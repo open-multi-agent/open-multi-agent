@@ -166,6 +166,8 @@ const result = await agent.run('Find the three most recent TypeScript releases.'
 
 ```typescript
 const claudeAgent: AgentConfig = {
+  name: 'strategist',
+  model: 'claude-opus-4-6',
   provider: 'anthropic',
   systemPrompt: 'You plan high-level approaches.',
   tools: ['file_write'],
