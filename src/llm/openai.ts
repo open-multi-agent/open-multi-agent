@@ -20,7 +20,7 @@
  *
  * @example
  * ```ts
- * import { OpenAIAdapter } from './openai.js'
+ * import { OpenAIAdapter } from '@vcg/agent-sdk'
  *
  * const adapter = new OpenAIAdapter()
  * const response = await adapter.chat(messages, {

@@ -7,7 +7,7 @@
  *
  * @example
  * ```ts
- * import { createAdapter } from './adapter.js'
+ * import { createAdapter } from '@vcg/agent-sdk'
  *
  * const anthropic = createAdapter('anthropic')
  * const openai    = createAdapter('openai', process.env.OPENAI_API_KEY)

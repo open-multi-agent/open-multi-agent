@@ -11,14 +11,14 @@
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../src/index.js'
+import { VCGAgentSDK, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../src/index.js'
 import type { OrchestratorEvent } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Part 1: Single agent via OpenMultiAgent (simplest path)
 // ---------------------------------------------------------------------------
 
-const orchestrator = new OpenMultiAgent({
+const orchestrator = new VCGAgentSDK({
   defaultModel: 'claude-sonnet-4-6',
   onProgress: (event: OrchestratorEvent) => {
     if (event.type === 'agent_start') {

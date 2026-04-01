@@ -16,7 +16,7 @@
  */
 
 import { z } from 'zod'
-import { OpenMultiAgent, defineTool } from '../src/index.js'
+import { VCGAgentSDK, defineTool } from '../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
 
 // ---------------------------------------------------------------------------

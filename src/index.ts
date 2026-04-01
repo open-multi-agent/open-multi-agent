@@ -1,17 +1,17 @@
 /**
- * @fileoverview open-multi-agent — public API surface.
+ * @fileoverview @vcg/agent-sdk — public API surface.
  *
- * Import from `'open-multi-agent'` to access everything you need:
+ * Import from `'@vcg/agent-sdk'` to access everything you need:
  *
  * ```ts
- * import { OpenMultiAgent, Agent, Team, defineTool } from 'open-multi-agent'
+ * import { VCGAgentSDK, Agent, Team, defineTool } from '@vcg/agent-sdk'
  * ```
  *
  * ## Quickstart
  *
  * ### Single agent
  * ```ts
- * const orchestrator = new OpenMultiAgent({ defaultModel: 'claude-opus-4-6' })
+ * const orchestrator = new VCGAgentSDK({ defaultModel: 'claude-opus-4-6' })
  * const result = await orchestrator.runAgent(
  *   { name: 'assistant', model: 'claude-opus-4-6' },
  *   'Explain monads in one paragraph.',
@@ -21,7 +21,7 @@
  *
  * ### Multi-agent team (auto-orchestrated)
  * ```ts
- * const orchestrator = new OpenMultiAgent()
+ * const orchestrator = new VCGAgentSDK()
  * const team = orchestrator.createTeam('writers', {
  *   name: 'writers',
  *   agents: [
@@ -54,7 +54,10 @@
 // Orchestrator (primary entry point)
 // ---------------------------------------------------------------------------
 
-export { OpenMultiAgent } from './orchestrator/orchestrator.js'
+export { VCGAgentSDK } from './orchestrator/orchestrator.js'
+
+/** @deprecated Use {@link VCGAgentSDK} instead. Will be removed in a future release. */
+export { VCGAgentSDK as OpenMultiAgent } from './orchestrator/orchestrator.js'
 export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 

@@ -12,7 +12,7 @@
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
+import { VCGAgentSDK } from '../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 
-const orchestrator = new OpenMultiAgent({
+const orchestrator = new VCGAgentSDK({
   defaultModel: 'claude-sonnet-4-6',
   maxConcurrency: 1, // run agents sequentially so output is readable
   onProgress: handleProgress,

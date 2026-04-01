@@ -1,7 +1,7 @@
 {
-  "name": "open-multi-agent",
+  "name": "@vcg/agent-sdk",
   "version": "0.1.0",
-  "description": "Production-grade multi-agent orchestration framework. Model-agnostic, supports team collaboration, task scheduling, and inter-agent communication.",
+  "description": "VCG Agent SDK — turnkey multi-agent framework for international applications.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

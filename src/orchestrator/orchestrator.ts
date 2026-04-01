@@ -1,7 +1,7 @@
 /**
- * @fileoverview OpenMultiAgent — the top-level multi-agent orchestration class.
+ * @fileoverview VCGAgentSDK — the top-level multi-agent orchestration class.
  *
- * {@link OpenMultiAgent} is the primary public API of the open-multi-agent framework.
+ * {@link VCGAgentSDK} is the primary public API of the @vcg/agent-sdk framework.
  * It ties together every subsystem:
  *
  *  - {@link Team}       — Agent roster, shared memory, inter-agent messaging
@@ -13,7 +13,7 @@
  * ## Quick start
  *
  * ```ts
- * const orchestrator = new OpenMultiAgent({ defaultModel: 'claude-opus-4-6' })
+ * const orchestrator = new VCGAgentSDK({ defaultModel: 'claude-opus-4-6' })
  *
  * const team = orchestrator.createTeam('research', {
  *   name: 'research',
@@ -39,6 +39,8 @@
  *   dependents remain `'blocked'` indefinitely; all non-dependent tasks continue.
  * - **Progress callbacks** — Callers can pass `onProgress` in the config to receive
  *   structured {@link OrchestratorEvent}s without polling.
+ *
+ * @module @vcg/agent-sdk
  */
 
 import type {
@@ -330,16 +332,16 @@ async function buildTaskPrompt(task: Task, team: Team): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// OpenMultiAgent
+// VCGAgentSDK
 // ---------------------------------------------------------------------------
 
 /**
- * Top-level orchestrator for the open-multi-agent framework.
+ * Top-level orchestrator for the @vcg/agent-sdk framework.
  *
  * Manages teams, coordinates task execution, and surfaces progress events.
  * Most users will interact with this class exclusively.
  */
-export class OpenMultiAgent {
+export class VCGAgentSDK {
   private readonly config: Required<
     Omit<OrchestratorConfig, 'onProgress'>
   > & Pick<OrchestratorConfig, 'onProgress'>
@@ -380,7 +382,7 @@ export class OpenMultiAgent {
   createTeam(name: string, config: TeamConfig): Team {
     if (this.teams.has(name)) {
       throw new Error(
-        `OpenMultiAgent: a team named "${name}" already exists. ` +
+        `VCGAgentSDK: a team named "${name}" already exists. ` +
         `Use a unique name or call shutdown() to clear all teams.`,
       )
     }
