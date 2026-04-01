@@ -293,6 +293,23 @@ export interface OrchestratorConfig {
 // vLLM configuration
 // ---------------------------------------------------------------------------
 
+/**
+ * Centralized SDK configuration.
+ *
+ * Resolved by {@link loadConfig} using the priority:
+ * constructor args > env vars > defaults.
+ */
+export interface VCGConfig {
+  /** Default LLM provider. */
+  readonly defaultProvider: 'anthropic' | 'openai' | 'vllm'
+  /** Maximum concurrency for agent pools. */
+  readonly maxConcurrency: number
+  /** Logging verbosity. */
+  readonly logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent'
+  /** vLLM connection settings (populated from env vars or constructor). */
+  readonly vllm?: VLLMConfig
+}
+
 /** Configuration for connecting to a vLLM inference server. */
 export interface VLLMConfig {
   /** Base URL of the vLLM server (e.g. `'http://localhost:8000/v1'`). */

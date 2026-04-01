@@ -111,6 +111,12 @@ export type { SupportedProvider } from './llm/adapter.js'
 export { VLLMAdapter } from './llm/vllm.js'
 
 // ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+export { DEFAULT_CONFIG, loadConfig } from './config/index.js'
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
@@ -170,4 +176,7 @@ export type {
 
   // vLLM
   VLLMConfig,
+
+  // Config
+  VCGConfig,
 } from './types.js'
