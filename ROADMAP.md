@@ -4,24 +4,24 @@ Transform `open-multi-agent` into `@vcg/agent-sdk`: a turnkey agent framework fo
 
 ---
 
-## Phase 1: Foundation — vLLM Adapter + Package Rebranding
+## Phase 1: Foundation — vLLM Adapter + Package Rebranding  ✅ COMPLETE
 
 **Goal:** Agents can target our vLLM servers out of the box.
 
-### 1A. Package Rename
+### 1A. Package Rename ✅
 
-- Rename from `open-multi-agent` to `@vcg/agent-sdk`
-- Rename `OpenMultiAgent` class to `VCGAgent` (or `AgentSDK`)
-- Update all exports, doc comments, and README
+- ✅ Renamed from `open-multi-agent` to `@vcg/agent-sdk`
+- ✅ Renamed `OpenMultiAgent` class to `VCGAgentSDK`
+- ✅ Added deprecated `OpenMultiAgent` re-export alias for backward compat
+- ✅ Updated all exports, doc comments, JSDoc, and example files
 
-### 1B. vLLM Adapter
+### 1B. vLLM Adapter ✅
 
-vLLM exposes an OpenAI-compatible API, so the adapter extends the existing OpenAI adapter pattern with custom base URL and model config.
-
-- **New** `src/llm/vllm.ts` — `VLLMAdapter` class
-- **New** `src/llm/openai-compat.ts` — extract shared OpenAI-format helpers (message conversion, tool formatting, streaming) so both `OpenAIAdapter` and `VLLMAdapter` reuse them
-- **Modify** `src/llm/adapter.ts` — add `'vllm'` to `createAdapter()` factory
-- **Modify** `src/types.ts` — add `VLLMConfig` type, `'vllm'` to provider unions
+- ✅ **New** `src/llm/openai-compat.ts` — extracted shared OpenAI-format helpers (message conversion, tool formatting, response parsing, streaming) so both `OpenAIAdapter` and `VLLMAdapter` reuse them
+- ✅ **New** `src/llm/vllm.ts` — `VLLMAdapter` class with `chat()`, `stream()`, and `healthCheck()`
+- ✅ **Modified** `src/llm/openai.ts` — refactored to import from `openai-compat.ts`
+- ✅ **Modified** `src/llm/adapter.ts` — added `'vllm'` to `createAdapter()` factory; accepts `VLLMConfig` object
+- ✅ **Modified** `src/types.ts` — added `VLLMConfig` type, `'vllm'` to all provider unions
 
 ```typescript
 interface VLLMConfig {
@@ -33,11 +33,12 @@ interface VLLMConfig {
 }
 ```
 
-### 1C. Centralized Configuration
+### 1C. Centralized Configuration ✅
 
-- **New** `src/config/defaults.ts` — default vLLM server URL, model, common settings
-- **New** `src/config/index.ts` — `loadConfig()` with priority: constructor args > env vars > config file
-- Env vars: `VCG_VLLM_URL`, `VCG_VLLM_MODEL`, `VCG_VLLM_API_KEY`, `VCG_DEFAULT_PROVIDER`, `VCG_LOG_LEVEL`, `VCG_LOCALE`
+- ✅ **New** `src/config/defaults.ts` — `DEFAULT_CONFIG` and `loadConfig(overrides?)` with priority: constructor args > env vars > defaults
+- ✅ **New** `src/config/index.ts` — re-exports
+- ✅ **New** `VCGConfig` type in `src/types.ts`
+- ✅ Env vars: `VCG_VLLM_URL`, `VCG_VLLM_MODEL`, `VCG_VLLM_API_KEY`, `VCG_DEFAULT_PROVIDER`, `VCG_MAX_CONCURRENCY`, `VCG_LOG_LEVEL`
 
 ---
 
@@ -294,9 +295,9 @@ const agent = createChatAgent({ locale: 'ja-JP' })
 ## Build Order
 
 ```
-Phase 1 (vLLM + rebrand)       <- Start here, immediate value
+Phase 1 (vLLM + rebrand)       ✅ COMPLETE
   |
-Phase 2 (presets + DX)          <- Devs can start using it
+Phase 2 (presets + DX)          <- NEXT: Devs can start using it
   |
 Phase 3 (tool packs)        \
                               >-- Can be parallelized
@@ -316,7 +317,7 @@ Phase 7 (production hardening)  <- Final polish
 | vLLM adapter approach | Extend OpenAI adapter via shared `openai-compat.ts` | vLLM is OpenAI-compatible; avoids code duplication |
 | Request queue placement | Transparent wrapper around `LLMAdapter` | Agents are unaware of queuing; zero code changes for consumers |
 | Queue implementation | Priority queue + semaphore + token bucket | Handles concurrency, rate limits, and fairness in one layer |
-| Config management | Env vars > config file > constructor (merge) | Flexible for different deployment contexts |
+| Config management | Env vars > constructor args > defaults (merge) | Flexible for different deployment contexts |
 | Cron library | Lightweight internal parser (or `cron-parser` dep) | Avoids heavy dependencies |
 | i18n approach | JSON locale files + template system | Simple, no heavy framework needed |
 | Tool middleware | Function composition (decorator pattern) | Familiar, zero-dependency, composable |
