@@ -186,7 +186,7 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
-  readonly provider?: 'anthropic' | 'openai'
+  readonly provider?: 'anthropic' | 'openai' | 'vllm'
   readonly systemPrompt?: string
   /** Names of tools (from the tool registry) available to this agent. */
   readonly tools?: readonly string[]
@@ -285,8 +285,26 @@ export interface OrchestratorEvent {
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
   readonly defaultModel?: string
-  readonly defaultProvider?: 'anthropic' | 'openai'
+  readonly defaultProvider?: 'anthropic' | 'openai' | 'vllm'
   onProgress?: (event: OrchestratorEvent) => void
+}
+
+// ---------------------------------------------------------------------------
+// vLLM configuration
+// ---------------------------------------------------------------------------
+
+/** Configuration for connecting to a vLLM inference server. */
+export interface VLLMConfig {
+  /** Base URL of the vLLM server (e.g. `'http://localhost:8000/v1'`). */
+  readonly baseURL: string
+  /** Model name to use for requests (e.g. `'meta-llama/Llama-3-70b-chat-hf'`). */
+  readonly model: string
+  /** Optional API key for authenticated vLLM deployments. */
+  readonly apiKey?: string
+  /** Request timeout in milliseconds. */
+  readonly timeout?: number
+  /** Maximum number of retries on transient errors. */
+  readonly maxRetries?: number
 }
 
 // ---------------------------------------------------------------------------

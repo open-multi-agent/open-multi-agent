@@ -108,6 +108,7 @@ export {
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
+export { VLLMAdapter } from './llm/vllm.js'
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -166,4 +167,7 @@ export type {
   // Memory
   MemoryEntry,
   MemoryStore,
+
+  // vLLM
+  VLLMConfig,
 } from './types.js'

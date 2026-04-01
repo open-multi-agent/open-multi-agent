@@ -1,33 +1,11 @@
 /**
- * @fileoverview OpenAI adapter implementing {@link LLMAdapter}.
+ * @fileoverview vLLM adapter implementing {@link LLMAdapter}.
  *
- * Converts between the framework's internal {@link ContentBlock} types and the
- * OpenAI Chat Completions wire format. Key mapping decisions:
+ * vLLM exposes an OpenAI-compatible API, so this adapter reuses all shared
+ * helpers from `openai-compat.ts` and simply points the `openai` client at
+ * a custom `baseURL`.
  *
- * - Framework `tool_use` blocks in assistant messages -> OpenAI `tool_calls`
- * - Framework `tool_result` blocks in user messages  -> OpenAI `tool` role messages
- * - Framework `image` blocks in user messages        -> OpenAI image content parts
- * - System prompt in {@link LLMChatOptions}           -> prepended `system` message
- *
- * Because OpenAI and Anthropic use fundamentally different role-based structures
- * for tool calling (Anthropic embeds tool results in user-role content arrays;
- * OpenAI uses a dedicated `tool` role), the conversion necessarily splits
- * `tool_result` blocks out into separate top-level messages.
- *
- * API key resolution order:
- *   1. `apiKey` constructor argument
- *   2. `OPENAI_API_KEY` environment variable
- *
- * @example
- * ```ts
- * import { OpenAIAdapter } from '@vcg/agent-sdk'
- *
- * const adapter = new OpenAIAdapter()
- * const response = await adapter.chat(messages, {
- *   model: 'gpt-5.4',
- *   maxTokens: 1024,
- * })
- * ```
+ * @module @vcg/agent-sdk
  */
 
 import OpenAI from 'openai'
@@ -40,10 +18,10 @@ import type {
   LLMMessage,
   LLMResponse,
   LLMStreamOptions,
-  LLMToolDef,
   StreamEvent,
   TextBlock,
   ToolUseBlock,
+  VLLMConfig,
 } from '../types.js'
 
 import {
@@ -54,39 +32,74 @@ import {
 } from './openai-compat.js'
 
 // ---------------------------------------------------------------------------
-// Adapter implementation
+// VLLMAdapter
 // ---------------------------------------------------------------------------
 
 /**
- * LLM adapter backed by the OpenAI Chat Completions API.
+ * LLM adapter for vLLM inference servers.
  *
- * Thread-safe — a single instance may be shared across concurrent agent runs.
+ * vLLM is OpenAI-compatible, so this adapter reuses the same message
+ * conversion and response parsing logic as the OpenAI adapter. The key
+ * difference is the configurable `baseURL` pointing at a self-hosted
+ * vLLM instance.
+ *
+ * @example
+ * ```ts
+ * const adapter = new VLLMAdapter({
+ *   baseURL: 'http://localhost:8000/v1',
+ *   model: 'meta-llama/Llama-3-70b-chat-hf',
+ * })
+ * const response = await adapter.chat(messages, { model: 'meta-llama/Llama-3-70b-chat-hf' })
+ * ```
  */
-export class OpenAIAdapter implements LLMAdapter {
-  readonly name = 'openai'
+export class VLLMAdapter implements LLMAdapter {
+  readonly name = 'vllm'
 
   readonly #client: OpenAI
+  readonly #config: VLLMConfig
 
-  constructor(apiKey?: string) {
+  constructor(config: VLLMConfig) {
+    this.#config = config
     this.#client = new OpenAI({
-      apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
+      baseURL: config.baseURL,
+      apiKey: config.apiKey ?? 'dummy',
+      timeout: config.timeout,
+      maxRetries: config.maxRetries,
     })
+  }
+
+  // -------------------------------------------------------------------------
+  // healthCheck()
+  // -------------------------------------------------------------------------
+
+  /**
+   * Check whether the vLLM server is reachable by hitting `GET {baseURL}/health`.
+   *
+   * Returns `true` if the server responds with a 2xx status, `false` otherwise.
+   */
+  async healthCheck(): Promise<boolean> {
+    try {
+      // Strip trailing /v1 if present to hit the root health endpoint
+      const base = this.#config.baseURL.replace(/\/v1\/?$/, '')
+      const response = await fetch(`${base}/health`, {
+        signal: AbortSignal.timeout(this.#config.timeout ?? 5000),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
   }
 
   // -------------------------------------------------------------------------
   // chat()
   // -------------------------------------------------------------------------
 
-  /**
-   * Send a synchronous (non-streaming) chat request and return the complete
-   * {@link LLMResponse}.
-   */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
 
     const completion = await this.#client.chat.completions.create(
       {
-        model: options.model,
+        model: options.model ?? this.#config.model,
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
@@ -105,9 +118,6 @@ export class OpenAIAdapter implements LLMAdapter {
   // stream()
   // -------------------------------------------------------------------------
 
-  /**
-   * Send a streaming chat request and yield {@link StreamEvent}s incrementally.
-   */
   async *stream(
     messages: LLMMessage[],
     options: LLMStreamOptions,
@@ -116,7 +126,7 @@ export class OpenAIAdapter implements LLMAdapter {
 
     const streamResponse = await this.#client.chat.completions.create(
       {
-        model: options.model,
+        model: options.model ?? this.#config.model,
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
@@ -235,16 +245,4 @@ export class OpenAIAdapter implements LLMAdapter {
       yield errorEvent
     }
   }
-}
-
-// Re-export types that consumers of this module commonly need alongside the adapter.
-export type {
-  ContentBlock,
-  LLMAdapter,
-  LLMChatOptions,
-  LLMMessage,
-  LLMResponse,
-  LLMStreamOptions,
-  LLMToolDef,
-  StreamEvent,
 }
