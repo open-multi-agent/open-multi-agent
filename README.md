@@ -21,7 +21,7 @@ Build AI agent teams that work together. One agent plans, another implements, a 
 npm install @jackchen_me/open-multi-agent
 ```
 
-Set `ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY`) in your environment.
+Set `ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY` or `MINIMAX_API_KEY`) in your environment.
 
 ```typescript
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
@@ -179,9 +179,17 @@ const gptAgent: AgentConfig = {
   tools: ['bash', 'file_read', 'file_write'],
 }
 
+const minimaxAgent: AgentConfig = {
+  name: 'reviewer',
+  model: 'MiniMax-M2.7',
+  provider: 'minimax',
+  systemPrompt: 'You review code for correctness and clarity.',
+  tools: ['file_read', 'grep'],
+}
+
 const team = orchestrator.createTeam('mixed-team', {
   name: 'mixed-team',
-  agents: [claudeAgent, gptAgent],
+  agents: [claudeAgent, gptAgent, minimaxAgent],
   sharedMemory: true,
 })
 
@@ -246,6 +254,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 │  - prompt()       │───►│  LLMAdapter          │
 │  - stream()       │    │  - AnthropicAdapter  │
 └────────┬──────────┘    │  - OpenAIAdapter     │
+         │               │  - MiniMaxAdapter    │
          │               └──────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -269,7 +278,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 
 Issues, feature requests, and PRs are welcome. Some areas where contributions would be especially valuable:
 
-- **LLM Adapters** — Ollama, llama.cpp, vLLM, Gemini. The `LLMAdapter` interface requires just two methods: `chat()` and `stream()`.
+- **LLM Adapters** — MiniMax is now supported out of the box. Additional adapters for Ollama, llama.cpp, vLLM, and Gemini are welcome. The `LLMAdapter` interface requires just two methods: `chat()` and `stream()`.
 - **Examples** — Real-world workflows and use cases.
 - **Documentation** — Guides, tutorials, and API docs.
 

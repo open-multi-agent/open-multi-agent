@@ -105,6 +105,7 @@ export {
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
+export { MiniMaxAdapter } from './llm/minimax.js'
 
 // ---------------------------------------------------------------------------
 // Memory

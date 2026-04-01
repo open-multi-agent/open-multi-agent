@@ -21,7 +21,7 @@
 npm install @jackchen_me/open-multi-agent
 ```
 
-在环境变量中设置 `ANTHROPIC_API_KEY`（以及可选的 `OPENAI_API_KEY`）。
+在环境变量中设置 `ANTHROPIC_API_KEY`（以及可选的 `OPENAI_API_KEY` 或 `MINIMAX_API_KEY`）。
 
 ```typescript
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
@@ -160,7 +160,7 @@ const result = await agent.run('Find the three most recent TypeScript releases.'
 </details>
 
 <details>
-<summary><b>多模型团队</b> — 在一个工作流中混合使用 Claude 和 GPT</summary>
+<summary><b>多模型团队</b> — 在一个工作流中混合使用 Claude、GPT 和 MiniMax</summary>
 
 ```typescript
 const claudeAgent: AgentConfig = {
@@ -179,9 +179,17 @@ const gptAgent: AgentConfig = {
   tools: ['bash', 'file_read', 'file_write'],
 }
 
+const minimaxAgent: AgentConfig = {
+  name: 'reviewer',
+  model: 'MiniMax-M2.7',
+  provider: 'minimax',
+  systemPrompt: 'You review code for correctness and clarity.',
+  tools: ['file_read', 'grep'],
+}
+
 const team = orchestrator.createTeam('mixed-team', {
   name: 'mixed-team',
-  agents: [claudeAgent, gptAgent],
+  agents: [claudeAgent, gptAgent, minimaxAgent],
   sharedMemory: true,
 })
 
@@ -246,6 +254,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 │  - prompt()       │───►│  LLMAdapter          │
 │  - stream()       │    │  - AnthropicAdapter  │
 └────────┬──────────┘    │  - OpenAIAdapter     │
+         │               │  - MiniMaxAdapter    │
          │               └──────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -269,7 +278,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 
 欢迎提 Issue、功能需求和 PR。以下方向的贡献尤其有价值：
 
-- **LLM 适配器** — Ollama、llama.cpp、vLLM、Gemini。`LLMAdapter` 接口只需实现两个方法：`chat()` 和 `stream()`。
+- **LLM 适配器** — MiniMax 已原生支持。欢迎继续贡献 Ollama、llama.cpp、vLLM、Gemini 等适配器。`LLMAdapter` 接口只需实现两个方法：`chat()` 和 `stream()`。
 - **示例** — 真实场景的工作流和用例。
 - **文档** — 指南、教程和 API 文档。
 
