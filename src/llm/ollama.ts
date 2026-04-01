@@ -1,5 +1,3 @@
-/// <reference types="node" />
-
 /**
  * @fileoverview Ollama adapter implementing {@link LLMAdapter}.
  *

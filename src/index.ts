@@ -106,6 +106,7 @@ export {
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
 export { OllamaAdapter } from './llm/ollama.js'
+export { CopilotAdapter } from './llm/copilot.js'
 
 // ---------------------------------------------------------------------------
 // Memory

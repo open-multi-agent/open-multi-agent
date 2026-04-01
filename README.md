@@ -23,6 +23,8 @@ npm install @jackchen_me/open-multi-agent
 
 Set `ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY`) in your environment.
 
+> **Running locally without a cloud API?** See [Ollama](#ollama-local-models) and [GitHub Copilot](#github-copilot) below.
+
 ```typescript
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
 
@@ -164,8 +166,6 @@ const result = await agent.run('Find the three most recent TypeScript releases.'
 
 ```typescript
 const claudeAgent: AgentConfig = {
-  name: 'strategist',
-  model: 'claude-opus-4-6',
   provider: 'anthropic',
   systemPrompt: 'You plan high-level approaches.',
   tools: ['file_write'],
@@ -215,6 +215,119 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 
 </details>
 
+## Ollama — Local Models
+
+Run multi-agent workflows entirely on your own hardware using [Ollama](https://ollama.com).
+No cloud API key required.
+
+```bash
+# Install and start Ollama, then pull a model
+ollama pull qwen2.5
+```
+
+```typescript
+import { OllamaAdapter, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '@jackchen_me/open-multi-agent'
+
+// Point at your local Ollama server (defaults to http://localhost:11434)
+// Override via the OLLAMA_BASE_URL environment variable or constructor arg:
+const adapter = new OllamaAdapter()        // uses localhost
+// const adapter = new OllamaAdapter('http://my-server:11434')
+
+const registry = new ToolRegistry()
+registerBuiltInTools(registry)
+const executor = new ToolExecutor(registry)
+
+const agent = new Agent(
+  { name: 'local-coder', model: 'qwen2.5', provider: 'ollama', tools: ['bash'] },
+  registry,
+  executor,
+  adapter,   // pass the adapter directly to bypass the cloud factory
+)
+
+const result = await agent.run('Write a Python one-liner that prints the Fibonacci sequence.')
+console.log(result.output)
+```
+
+You can also use Ollama via the standard factory:
+
+```typescript
+import { createAdapter } from '@jackchen_me/open-multi-agent'
+
+const adapter = await createAdapter('ollama')
+// or with a custom URL:
+const adapter = await createAdapter('ollama', 'http://my-server:11434')
+```
+
+Supported models include any model available through Ollama — Qwen 2.5, Llama 3.3,
+Mistral, Phi-4, Gemma 3, and more. Tool calling requires a model that supports it
+(e.g. `qwen2.5`, `llama3.1`, `mistral-nemo`).
+
+---
+
+## GitHub Copilot
+
+Use your existing GitHub Copilot subscription. The `CopilotAdapter` authenticates
+exactly like `:Copilot setup` in [copilot.vim](https://github.com/github/copilot.vim) —
+GitHub's Device Authorization Flow — and stores the token in the same location
+(`~/.config/github-copilot/hosts.json`).
+
+### Step 1 — Authenticate (once)
+
+```typescript
+import { CopilotAdapter } from '@jackchen_me/open-multi-agent'
+
+// Interactive Device Flow: prints a one-time code, waits for browser confirmation.
+// Token is saved to ~/.config/github-copilot/hosts.json for future runs.
+await CopilotAdapter.authenticate()
+```
+
+This is a one-time step. If you have already authenticated via `:Copilot setup` in Vim
+or Neovim the token file already exists and you can skip this step.
+
+You can also pass a token via environment variable — no interactive prompt needed:
+
+```bash
+export GITHUB_COPILOT_TOKEN=ghu_your_github_oauth_token
+```
+
+### Step 2 — Use normally
+
+```typescript
+import { CopilotAdapter, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '@jackchen_me/open-multi-agent'
+
+// Token is loaded automatically from hosts.json or GITHUB_COPILOT_TOKEN
+const adapter = new CopilotAdapter()
+
+const registry = new ToolRegistry()
+registerBuiltInTools(registry)
+const executor = new ToolExecutor(registry)
+
+const agent = new Agent(
+  { name: 'copilot-coder', model: 'gpt-4o', provider: 'copilot', tools: ['bash', 'file_write'] },
+  registry,
+  executor,
+  adapter,
+)
+
+const result = await agent.run('Scaffold a TypeScript Express app in /tmp/my-app/')
+console.log(result.output)
+```
+
+Via the factory:
+
+```typescript
+import { createAdapter } from '@jackchen_me/open-multi-agent'
+
+const adapter = await createAdapter('copilot')
+// or with an explicit token:
+const adapter = await createAdapter('copilot', process.env.GITHUB_COPILOT_TOKEN)
+```
+
+Available models include `gpt-4o`, `claude-3.5-sonnet`, `o3-mini`, and others
+enabled by your Copilot plan.
+
+---
+
 ## Architecture
 
 ```
@@ -246,6 +359,8 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 │  - prompt()       │───►│  LLMAdapter          │
 │  - stream()       │    │  - AnthropicAdapter  │
 └────────┬──────────┘    │  - OpenAIAdapter     │
+         │               │  - OllamaAdapter     │
+         │               │  - CopilotAdapter    │
          │               └──────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -269,7 +384,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 
 Issues, feature requests, and PRs are welcome. Some areas where contributions would be especially valuable:
 
-- **LLM Adapters** — Ollama, llama.cpp, vLLM, Gemini. The `LLMAdapter` interface requires just two methods: `chat()` and `stream()`.
+- **LLM Adapters** — llama.cpp, vLLM, Gemini, and others. The `LLMAdapter` interface requires just two methods: `chat()` and `stream()`.
 - **Examples** — Real-world workflows and use cases.
 - **Documentation** — Guides, tutorials, and API docs.
 

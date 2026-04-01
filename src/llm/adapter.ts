@@ -39,7 +39,7 @@ import type { LLMAdapter } from '../types.js'
  * Additional providers can be integrated by implementing {@link LLMAdapter}
  * directly and bypassing this factory.
  */
-export type SupportedProvider = 'anthropic' | 'openai' | 'ollama'
+export type SupportedProvider = 'anthropic' | 'openai' | 'ollama' | 'copilot'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -51,6 +51,10 @@ export type SupportedProvider = 'anthropic' | 'openai' | 'ollama'
  * For `'ollama'`, the second argument is the base URL of the Ollama server
  * (e.g. `'http://localhost:11434'`). It falls back to the `OLLAMA_BASE_URL`
  * environment variable, then `http://localhost:11434`.
+ *
+ * For `'copilot'`, the second argument is a GitHub OAuth token. It falls back
+ * to `GITHUB_COPILOT_TOKEN`, `GITHUB_TOKEN`, then
+ * `~/.config/github-copilot/hosts.json` (written by `:Copilot setup`).
  *
  * Adapters are imported lazily so that projects using only one provider
  * are not forced to install the SDK for the other.
@@ -75,6 +79,10 @@ export async function createAdapter(
     case 'ollama': {
       const { OllamaAdapter } = await import('./ollama.js')
       return new OllamaAdapter(credential)
+    }
+    case 'copilot': {
+      const { CopilotAdapter } = await import('./copilot.js')
+      return new CopilotAdapter(credential)
     }
     default: {
       // The `never` cast here makes TypeScript enforce exhaustiveness.
