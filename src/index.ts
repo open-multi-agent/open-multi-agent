@@ -104,6 +104,7 @@ export {
 // ---------------------------------------------------------------------------
 
 export { createAdapter } from './llm/adapter.js'
+export { OllamaAdapter } from './llm/ollama.js'
 export type { SupportedProvider } from './llm/adapter.js'
 
 // ---------------------------------------------------------------------------

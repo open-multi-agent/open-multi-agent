@@ -187,6 +187,33 @@ const team = orchestrator.createTeam('mixed-team', {
 const result = await orchestrator.runTeam(team, 'Build a CLI tool that converts JSON to CSV.')
 ```
 
+### Local Ollama Support
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  defaultProvider: 'ollama',
+  defaultModel: 'llama2',
+})
+
+const localAgent: AgentConfig = {
+  name: 'assistant',
+  model: 'llama2',
+  provider: 'ollama',
+  systemPrompt: 'You are a local assistant running on Ollama.',
+  tools: ['bash', 'file_read', 'file_write'],
+}
+
+const team = orchestrator.createTeam('local-team', {
+  name: 'local-team',
+  agents: [localAgent],
+  sharedMemory: true,
+})
+
+const result = await orchestrator.runTeam(team, 'Create a small script that lists files in the current directory.')
+```
+
+Set `OLLAMA_API_KEY` when your local Ollama instance requires authentication. The adapter defaults to `http://localhost:11434`.
+
 ### Streaming Output
 
 ```typescript
