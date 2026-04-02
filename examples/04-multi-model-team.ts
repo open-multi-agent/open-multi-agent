@@ -136,6 +136,7 @@ function buildCustomAgent(
 // ---------------------------------------------------------------------------
 
 const useOpenAI = Boolean(process.env.OPENAI_API_KEY)
+const useOllama = Boolean(process.env.OLLAMA_BASE_URL);
 
 const researcherConfig: AgentConfig = {
   name: 'researcher',
@@ -151,7 +152,8 @@ Return the raw rates as a JSON object keyed by pair, e.g. { "USD/EUR": 0.91, "US
 
 const analystConfig: AgentConfig = {
   name: 'analyst',
-  model: useOllama ? 'llama3.1' : useOpenAI ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20240620',\n  provider: useOllama ? 'ollama' : useOpenAI ? 'openai' : 'anthropic',
+  model: useOllama ? 'llama3.1' : useOpenAI ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20240620',
+  provider: useOllama ? 'ollama' : useOpenAI ? 'openai' : 'anthropic',
   systemPrompt: `You are a foreign exchange analyst.
 You receive exchange rate data and produce a short briefing.
 Use format_currency to show example conversions.

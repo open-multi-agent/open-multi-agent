@@ -186,7 +186,7 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
-provider?: 'anthropic' | 'openai' | 'ollama'
+  readonly provider?: 'anthropic' | 'ollama' | 'openai'
   readonly systemPrompt?: string
   /** Names of tools (from the tool registry) available to this agent. */
   readonly tools?: readonly string[]
@@ -285,7 +285,7 @@ export interface OrchestratorEvent {
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
   readonly defaultModel?: string
-defaultProvider?: 'anthropic' | 'openai' | 'ollama'
+  readonly defaultProvider?: 'anthropic' | 'ollama' | 'openai'
   onProgress?: (event: OrchestratorEvent) => void
 }
 
