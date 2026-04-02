@@ -151,8 +151,7 @@ Return the raw rates as a JSON object keyed by pair, e.g. { "USD/EUR": 0.91, "US
 
 const analystConfig: AgentConfig = {
   name: 'analyst',
-  model: useOpenAI ? 'gpt-5.4' : 'claude-sonnet-4-6',
-  provider: useOpenAI ? 'openai' : 'anthropic',
+  model: useOllama ? 'llama3.1' : useOpenAI ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20240620',\n  provider: useOllama ? 'ollama' : useOpenAI ? 'openai' : 'anthropic',
   systemPrompt: `You are a foreign exchange analyst.
 You receive exchange rate data and produce a short briefing.
 Use format_currency to show example conversions.
