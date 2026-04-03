@@ -133,12 +133,20 @@ export async function executeWithRetry(
   const backoff = Math.max(1, task.retryBackoff ?? 2)
 
   let lastError: string = ''
+  // Accumulate token usage across all attempts so billing/observability
+  // reflects the true cost of retries.
+  let totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const result = await run()
+      totalUsage = {
+        input_tokens: totalUsage.input_tokens + result.tokenUsage.input_tokens,
+        output_tokens: totalUsage.output_tokens + result.tokenUsage.output_tokens,
+      }
+
       if (result.success) {
-        return result
+        return { ...result, tokenUsage: totalUsage }
       }
       lastError = result.output
 
@@ -150,7 +158,7 @@ export async function executeWithRetry(
         continue
       }
 
-      return result
+      return { ...result, tokenUsage: totalUsage }
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err)
 
@@ -166,7 +174,7 @@ export async function executeWithRetry(
         success: false,
         output: lastError,
         messages: [],
-        tokenUsage: { input_tokens: 0, output_tokens: 0 },
+        tokenUsage: totalUsage,
         toolCalls: [],
       }
     }
@@ -177,7 +185,7 @@ export async function executeWithRetry(
     success: false,
     output: lastError,
     messages: [],
-    tokenUsage: { input_tokens: 0, output_tokens: 0 },
+    tokenUsage: totalUsage,
     toolCalls: [],
   }
 }

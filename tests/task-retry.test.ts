@@ -276,6 +276,58 @@ describe('executeWithRetry', () => {
     expect(mockDelay).toHaveBeenCalledWith(30_000)  // capped
   })
 
+  it('accumulates token usage across retry attempts', async () => {
+    const failResult: AgentRunResult = {
+      ...FAILURE_RESULT,
+      tokenUsage: { input_tokens: 100, output_tokens: 50 },
+    }
+    const successResult: AgentRunResult = {
+      ...SUCCESS_RESULT,
+      tokenUsage: { input_tokens: 200, output_tokens: 80 },
+    }
+
+    const run = vi.fn()
+      .mockResolvedValueOnce(failResult)
+      .mockResolvedValueOnce(failResult)
+      .mockResolvedValueOnce(successResult)
+
+    const task = createTask({
+      title: 'Token test',
+      description: 'test',
+      maxRetries: 2,
+      retryDelayMs: 10,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(true)
+    // 100+100+200 input, 50+50+80 output
+    expect(result.tokenUsage.input_tokens).toBe(400)
+    expect(result.tokenUsage.output_tokens).toBe(180)
+  })
+
+  it('accumulates token usage even when all retries fail', async () => {
+    const failResult: AgentRunResult = {
+      ...FAILURE_RESULT,
+      tokenUsage: { input_tokens: 50, output_tokens: 30 },
+    }
+
+    const run = vi.fn().mockResolvedValue(failResult)
+
+    const task = createTask({
+      title: 'Token fail test',
+      description: 'test',
+      maxRetries: 1,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(false)
+    // 50+50 input, 30+30 output (2 attempts)
+    expect(result.tokenUsage.input_tokens).toBe(100)
+    expect(result.tokenUsage.output_tokens).toBe(60)
+  })
+
   it('clamps negative maxRetries to 0 (single attempt)', async () => {
     const run = vi.fn().mockRejectedValue(new Error('fail'))
 
