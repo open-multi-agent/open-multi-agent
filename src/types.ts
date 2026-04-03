@@ -281,6 +281,12 @@ export interface Task {
   result?: string
   readonly createdAt: Date
   updatedAt: Date
+  /** Maximum number of retry attempts on failure (default: 0 — no retry). */
+  readonly maxRetries?: number
+  /** Base delay in ms before the first retry (default: 1000). */
+  readonly retryDelayMs?: number
+  /** Exponential backoff multiplier (default: 2). */
+  readonly retryBackoff?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +300,7 @@ export interface OrchestratorEvent {
     | 'agent_complete'
     | 'task_start'
     | 'task_complete'
+    | 'task_retry'
     | 'message'
     | 'error'
   readonly agent?: string
