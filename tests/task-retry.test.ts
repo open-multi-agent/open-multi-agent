@@ -275,4 +275,42 @@ describe('executeWithRetry', () => {
 
     expect(mockDelay).toHaveBeenCalledWith(30_000)  // capped
   })
+
+  it('clamps negative maxRetries to 0 (single attempt)', async () => {
+    const run = vi.fn().mockRejectedValue(new Error('fail'))
+
+    const task = createTask({
+      title: 'Negative retry',
+      description: 'test',
+      maxRetries: -5,
+    })
+    // Manually set negative value since createTask doesn't validate
+    ;(task as any).maxRetries = -5
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(false)
+    expect(run).toHaveBeenCalledTimes(1)  // exactly 1 attempt, no retries
+  })
+
+  it('clamps backoff below 1 to 1 (constant delay)', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new Error('error'))
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+
+    const task = createTask({
+      title: 'Bad backoff',
+      description: 'test',
+      maxRetries: 1,
+      retryDelayMs: 100,
+      retryBackoff: -2,
+    })
+    ;(task as any).retryBackoff = -2
+
+    const mockDelay = vi.fn().mockResolvedValue(undefined)
+    await executeWithRetry(run, task, undefined, mockDelay)
+
+    // backoff clamped to 1, so delay = 100 * 1^0 = 100
+    expect(mockDelay).toHaveBeenCalledWith(100)
+  })
 })
