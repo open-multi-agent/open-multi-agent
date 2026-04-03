@@ -54,7 +54,7 @@
 // Orchestrator (primary entry point)
 // ---------------------------------------------------------------------------
 
-export { OpenMultiAgent } from './orchestrator/orchestrator.js'
+export { OpenMultiAgent, executeWithRetry, computeRetryDelay } from './orchestrator/orchestrator.js'
 export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 
