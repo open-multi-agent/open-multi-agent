@@ -324,7 +324,7 @@ export interface OrchestratorConfig {
 // ---------------------------------------------------------------------------
 
 /** Shared fields present on every trace event. */
-interface TraceEventBase {
+export interface TraceEventBase {
   /** Unique identifier for the entire run (runTeam / runTasks / runAgent call). */
   readonly runId: string
   readonly type: string
@@ -335,7 +335,7 @@ interface TraceEventBase {
   /** Wall-clock duration in milliseconds (`endMs - startMs`). */
   readonly durationMs: number
   /** Agent name associated with this span. */
-  readonly agent?: string
+  readonly agent: string
   /** Task ID associated with this span. */
   readonly taskId?: string
 }
@@ -344,7 +344,7 @@ interface TraceEventBase {
 export interface LLMCallTrace extends TraceEventBase {
   readonly type: 'llm_call'
   readonly agent: string
-  readonly model?: string
+  readonly model: string
   readonly turn: number
   readonly tokens: TokenUsage
 }

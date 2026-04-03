@@ -354,7 +354,7 @@ async function executeQueue(
         () => pool.run(assignee, prompt, traceOptions),
         task,
         (retryData) => {
-          retryCount = retryData.attempt
+          retryCount++
           config.onProgress?.({
             type: 'task_retry',
             task: task.id,

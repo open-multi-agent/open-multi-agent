@@ -175,6 +175,7 @@ export class Agent {
    *
    * Use this for multi-turn interactions.
    */
+  // TODO(#18): accept optional RunOptions to forward trace context
   async prompt(message: string): Promise<AgentRunResult> {
     const userMessage: LLMMessage = {
       role: 'user',
@@ -198,6 +199,7 @@ export class Agent {
    *
    * Like {@link run}, this does not use or update the persistent history.
    */
+  // TODO(#18): accept optional RunOptions to forward trace context
   async *stream(prompt: string): AsyncGenerator<StreamEvent> {
     const messages: LLMMessage[] = [
       { role: 'user', content: [{ type: 'text', text: prompt }] },

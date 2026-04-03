@@ -162,6 +162,7 @@ export type {
   OrchestratorEvent,
 
   // Trace
+  TraceEventBase,
   TraceEvent,
   LLMCallTrace,
   ToolCallTrace,
