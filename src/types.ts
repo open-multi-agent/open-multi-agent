@@ -201,6 +201,12 @@ export interface AgentConfig {
   readonly maxTurns?: number
   readonly maxTokens?: number
   readonly temperature?: number
+  /**
+   * Optional Zod schema for structured output.  When set, the agent's final
+   * output is parsed as JSON and validated against this schema.  A single
+   * retry with error feedback is attempted on validation failure.
+   */
+  readonly outputSchema?: ZodSchema
 }
 
 /** Lifecycle state tracked during an agent run. */
@@ -227,6 +233,12 @@ export interface AgentRunResult {
   readonly messages: LLMMessage[]
   readonly tokenUsage: TokenUsage
   readonly toolCalls: ToolCallRecord[]
+  /**
+   * Parsed and validated structured output when `outputSchema` is set on the
+   * agent config.  `undefined` when no schema is configured or validation
+   * failed after retry.
+   */
+  readonly structured?: unknown
 }
 
 // ---------------------------------------------------------------------------

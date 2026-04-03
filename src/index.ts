@@ -63,6 +63,7 @@ export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 // ---------------------------------------------------------------------------
 
 export { Agent } from './agent/agent.js'
+export { buildStructuredOutputInstruction, extractJSON, validateOutput } from './agent/structured-output.js'
 export { AgentPool, Semaphore } from './agent/pool.js'
 export type { PoolStatus } from './agent/pool.js'
 

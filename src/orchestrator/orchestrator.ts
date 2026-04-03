@@ -837,13 +837,15 @@ export class OpenMultiAgent {
       if (!existing) {
         collapsed.set(agentName, result)
       } else {
-        // Merge multiple results for the same agent (multi-task case)
+        // Merge multiple results for the same agent (multi-task case).
+        // Keep the latest `structured` value (last completed task wins).
         collapsed.set(agentName, {
           success: existing.success && result.success,
           output: [existing.output, result.output].filter(Boolean).join('\n\n---\n\n'),
           messages: [...existing.messages, ...result.messages],
           tokenUsage: addUsage(existing.tokenUsage, result.tokenUsage),
           toolCalls: [...existing.toolCalls, ...result.toolCalls],
+          structured: result.structured ?? existing.structured,
         })
       }
 
