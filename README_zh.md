@@ -18,6 +18,7 @@
 - **模型无关** — Claude、GPT、Gemma 4 和本地模型（Ollama、vLLM、LM Studio）可以在同一个团队中使用。通过 `baseURL` 即可接入任何 OpenAI 兼容服务。
 - **结构化输出** — 为任意智能体添加 `outputSchema`（Zod），输出自动解析为 JSON 并校验，校验失败自动重试一次。通过 `result.structured` 获取类型化结果。
 - **任务重试** — 为任务设置 `maxRetries`，失败时自动指数退避重试。所有尝试的 token 用量累计，确保计费准确。
+- **可观测性** — 可选的 `onTrace` 回调为每次 LLM 调用、工具执行、任务和智能体运行发出结构化 span 事件——包含耗时、token 用量和共享的 `runId` 用于关联追踪。未订阅时零开销，零额外依赖。
 - **进程内执行** — 没有子进程开销。所有内容在一个 Node.js 进程中运行。可部署到 Serverless、Docker、CI/CD。
 
 ## 快速开始
@@ -120,6 +121,7 @@ npx tsx examples/01-single-agent.ts
 | [08 — Gemma 4 本地](examples/08-gemma4-local.ts) | `runTasks()` + `runTeam()` 本地 Gemma 4 via Ollama — 零 API 费用 |
 | [09 — 结构化输出](examples/09-structured-output.ts) | `outputSchema`（Zod）— 校验 JSON 输出，通过 `result.structured` 获取 |
 | [10 — 任务重试](examples/10-task-retry.ts) | `maxRetries` / `retryDelayMs` / `retryBackoff` + `task_retry` 进度事件 |
+| [11 — 可观测性](examples/11-trace-observability.ts) | `onTrace` 回调 — LLM 调用、工具、任务、智能体的结构化 span 事件 |
 
 ## 架构
 

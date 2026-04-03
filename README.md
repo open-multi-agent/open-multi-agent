@@ -18,6 +18,7 @@ Build AI agent teams that decompose goals into tasks automatically. Define agent
 - **Model Agnostic** — Claude, GPT, Gemma 4, and local models (Ollama, vLLM, LM Studio) in the same team. Swap models per agent via `baseURL`.
 - **Structured Output** — Add `outputSchema` (Zod) to any agent. Output is parsed as JSON, validated, and auto-retried once on failure. Access typed results via `result.structured`.
 - **Task Retry** — Set `maxRetries` on tasks for automatic retry with exponential backoff. Failed attempts accumulate token usage for accurate billing.
+- **Observability** — Optional `onTrace` callback emits structured spans for every LLM call, tool execution, task, and agent run — with timing, token usage, and a shared `runId` for correlation. Zero overhead when not subscribed, zero extra dependencies.
 - **In-Process Execution** — No subprocess overhead. Everything runs in one Node.js process. Deploy to serverless, Docker, CI/CD.
 
 ## Quick Start
@@ -120,6 +121,7 @@ npx tsx examples/01-single-agent.ts
 | [08 — Gemma 4 Local](examples/08-gemma4-local.ts) | `runTasks()` + `runTeam()` with local Gemma 4 via Ollama — zero API cost |
 | [09 — Structured Output](examples/09-structured-output.ts) | `outputSchema` (Zod) on AgentConfig — validated JSON via `result.structured` |
 | [10 — Task Retry](examples/10-task-retry.ts) | `maxRetries` / `retryDelayMs` / `retryBackoff` with `task_retry` progress events |
+| [11 — Trace Observability](examples/11-trace-observability.ts) | `onTrace` callback — structured spans for LLM calls, tools, tasks, and agents |
 
 ## Architecture
 
