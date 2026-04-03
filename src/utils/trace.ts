@@ -15,11 +15,18 @@ export function emitTrace(
 ): void {
   if (!fn) return
   try {
-    fn(event)
+    // Guard async callbacks: if fn returns a Promise, swallow its rejection
+    // so an async onTrace never produces an unhandled promise rejection.
+    const result = fn(event) as unknown
+    if (result && typeof (result as Promise<unknown>).catch === 'function') {
+      ;(result as Promise<unknown>).catch(noop)
+    }
   } catch {
     // Intentionally swallowed — observability must never break execution.
   }
 }
+
+function noop() {}
 
 /** Generate a unique run ID for trace correlation. */
 export function generateRunId(): string {

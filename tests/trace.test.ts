@@ -136,6 +136,25 @@ describe('emitTrace', () => {
       }),
     ).not.toThrow()
   })
+
+  it('swallows rejected promises from async callbacks', async () => {
+    // An async onTrace that rejects should not produce unhandled rejection
+    const fn = async () => { throw new Error('async boom') }
+    emitTrace(fn as unknown as (event: TraceEvent) => void, {
+      type: 'agent',
+      runId: 'r1',
+      agent: 'a',
+      turns: 1,
+      tokens: { input_tokens: 0, output_tokens: 0 },
+      toolCalls: 0,
+      startMs: 0,
+      endMs: 0,
+      durationMs: 0,
+    })
+    // If the rejection is not caught, vitest will fail with unhandled rejection.
+    // Give the microtask queue a tick to surface any unhandled rejection.
+    await new Promise(resolve => setTimeout(resolve, 10))
+  })
 })
 
 describe('generateRunId', () => {
