@@ -25,7 +25,9 @@ import type {
   ToolUseContext,
   LLMAdapter,
   LLMChatOptions,
+  TraceEvent,
 } from '../types.js'
+import { emitTrace } from '../utils/trace.js'
 import type { ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 
@@ -76,6 +78,14 @@ export interface RunOptions {
   readonly onToolResult?: (name: string, result: ToolResult) => void
   /** Fired after each complete {@link LLMMessage} is appended. */
   readonly onMessage?: (message: LLMMessage) => void
+  /** Trace callback for observability spans. Async callbacks are safe. */
+  readonly onTrace?: (event: TraceEvent) => void | Promise<void>
+  /** Run ID for trace correlation. */
+  readonly runId?: string
+  /** Task ID for trace correlation. */
+  readonly taskId?: string
+  /** Agent name for trace correlation (overrides RunnerOptions.agentName). */
+  readonly traceAgent?: string
 }
 
 /** The aggregated result returned when a full run completes. */
@@ -254,7 +264,23 @@ export class AgentRunner {
         // ------------------------------------------------------------------
         // Step 1: Call the LLM and collect the full response for this turn.
         // ------------------------------------------------------------------
+        const llmStartMs = Date.now()
         const response = await this.adapter.chat(conversationMessages, baseChatOptions)
+        if (options.onTrace) {
+          const llmEndMs = Date.now()
+          emitTrace(options.onTrace, {
+            type: 'llm_call',
+            runId: options.runId ?? '',
+            taskId: options.taskId,
+            agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
+            model: this.options.model,
+            turn: turns,
+            tokens: response.usage,
+            startMs: llmStartMs,
+            endMs: llmEndMs,
+            durationMs: llmEndMs - llmStartMs,
+          })
+        }
 
         totalUsage = addTokenUsage(totalUsage, response.usage)
 
@@ -319,9 +345,24 @@ export class AgentRunner {
             result = { data: message, isError: true }
           }
 
-          const duration = Date.now() - startTime
+          const endTime = Date.now()
+          const duration = endTime - startTime
 
           options.onToolResult?.(block.name, result)
+
+          if (options.onTrace) {
+            emitTrace(options.onTrace, {
+              type: 'tool_call',
+              runId: options.runId ?? '',
+              taskId: options.taskId,
+              agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
+              tool: block.name,
+              isError: result.isError ?? false,
+              startMs: startTime,
+              endMs: endTime,
+              durationMs: duration,
+            })
+          }
 
           const record: ToolCallRecord = {
             toolName: block.name,

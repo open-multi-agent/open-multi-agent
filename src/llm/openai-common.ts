@@ -1,15 +1,16 @@
 /**
- * @fileoverview Shared OpenAI wire-format helpers for Ollama and OpenAI adapters.
+ * @fileoverview Shared OpenAI wire-format conversion helpers.
  *
- * These functions convert between the framework's internal types and the
- * OpenAI/Ollama Chat Completions wire format. Both adapters should import
- * from here rather than duplicating the conversion logic.
+ * Both the OpenAI and Copilot adapters use the OpenAI Chat Completions API
+ * format. This module contains the common conversion logic so it isn't
+ * duplicated across adapters.
  */
 
+import OpenAI from 'openai'
 import type {
   ChatCompletion,
-  ChatCompletionAssistantMessageParam,
   ChatCompletionChunk,
+  ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
   ChatCompletionTool,
@@ -27,8 +28,12 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 
+// ---------------------------------------------------------------------------
+// Framework → OpenAI
+// ---------------------------------------------------------------------------
+
 /**
- * Convert a framework {@link LLMToolDef} to an OpenAI/Ollama {@link ChatCompletionTool}.
+ * Convert a framework {@link LLMToolDef} to an OpenAI {@link ChatCompletionTool}.
  */
 export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
   return {
@@ -43,15 +48,19 @@ export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
 
 /**
  * Determine whether a framework message contains any `tool_result` content
- * blocks, which must be serialised as separate OpenAI/Ollama `tool`-role messages.
+ * blocks, which must be serialised as separate OpenAI `tool`-role messages.
  */
-export function hasToolResults(msg: LLMMessage): boolean {
+function hasToolResults(msg: LLMMessage): boolean {
   return msg.content.some((b) => b.type === 'tool_result')
 }
 
 /**
- * Convert a single framework {@link LLMMessage} into one or more OpenAI/Ollama
+ * Convert framework {@link LLMMessage}s into OpenAI
  * {@link ChatCompletionMessageParam} entries.
+ *
+ * `tool_result` blocks are expanded into top-level `tool`-role messages
+ * because OpenAI uses a dedicated role for tool results rather than embedding
+ * them inside user-content arrays.
  */
 export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
@@ -60,6 +69,7 @@ export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageP
     if (msg.role === 'assistant') {
       result.push(toOpenAIAssistantMessage(msg))
     } else {
+      // user role
       if (!hasToolResults(msg)) {
         result.push(toOpenAIUserMessage(msg))
       } else {
@@ -85,13 +95,18 @@ export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageP
   return result
 }
 
-export function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
+/**
+ * Convert a `user`-role framework message into an OpenAI user message.
+ * Image blocks are converted to the OpenAI image_url content part format.
+ */
+function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
   if (msg.content.length === 1 && msg.content[0]?.type === 'text') {
     return { role: 'user', content: msg.content[0].text }
   }
 
   const parts: Array<{ type: 'text', text: string } | { type: 'image_url', image_url: { url: string } }> = []
-
+  type ContentPart = OpenAI.Chat.ChatCompletionContentPartText | OpenAI.Chat.ChatCompletionContentPartImage
+  
   for (const block of msg.content) {
     if (block.type === 'text') {
       parts.push({ type: 'text', text: block.text })
@@ -103,12 +118,17 @@ export function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageP
         },
       })
     }
+    // tool_result blocks are handled by the caller (toOpenAIMessages); skip here.
   }
 
   return { role: 'user', content: parts }
 }
 
-export function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
+/**
+ * Convert an `assistant`-role framework message into an OpenAI assistant message.
+ * `tool_use` blocks become `tool_calls`; `text` blocks become message content.
+ */
+function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
 
@@ -139,8 +159,15 @@ export function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssista
   return assistantMsg
 }
 
+// ---------------------------------------------------------------------------
+// OpenAI → Framework
+// ---------------------------------------------------------------------------
+
 /**
- * Convert an OpenAI/Ollama {@link ChatCompletion} into a framework {@link LLMResponse}.
+ * Convert an OpenAI {@link ChatCompletion} into a framework {@link LLMResponse}.
+ *
+ * Takes only the first choice (index 0), consistent with how the framework
+ * is designed for single-output agents.
  */
 export function fromOpenAICompletion(completion: ChatCompletion): LLMResponse {
   const choice = completion.choices[0]
@@ -191,8 +218,15 @@ export function fromOpenAICompletion(completion: ChatCompletion): LLMResponse {
 }
 
 /**
- * Normalize an OpenAI/Ollama `finish_reason` string to the framework's canonical
+ * Normalize an OpenAI `finish_reason` string to the framework's canonical
  * stop-reason vocabulary.
+ *
+ * Mapping:
+ * - `'stop'`           → `'end_turn'`
+ * - `'tool_calls'`     → `'tool_use'`
+ * - `'length'`         → `'max_tokens'`
+ * - `'content_filter'` → `'content_filter'`
+ * - anything else      → passed through unchanged
  */
 export function normalizeFinishReason(reason: string): string {
   switch (reason) {

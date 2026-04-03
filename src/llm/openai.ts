@@ -32,14 +32,7 @@
 
 import OpenAI from 'openai'
 import type {
-  ChatCompletion,
-  ChatCompletionAssistantMessageParam,
   ChatCompletionChunk,
-  ChatCompletionMessageParam,
-  ChatCompletionMessageToolCall,
-  ChatCompletionTool,
-  ChatCompletionToolMessageParam,
-  ChatCompletionUserMessageParam,
 } from 'openai/resources/chat/completions/index.js'
 
 import type {
@@ -55,231 +48,12 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 
-// ---------------------------------------------------------------------------
-// Internal helpers — framework → OpenAI
-// ---------------------------------------------------------------------------
-
-/**
- * Convert a framework {@link LLMToolDef} to an OpenAI {@link ChatCompletionTool}.
- *
- * OpenAI wraps the function definition inside a `function` key and a `type`
- * discriminant. The `inputSchema` is already a JSON Schema object.
- */
-function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
-  return {
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema as Record<string, unknown>,
-    },
-  }
-}
-
-/**
- * Determine whether a framework message contains any `tool_result` content
- * blocks, which must be serialised as separate OpenAI `tool`-role messages.
- */
-function hasToolResults(msg: LLMMessage): boolean {
-  return msg.content.some((b) => b.type === 'tool_result')
-}
-
-/**
- * Convert a single framework {@link LLMMessage} into one or more OpenAI
- * {@link ChatCompletionMessageParam} entries.
- *
- * The expansion is necessary because OpenAI represents tool results as
- * top-level messages with role `tool`, whereas in our model they are content
- * blocks inside a `user` message.
- *
- * Expansion rules:
- * - A `user` message containing only text/image blocks → single user message
- * - A `user` message containing `tool_result` blocks → one `tool` message per
- *   tool_result block; any remaining text/image blocks are folded into an
- *   additional user message prepended to the group
- * - An `assistant` message → single assistant message with optional tool_calls
- */
-function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
-  const result: ChatCompletionMessageParam[] = []
-
-  for (const msg of messages) {
-    if (msg.role === 'assistant') {
-      result.push(toOpenAIAssistantMessage(msg))
-    } else {
-      // user role
-      if (!hasToolResults(msg)) {
-        result.push(toOpenAIUserMessage(msg))
-      } else {
-        // Split: text/image blocks become a user message (if any exist), then
-        // each tool_result block becomes an independent tool message.
-        const nonToolBlocks = msg.content.filter((b) => b.type !== 'tool_result')
-        if (nonToolBlocks.length > 0) {
-          result.push(toOpenAIUserMessage({ role: 'user', content: nonToolBlocks }))
-        }
-
-        for (const block of msg.content) {
-          if (block.type === 'tool_result') {
-            const toolMsg: ChatCompletionToolMessageParam = {
-              role: 'tool',
-              tool_call_id: block.tool_use_id,
-              content: block.content,
-            }
-            result.push(toolMsg)
-          }
-        }
-      }
-    }
-  }
-
-  return result
-}
-
-/**
- * Convert a `user`-role framework message into an OpenAI user message.
- * Image blocks are converted to the OpenAI image_url content part format.
- */
-function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
-  // If the entire content is a single text block, use the compact string form
-  // to keep the request payload smaller.
-  if (msg.content.length === 1 && msg.content[0]?.type === 'text') {
-    return { role: 'user', content: msg.content[0].text }
-  }
-
-  type ContentPart = OpenAI.Chat.ChatCompletionContentPartText | OpenAI.Chat.ChatCompletionContentPartImage
-  const parts: ContentPart[] = []
-
-  for (const block of msg.content) {
-    if (block.type === 'text') {
-      parts.push({ type: 'text', text: block.text })
-    } else if (block.type === 'image') {
-      parts.push({
-        type: 'image_url',
-        image_url: {
-          url: `data:${block.source.media_type};base64,${block.source.data}`,
-        },
-      })
-    }
-    // tool_result blocks are handled by the caller (toOpenAIMessages); skip here.
-  }
-
-  return { role: 'user', content: parts }
-}
-
-/**
- * Convert an `assistant`-role framework message into an OpenAI assistant message.
- *
- * Any `tool_use` blocks become `tool_calls`; `text` blocks become the message content.
- */
-function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
-  const toolCalls: ChatCompletionMessageToolCall[] = []
-  const textParts: string[] = []
-
-  for (const block of msg.content) {
-    if (block.type === 'tool_use') {
-      toolCalls.push({
-        id: block.id,
-        type: 'function',
-        function: {
-          name: block.name,
-          arguments: JSON.stringify(block.input),
-        },
-      })
-    } else if (block.type === 'text') {
-      textParts.push(block.text)
-    }
-  }
-
-  const assistantMsg: ChatCompletionAssistantMessageParam = {
-    role: 'assistant',
-    content: textParts.length > 0 ? textParts.join('') : null,
-  }
-
-  if (toolCalls.length > 0) {
-    assistantMsg.tool_calls = toolCalls
-  }
-
-  return assistantMsg
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers — OpenAI → framework
-// ---------------------------------------------------------------------------
-
-/**
- * Convert an OpenAI {@link ChatCompletion} into a framework {@link LLMResponse}.
- *
- * We take only the first choice (index 0), consistent with how the framework
- * is designed for single-output agents.
- */
-function fromOpenAICompletion(completion: ChatCompletion): LLMResponse {
-  const choice = completion.choices[0]
-  if (choice === undefined) {
-    throw new Error('OpenAI returned a completion with no choices')
-  }
-
-  const content: ContentBlock[] = []
-  const message = choice.message
-
-  if (message.content !== null && message.content !== undefined) {
-    const textBlock: TextBlock = { type: 'text', text: message.content }
-    content.push(textBlock)
-  }
-
-  for (const toolCall of message.tool_calls ?? []) {
-    let parsedInput: Record<string, unknown> = {}
-    try {
-      const parsed: unknown = JSON.parse(toolCall.function.arguments)
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        parsedInput = parsed as Record<string, unknown>
-      }
-    } catch {
-      // Malformed arguments from the model — surface as empty object.
-    }
-
-    const toolUseBlock: ToolUseBlock = {
-      type: 'tool_use',
-      id: toolCall.id,
-      name: toolCall.function.name,
-      input: parsedInput,
-    }
-    content.push(toolUseBlock)
-  }
-
-  const stopReason = normalizeFinishReason(choice.finish_reason ?? 'stop')
-
-  return {
-    id: completion.id,
-    content,
-    model: completion.model,
-    stop_reason: stopReason,
-    usage: {
-      input_tokens: completion.usage?.prompt_tokens ?? 0,
-      output_tokens: completion.usage?.completion_tokens ?? 0,
-    },
-  }
-}
-
-/**
- * Normalize an OpenAI `finish_reason` string to the framework's canonical
- * stop-reason vocabulary so consumers never need to branch on provider-specific
- * strings.
- *
- * Mapping:
- * - `'stop'`           → `'end_turn'`
- * - `'tool_calls'`     → `'tool_use'`
- * - `'length'`         → `'max_tokens'`
- * - `'content_filter'` → `'content_filter'`
- * - anything else      → passed through unchanged
- */
-function normalizeFinishReason(reason: string): string {
-  switch (reason) {
-    case 'stop':           return 'end_turn'
-    case 'tool_calls':     return 'tool_use'
-    case 'length':         return 'max_tokens'
-    case 'content_filter': return 'content_filter'
-    default:               return reason
-  }
-}
+import {
+  toOpenAITool,
+  fromOpenAICompletion,
+  normalizeFinishReason,
+  buildOpenAIMessageList,
+} from './openai-common.js'
 
 // ---------------------------------------------------------------------------
 // Adapter implementation
@@ -295,9 +69,10 @@ export class OpenAIAdapter implements LLMAdapter {
 
   readonly #client: OpenAI
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseURL?: string) {
     this.#client = new OpenAI({
       apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
+      baseURL,
     })
   }
 
@@ -482,31 +257,6 @@ export class OpenAIAdapter implements LLMAdapter {
       yield errorEvent
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Private utility
-// ---------------------------------------------------------------------------
-
-/**
- * Prepend a system message when `systemPrompt` is provided, then append the
- * converted conversation messages.
- *
- * OpenAI represents system instructions as a message with `role: 'system'`
- * at the top of the array, not as a separate API parameter.
- */
-function buildOpenAIMessageList(
-  messages: LLMMessage[],
-  systemPrompt: string | undefined,
-): ChatCompletionMessageParam[] {
-  const result: ChatCompletionMessageParam[] = []
-
-  if (systemPrompt !== undefined && systemPrompt.length > 0) {
-    result.push({ role: 'system', content: systemPrompt })
-  }
-
-  result.push(...toOpenAIMessages(messages))
-  return result
 }
 
 // Re-export types that consumers of this module commonly need alongside the adapter.

@@ -189,9 +189,10 @@ export class AnthropicAdapter implements LLMAdapter {
 
   readonly #client: Anthropic
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseURL?: string) {
     this.#client = new Anthropic({
       apiKey: apiKey ?? process.env['ANTHROPIC_API_KEY'],
+      baseURL,
     })
   }
 

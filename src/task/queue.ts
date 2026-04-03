@@ -356,7 +356,7 @@ export class TaskQueue {
 
       // Re-check against the current state of the whole task set.
       // Pass the pre-built map to avoid rebuilding it for every candidate task.
-      if (isTaskReady(task, allTasks, taskById)) {
+      if (isTaskReady({ ...task, status: 'pending' }, allTasks, taskById)) {
         const unblocked: Task = {
           ...task,
           status: 'pending',

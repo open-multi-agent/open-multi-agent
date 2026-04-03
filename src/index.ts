@@ -54,7 +54,7 @@
 // Orchestrator (primary entry point)
 // ---------------------------------------------------------------------------
 
-export { OpenMultiAgent } from './orchestrator/orchestrator.js'
+export { OpenMultiAgent, executeWithRetry, computeRetryDelay } from './orchestrator/orchestrator.js'
 export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 
@@ -63,6 +63,7 @@ export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 // ---------------------------------------------------------------------------
 
 export { Agent } from './agent/agent.js'
+export { buildStructuredOutputInstruction, extractJSON, validateOutput } from './agent/structured-output.js'
 export { AgentPool, Semaphore } from './agent/pool.js'
 export type { PoolStatus } from './agent/pool.js'
 
@@ -160,7 +161,18 @@ export type {
   OrchestratorConfig,
   OrchestratorEvent,
 
+  // Trace
+  TraceEventType,
+  TraceEventBase,
+  TraceEvent,
+  LLMCallTrace,
+  ToolCallTrace,
+  TaskTrace,
+  AgentTrace,
+
   // Memory
   MemoryEntry,
   MemoryStore,
 } from './types.js'
+
+export { generateRunId } from './utils/trace.js'

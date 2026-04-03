@@ -186,13 +186,27 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
-  readonly provider?: 'anthropic' | 'ollama' | 'openai'
+  readonly provider?: 'anthropic' | 'copilot' | 'openai'
+  /**
+   * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).
+   * Note: local servers that don't require auth still need `apiKey` set to a
+   * non-empty placeholder (e.g. `'ollama'`) because the OpenAI SDK validates it.
+   */
+  readonly baseURL?: string
+  /** API key override; falls back to the provider's standard env var. */
+  readonly apiKey?: string
   readonly systemPrompt?: string
   /** Names of tools (from the tool registry) available to this agent. */
   readonly tools?: readonly string[]
   readonly maxTurns?: number
   readonly maxTokens?: number
   readonly temperature?: number
+  /**
+   * Optional Zod schema for structured output.  When set, the agent's final
+   * output is parsed as JSON and validated against this schema.  A single
+   * retry with error feedback is attempted on validation failure.
+   */
+  readonly outputSchema?: ZodSchema
 }
 
 /** Lifecycle state tracked during an agent run. */
@@ -219,6 +233,12 @@ export interface AgentRunResult {
   readonly messages: LLMMessage[]
   readonly tokenUsage: TokenUsage
   readonly toolCalls: ToolCallRecord[]
+  /**
+   * Parsed and validated structured output when `outputSchema` is set on the
+   * agent config.  `undefined` when no schema is configured or validation
+   * failed after retry.
+   */
+  readonly structured?: unknown
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +281,12 @@ export interface Task {
   result?: string
   readonly createdAt: Date
   updatedAt: Date
+  /** Maximum number of retry attempts on failure (default: 0 — no retry). */
+  readonly maxRetries?: number
+  /** Base delay in ms before the first retry (default: 1000). */
+  readonly retryDelayMs?: number
+  /** Exponential backoff multiplier (default: 2). */
+  readonly retryBackoff?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +300,7 @@ export interface OrchestratorEvent {
     | 'agent_complete'
     | 'task_start'
     | 'task_complete'
+    | 'task_retry'
     | 'message'
     | 'error'
   readonly agent?: string
@@ -285,9 +312,71 @@ export interface OrchestratorEvent {
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
   readonly defaultModel?: string
-  readonly defaultProvider?: 'anthropic' | 'ollama' | 'openai'
-  onProgress?: (event: OrchestratorEvent) => void
+  readonly defaultProvider?: 'anthropic' | 'copilot' | 'openai'
+  readonly defaultBaseURL?: string
+  readonly defaultApiKey?: string
+  readonly onProgress?: (event: OrchestratorEvent) => void
+  readonly onTrace?: (event: TraceEvent) => void | Promise<void>
 }
+
+// ---------------------------------------------------------------------------
+// Trace events — lightweight observability spans
+// ---------------------------------------------------------------------------
+
+/** Trace event type discriminants. */
+export type TraceEventType = 'llm_call' | 'tool_call' | 'task' | 'agent'
+
+/** Shared fields present on every trace event. */
+export interface TraceEventBase {
+  /** Unique identifier for the entire run (runTeam / runTasks / runAgent call). */
+  readonly runId: string
+  readonly type: TraceEventType
+  /** Unix epoch ms when the span started. */
+  readonly startMs: number
+  /** Unix epoch ms when the span ended. */
+  readonly endMs: number
+  /** Wall-clock duration in milliseconds (`endMs - startMs`). */
+  readonly durationMs: number
+  /** Agent name associated with this span. */
+  readonly agent: string
+  /** Task ID associated with this span. */
+  readonly taskId?: string
+}
+
+/** Emitted for each LLM API call (one per agent turn). */
+export interface LLMCallTrace extends TraceEventBase {
+  readonly type: 'llm_call'
+  readonly model: string
+  readonly turn: number
+  readonly tokens: TokenUsage
+}
+
+/** Emitted for each tool execution. */
+export interface ToolCallTrace extends TraceEventBase {
+  readonly type: 'tool_call'
+  readonly tool: string
+  readonly isError: boolean
+}
+
+/** Emitted when a task completes (wraps the full retry sequence). */
+export interface TaskTrace extends TraceEventBase {
+  readonly type: 'task'
+  readonly taskId: string
+  readonly taskTitle: string
+  readonly success: boolean
+  readonly retries: number
+}
+
+/** Emitted when an agent run completes (wraps the full conversation loop). */
+export interface AgentTrace extends TraceEventBase {
+  readonly type: 'agent'
+  readonly turns: number
+  readonly tokens: TokenUsage
+  readonly toolCalls: number
+}
+
+/** Discriminated union of all trace event types. */
+export type TraceEvent = LLMCallTrace | ToolCallTrace | TaskTrace | AgentTrace
 
 // ---------------------------------------------------------------------------
 // Memory

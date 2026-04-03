@@ -6,6 +6,8 @@
  * for replay and audit; read-state is tracked per recipient.
  */
 
+import { randomUUID } from 'node:crypto'
+
 // ---------------------------------------------------------------------------
 // Message type
 // ---------------------------------------------------------------------------
@@ -93,7 +95,7 @@ export class MessageBus {
    */
   send(from: string, to: string, content: string): Message {
     const message: Message = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       from,
       to,
       content,

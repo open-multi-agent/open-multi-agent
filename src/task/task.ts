@@ -6,6 +6,7 @@
  * Stateful orchestration belongs in {@link TaskQueue}.
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Task, TaskStatus } from '../types.js'
 
 // ---------------------------------------------------------------------------
@@ -30,10 +31,13 @@ export function createTask(input: {
   description: string
   assignee?: string
   dependsOn?: string[]
+  maxRetries?: number
+  retryDelayMs?: number
+  retryBackoff?: number
 }): Task {
   const now = new Date()
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     title: input.title,
     description: input.description,
     status: 'pending' as TaskStatus,
@@ -42,6 +46,9 @@ export function createTask(input: {
     result: undefined,
     createdAt: now,
     updatedAt: now,
+    maxRetries: input.maxRetries,
+    retryDelayMs: input.retryDelayMs,
+    retryBackoff: input.retryBackoff,
   }
 }
 

@@ -1,6 +1,8 @@
 # Open Multi-Agent
 
-Build AI agent teams that work together. One agent plans, another implements, a third reviews — the framework handles task scheduling, dependencies, and communication automatically.
+TypeScript framework for multi-agent orchestration. One `runTeam()` call from goal to result — the framework decomposes it into tasks, resolves dependencies, and runs agents in parallel.
+
+3 runtime dependencies · 27 source files · Deploys anywhere Node.js runs · Mentioned in [Latent Space](https://www.latent.space/p/ainews-a-quiet-april-fools) AI News
 
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
@@ -10,40 +12,26 @@ Build AI agent teams that work together. One agent plans, another implements, a 
 
 ## Why Open Multi-Agent?
 
-- **Multi-Agent Teams** — Define agents with different roles, tools, and even different models. They collaborate through a message bus and shared memory.
-- **Task DAG Scheduling** — Tasks have dependencies. The framework resolves them topologically — dependent tasks wait, independent tasks run in parallel.
-- **Model Agnostic** — Claude and GPT in the same team. Swap models per agent. Bring your own adapter for any LLM.
-- **In-Process Execution** — No subprocess overhead. Everything runs in one Node.js process. Deploy to serverless, Docker, CI/CD.
+- **Goal In, Result Out** — `runTeam(team, "Build a REST API")`. A coordinator agent auto-decomposes the goal into a task DAG with dependencies and assignees, runs independent tasks in parallel, and synthesizes the final output. No manual task definitions or graph wiring required.
+- **TypeScript-Native** — Built for the Node.js ecosystem. `npm install`, import, run. No Python runtime, no subprocess bridge, no sidecar services. Embed in Express, Next.js, serverless functions, or CI/CD pipelines.
+- **Auditable and Lightweight** — 3 runtime dependencies (`@anthropic-ai/sdk`, `openai`, `zod`). 27 source files. The entire codebase is readable in an afternoon.
+- **Model Agnostic** — Claude, GPT, Gemma 4, and local models (Ollama, vLLM, LM Studio) in the same team. Swap models per agent via `baseURL`.
+- **Multi-Agent Collaboration** — Agents with different roles, tools, and models collaborate through a message bus and shared memory.
+- **Structured Output** — Add `outputSchema` (Zod) to any agent. Output is parsed as JSON, validated, and auto-retried once on failure. Access typed results via `result.structured`.
+- **Task Retry** — Set `maxRetries` on tasks for automatic retry with exponential backoff. Failed attempts accumulate token usage for accurate billing.
+- **Observability** — Optional `onTrace` callback emits structured spans for every LLM call, tool execution, task, and agent run — with timing, token usage, and a shared `runId` for correlation. Zero overhead when not subscribed, zero extra dependencies.
 
 ## Quick Start
+
+Requires Node.js >= 18.
 
 ```bash
 npm install @jackchen_me/open-multi-agent
 ```
 
-Set `ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY`) in your environment.
+Set `ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY` or `GITHUB_TOKEN` for Copilot) in your environment. Local models via Ollama require no API key — see [example 06](examples/06-local-model.ts).
 
-```typescript
-import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
-
-const orchestrator = new OpenMultiAgent({ defaultModel: 'claude-sonnet-4-6' })
-
-// One agent, one task
-const result = await orchestrator.runAgent(
-  {
-    name: 'coder',
-    model: 'claude-sonnet-4-6',
-    tools: ['bash', 'file_write'],
-  },
-  'Write a TypeScript function that reverses a string, save it to /tmp/reverse.ts, and run it.',
-)
-
-console.log(result.output)
-```
-
-## Multi-Agent Team
-
-This is where it gets interesting. Three agents, one goal:
+Three agents, one goal — the framework handles the rest:
 
 ```typescript
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
@@ -88,132 +76,52 @@ console.log(`Success: ${result.success}`)
 console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 ```
 
-## More Examples
+What happens under the hood:
 
-<details>
-<summary><b>Task Pipeline</b> — explicit control over task graph and assignments</summary>
-
-```typescript
-const result = await orchestrator.runTasks(team, [
-  {
-    title: 'Design the data model',
-    description: 'Write a TypeScript interface spec to /tmp/spec.md',
-    assignee: 'architect',
-  },
-  {
-    title: 'Implement the module',
-    description: 'Read /tmp/spec.md and implement the module in /tmp/src/',
-    assignee: 'developer',
-    dependsOn: ['Design the data model'], // blocked until design completes
-  },
-  {
-    title: 'Write tests',
-    description: 'Read the implementation and write Vitest tests.',
-    assignee: 'developer',
-    dependsOn: ['Implement the module'],
-  },
-  {
-    title: 'Review code',
-    description: 'Review /tmp/src/ and produce a structured code review.',
-    assignee: 'reviewer',
-    dependsOn: ['Implement the module'], // can run in parallel with tests
-  },
-])
+```
+agent_start coordinator
+task_start architect
+task_complete architect
+task_start developer
+task_start developer              // independent tasks run in parallel
+task_complete developer
+task_start reviewer               // unblocked after implementation
+task_complete developer
+task_complete reviewer
+agent_complete coordinator        // synthesizes final result
+Success: true
+Tokens: 12847 output tokens
 ```
 
-</details>
+## Three Ways to Run
 
-<details>
-<summary><b>Custom Tools</b> — define tools with Zod schemas</summary>
+| Mode | Method | When to use |
+|------|--------|-------------|
+| Single agent | `runAgent()` | One agent, one prompt — simplest entry point |
+| Auto-orchestrated team | `runTeam()` | Give a goal, framework plans and executes |
+| Explicit pipeline | `runTasks()` | You define the task graph and assignments |
 
-```typescript
-import { z } from 'zod'
-import { defineTool, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '@jackchen_me/open-multi-agent'
+## Examples
 
-const searchTool = defineTool({
-  name: 'web_search',
-  description: 'Search the web and return the top results.',
-  inputSchema: z.object({
-    query: z.string().describe('The search query.'),
-    maxResults: z.number().optional().describe('Number of results (default 5).'),
-  }),
-  execute: async ({ query, maxResults = 5 }) => {
-    const results = await mySearchProvider(query, maxResults)
-    return { data: JSON.stringify(results), isError: false }
-  },
-})
+All examples are runnable scripts in [`examples/`](./examples/). Run any of them with `npx tsx`:
 
-const registry = new ToolRegistry()
-registerBuiltInTools(registry)
-registry.register(searchTool)
-
-const executor = new ToolExecutor(registry)
-const agent = new Agent(
-  { name: 'researcher', model: 'claude-sonnet-4-6', tools: ['web_search'] },
-  registry,
-  executor,
-)
-
-const result = await agent.run('Find the three most recent TypeScript releases.')
+```bash
+npx tsx examples/01-single-agent.ts
 ```
 
-</details>
-
-<details>
-<summary><b>Multi-Model Teams</b> — mix Claude and GPT in one workflow</summary>
-
-```typescript
-const claudeAgent: AgentConfig = {
-  name: 'strategist',
-  model: 'claude-opus-4-6',
-  provider: 'anthropic',
-  systemPrompt: 'You plan high-level approaches.',
-  tools: ['file_write'],
-}
-
-const gptAgent: AgentConfig = {
-  name: 'implementer',
-  model: 'gpt-5.4',
-  provider: 'openai',
-  systemPrompt: 'You implement plans as working code.',
-  tools: ['bash', 'file_read', 'file_write'],
-}
-
-const team = orchestrator.createTeam('mixed-team', {
-  name: 'mixed-team',
-  agents: [claudeAgent, gptAgent],
-  sharedMemory: true,
-})
-
-const result = await orchestrator.runTeam(team, 'Build a CLI tool that converts JSON to CSV.')
-```
-
-</details>
-
-<details>
-<summary><b>Streaming Output</b></summary>
-
-```typescript
-import { Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '@jackchen_me/open-multi-agent'
-
-const registry = new ToolRegistry()
-registerBuiltInTools(registry)
-const executor = new ToolExecutor(registry)
-
-const agent = new Agent(
-  { name: 'writer', model: 'claude-sonnet-4-6', maxTurns: 3 },
-  registry,
-  executor,
-)
-
-for await (const event of agent.stream('Explain monads in two sentences.')) {
-  if (event.type === 'text' && typeof event.data === 'string') {
-    process.stdout.write(event.data)
-  }
-}
-```
-
-</details>
+| Example | What it shows |
+|---------|---------------|
+| [01 — Single Agent](examples/01-single-agent.ts) | `runAgent()` one-shot, `stream()` streaming, `prompt()` multi-turn |
+| [02 — Team Collaboration](examples/02-team-collaboration.ts) | `runTeam()` auto-orchestration with coordinator pattern |
+| [03 — Task Pipeline](examples/03-task-pipeline.ts) | `runTasks()` explicit dependency graph (design → implement → test + review) |
+| [04 — Multi-Model Team](examples/04-multi-model-team.ts) | `defineTool()` custom tools, mixed Anthropic + OpenAI providers, `AgentPool` |
+| [05 — Copilot](examples/05-copilot-test.ts) | GitHub Copilot as an LLM provider |
+| [06 — Local Model](examples/06-local-model.ts) | Ollama + Claude in one pipeline via `baseURL` (works with vLLM, LM Studio, etc.) |
+| [07 — Fan-Out / Aggregate](examples/07-fan-out-aggregate.ts) | `runParallel()` MapReduce — 3 analysts in parallel, then synthesize |
+| [08 — Gemma 4 Local](examples/08-gemma4-local.ts) | `runTasks()` + `runTeam()` with local Gemma 4 via Ollama — zero API cost |
+| [09 — Structured Output](examples/09-structured-output.ts) | `outputSchema` (Zod) on AgentConfig — validated JSON via `result.structured` |
+| [10 — Task Retry](examples/10-task-retry.ts) | `maxRetries` / `retryDelayMs` / `retryBackoff` with `task_retry` progress events |
+| [11 — Trace Observability](examples/11-trace-observability.ts) | `onTrace` callback — structured spans for LLM calls, tools, tasks, and agents |
 
 ## Architecture
 
@@ -246,6 +154,7 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 │  - prompt()       │───►│  LLMAdapter          │
 │  - stream()       │    │  - AnthropicAdapter  │
 └────────┬──────────┘    │  - OpenAIAdapter     │
+         │               │  - CopilotAdapter    │
          │               └──────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -265,17 +174,46 @@ for await (const event of agent.stream('Explain monads in two sentences.')) {
 | `file_edit` | Edit a file by replacing an exact string match. |
 | `grep` | Search file contents with regex. Uses ripgrep when available, falls back to Node.js. |
 
+## Supported Providers
+
+| Provider | Config | Env var | Status |
+|----------|--------|---------|--------|
+| Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | Verified |
+| OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | Verified |
+| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | Verified |
+| Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | — | Verified |
+
+Verified local models with tool-calling: **Gemma 4** (see [example 08](examples/08-gemma4-local.ts)).
+
+Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (DeepSeek, Groq, Mistral, Qwen, MiniMax, etc.). These providers have not been fully verified yet — contributions welcome via [#25](https://github.com/JackChen-me/open-multi-agent/issues/25).
+
 ## Contributing
 
 Issues, feature requests, and PRs are welcome. Some areas where contributions would be especially valuable:
 
-- **LLM Adapters** — Ollama, llama.cpp, vLLM, Gemini. The `LLMAdapter` interface requires just two methods: `chat()` and `stream()`.
+- **Provider integrations** — Verify and document OpenAI-compatible providers (DeepSeek, Groq, Qwen, MiniMax, etc.) via `baseURL`. See [#25](https://github.com/JackChen-me/open-multi-agent/issues/25). For providers that are NOT OpenAI-compatible (e.g. Gemini), a new `LLMAdapter` implementation is welcome — the interface requires just two methods: `chat()` and `stream()`.
 - **Examples** — Real-world workflows and use cases.
 - **Documentation** — Guides, tutorials, and API docs.
 
+## Author
+
+> JackChen — Ex PM (¥100M+ revenue), now indie builder. Follow on [X](https://x.com/JackChen_x) for AI Agent insights.
+
+## Contributors
+
+<a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent" />
+</a>
+
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260402)](https://star-history.com/#JackChen-me/open-multi-agent&Date)
+<a href="https://star-history.com/#JackChen-me/open-multi-agent&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark&v=20260403" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260403" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260403" />
+ </picture>
+</a>
 
 ## License
 

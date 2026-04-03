@@ -52,8 +52,10 @@ import type {
   TeamRunResult,
   TokenUsage,
 } from '../types.js'
+import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
+import { emitTrace, generateRunId } from '../utils/trace.js'
 import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
@@ -90,6 +92,105 @@ function buildAgent(config: AgentConfig): Agent {
   registerBuiltInTools(registry)
   const executor = new ToolExecutor(registry)
   return new Agent(config, registry, executor)
+}
+
+/** Promise-based delay. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Maximum delay cap to prevent runaway exponential backoff (30 seconds). */
+const MAX_RETRY_DELAY_MS = 30_000
+
+/**
+ * Compute the retry delay for a given attempt, capped at {@link MAX_RETRY_DELAY_MS}.
+ */
+export function computeRetryDelay(
+  baseDelay: number,
+  backoff: number,
+  attempt: number,
+): number {
+  return Math.min(baseDelay * backoff ** (attempt - 1), MAX_RETRY_DELAY_MS)
+}
+
+/**
+ * Execute an agent task with optional retry and exponential backoff.
+ *
+ * Exported for testability — called internally by {@link executeQueue}.
+ *
+ * @param run      - The function that executes the task (typically `pool.run`).
+ * @param task     - The task to execute (retry config read from its fields).
+ * @param onRetry  - Called before each retry sleep with event data.
+ * @param delayFn  - Injectable delay function (defaults to real `sleep`).
+ * @returns The final {@link AgentRunResult} from the last attempt.
+ */
+export async function executeWithRetry(
+  run: () => Promise<AgentRunResult>,
+  task: Task,
+  onRetry?: (data: { attempt: number; maxAttempts: number; error: string; nextDelayMs: number }) => void,
+  delayFn: (ms: number) => Promise<void> = sleep,
+): Promise<AgentRunResult> {
+  const rawRetries = Number.isFinite(task.maxRetries) ? task.maxRetries! : 0
+  const maxAttempts = Math.max(0, rawRetries) + 1
+  const baseDelay = Math.max(0, Number.isFinite(task.retryDelayMs) ? task.retryDelayMs! : 1000)
+  const backoff = Math.max(1, Number.isFinite(task.retryBackoff) ? task.retryBackoff! : 2)
+
+  let lastError: string = ''
+  // Accumulate token usage across all attempts so billing/observability
+  // reflects the true cost of retries.
+  let totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await run()
+      totalUsage = {
+        input_tokens: totalUsage.input_tokens + result.tokenUsage.input_tokens,
+        output_tokens: totalUsage.output_tokens + result.tokenUsage.output_tokens,
+      }
+
+      if (result.success) {
+        return { ...result, tokenUsage: totalUsage }
+      }
+      lastError = result.output
+
+      // Failure — retry or give up
+      if (attempt < maxAttempts) {
+        const delay = computeRetryDelay(baseDelay, backoff, attempt)
+        onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: delay })
+        await delayFn(delay)
+        continue
+      }
+
+      return { ...result, tokenUsage: totalUsage }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+
+      if (attempt < maxAttempts) {
+        const delay = computeRetryDelay(baseDelay, backoff, attempt)
+        onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: delay })
+        await delayFn(delay)
+        continue
+      }
+
+      // All retries exhausted — return a failure result
+      return {
+        success: false,
+        output: lastError,
+        messages: [],
+        tokenUsage: totalUsage,
+        toolCalls: [],
+      }
+    }
+  }
+
+  // Should not be reached, but TypeScript needs a return
+  return {
+    success: false,
+    output: lastError,
+    messages: [],
+    tokenUsage: totalUsage,
+    toolCalls: [],
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +262,8 @@ interface RunContext {
   readonly scheduler: Scheduler
   readonly agentResults: Map<string, AgentRunResult>
   readonly config: OrchestratorConfig
+  /** Trace run ID, present when `onTrace` is configured. */
+  readonly runId?: string
 }
 
 /**
@@ -239,49 +342,76 @@ async function executeQueue(
       // Build the prompt: inject shared memory context + task description
       const prompt = await buildTaskPrompt(task, team)
 
-      try {
-        const result = await pool.run(assignee, prompt)
-        ctx.agentResults.set(`${assignee}:${task.id}`, result)
+      // Build trace context for this task's agent run
+      const traceOptions: Partial<RunOptions> | undefined = config.onTrace
+        ? { onTrace: config.onTrace, runId: ctx.runId ?? '', taskId: task.id, traceAgent: assignee }
+        : undefined
 
-        if (result.success) {
-          // Persist result into shared memory so other agents can read it
-          const sharedMem = team.getSharedMemoryInstance()
-          if (sharedMem) {
-            await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
-          }
+      const taskStartMs = config.onTrace ? Date.now() : 0
+      let retryCount = 0
 
-          queue.complete(task.id, result.output)
-
+      const result = await executeWithRetry(
+        () => pool.run(assignee, prompt, traceOptions),
+        task,
+        (retryData) => {
+          retryCount++
           config.onProgress?.({
-            type: 'task_complete',
+            type: 'task_retry',
             task: task.id,
             agent: assignee,
-            data: result,
+            data: retryData,
           } satisfies OrchestratorEvent)
+        },
+      )
 
-          config.onProgress?.({
-            type: 'agent_complete',
-            agent: assignee,
-            task: task.id,
-            data: result,
-          } satisfies OrchestratorEvent)
-        } else {
-          queue.fail(task.id, result.output)
-          config.onProgress?.({
-            type: 'error',
-            task: task.id,
-            agent: assignee,
-            data: result,
-          } satisfies OrchestratorEvent)
+      // Emit task trace
+      if (config.onTrace) {
+        const taskEndMs = Date.now()
+        emitTrace(config.onTrace, {
+          type: 'task',
+          runId: ctx.runId ?? '',
+          taskId: task.id,
+          taskTitle: task.title,
+          agent: assignee,
+          success: result.success,
+          retries: retryCount,
+          startMs: taskStartMs,
+          endMs: taskEndMs,
+          durationMs: taskEndMs - taskStartMs,
+        })
+      }
+
+      ctx.agentResults.set(`${assignee}:${task.id}`, result)
+
+      if (result.success) {
+        // Persist result into shared memory so other agents can read it
+        const sharedMem = team.getSharedMemoryInstance()
+        if (sharedMem) {
+          await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        queue.fail(task.id, message)
+
+        queue.complete(task.id, result.output)
+
+        config.onProgress?.({
+          type: 'task_complete',
+          task: task.id,
+          agent: assignee,
+          data: result,
+        } satisfies OrchestratorEvent)
+
+        config.onProgress?.({
+          type: 'agent_complete',
+          agent: assignee,
+          task: task.id,
+          data: result,
+        } satisfies OrchestratorEvent)
+      } else {
+        queue.fail(task.id, result.output)
         config.onProgress?.({
           type: 'error',
           task: task.id,
           agent: assignee,
-          data: err,
+          data: result,
         } satisfies OrchestratorEvent)
       }
     })
@@ -341,8 +471,8 @@ async function buildTaskPrompt(task: Task, team: Team): Promise<string> {
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onProgress'>
-  > & Pick<OrchestratorConfig, 'onProgress'>
+    Omit<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
+  > & Pick<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
 
   private readonly teams: Map<string, Team> = new Map()
   private completedTaskCount = 0
@@ -360,7 +490,10 @@ export class OpenMultiAgent {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       defaultModel: config.defaultModel ?? DEFAULT_MODEL,
       defaultProvider: config.defaultProvider ?? 'anthropic',
+      defaultBaseURL: config.defaultBaseURL,
+      defaultApiKey: config.defaultApiKey,
       onProgress: config.onProgress,
+      onTrace: config.onTrace,
     }
   }
 
@@ -405,14 +538,24 @@ export class OpenMultiAgent {
    * @param prompt - The user prompt to send.
    */
   async runAgent(config: AgentConfig, prompt: string): Promise<AgentRunResult> {
-    const agent = buildAgent(config)
+    const effective: AgentConfig = {
+      ...config,
+      provider: config.provider ?? this.config.defaultProvider,
+      baseURL: config.baseURL ?? this.config.defaultBaseURL,
+      apiKey: config.apiKey ?? this.config.defaultApiKey,
+    }
+    const agent = buildAgent(effective)
     this.config.onProgress?.({
       type: 'agent_start',
       agent: config.name,
       data: { prompt },
     })
 
-    const result = await agent.run(prompt)
+    const traceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: generateRunId(), traceAgent: config.name }
+      : undefined
+
+    const result = await agent.run(prompt, traceOptions)
 
     this.config.onProgress?.({
       type: 'agent_complete',
@@ -462,12 +605,15 @@ export class OpenMultiAgent {
       name: 'coordinator',
       model: this.config.defaultModel,
       provider: this.config.defaultProvider,
+      baseURL: this.config.defaultBaseURL,
+      apiKey: this.config.defaultApiKey,
       systemPrompt: this.buildCoordinatorSystemPrompt(agentConfigs),
       maxTurns: 3,
     }
 
     const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
+    const runId = this.config.onTrace ? generateRunId() : undefined
 
     this.config.onProgress?.({
       type: 'agent_start',
@@ -475,7 +621,10 @@ export class OpenMultiAgent {
       data: { phase: 'decomposition', goal },
     })
 
-    const decompositionResult = await coordinatorAgent.run(decompositionPrompt)
+    const decompTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
+      : undefined
+    const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
 
@@ -519,6 +668,7 @@ export class OpenMultiAgent {
       scheduler,
       agentResults,
       config: this.config,
+      runId,
     }
 
     await executeQueue(queue, ctx)
@@ -527,7 +677,10 @@ export class OpenMultiAgent {
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
     const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
-    const synthesisResult = await coordinatorAgent.run(synthesisPrompt)
+    const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
+      : undefined
+    const synthesisResult = await coordinatorAgent.run(synthesisPrompt, synthTraceOptions)
     agentResults.set('coordinator', synthesisResult)
 
     this.config.onProgress?.({
@@ -564,6 +717,9 @@ export class OpenMultiAgent {
       description: string
       assignee?: string
       dependsOn?: string[]
+      maxRetries?: number
+      retryDelayMs?: number
+      retryBackoff?: number
     }>,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
@@ -576,6 +732,9 @@ export class OpenMultiAgent {
         description: t.description,
         assignee: t.assignee,
         dependsOn: t.dependsOn,
+        maxRetries: t.maxRetries,
+        retryDelayMs: t.retryDelayMs,
+        retryBackoff: t.retryBackoff,
       })),
       agentConfigs,
       queue,
@@ -591,6 +750,7 @@ export class OpenMultiAgent {
       scheduler,
       agentResults,
       config: this.config,
+      runId: this.config.onTrace ? generateRunId() : undefined,
     }
 
     await executeQueue(queue, ctx)
@@ -733,7 +893,11 @@ export class OpenMultiAgent {
    * then resolving them to real IDs before adding tasks to the queue.
    */
   private loadSpecsIntoQueue(
-    specs: ReadonlyArray<ParsedTaskSpec>,
+    specs: ReadonlyArray<ParsedTaskSpec & {
+      maxRetries?: number
+      retryDelayMs?: number
+      retryBackoff?: number
+    }>,
     agentConfigs: AgentConfig[],
     queue: TaskQueue,
   ): void {
@@ -750,6 +914,9 @@ export class OpenMultiAgent {
         assignee: spec.assignee && agentNames.has(spec.assignee)
           ? spec.assignee
           : undefined,
+        maxRetries: spec.maxRetries,
+        retryDelayMs: spec.retryDelayMs,
+        retryBackoff: spec.retryBackoff,
       })
       titleToId.set(spec.title.toLowerCase().trim(), task.id)
       createdTasks.push(task)
@@ -792,6 +959,8 @@ export class OpenMultiAgent {
         ...config,
         model: config.model,
         provider: config.provider ?? this.config.defaultProvider,
+        baseURL: config.baseURL ?? this.config.defaultBaseURL,
+        apiKey: config.apiKey ?? this.config.defaultApiKey,
       }
       pool.add(buildAgent(effective))
     }
@@ -825,13 +994,15 @@ export class OpenMultiAgent {
       if (!existing) {
         collapsed.set(agentName, result)
       } else {
-        // Merge multiple results for the same agent (multi-task case)
+        // Merge multiple results for the same agent (multi-task case).
+        // Keep the latest `structured` value (last completed task wins).
         collapsed.set(agentName, {
           success: existing.success && result.success,
           output: [existing.output, result.output].filter(Boolean).join('\n\n---\n\n'),
           messages: [...existing.messages, ...result.messages],
           tokenUsage: addUsage(existing.tokenUsage, result.tokenUsage),
           toolCalls: [...existing.toolCalls, ...result.toolCalls],
+          structured: result.structured !== undefined ? result.structured : existing.structured,
         })
       }
 

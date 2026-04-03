@@ -21,6 +21,7 @@
  */
 
 import type { AgentRunResult } from '../types.js'
+import type { RunOptions } from './runner.js'
 import type { Agent } from './agent.js'
 import { Semaphore } from '../utils/semaphore.js'
 
@@ -123,12 +124,16 @@ export class AgentPool {
    *
    * @throws {Error} If the agent name is not found.
    */
-  async run(agentName: string, prompt: string): Promise<AgentRunResult> {
+  async run(
+    agentName: string,
+    prompt: string,
+    runOptions?: Partial<RunOptions>,
+  ): Promise<AgentRunResult> {
     const agent = this.requireAgent(agentName)
 
     await this.semaphore.acquire()
     try {
-      return await agent.run(prompt)
+      return await agent.run(prompt, runOptions)
     } finally {
       this.semaphore.release()
     }
@@ -144,6 +149,7 @@ export class AgentPool {
    *
    * @param tasks - Array of `{ agent, prompt }` descriptors.
    */
+  // TODO(#18): accept RunOptions per task to forward trace context
   async runParallel(
     tasks: ReadonlyArray<{ readonly agent: string; readonly prompt: string }>,
   ): Promise<Map<string, AgentRunResult>> {
@@ -182,6 +188,7 @@ export class AgentPool {
    *
    * @throws {Error} If the pool is empty.
    */
+  // TODO(#18): accept RunOptions to forward trace context
   async runAny(prompt: string): Promise<AgentRunResult> {
     const allAgents = this.list()
     if (allAgents.length === 0) {

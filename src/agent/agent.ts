@@ -32,10 +32,16 @@ import type {
   TokenUsage,
   ToolUseContext,
 } from '../types.js'
+import { emitTrace, generateRunId } from '../utils/trace.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { createAdapter } from '../llm/adapter.js'
-import { AgentRunner, type RunnerOptions, type RunOptions } from './runner.js'
+import { AgentRunner, type RunnerOptions, type RunOptions, type RunResult } from './runner.js'
+import {
+  buildStructuredOutputInstruction,
+  extractJSON,
+  validateOutput,
+} from './structured-output.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -109,11 +115,20 @@ export class Agent {
     }
 
     const provider = this.config.provider ?? 'anthropic'
-    const adapter = await createAdapter(provider)
+    const adapter = await createAdapter(provider, this.config.apiKey, this.config.baseURL)
+
+    // Append structured-output instructions when an outputSchema is configured.
+    let effectiveSystemPrompt = this.config.systemPrompt
+    if (this.config.outputSchema) {
+      const instruction = buildStructuredOutputInstruction(this.config.outputSchema)
+      effectiveSystemPrompt = effectiveSystemPrompt
+        ? effectiveSystemPrompt + '\n' + instruction
+        : instruction
+    }
 
     const runnerOptions: RunnerOptions = {
       model: this.config.model,
-      systemPrompt: this.config.systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       maxTurns: this.config.maxTurns,
       maxTokens: this.config.maxTokens,
       temperature: this.config.temperature,
@@ -144,12 +159,12 @@ export class Agent {
    *
    * Use this for one-shot queries where past context is irrelevant.
    */
-  async run(prompt: string): Promise<AgentRunResult> {
+  async run(prompt: string, runOptions?: Partial<RunOptions>): Promise<AgentRunResult> {
     const messages: LLMMessage[] = [
       { role: 'user', content: [{ type: 'text', text: prompt }] },
     ]
 
-    return this.executeRun(messages)
+    return this.executeRun(messages, runOptions)
   }
 
   /**
@@ -160,6 +175,7 @@ export class Agent {
    *
    * Use this for multi-turn interactions.
    */
+  // TODO(#18): accept optional RunOptions to forward trace context
   async prompt(message: string): Promise<AgentRunResult> {
     const userMessage: LLMMessage = {
       role: 'user',
@@ -183,6 +199,7 @@ export class Agent {
    *
    * Like {@link run}, this does not use or update the persistent history.
    */
+  // TODO(#18): accept optional RunOptions to forward trace context
   async *stream(prompt: string): AsyncGenerator<StreamEvent> {
     const messages: LLMMessage[] = [
       { role: 'user', content: [{ type: 'text', text: prompt }] },
@@ -252,33 +269,165 @@ export class Agent {
    * Shared execution path used by both `run` and `prompt`.
    * Handles state transitions and error wrapping.
    */
-  private async executeRun(messages: LLMMessage[]): Promise<AgentRunResult> {
+  private async executeRun(
+    messages: LLMMessage[],
+    callerOptions?: Partial<RunOptions>,
+  ): Promise<AgentRunResult> {
     this.transitionTo('running')
+
+    const agentStartMs = Date.now()
 
     try {
       const runner = await this.getRunner()
+      const internalOnMessage = (msg: LLMMessage) => {
+        this.state.messages.push(msg)
+        callerOptions?.onMessage?.(msg)
+      }
+      // Auto-generate runId when onTrace is provided but runId is missing
+      const needsRunId = callerOptions?.onTrace && !callerOptions.runId
       const runOptions: RunOptions = {
-        onMessage: msg => {
-          this.state.messages.push(msg)
-        },
+        ...callerOptions,
+        onMessage: internalOnMessage,
+        ...(needsRunId ? { runId: generateRunId() } : undefined),
       }
 
       const result = await runner.run(messages, runOptions)
-
       this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
-      this.transitionTo('completed')
 
-      return this.toAgentRunResult(result, true)
+      // --- Structured output validation ---
+      if (this.config.outputSchema) {
+        const validated = await this.validateStructuredOutput(
+          messages,
+          result,
+          runner,
+          runOptions,
+        )
+        this.emitAgentTrace(callerOptions, agentStartMs, validated)
+        return validated
+      }
+
+      this.transitionTo('completed')
+      const agentResult = this.toAgentRunResult(result, true)
+      this.emitAgentTrace(callerOptions, agentStartMs, agentResult)
+      return agentResult
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
 
-      return {
+      const errorResult: AgentRunResult = {
         success: false,
         output: error.message,
         messages: [],
         tokenUsage: ZERO_USAGE,
         toolCalls: [],
+        structured: undefined,
+      }
+      this.emitAgentTrace(callerOptions, agentStartMs, errorResult)
+      return errorResult
+    }
+  }
+
+  /** Emit an `agent` trace event if `onTrace` is provided. */
+  private emitAgentTrace(
+    options: Partial<RunOptions> | undefined,
+    startMs: number,
+    result: AgentRunResult,
+  ): void {
+    if (!options?.onTrace) return
+    const endMs = Date.now()
+    emitTrace(options.onTrace, {
+      type: 'agent',
+      runId: options.runId ?? '',
+      taskId: options.taskId,
+      agent: options.traceAgent ?? this.name,
+      turns: result.messages.filter(m => m.role === 'assistant').length,
+      tokens: result.tokenUsage,
+      toolCalls: result.toolCalls.length,
+      startMs,
+      endMs,
+      durationMs: endMs - startMs,
+    })
+  }
+
+  /**
+   * Validate agent output against the configured `outputSchema`.
+   * On first validation failure, retry once with error feedback.
+   */
+  private async validateStructuredOutput(
+    originalMessages: LLMMessage[],
+    result: RunResult,
+    runner: AgentRunner,
+    runOptions: RunOptions,
+  ): Promise<AgentRunResult> {
+    const schema = this.config.outputSchema!
+
+    // First attempt
+    let firstAttemptError: unknown
+    try {
+      const parsed = extractJSON(result.output)
+      const validated = validateOutput(schema, parsed)
+      this.transitionTo('completed')
+      return this.toAgentRunResult(result, true, validated)
+    } catch (e) {
+      firstAttemptError = e
+    }
+
+    // Retry: send full context + error feedback
+    const errorMsg = firstAttemptError instanceof Error
+      ? firstAttemptError.message
+      : String(firstAttemptError)
+
+    const errorFeedbackMessage: LLMMessage = {
+      role: 'user' as const,
+      content: [{
+        type: 'text' as const,
+        text: [
+          'Your previous response did not produce valid JSON matching the required schema.',
+          '',
+          `Error: ${errorMsg}`,
+          '',
+          'Please try again. Respond with ONLY valid JSON, no other text.',
+        ].join('\n'),
+      }],
+    }
+
+    const retryMessages: LLMMessage[] = [
+      ...originalMessages,
+      ...result.messages,
+      errorFeedbackMessage,
+    ]
+
+    const retryResult = await runner.run(retryMessages, runOptions)
+    this.state.tokenUsage = addUsage(this.state.tokenUsage, retryResult.tokenUsage)
+
+    const mergedTokenUsage = addUsage(result.tokenUsage, retryResult.tokenUsage)
+    // Include the error feedback turn to maintain alternating user/assistant roles,
+    // which is required by Anthropic's API for subsequent prompt() calls.
+    const mergedMessages = [...result.messages, errorFeedbackMessage, ...retryResult.messages]
+    const mergedToolCalls = [...result.toolCalls, ...retryResult.toolCalls]
+
+    try {
+      const parsed = extractJSON(retryResult.output)
+      const validated = validateOutput(schema, parsed)
+      this.transitionTo('completed')
+      return {
+        success: true,
+        output: retryResult.output,
+        messages: mergedMessages,
+        tokenUsage: mergedTokenUsage,
+        toolCalls: mergedToolCalls,
+        structured: validated,
+      }
+    } catch {
+      // Retry also failed
+      this.transitionTo('completed')
+      return {
+        success: false,
+        output: retryResult.output,
+        messages: mergedMessages,
+        tokenUsage: mergedTokenUsage,
+        toolCalls: mergedToolCalls,
+        structured: undefined,
       }
     }
   }
@@ -331,8 +480,9 @@ export class Agent {
   // -------------------------------------------------------------------------
 
   private toAgentRunResult(
-    result: import('./runner.js').RunResult,
+    result: RunResult,
     success: boolean,
+    structured?: unknown,
   ): AgentRunResult {
     return {
       success,
@@ -340,6 +490,7 @@ export class Agent {
       messages: result.messages,
       tokenUsage: result.tokenUsage,
       toolCalls: result.toolCalls,
+      structured,
     }
   }
 
