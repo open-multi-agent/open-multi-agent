@@ -32,7 +32,7 @@ import type {
   TokenUsage,
   ToolUseContext,
 } from '../types.js'
-import { emitTrace } from '../utils/trace.js'
+import { emitTrace, generateRunId } from '../utils/trace.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { createAdapter } from '../llm/adapter.js'
@@ -275,7 +275,7 @@ export class Agent {
   ): Promise<AgentRunResult> {
     this.transitionTo('running')
 
-    const agentStartMs = callerOptions?.onTrace ? Date.now() : 0
+    const agentStartMs = Date.now()
 
     try {
       const runner = await this.getRunner()
@@ -283,9 +283,12 @@ export class Agent {
         this.state.messages.push(msg)
         callerOptions?.onMessage?.(msg)
       }
+      // Auto-generate runId when onTrace is provided but runId is missing
+      const needsRunId = callerOptions?.onTrace && !callerOptions.runId
       const runOptions: RunOptions = {
         ...callerOptions,
         onMessage: internalOnMessage,
+        ...(needsRunId ? { runId: generateRunId() } : undefined),
       }
 
       const result = await runner.run(messages, runOptions)

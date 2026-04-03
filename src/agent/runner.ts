@@ -78,8 +78,8 @@ export interface RunOptions {
   readonly onToolResult?: (name: string, result: ToolResult) => void
   /** Fired after each complete {@link LLMMessage} is appended. */
   readonly onMessage?: (message: LLMMessage) => void
-  /** Trace callback for observability spans. */
-  readonly onTrace?: (event: TraceEvent) => void
+  /** Trace callback for observability spans. Async callbacks are safe. */
+  readonly onTrace?: (event: TraceEvent) => void | Promise<void>
   /** Run ID for trace correlation. */
   readonly runId?: string
   /** Task ID for trace correlation. */
@@ -264,16 +264,15 @@ export class AgentRunner {
         // ------------------------------------------------------------------
         // Step 1: Call the LLM and collect the full response for this turn.
         // ------------------------------------------------------------------
-        const llmStartMs = options.onTrace ? Date.now() : 0
+        const llmStartMs = Date.now()
         const response = await this.adapter.chat(conversationMessages, baseChatOptions)
         if (options.onTrace) {
           const llmEndMs = Date.now()
-          const agentName = options.traceAgent ?? this.options.agentName ?? 'unknown'
           emitTrace(options.onTrace, {
             type: 'llm_call',
             runId: options.runId ?? '',
             taskId: options.taskId,
-            agent: agentName,
+            agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
             model: this.options.model,
             turn: turns,
             tokens: response.usage,
@@ -352,12 +351,11 @@ export class AgentRunner {
           options.onToolResult?.(block.name, result)
 
           if (options.onTrace) {
-            const agentName = options.traceAgent ?? this.options.agentName ?? 'unknown'
             emitTrace(options.onTrace, {
               type: 'tool_call',
               runId: options.runId ?? '',
               taskId: options.taskId,
-              agent: agentName,
+              agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
               tool: block.name,
               isError: result.isError ?? false,
               startMs: startTime,

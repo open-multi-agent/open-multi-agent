@@ -149,6 +149,7 @@ export class AgentPool {
    *
    * @param tasks - Array of `{ agent, prompt }` descriptors.
    */
+  // TODO(#18): accept RunOptions per task to forward trace context
   async runParallel(
     tasks: ReadonlyArray<{ readonly agent: string; readonly prompt: string }>,
   ): Promise<Map<string, AgentRunResult>> {
@@ -187,6 +188,7 @@ export class AgentPool {
    *
    * @throws {Error} If the pool is empty.
    */
+  // TODO(#18): accept RunOptions to forward trace context
   async runAny(prompt: string): Promise<AgentRunResult> {
     const allAgents = this.list()
     if (allAgents.length === 0) {

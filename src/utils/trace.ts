@@ -10,7 +10,7 @@ import type { TraceEvent } from '../types.js'
  * subscriber never crashes agent execution.
  */
 export function emitTrace(
-  fn: ((event: TraceEvent) => void) | undefined,
+  fn: ((event: TraceEvent) => void | Promise<void>) | undefined,
   event: TraceEvent,
 ): void {
   if (!fn) return

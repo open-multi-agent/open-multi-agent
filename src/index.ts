@@ -162,6 +162,7 @@ export type {
   OrchestratorEvent,
 
   // Trace
+  TraceEventType,
   TraceEventBase,
   TraceEvent,
   LLMCallTrace,
@@ -174,4 +175,4 @@ export type {
   MemoryStore,
 } from './types.js'
 
-export { emitTrace, generateRunId } from './utils/trace.js'
+export { generateRunId } from './utils/trace.js'
