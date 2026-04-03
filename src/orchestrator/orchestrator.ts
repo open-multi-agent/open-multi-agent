@@ -845,7 +845,7 @@ export class OpenMultiAgent {
           messages: [...existing.messages, ...result.messages],
           tokenUsage: addUsage(existing.tokenUsage, result.tokenUsage),
           toolCalls: [...existing.toolCalls, ...result.toolCalls],
-          structured: result.structured ?? existing.structured,
+          structured: result.structured !== undefined ? result.structured : existing.structured,
         })
       }
 

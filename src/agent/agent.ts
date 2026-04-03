@@ -335,29 +335,33 @@ export class Agent {
       ? firstAttemptError.message
       : String(firstAttemptError)
 
+    const errorFeedbackMessage: LLMMessage = {
+      role: 'user' as const,
+      content: [{
+        type: 'text' as const,
+        text: [
+          'Your previous response did not produce valid JSON matching the required schema.',
+          '',
+          `Error: ${errorMsg}`,
+          '',
+          'Please try again. Respond with ONLY valid JSON, no other text.',
+        ].join('\n'),
+      }],
+    }
+
     const retryMessages: LLMMessage[] = [
       ...originalMessages,
       ...result.messages,
-      {
-        role: 'user' as const,
-        content: [{
-          type: 'text' as const,
-          text: [
-            'Your previous response did not produce valid JSON matching the required schema.',
-            '',
-            `Error: ${errorMsg}`,
-            '',
-            'Please try again. Respond with ONLY valid JSON, no other text.',
-          ].join('\n'),
-        }],
-      },
+      errorFeedbackMessage,
     ]
 
     const retryResult = await runner.run(retryMessages, runOptions)
     this.state.tokenUsage = addUsage(this.state.tokenUsage, retryResult.tokenUsage)
 
     const mergedTokenUsage = addUsage(result.tokenUsage, retryResult.tokenUsage)
-    const mergedMessages = [...result.messages, ...retryResult.messages]
+    // Include the error feedback turn to maintain alternating user/assistant roles,
+    // which is required by Anthropic's API for subsequent prompt() calls.
+    const mergedMessages = [...result.messages, errorFeedbackMessage, ...retryResult.messages]
     const mergedToolCalls = [...result.toolCalls, ...retryResult.toolCalls]
 
     try {
