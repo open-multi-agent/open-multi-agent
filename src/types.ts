@@ -316,7 +316,68 @@ export interface OrchestratorConfig {
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
   onProgress?: (event: OrchestratorEvent) => void
+  onTrace?: (event: TraceEvent) => void
 }
+
+// ---------------------------------------------------------------------------
+// Trace events — lightweight observability spans
+// ---------------------------------------------------------------------------
+
+/** Shared fields present on every trace event. */
+interface TraceEventBase {
+  /** Unique identifier for the entire run (runTeam / runTasks / runAgent call). */
+  readonly runId: string
+  readonly type: string
+  /** Unix epoch ms when the span started. */
+  readonly startMs: number
+  /** Unix epoch ms when the span ended. */
+  readonly endMs: number
+  /** Wall-clock duration in milliseconds (`endMs - startMs`). */
+  readonly durationMs: number
+  /** Agent name associated with this span. */
+  readonly agent?: string
+  /** Task ID associated with this span. */
+  readonly taskId?: string
+}
+
+/** Emitted for each LLM API call (one per agent turn). */
+export interface LLMCallTrace extends TraceEventBase {
+  readonly type: 'llm_call'
+  readonly agent: string
+  readonly model?: string
+  readonly turn: number
+  readonly tokens: TokenUsage
+}
+
+/** Emitted for each tool execution. */
+export interface ToolCallTrace extends TraceEventBase {
+  readonly type: 'tool_call'
+  readonly agent: string
+  readonly tool: string
+  readonly isError: boolean
+}
+
+/** Emitted when a task completes (wraps the full retry sequence). */
+export interface TaskTrace extends TraceEventBase {
+  readonly type: 'task'
+  readonly taskId: string
+  readonly taskTitle: string
+  readonly agent: string
+  readonly success: boolean
+  readonly retries: number
+}
+
+/** Emitted when an agent run completes (wraps the full conversation loop). */
+export interface AgentTrace extends TraceEventBase {
+  readonly type: 'agent'
+  readonly agent: string
+  readonly turns: number
+  readonly tokens: TokenUsage
+  readonly toolCalls: number
+}
+
+/** Discriminated union of all trace event types. */
+export type TraceEvent = LLMCallTrace | ToolCallTrace | TaskTrace | AgentTrace
 
 // ---------------------------------------------------------------------------
 // Memory

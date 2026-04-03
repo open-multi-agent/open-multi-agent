@@ -32,6 +32,7 @@ import type {
   TokenUsage,
   ToolUseContext,
 } from '../types.js'
+import { emitTrace } from '../utils/trace.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { createAdapter } from '../llm/adapter.js'
@@ -158,12 +159,12 @@ export class Agent {
    *
    * Use this for one-shot queries where past context is irrelevant.
    */
-  async run(prompt: string): Promise<AgentRunResult> {
+  async run(prompt: string, runOptions?: Partial<RunOptions>): Promise<AgentRunResult> {
     const messages: LLMMessage[] = [
       { role: 'user', content: [{ type: 'text', text: prompt }] },
     ]
 
-    return this.executeRun(messages)
+    return this.executeRun(messages, runOptions)
   }
 
   /**
@@ -266,15 +267,23 @@ export class Agent {
    * Shared execution path used by both `run` and `prompt`.
    * Handles state transitions and error wrapping.
    */
-  private async executeRun(messages: LLMMessage[]): Promise<AgentRunResult> {
+  private async executeRun(
+    messages: LLMMessage[],
+    callerOptions?: Partial<RunOptions>,
+  ): Promise<AgentRunResult> {
     this.transitionTo('running')
+
+    const agentStartMs = callerOptions?.onTrace ? Date.now() : 0
 
     try {
       const runner = await this.getRunner()
+      const internalOnMessage = (msg: LLMMessage) => {
+        this.state.messages.push(msg)
+        callerOptions?.onMessage?.(msg)
+      }
       const runOptions: RunOptions = {
-        onMessage: msg => {
-          this.state.messages.push(msg)
-        },
+        ...callerOptions,
+        onMessage: internalOnMessage,
       }
 
       const result = await runner.run(messages, runOptions)
@@ -282,21 +291,25 @@ export class Agent {
 
       // --- Structured output validation ---
       if (this.config.outputSchema) {
-        return this.validateStructuredOutput(
+        const validated = await this.validateStructuredOutput(
           messages,
           result,
           runner,
           runOptions,
         )
+        this.emitAgentTrace(callerOptions, agentStartMs, validated)
+        return validated
       }
 
       this.transitionTo('completed')
-      return this.toAgentRunResult(result, true)
+      const agentResult = this.toAgentRunResult(result, true)
+      this.emitAgentTrace(callerOptions, agentStartMs, agentResult)
+      return agentResult
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
 
-      return {
+      const errorResult: AgentRunResult = {
         success: false,
         output: error.message,
         messages: [],
@@ -304,7 +317,31 @@ export class Agent {
         toolCalls: [],
         structured: undefined,
       }
+      this.emitAgentTrace(callerOptions, agentStartMs, errorResult)
+      return errorResult
     }
+  }
+
+  /** Emit an `agent` trace event if `onTrace` is provided. */
+  private emitAgentTrace(
+    options: Partial<RunOptions> | undefined,
+    startMs: number,
+    result: AgentRunResult,
+  ): void {
+    if (!options?.onTrace) return
+    const endMs = Date.now()
+    emitTrace(options.onTrace, {
+      type: 'agent',
+      runId: options.runId ?? '',
+      taskId: options.taskId,
+      agent: options.traceAgent ?? this.name,
+      turns: result.messages.filter(m => m.role === 'assistant').length,
+      tokens: result.tokenUsage,
+      toolCalls: result.toolCalls.length,
+      startMs,
+      endMs,
+      durationMs: endMs - startMs,
+    })
   }
 
   /**

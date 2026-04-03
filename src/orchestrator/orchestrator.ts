@@ -52,8 +52,10 @@ import type {
   TeamRunResult,
   TokenUsage,
 } from '../types.js'
+import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
+import { emitTrace, generateRunId } from '../utils/trace.js'
 import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
@@ -260,6 +262,8 @@ interface RunContext {
   readonly scheduler: Scheduler
   readonly agentResults: Map<string, AgentRunResult>
   readonly config: OrchestratorConfig
+  /** Trace run ID, present when `onTrace` is configured. */
+  readonly runId?: string
 }
 
 /**
@@ -338,10 +342,19 @@ async function executeQueue(
       // Build the prompt: inject shared memory context + task description
       const prompt = await buildTaskPrompt(task, team)
 
+      // Build trace context for this task's agent run
+      const traceOptions: Partial<RunOptions> | undefined = config.onTrace
+        ? { onTrace: config.onTrace, runId: ctx.runId ?? '', taskId: task.id, traceAgent: assignee }
+        : undefined
+
+      const taskStartMs = config.onTrace ? Date.now() : 0
+      let retryCount = 0
+
       const result = await executeWithRetry(
-        () => pool.run(assignee, prompt),
+        () => pool.run(assignee, prompt, traceOptions),
         task,
         (retryData) => {
+          retryCount = retryData.attempt
           config.onProgress?.({
             type: 'task_retry',
             task: task.id,
@@ -350,6 +363,23 @@ async function executeQueue(
           } satisfies OrchestratorEvent)
         },
       )
+
+      // Emit task trace
+      if (config.onTrace) {
+        const taskEndMs = Date.now()
+        emitTrace(config.onTrace, {
+          type: 'task',
+          runId: ctx.runId ?? '',
+          taskId: task.id,
+          taskTitle: task.title,
+          agent: assignee,
+          success: result.success,
+          retries: retryCount,
+          startMs: taskStartMs,
+          endMs: taskEndMs,
+          durationMs: taskEndMs - taskStartMs,
+        })
+      }
 
       ctx.agentResults.set(`${assignee}:${task.id}`, result)
 
@@ -441,8 +471,8 @@ async function buildTaskPrompt(task: Task, team: Team): Promise<string> {
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onProgress' | 'defaultBaseURL' | 'defaultApiKey'>
-  > & Pick<OrchestratorConfig, 'onProgress' | 'defaultBaseURL' | 'defaultApiKey'>
+    Omit<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
+  > & Pick<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
 
   private readonly teams: Map<string, Team> = new Map()
   private completedTaskCount = 0
@@ -463,6 +493,7 @@ export class OpenMultiAgent {
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
       onProgress: config.onProgress,
+      onTrace: config.onTrace,
     }
   }
 
@@ -520,7 +551,11 @@ export class OpenMultiAgent {
       data: { prompt },
     })
 
-    const result = await agent.run(prompt)
+    const traceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: generateRunId(), traceAgent: config.name }
+      : undefined
+
+    const result = await agent.run(prompt, traceOptions)
 
     this.config.onProgress?.({
       type: 'agent_complete',
@@ -578,6 +613,7 @@ export class OpenMultiAgent {
 
     const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
+    const runId = this.config.onTrace ? generateRunId() : undefined
 
     this.config.onProgress?.({
       type: 'agent_start',
@@ -585,7 +621,10 @@ export class OpenMultiAgent {
       data: { phase: 'decomposition', goal },
     })
 
-    const decompositionResult = await coordinatorAgent.run(decompositionPrompt)
+    const decompTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
+      : undefined
+    const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
 
@@ -629,6 +668,7 @@ export class OpenMultiAgent {
       scheduler,
       agentResults,
       config: this.config,
+      runId,
     }
 
     await executeQueue(queue, ctx)
@@ -637,7 +677,10 @@ export class OpenMultiAgent {
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
     const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
-    const synthesisResult = await coordinatorAgent.run(synthesisPrompt)
+    const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
+      : undefined
+    const synthesisResult = await coordinatorAgent.run(synthesisPrompt, synthTraceOptions)
     agentResults.set('coordinator', synthesisResult)
 
     this.config.onProgress?.({
@@ -707,6 +750,7 @@ export class OpenMultiAgent {
       scheduler,
       agentResults,
       config: this.config,
+      runId: this.config.onTrace ? generateRunId() : undefined,
     }
 
     await executeQueue(queue, ctx)
