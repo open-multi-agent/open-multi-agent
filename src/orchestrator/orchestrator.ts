@@ -306,6 +306,8 @@ async function executeQueue(
     }
 
     // Track tasks that complete successfully in this round for the approval gate.
+    // Safe to push from concurrent promises: JS is single-threaded, so
+    // Array.push calls from resolved microtasks never interleave.
     const completedThisRound: Task[] = []
 
     // Dispatch all currently-pending tasks as a parallel batch.

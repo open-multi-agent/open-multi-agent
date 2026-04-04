@@ -353,4 +353,112 @@ describe('onApproval integration', () => {
     const titles = completedTasks.map((t: Task) => t.title).sort()
     expect(titles).toEqual(['task-1', 'task-2'])
   })
+
+  it('single batch with no second round — callback never fires', async () => {
+    const approvalSpy = vi.fn().mockResolvedValue(true)
+    const { orchestrator, team } = setup(approvalSpy)
+
+    const result = await orchestrator.runTasks(team, [
+      { title: 'task-1', description: 'first', assignee: 'agent-a' },
+      { title: 'task-2', description: 'second', assignee: 'agent-b' },
+    ])
+
+    expect(result.success).toBe(true)
+    // No second round → callback never called
+    expect(approvalSpy).not.toHaveBeenCalled()
+  })
+
+  it('mixed success/failure in batch — completedTasks only contains succeeded tasks', async () => {
+    const approvalSpy = vi.fn().mockResolvedValue(true)
+    const agentA: AgentConfig = { name: 'agent-a', model: 'mock', systemPrompt: 'A' }
+    const agentB: AgentConfig = { name: 'agent-b', model: 'mock', systemPrompt: 'B' }
+    const agentC: AgentConfig = { name: 'agent-c', model: 'mock', systemPrompt: 'C' }
+
+    const orchestrator = new OpenMultiAgent({
+      defaultModel: 'mock',
+      onApproval: approvalSpy,
+    })
+
+    const team = orchestrator.createTeam('test', {
+      name: 'test',
+      agents: [agentA, agentB, agentC],
+    })
+
+    const mockAgents = new Map<string, Agent>()
+    mockAgents.set('agent-a', buildMockAgent(agentA, 'A done'))
+    mockAgents.set('agent-b', buildMockAgent(agentB, 'B done'))
+    mockAgents.set('agent-c', buildMockAgent(agentC, 'C done'))
+
+    // Patch buildPool so that pool.run for agent-b returns a failure result
+    ;(orchestrator as any).buildPool = () => {
+      const pool = new AgentPool(5)
+      for (const [, agent] of mockAgents) pool.add(agent)
+      const originalRun = pool.run.bind(pool)
+      pool.run = async (agentName: string, prompt: string, opts?: any) => {
+        if (agentName === 'agent-b') {
+          return {
+            success: false,
+            output: 'simulated failure',
+            messages: [],
+            tokenUsage: { input_tokens: 0, output_tokens: 0 },
+            toolCalls: [],
+          }
+        }
+        return originalRun(agentName, prompt, opts)
+      }
+      return pool
+    }
+
+    // task-1 (success) and task-2 (fail) run in parallel, task-3 depends on task-1
+    await orchestrator.runTasks(team, [
+      { title: 'task-1', description: 'first', assignee: 'agent-a' },
+      { title: 'task-2', description: 'second', assignee: 'agent-b' },
+      { title: 'task-3', description: 'third', assignee: 'agent-c', dependsOn: ['task-1'] },
+    ])
+
+    expect(approvalSpy).toHaveBeenCalledTimes(1)
+    const completedTasks = approvalSpy.mock.calls[0][0] as Task[]
+    // Only task-1 succeeded — task-2 failed, so it should not appear
+    expect(completedTasks).toHaveLength(1)
+    expect(completedTasks[0].title).toBe('task-1')
+    expect(completedTasks[0].status).toBe('completed')
+  })
+
+  it('onProgress receives task_skipped events when approval is rejected', async () => {
+    const progressSpy = vi.fn()
+    const agentA: AgentConfig = { name: 'agent-a', model: 'mock', systemPrompt: 'A' }
+    const agentB: AgentConfig = { name: 'agent-b', model: 'mock', systemPrompt: 'B' }
+
+    const orchestrator = new OpenMultiAgent({
+      defaultModel: 'mock',
+      onApproval: vi.fn().mockResolvedValue(false),
+      onProgress: progressSpy,
+    })
+
+    const team = orchestrator.createTeam('test', {
+      name: 'test',
+      agents: [agentA, agentB],
+    })
+
+    const mockAgents = new Map<string, Agent>()
+    mockAgents.set('agent-a', buildMockAgent(agentA, 'A done'))
+    mockAgents.set('agent-b', buildMockAgent(agentB, 'B done'))
+    ;(orchestrator as any).buildPool = () => {
+      const pool = new AgentPool(5)
+      for (const [, agent] of mockAgents) pool.add(agent)
+      return pool
+    }
+
+    await orchestrator.runTasks(team, [
+      { title: 'task-1', description: 'first', assignee: 'agent-a' },
+      { title: 'task-2', description: 'second', assignee: 'agent-b', dependsOn: ['task-1'] },
+    ])
+
+    const skippedEvents = progressSpy.mock.calls
+      .map((c: any) => c[0])
+      .filter((e: any) => e.type === 'task_skipped')
+
+    expect(skippedEvents).toHaveLength(1)
+    expect(skippedEvents[0].data.status).toBe('skipped')
+  })
 })

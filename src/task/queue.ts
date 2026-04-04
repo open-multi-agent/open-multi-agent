@@ -161,7 +161,9 @@ export class TaskQueue {
    * Marks `taskId` as `'skipped'` and records `reason` in the `result` field.
    *
    * Fires `'task:skipped'` for the skipped task and cascades to every
-   * downstream task that transitively depended on it.
+   * downstream task that transitively depended on it — even if the dependent
+   * has other dependencies that are still pending or completed. A skipped
+   * upstream is treated as permanently unsatisfiable, mirroring `fail()`.
    *
    * @throws {Error} when `taskId` is not found.
    */
@@ -180,6 +182,11 @@ export class TaskQueue {
    *
    * Used when an approval gate rejects continuation — every pending, blocked,
    * or in-progress task is skipped with the given reason.
+   *
+   * **Important:** Call only when no tasks are actively executing. The
+   * orchestrator invokes this after `await Promise.all()`, so no tasks are
+   * in-flight. Calling while agents are running may mark an in-progress task
+   * as skipped while its agent continues executing.
    */
   skipRemaining(reason = 'Skipped: approval rejected.'): void {
     // Snapshot first — update() mutates the live map, which is unsafe to

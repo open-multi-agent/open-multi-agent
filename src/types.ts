@@ -313,7 +313,12 @@ export interface Task {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/** Progress event emitted by the orchestrator during a run. */
+/**
+ * Progress event emitted by the orchestrator during a run.
+ *
+ * **v0.3 addition:** `'task_skipped'` — consumers with exhaustive switches
+ * on `type` will need to add a case for this variant.
+ */
 export interface OrchestratorEvent {
   readonly type:
     | 'agent_start'
@@ -346,7 +351,13 @@ export interface OrchestratorConfig {
    * to start next. Return `true` to continue or `false` to abort —
    * remaining tasks will be marked `'skipped'`.
    *
-   * Not called after the final round (when no tasks remain to start).
+   * Not called when:
+   * - No tasks succeeded in the round (all failed).
+   * - No pending tasks remain after the round (final batch).
+   *
+   * **Note:** Do not mutate the {@link Task} objects passed to this
+   * callback — they are live references to queue state. Mutation is
+   * undefined behavior.
    */
   readonly onApproval?: (completedTasks: readonly Task[], nextTasks: readonly Task[]) => Promise<boolean>
 }
