@@ -147,6 +147,7 @@ export type {
   AgentConfig,
   AgentState,
   AgentRunResult,
+  BeforeRunHookContext,
   ToolCallRecord,
 
   // Team

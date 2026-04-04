@@ -27,6 +27,7 @@ import type {
   AgentConfig,
   AgentState,
   AgentRunResult,
+  BeforeRunHookContext,
   LLMMessage,
   StreamEvent,
   TokenUsage,
@@ -278,6 +279,14 @@ export class Agent {
     const agentStartMs = Date.now()
 
     try {
+      // --- beforeRun hook ---
+      if (this.config.beforeRun) {
+        const hookCtx = await this.config.beforeRun(
+          this.buildBeforeRunHookContext(messages),
+        )
+        this.applyHookContext(messages, hookCtx)
+      }
+
       const runner = await this.getRunner()
       const internalOnMessage = (msg: LLMMessage) => {
         this.state.messages.push(msg)
@@ -296,18 +305,28 @@ export class Agent {
 
       // --- Structured output validation ---
       if (this.config.outputSchema) {
-        const validated = await this.validateStructuredOutput(
+        let validated = await this.validateStructuredOutput(
           messages,
           result,
           runner,
           runOptions,
         )
+        // --- afterRun hook ---
+        if (this.config.afterRun) {
+          validated = await this.config.afterRun(validated)
+        }
         this.emitAgentTrace(callerOptions, agentStartMs, validated)
         return validated
       }
 
       this.transitionTo('completed')
-      const agentResult = this.toAgentRunResult(result, true)
+      let agentResult = this.toAgentRunResult(result, true)
+
+      // --- afterRun hook ---
+      if (this.config.afterRun) {
+        agentResult = await this.config.afterRun(agentResult)
+      }
+
       this.emitAgentTrace(callerOptions, agentStartMs, agentResult)
       return agentResult
     } catch (err) {
@@ -440,6 +459,14 @@ export class Agent {
     this.transitionTo('running')
 
     try {
+      // --- beforeRun hook ---
+      if (this.config.beforeRun) {
+        const hookCtx = await this.config.beforeRun(
+          this.buildBeforeRunHookContext(messages),
+        )
+        this.applyHookContext(messages, hookCtx)
+      }
+
       const runner = await this.getRunner()
 
       for await (const event of runner.stream(messages)) {
@@ -447,6 +474,14 @@ export class Agent {
           const result = event.data as import('./runner.js').RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
           this.transitionTo('completed')
+
+          // --- afterRun hook ---
+          if (this.config.afterRun) {
+            const agentResult = this.toAgentRunResult(result, true)
+            const modified = await this.config.afterRun(agentResult)
+            yield { type: 'done', data: modified } satisfies StreamEvent
+            continue
+          }
         } else if (event.type === 'error') {
           const error = event.data instanceof Error
             ? event.data
@@ -460,6 +495,39 @@ export class Agent {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
       yield { type: 'error', data: error } satisfies StreamEvent
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Hook helpers
+  // -------------------------------------------------------------------------
+
+  /** Extract the prompt text from the last user message to build hook context. */
+  private buildBeforeRunHookContext(messages: LLMMessage[]): BeforeRunHookContext {
+    const lastUser = [...messages].reverse().find(m => m.role === 'user')
+    const prompt = lastUser
+      ? lastUser.content
+          .filter((b): b is import('../types.js').TextBlock => b.type === 'text')
+          .map(b => b.text)
+          .join('')
+      : ''
+    return { prompt, agent: this.config }
+  }
+
+  /** Apply a (possibly modified) hook context back to the messages array. */
+  private applyHookContext(messages: LLMMessage[], ctx: BeforeRunHookContext): void {
+    const original = this.buildBeforeRunHookContext(messages)
+    if (ctx.prompt === original.prompt) return
+
+    // Find the last user message and replace its text content.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]!.role === 'user') {
+        messages[i] = {
+          role: 'user',
+          content: [{ type: 'text', text: ctx.prompt }],
+        }
+        break
+      }
     }
   }
 

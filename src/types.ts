@@ -182,6 +182,14 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
 // Agent
 // ---------------------------------------------------------------------------
 
+/** Context passed to the {@link AgentConfig.beforeRun} hook. */
+export interface BeforeRunHookContext {
+  /** The user prompt text. */
+  readonly prompt: string
+  /** The agent's static configuration. */
+  readonly agent: AgentConfig
+}
+
 /** Static configuration for a single agent. */
 export interface AgentConfig {
   readonly name: string
@@ -207,6 +215,16 @@ export interface AgentConfig {
    * retry with error feedback is attempted on validation failure.
    */
   readonly outputSchema?: ZodSchema
+  /**
+   * Called before each agent run. Receives the prompt and agent config.
+   * Return a (possibly modified) context to continue, or throw to abort the run.
+   */
+  readonly beforeRun?: (context: BeforeRunHookContext) => Promise<BeforeRunHookContext> | BeforeRunHookContext
+  /**
+   * Called after each agent run completes. Receives the run result.
+   * Return a (possibly modified) result, or throw to mark the run as failed.
+   */
+  readonly afterRun?: (result: AgentRunResult) => Promise<AgentRunResult> | AgentRunResult
 }
 
 /** Lifecycle state tracked during an agent run. */
