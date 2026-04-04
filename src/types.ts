@@ -286,7 +286,7 @@ export interface TeamRunResult {
 // ---------------------------------------------------------------------------
 
 /** Valid states for a {@link Task}. */
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'blocked'
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'blocked' | 'skipped'
 
 /** A discrete unit of work tracked by the orchestrator. */
 export interface Task {
@@ -320,6 +320,7 @@ export interface OrchestratorEvent {
     | 'agent_complete'
     | 'task_start'
     | 'task_complete'
+    | 'task_skipped'
     | 'task_retry'
     | 'message'
     | 'error'
@@ -337,6 +338,17 @@ export interface OrchestratorConfig {
   readonly defaultApiKey?: string
   readonly onProgress?: (event: OrchestratorEvent) => void
   readonly onTrace?: (event: TraceEvent) => void | Promise<void>
+  /**
+   * Optional approval gate called between task execution rounds.
+   *
+   * After a batch of tasks completes, this callback receives all
+   * completed {@link Task}s from that round and the list of tasks about
+   * to start next. Return `true` to continue or `false` to abort —
+   * remaining tasks will be marked `'skipped'`.
+   *
+   * Not called after the final round (when no tasks remain to start).
+   */
+  readonly onApproval?: (completedTasks: readonly Task[], nextTasks: readonly Task[]) => Promise<boolean>
 }
 
 // ---------------------------------------------------------------------------

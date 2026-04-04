@@ -283,6 +283,17 @@ async function executeQueue(
 ): Promise<void> {
   const { team, pool, scheduler, config } = ctx
 
+  // Relay queue-level skip events to the orchestrator's onProgress callback.
+  const unsubSkipped = config.onProgress
+    ? queue.on('task:skipped', (task) => {
+        config.onProgress!({
+          type: 'task_skipped',
+          task: task.id,
+          data: task,
+        } satisfies OrchestratorEvent)
+      })
+    : undefined
+
   while (true) {
     // Re-run auto-assignment each iteration so tasks that were unblocked since
     // the last round (and thus have no assignee yet) get assigned before dispatch.
@@ -293,6 +304,9 @@ async function executeQueue(
       // Either all done, or everything remaining is blocked/failed.
       break
     }
+
+    // Track tasks that complete successfully in this round for the approval gate.
+    const completedThisRound: Task[] = []
 
     // Dispatch all currently-pending tasks as a parallel batch.
     const dispatchPromises = pending.map(async (task): Promise<void> => {
@@ -390,7 +404,8 @@ async function executeQueue(
           await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
         }
 
-        queue.complete(task.id, result.output)
+        const completedTask = queue.complete(task.id, result.output)
+        completedThisRound.push(completedTask)
 
         config.onProgress?.({
           type: 'task_complete',
@@ -418,7 +433,32 @@ async function executeQueue(
 
     // Wait for the entire parallel batch before checking for newly-unblocked tasks.
     await Promise.all(dispatchPromises)
+
+    // --- Approval gate ---
+    // After the batch completes, check if the caller wants to approve
+    // the next round before it starts.
+    if (config.onApproval && completedThisRound.length > 0) {
+      scheduler.autoAssign(queue, team.getAgents())
+      const nextPending = queue.getByStatus('pending')
+
+      if (nextPending.length > 0) {
+        let approved: boolean
+        try {
+          approved = await config.onApproval(completedThisRound, nextPending)
+        } catch (err) {
+          const reason = `Skipped: approval callback error — ${err instanceof Error ? err.message : String(err)}`
+          queue.skipRemaining(reason)
+          break
+        }
+        if (!approved) {
+          queue.skipRemaining('Skipped: approval rejected.')
+          break
+        }
+      }
+    }
   }
+
+  unsubSkipped?.()
 }
 
 /**
@@ -471,8 +511,8 @@ async function buildTaskPrompt(task: Task, team: Team): Promise<string> {
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
-  > & Pick<OrchestratorConfig, 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey'>
 
   private readonly teams: Map<string, Team> = new Map()
   private completedTaskCount = 0
@@ -492,6 +532,7 @@ export class OpenMultiAgent {
       defaultProvider: config.defaultProvider ?? 'anthropic',
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
+      onApproval: config.onApproval,
       onProgress: config.onProgress,
       onTrace: config.onTrace,
     }
@@ -854,6 +895,7 @@ export class OpenMultiAgent {
   ): Promise<string> {
     const completedTasks = tasks.filter((t) => t.status === 'completed')
     const failedTasks = tasks.filter((t) => t.status === 'failed')
+    const skippedTasks = tasks.filter((t) => t.status === 'skipped')
 
     const resultSections = completedTasks.map((t) => {
       const assignee = t.assignee ?? 'unknown'
@@ -862,6 +904,10 @@ export class OpenMultiAgent {
 
     const failureSections = failedTasks.map(
       (t) => `### ${t.title} (FAILED)\nError: ${t.result ?? 'unknown error'}`,
+    )
+
+    const skippedSections = skippedTasks.map(
+      (t) => `### ${t.title} (SKIPPED)\nReason: ${t.result ?? 'approval rejected'}`,
     )
 
     // Also include shared memory summary for additional context
@@ -878,11 +924,12 @@ export class OpenMultiAgent {
       `## Task Results`,
       ...resultSections,
       ...(failureSections.length > 0 ? ['', '## Failed Tasks', ...failureSections] : []),
+      ...(skippedSections.length > 0 ? ['', '## Skipped Tasks', ...skippedSections] : []),
       ...(memorySummary ? ['', memorySummary] : []),
       '',
       '## Your Task',
       'Synthesise the above results into a comprehensive final answer that addresses the original goal.',
-      'If some tasks failed, note any gaps in the result.',
+      'If some tasks failed or were skipped, note any gaps in the result.',
     ].join('\n')
   }
 

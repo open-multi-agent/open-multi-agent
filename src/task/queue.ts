@@ -18,6 +18,7 @@ export type TaskQueueEvent =
   | 'task:ready'
   | 'task:complete'
   | 'task:failed'
+  | 'task:skipped'
   | 'all:complete'
 
 /** Handler for `'task:ready' | 'task:complete' | 'task:failed'` events. */
@@ -157,6 +158,44 @@ export class TaskQueue {
   }
 
   /**
+   * Marks `taskId` as `'skipped'` and records `reason` in the `result` field.
+   *
+   * Fires `'task:skipped'` for the skipped task and cascades to every
+   * downstream task that transitively depended on it.
+   *
+   * @throws {Error} when `taskId` is not found.
+   */
+  skip(taskId: string, reason: string): Task {
+    const skipped = this.update(taskId, { status: 'skipped', result: reason })
+    this.emit('task:skipped', skipped)
+    this.cascadeSkip(taskId)
+    if (this.isComplete()) {
+      this.emitAllComplete()
+    }
+    return skipped
+  }
+
+  /**
+   * Marks all non-terminal tasks as `'skipped'`.
+   *
+   * Used when an approval gate rejects continuation — every pending, blocked,
+   * or in-progress task is skipped with the given reason.
+   */
+  skipRemaining(reason = 'Skipped: approval rejected.'): void {
+    // Snapshot first — update() mutates the live map, which is unsafe to
+    // iterate over during modification.
+    const snapshot = Array.from(this.tasks.values())
+    for (const task of snapshot) {
+      if (task.status === 'completed' || task.status === 'failed' || task.status === 'skipped') continue
+      const skipped = this.update(task.id, { status: 'skipped', result: reason })
+      this.emit('task:skipped', skipped)
+    }
+    if (this.isComplete()) {
+      this.emitAllComplete()
+    }
+  }
+
+  /**
    * Recursively marks all tasks that (transitively) depend on `failedTaskId`
    * as `'failed'` with an informative message, firing `'task:failed'` for each.
    *
@@ -175,6 +214,24 @@ export class TaskQueue {
       this.emit('task:failed', cascaded)
       // Recurse to handle transitive dependents.
       this.cascadeFailure(task.id)
+    }
+  }
+
+  /**
+   * Recursively marks all tasks that (transitively) depend on `skippedTaskId`
+   * as `'skipped'`, firing `'task:skipped'` for each.
+   */
+  private cascadeSkip(skippedTaskId: string): void {
+    for (const task of this.tasks.values()) {
+      if (task.status !== 'blocked' && task.status !== 'pending') continue
+      if (!task.dependsOn?.includes(skippedTaskId)) continue
+
+      const cascaded = this.update(task.id, {
+        status: 'skipped',
+        result: `Skipped: dependency "${skippedTaskId}" was skipped.`,
+      })
+      this.emit('task:skipped', cascaded)
+      this.cascadeSkip(task.id)
     }
   }
 
@@ -227,11 +284,11 @@ export class TaskQueue {
 
   /**
    * Returns `true` when every task in the queue has reached a terminal state
-   * (`'completed'` or `'failed'`), **or** the queue is empty.
+   * (`'completed'`, `'failed'`, or `'skipped'`), **or** the queue is empty.
    */
   isComplete(): boolean {
     for (const task of this.tasks.values()) {
-      if (task.status !== 'completed' && task.status !== 'failed') return false
+      if (task.status !== 'completed' && task.status !== 'failed' && task.status !== 'skipped') return false
     }
     return true
   }
@@ -249,12 +306,14 @@ export class TaskQueue {
     total: number
     completed: number
     failed: number
+    skipped: number
     inProgress: number
     pending: number
     blocked: number
   } {
     let completed = 0
     let failed = 0
+    let skipped = 0
     let inProgress = 0
     let pending = 0
     let blocked = 0
@@ -266,6 +325,9 @@ export class TaskQueue {
           break
         case 'failed':
           failed++
+          break
+        case 'skipped':
+          skipped++
           break
         case 'in_progress':
           inProgress++
@@ -283,6 +345,7 @@ export class TaskQueue {
       total: this.tasks.size,
       completed,
       failed,
+      skipped,
       inProgress,
       pending,
       blocked,
@@ -370,7 +433,7 @@ export class TaskQueue {
     }
   }
 
-  private emit(event: 'task:ready' | 'task:complete' | 'task:failed', task: Task): void {
+  private emit(event: 'task:ready' | 'task:complete' | 'task:failed' | 'task:skipped', task: Task): void {
     const map = this.listeners.get(event)
     if (!map) return
     for (const handler of map.values()) {
