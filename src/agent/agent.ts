@@ -504,27 +504,37 @@ export class Agent {
 
   /** Extract the prompt text from the last user message to build hook context. */
   private buildBeforeRunHookContext(messages: LLMMessage[]): BeforeRunHookContext {
-    const lastUser = [...messages].reverse().find(m => m.role === 'user')
-    const prompt = lastUser
-      ? lastUser.content
+    let prompt = ''
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]!.role === 'user') {
+        prompt = messages[i]!.content
           .filter((b): b is import('../types.js').TextBlock => b.type === 'text')
           .map(b => b.text)
           .join('')
-      : ''
+        break
+      }
+    }
     return { prompt, agent: this.config }
   }
 
-  /** Apply a (possibly modified) hook context back to the messages array. */
+  /**
+   * Apply a (possibly modified) hook context back to the messages array.
+   *
+   * Only text blocks in the last user message are replaced; non-text content
+   * (images, tool results) is preserved. The array element is replaced (not
+   * mutated in place) so that shallow copies of the original array (e.g. from
+   * `prompt()`) are not affected.
+   */
   private applyHookContext(messages: LLMMessage[], ctx: BeforeRunHookContext): void {
     const original = this.buildBeforeRunHookContext(messages)
     if (ctx.prompt === original.prompt) return
 
-    // Find the last user message and replace its text content.
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]!.role === 'user') {
+        const nonTextBlocks = messages[i]!.content.filter(b => b.type !== 'text')
         messages[i] = {
           role: 'user',
-          content: [{ type: 'text', text: ctx.prompt }],
+          content: [{ type: 'text', text: ctx.prompt }, ...nonTextBlocks],
         }
         break
       }

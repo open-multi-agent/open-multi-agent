@@ -218,6 +218,7 @@ export interface AgentConfig {
   /**
    * Called before each agent run. Receives the prompt and agent config.
    * Return a (possibly modified) context to continue, or throw to abort the run.
+   * Only `prompt` from the returned context is applied; `agent` is read-only informational.
    */
   readonly beforeRun?: (context: BeforeRunHookContext) => Promise<BeforeRunHookContext> | BeforeRunHookContext
   /**
