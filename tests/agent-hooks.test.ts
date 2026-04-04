@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { z } from 'zod'
 import { Agent } from '../src/agent/agent.js'
 import { AgentRunner } from '../src/agent/runner.js'
 import { ToolRegistry } from '../src/tool/framework.js'
@@ -376,5 +377,97 @@ describe('Agent hooks — beforeRun / afterRun', () => {
     const history = agent.getHistory()
     const firstUserInHistory = history.find(m => m.role === 'user')
     expect((firstUserInHistory!.content[0] as any).text).toBe('original message')
+  })
+
+  // -----------------------------------------------------------------------
+  // afterRun NOT called on error
+  // -----------------------------------------------------------------------
+
+  it('afterRun is not called when executeRun throws', async () => {
+    const afterSpy = vi.fn((result) => result)
+
+    const config: AgentConfig = {
+      ...baseConfig,
+      // Use beforeRun to trigger an error inside executeRun's try block,
+      // before afterRun would normally run.
+      beforeRun: () => { throw new Error('rejected by policy') },
+      afterRun: afterSpy,
+    }
+    const { agent } = buildMockAgent(config, 'should not reach')
+    const result = await agent.run('hi')
+
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('rejected by policy')
+    expect(afterSpy).not.toHaveBeenCalled()
+  })
+
+  // -----------------------------------------------------------------------
+  // outputSchema + afterRun
+  // -----------------------------------------------------------------------
+
+  it('afterRun fires after structured output validation', async () => {
+    const schema = z.object({ answer: z.string() })
+
+    const config: AgentConfig = {
+      ...baseConfig,
+      outputSchema: schema,
+      afterRun: (result) => ({ ...result, output: '[post-processed] ' + result.output }),
+    }
+    // Return valid JSON matching the schema
+    const { agent } = buildMockAgent(config, '{"answer":"42"}')
+    const result = await agent.run('what is the answer?')
+
+    expect(result.success).toBe(true)
+    expect(result.output).toBe('[post-processed] {"answer":"42"}')
+    expect(result.structured).toEqual({ answer: '42' })
+  })
+
+  // -----------------------------------------------------------------------
+  // ctx.agent does not contain hook self-references
+  // -----------------------------------------------------------------------
+
+  it('beforeRun context.agent has correct config without hook self-references', async () => {
+    let receivedAgent: AgentConfig | undefined
+
+    const config: AgentConfig = {
+      ...baseConfig,
+      beforeRun: (ctx) => {
+        receivedAgent = ctx.agent
+        return ctx
+      },
+    }
+    const { agent } = buildMockAgent(config, 'ok')
+    await agent.run('test')
+
+    expect(receivedAgent).toBeDefined()
+    expect(receivedAgent!.name).toBe('test-agent')
+    expect(receivedAgent!.model).toBe('mock-model')
+    // Hook functions should be stripped to avoid circular references
+    expect(receivedAgent!.beforeRun).toBeUndefined()
+    expect(receivedAgent!.afterRun).toBeUndefined()
+  })
+
+  // -----------------------------------------------------------------------
+  // Multiple prompt() turns fire hooks each time
+  // -----------------------------------------------------------------------
+
+  it('hooks fire on every prompt() call', async () => {
+    const beforeSpy = vi.fn((ctx) => ctx)
+    const afterSpy = vi.fn((result) => result)
+
+    const config: AgentConfig = {
+      ...baseConfig,
+      beforeRun: beforeSpy,
+      afterRun: afterSpy,
+    }
+    const { agent } = buildMockAgent(config, 'reply')
+
+    await agent.prompt('turn 1')
+    await agent.prompt('turn 2')
+
+    expect(beforeSpy).toHaveBeenCalledTimes(2)
+    expect(afterSpy).toHaveBeenCalledTimes(2)
+    expect(beforeSpy.mock.calls[0]![0].prompt).toBe('turn 1')
+    expect(beforeSpy.mock.calls[1]![0].prompt).toBe('turn 2')
   })
 })

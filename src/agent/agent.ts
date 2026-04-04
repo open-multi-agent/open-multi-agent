@@ -281,10 +281,9 @@ export class Agent {
     try {
       // --- beforeRun hook ---
       if (this.config.beforeRun) {
-        const hookCtx = await this.config.beforeRun(
-          this.buildBeforeRunHookContext(messages),
-        )
-        this.applyHookContext(messages, hookCtx)
+        const hookCtx = this.buildBeforeRunHookContext(messages)
+        const modified = await this.config.beforeRun(hookCtx)
+        this.applyHookContext(messages, modified, hookCtx.prompt)
       }
 
       const runner = await this.getRunner()
@@ -319,7 +318,6 @@ export class Agent {
         return validated
       }
 
-      this.transitionTo('completed')
       let agentResult = this.toAgentRunResult(result, true)
 
       // --- afterRun hook ---
@@ -327,6 +325,7 @@ export class Agent {
         agentResult = await this.config.afterRun(agentResult)
       }
 
+      this.transitionTo('completed')
       this.emitAgentTrace(callerOptions, agentStartMs, agentResult)
       return agentResult
     } catch (err) {
@@ -461,10 +460,9 @@ export class Agent {
     try {
       // --- beforeRun hook ---
       if (this.config.beforeRun) {
-        const hookCtx = await this.config.beforeRun(
-          this.buildBeforeRunHookContext(messages),
-        )
-        this.applyHookContext(messages, hookCtx)
+        const hookCtx = this.buildBeforeRunHookContext(messages)
+        const modified = await this.config.beforeRun(hookCtx)
+        this.applyHookContext(messages, modified, hookCtx.prompt)
       }
 
       const runner = await this.getRunner()
@@ -473,15 +471,14 @@ export class Agent {
         if (event.type === 'done') {
           const result = event.data as import('./runner.js').RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
-          this.transitionTo('completed')
 
-          // --- afterRun hook ---
+          let agentResult = this.toAgentRunResult(result, true)
           if (this.config.afterRun) {
-            const agentResult = this.toAgentRunResult(result, true)
-            const modified = await this.config.afterRun(agentResult)
-            yield { type: 'done', data: modified } satisfies StreamEvent
-            continue
+            agentResult = await this.config.afterRun(agentResult)
           }
+          this.transitionTo('completed')
+          yield { type: 'done', data: agentResult } satisfies StreamEvent
+          continue
         } else if (event.type === 'error') {
           const error = event.data instanceof Error
             ? event.data
@@ -514,7 +511,9 @@ export class Agent {
         break
       }
     }
-    return { prompt, agent: this.config }
+    // Strip hook functions to avoid circular self-references in the context
+    const { beforeRun, afterRun, ...agentInfo } = this.config
+    return { prompt, agent: agentInfo as AgentConfig }
   }
 
   /**
@@ -525,9 +524,8 @@ export class Agent {
    * mutated in place) so that shallow copies of the original array (e.g. from
    * `prompt()`) are not affected.
    */
-  private applyHookContext(messages: LLMMessage[], ctx: BeforeRunHookContext): void {
-    const original = this.buildBeforeRunHookContext(messages)
-    if (ctx.prompt === original.prompt) return
+  private applyHookContext(messages: LLMMessage[], ctx: BeforeRunHookContext, originalPrompt: string): void {
+    if (ctx.prompt === originalPrompt) return
 
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]!.role === 'user') {

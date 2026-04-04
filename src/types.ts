@@ -222,8 +222,9 @@ export interface AgentConfig {
    */
   readonly beforeRun?: (context: BeforeRunHookContext) => Promise<BeforeRunHookContext> | BeforeRunHookContext
   /**
-   * Called after each agent run completes. Receives the run result.
+   * Called after each agent run completes successfully. Receives the run result.
    * Return a (possibly modified) result, or throw to mark the run as failed.
+   * Not called when the run throws. For error observation, handle errors at the call site.
    */
   readonly afterRun?: (result: AgentRunResult) => Promise<AgentRunResult> | AgentRunResult
 }
