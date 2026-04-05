@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SharedMemory } from '../src/memory/shared.js'
+import { InMemoryStore } from '../src/memory/store.js'
 
 describe('SharedMemory', () => {
   // -------------------------------------------------------------------------
@@ -118,5 +119,22 @@ describe('SharedMemory', () => {
 
     const all = await mem.listAll()
     expect(all).toHaveLength(2)
+  })
+})
+
+describe('SharedMemory with injected store', () => {
+  it('uses the injected store', async () => {
+    const externalStore = new InMemoryStore()
+    const mem = new SharedMemory(externalStore)
+
+    await mem.write('agent', 'key', 'value')
+    const entry = await mem.read('agent/key')
+    expect(entry!.value).toBe('value')
+  })
+
+  it('defaults to InMemoryStore when none provided', async () => {
+    const mem = new SharedMemory()
+    await mem.write('agent', 'key', 'val')
+    expect(await mem.read('agent/key')).not.toBeNull()
   })
 })

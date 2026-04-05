@@ -101,9 +101,9 @@ export class Team {
 
     // Index agents by name for O(1) lookup.
     this.agentMap = new Map(config.agents.map((a) => [a.name, a]))
-    this.bus = new MessageBus()
+    this.bus = new MessageBus(config.messageStore)
     this.queue = new TaskQueue()
-    this.memory = config.sharedMemory ? new SharedMemory() : undefined
+    this.memory = config.sharedMemory ? new SharedMemory(config.store) : undefined
     this.events = new EventBus()
 
     // Bridge queue events onto the team's event bus.

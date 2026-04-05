@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { MessageStore, StoredMessage } from '../types.js'
 
 // ---------------------------------------------------------------------------
 // Message type
@@ -66,23 +67,17 @@ function isAddressedTo(message: Message, agentName: string): boolean {
  * ```
  */
 export class MessageBus {
-  /** All messages ever sent, in insertion order. */
   private readonly messages: Message[] = []
-
-  /**
-   * Per-agent set of message IDs that have already been marked as read.
-   * A message absent from this set is considered unread.
-   */
   private readonly readState = new Map<string, Set<string>>()
-
-  /**
-   * Active subscribers keyed by agent name. Each subscriber is a callback
-   * paired with a unique subscription ID used for unsubscription.
-   */
   private readonly subscribers = new Map<
     string,
     Map<symbol, (message: Message) => void>
   >()
+  private readonly store: MessageStore | undefined
+
+  constructor(store?: MessageStore) {
+    this.store = store
+  }
 
   // ---------------------------------------------------------------------------
   // Write operations
@@ -204,7 +199,20 @@ export class MessageBus {
 
   private persist(message: Message): void {
     this.messages.push(message)
+    if (this.store) {
+      this.store.save(MessageBus.toStored(message)).catch(() => {})
+    }
     this.notifySubscribers(message)
+  }
+
+  private static toStored(message: Message): StoredMessage {
+    return {
+      id: message.id,
+      from: message.from,
+      to: message.to,
+      content: message.content,
+      timestamp: message.timestamp.toISOString(),
+    }
   }
 
   private notifySubscribers(message: Message): void {
