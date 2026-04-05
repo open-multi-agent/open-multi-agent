@@ -38,7 +38,7 @@ export class LoopDetector {
   private readonly textOutputs: string[] = []
 
   constructor(config: LoopDetectionConfig = {}) {
-    this.maxRepeats = config.maxRepeatedToolCalls ?? 3
+    this.maxRepeats = config.maxRepetitions ?? 3
     const requestedWindow = config.loopDetectionWindow ?? 4
     // Window must be >= threshold, otherwise detection can never trigger.
     this.windowSize = Math.max(requestedWindow, this.maxRepeats)

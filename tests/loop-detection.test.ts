@@ -117,7 +117,7 @@ describe('LoopDetector', () => {
     })
 
     it('respects custom threshold', () => {
-      const detector = new LoopDetector({ maxRepeatedToolCalls: 2 })
+      const detector = new LoopDetector({ maxRepetitions: 2 })
       expect(detector.recordToolCalls([{ name: 'a', input: {} }])).toBeNull()
       const info = detector.recordToolCalls([{ name: 'a', input: {} }])
       expect(info).not.toBeNull()
@@ -175,7 +175,7 @@ describe('LoopDetector', () => {
   describe('window size', () => {
     it('clamps windowSize to at least maxRepeats', () => {
       // Window of 2 with threshold 3 is auto-clamped to 3.
-      const detector = new LoopDetector({ loopDetectionWindow: 2, maxRepeatedToolCalls: 3 })
+      const detector = new LoopDetector({ loopDetectionWindow: 2, maxRepetitions: 3 })
       detector.recordToolCalls([{ name: 'a', input: {} }])
       detector.recordToolCalls([{ name: 'a', input: {} }])
       // Third call triggers because window was clamped to 3
@@ -185,7 +185,7 @@ describe('LoopDetector', () => {
     })
 
     it('works correctly when window >= threshold', () => {
-      const detector = new LoopDetector({ loopDetectionWindow: 4, maxRepeatedToolCalls: 3 })
+      const detector = new LoopDetector({ loopDetectionWindow: 4, maxRepetitions: 3 })
       detector.recordToolCalls([{ name: 'a', input: {} }])
       detector.recordToolCalls([{ name: 'a', input: {} }])
       const info = detector.recordToolCalls([{ name: 'a', input: {} }])
@@ -224,7 +224,7 @@ describe('AgentRunner loop detection', () => {
       textResponse('done'),
     ]
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: 'terminate',
     })
 
@@ -240,7 +240,7 @@ describe('AgentRunner loop detection', () => {
       textResponse('done'),
     ]
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: 'terminate',
     })
 
@@ -262,7 +262,7 @@ describe('AgentRunner loop detection', () => {
       textResponse('done'),
     ]
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: 'terminate',
     })
 
@@ -283,7 +283,7 @@ describe('AgentRunner loop detection', () => {
       textResponse('done'),
     ]
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: 'warn',
     })
 
@@ -301,7 +301,7 @@ describe('AgentRunner loop detection', () => {
     ]
     const callback = vi.fn().mockReturnValue('terminate')
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: callback,
     })
 
@@ -320,7 +320,7 @@ describe('AgentRunner loop detection', () => {
     ]
     const callback = vi.fn().mockReturnValue('inject')
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: callback,
     })
 
@@ -338,7 +338,7 @@ describe('AgentRunner loop detection', () => {
     ]
     const callback = vi.fn().mockReturnValue('continue')
     const runner = buildRunner(responses, {
-      maxRepeatedToolCalls: 3,
+      maxRepetitions: 3,
       onLoopDetected: callback,
     })
 

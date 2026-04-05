@@ -350,6 +350,10 @@ export class AgentRunner {
               // Fall through to execute tools, then inject warning.
             }
             // 'continue' — do nothing, let the loop proceed normally.
+          } else {
+            // No loop detected this turn — agent has recovered, so reset
+            // the warning state. A future loop gets a fresh warning cycle.
+            loopWarned = false
           }
         }
 

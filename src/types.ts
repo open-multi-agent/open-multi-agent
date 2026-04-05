@@ -241,10 +241,10 @@ export interface AgentConfig {
 /** Configuration for agent loop detection. */
 export interface LoopDetectionConfig {
   /**
-   * Maximum consecutive times the same tool call (name + args) can repeat
-   * before detection triggers. Default: `3`.
+   * Maximum consecutive times the same tool call (name + args) or text
+   * output can repeat before detection triggers. Default: `3`.
    */
-  readonly maxRepeatedToolCalls?: number
+  readonly maxRepetitions?: number
   /**
    * Number of recent turns to track for repetition analysis. Default: `4`.
    */
