@@ -7,7 +7,7 @@ TypeScript framework for multi-agent orchestration. One `runTeam()` call from go
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![coverage](https://img.shields.io/badge/coverage-71%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
+[![coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
 
 **English** | [中文](./README_zh.md)
 
