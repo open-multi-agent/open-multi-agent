@@ -26,7 +26,10 @@ import type {
   LLMAdapter,
   LLMChatOptions,
   TraceEvent,
+  LoopDetectionConfig,
+  LoopDetectionInfo,
 } from '../types.js'
+import { LoopDetector } from './loop-detector.js'
 import { emitTrace } from '../utils/trace.js'
 import type { ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
@@ -65,6 +68,8 @@ export interface RunnerOptions {
   readonly agentName?: string
   /** Short role description of the agent (used in tool context). */
   readonly agentRole?: string
+  /** Loop detection configuration. When set, detects stuck agent loops. */
+  readonly loopDetection?: LoopDetectionConfig
 }
 
 /**
@@ -86,6 +91,11 @@ export interface RunOptions {
   readonly taskId?: string
   /** Agent name for trace correlation (overrides RunnerOptions.agentName). */
   readonly traceAgent?: string
+  /**
+   * Fired when the runner detects a potential issue (e.g. loop detection,
+   * model ignoring tool definitions).
+   */
+  readonly onWarning?: (message: string) => void
 }
 
 /** The aggregated result returned when a full run completes. */
@@ -100,6 +110,8 @@ export interface RunResult {
   readonly tokenUsage: TokenUsage
   /** Total number of LLM turns (including tool-call follow-ups). */
   readonly turns: number
+  /** True when the run was terminated or warned due to loop detection. */
+  readonly loopDetected?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -176,13 +188,7 @@ export class AgentRunner {
     options: RunOptions = {},
   ): Promise<RunResult> {
     // Collect everything yielded by the internal streaming loop.
-    const accumulated: {
-      messages: LLMMessage[]
-      output: string
-      toolCalls: ToolCallRecord[]
-      tokenUsage: TokenUsage
-      turns: number
-    } = {
+    const accumulated: RunResult = {
       messages: [],
       output: '',
       toolCalls: [],
@@ -192,12 +198,7 @@ export class AgentRunner {
 
     for await (const event of this.stream(messages, options)) {
       if (event.type === 'done') {
-        const result = event.data as RunResult
-        accumulated.messages = result.messages
-        accumulated.output = result.output
-        accumulated.toolCalls = result.toolCalls
-        accumulated.tokenUsage = result.tokenUsage
-        accumulated.turns = result.turns
+        Object.assign(accumulated, event.data)
       }
     }
 
@@ -243,6 +244,14 @@ export class AgentRunner {
       systemPrompt: this.options.systemPrompt,
       abortSignal: this.options.abortSignal,
     }
+
+    // Loop detection state — only allocated when configured.
+    const detector = this.options.loopDetection
+      ? new LoopDetector(this.options.loopDetection)
+      : null
+    let loopDetected = false
+    let loopWarned = false
+    const loopAction = this.options.loopDetection?.onLoopDetected ?? 'warn'
 
     try {
       // -----------------------------------------------------------------
@@ -305,6 +314,44 @@ export class AgentRunner {
         const toolUseBlocks = extractToolUseBlocks(response.content)
         for (const block of toolUseBlocks) {
           yield { type: 'tool_use', data: block } satisfies StreamEvent
+        }
+
+        // ------------------------------------------------------------------
+        // Step 2.5: Loop detection — check before executing tools.
+        // ------------------------------------------------------------------
+        let injectWarning = false
+        let injectWarningKind: 'tool_repetition' | 'text_repetition' = 'tool_repetition'
+        if (detector && toolUseBlocks.length > 0) {
+          const toolInfo = detector.recordToolCalls(toolUseBlocks)
+          const textInfo = turnText.length > 0 ? detector.recordText(turnText) : null
+          const info = toolInfo ?? textInfo
+
+          if (info) {
+            yield { type: 'loop_detected', data: info } satisfies StreamEvent
+            options.onWarning?.(info.detail)
+
+            const action = typeof loopAction === 'function'
+              ? loopAction(info)
+              : loopAction
+
+            if (action === 'terminate') {
+              loopDetected = true
+              finalOutput = turnText
+              break
+            } else if (action === 'warn' || action === 'inject') {
+              if (loopWarned) {
+                // Second detection after a warning — force terminate.
+                loopDetected = true
+                finalOutput = turnText
+                break
+              }
+              loopWarned = true
+              injectWarning = true
+              injectWarningKind = info.kind
+              // Fall through to execute tools, then inject warning.
+            }
+            // 'continue' — do nothing, let the loop proceed normally.
+          }
         }
 
         // ------------------------------------------------------------------
@@ -395,6 +442,20 @@ export class AgentRunner {
           yield { type: 'tool_result', data: resultBlock } satisfies StreamEvent
         }
 
+        // Inject a loop-detection warning into the tool-result message so
+        // the LLM sees it alongside the results (avoids two consecutive user
+        // messages which violates the alternating-role constraint).
+        if (injectWarning) {
+          const warningText = injectWarningKind === 'text_repetition'
+            ? 'WARNING: You appear to be generating the same response repeatedly. ' +
+              'This suggests you are stuck in a loop. Please try a different approach ' +
+              'or provide new information.'
+            : 'WARNING: You appear to be repeating the same tool calls with identical arguments. ' +
+              'This suggests you are stuck in a loop. Please try a different approach, use different ' +
+              'parameters, or explain what you are trying to accomplish.'
+          toolResultBlocks.push({ type: 'text' as const, text: warningText })
+        }
+
         const toolResultMessage: LLMMessage = {
           role: 'user',
           content: toolResultBlocks,
@@ -428,6 +489,7 @@ export class AgentRunner {
       toolCalls: allToolCalls,
       tokenUsage: totalUsage,
       turns,
+      ...(loopDetected ? { loopDetected: true } : {}),
     }
 
     yield { type: 'done', data: runResult } satisfies StreamEvent

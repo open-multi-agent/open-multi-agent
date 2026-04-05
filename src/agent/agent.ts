@@ -136,6 +136,7 @@ export class Agent {
       allowedTools: this.config.tools,
       agentName: this.name,
       agentRole: this.config.systemPrompt?.slice(0, 50) ?? 'assistant',
+      loopDetection: this.config.loopDetection,
     }
 
     this.runner = new AgentRunner(
@@ -567,6 +568,7 @@ export class Agent {
       tokenUsage: result.tokenUsage,
       toolCalls: result.toolCalls,
       structured,
+      ...(result.loopDetected ? { loopDetected: true } : {}),
     }
   }
 
