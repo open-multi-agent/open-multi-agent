@@ -111,8 +111,11 @@ export type { SupportedProvider } from './llm/adapter.js'
 // Memory
 // ---------------------------------------------------------------------------
 
-export { InMemoryStore } from './memory/store.js'
+export { InMemoryStore, InMemoryKVStore } from './memory/store.js'
 export { SharedMemory } from './memory/shared.js'
+export { InMemoryMessageStore } from './memory/in-memory-message-store.js'
+export { RedisStore } from './memory/redis-store.js'
+export type { RedisStoreOptions } from './memory/redis-store.js'
 
 // ---------------------------------------------------------------------------
 // Types — all public interfaces re-exported for consumer type-checking
@@ -174,6 +177,10 @@ export type {
   // Memory
   MemoryEntry,
   MemoryStore,
+  KVStore,
+  MessageFilter,
+  MessageStore,
+  StoredMessage,
 } from './types.js'
 
 export { generateRunId } from './utils/trace.js'
