@@ -310,14 +310,13 @@ export class AgentRunner {
           yield { type: 'text', data: turnText } satisfies StreamEvent
         }
 
-        // Announce each tool-use block the model requested.
+        // Extract tool-use blocks for detection and execution.
         const toolUseBlocks = extractToolUseBlocks(response.content)
-        for (const block of toolUseBlocks) {
-          yield { type: 'tool_use', data: block } satisfies StreamEvent
-        }
 
         // ------------------------------------------------------------------
-        // Step 2.5: Loop detection — check before executing tools.
+        // Step 2.5: Loop detection — check before yielding tool_use events
+        // so that terminate mode doesn't emit orphaned tool_use without
+        // matching tool_result.
         // ------------------------------------------------------------------
         let injectWarning = false
         let injectWarningKind: 'tool_repetition' | 'text_repetition' = 'tool_repetition'
@@ -331,7 +330,7 @@ export class AgentRunner {
             options.onWarning?.(info.detail)
 
             const action = typeof loopAction === 'function'
-              ? loopAction(info)
+              ? await loopAction(info)
               : loopAction
 
             if (action === 'terminate') {
@@ -361,6 +360,12 @@ export class AgentRunner {
           // No tools requested — this is the terminal assistant turn.
           finalOutput = turnText
           break
+        }
+
+        // Announce each tool-use block the model requested (after loop
+        // detection, so terminate mode never emits unpaired events).
+        for (const block of toolUseBlocks) {
+          yield { type: 'tool_use', data: block } satisfies StreamEvent
         }
 
         // ------------------------------------------------------------------

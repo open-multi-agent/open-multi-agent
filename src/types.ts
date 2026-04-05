@@ -254,10 +254,10 @@ export interface LoopDetectionConfig {
    * - `'warn'`      — inject a "you appear stuck" message, give the LLM one
    *                    more chance; terminate if the loop persists (default)
    * - `'terminate'` — stop the run immediately
-   * - `function`    — custom callback; return `'continue'`, `'inject'`, or
-   *                    `'terminate'` to control the outcome
+   * - `function`    — custom callback (sync or async); return `'continue'`,
+   *                    `'inject'`, or `'terminate'` to control the outcome
    */
-  readonly onLoopDetected?: 'warn' | 'terminate' | ((info: LoopDetectionInfo) => 'continue' | 'inject' | 'terminate')
+  readonly onLoopDetected?: 'warn' | 'terminate' | ((info: LoopDetectionInfo) => 'continue' | 'inject' | 'terminate' | Promise<'continue' | 'inject' | 'terminate'>)
 }
 
 /** Diagnostic payload emitted when a loop is detected. */
