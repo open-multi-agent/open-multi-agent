@@ -271,6 +271,8 @@ export interface TeamConfig {
   readonly agents: readonly AgentConfig[]
   readonly sharedMemory?: boolean
   readonly maxConcurrency?: number
+  readonly store?: MemoryStore
+  readonly messageStore?: MessageStore
 }
 
 /** Aggregated result for a full team run. */
@@ -433,6 +435,14 @@ export interface MemoryEntry {
   readonly createdAt: Date
 }
 
+export interface KVStore {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string): Promise<void>
+  delete(key: string): Promise<void>
+  list(): Promise<string[]>
+  clear(): Promise<void>
+}
+
 /**
  * Persistent (or in-memory) key-value store shared across agents.
  * Implementations may be backed by Redis, SQLite, or plain objects.
@@ -443,6 +453,31 @@ export interface MemoryStore {
   list(): Promise<MemoryEntry[]>
   delete(key: string): Promise<void>
   clear(): Promise<void>
+}
+
+// ---------------------------------------------------------------------------
+// Message storage
+// ---------------------------------------------------------------------------
+
+export interface MessageFilter {
+  to?: string
+  from?: string
+}
+
+export interface StoredMessage {
+  readonly id: string
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly timestamp: string
+}
+
+export interface MessageStore {
+  save(message: StoredMessage): Promise<void>
+  get(messageId: string): Promise<StoredMessage | null>
+  query(filter: MessageFilter): Promise<StoredMessage[]>
+  markRead(agentName: string, messageIds: string[]): Promise<void>
+  getUnreadIds(agentName: string): Promise<Set<string>>
 }
 
 // ---------------------------------------------------------------------------
