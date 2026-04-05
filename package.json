@@ -1,7 +1,12 @@
 {
   "name": "@jackchen_me/open-multi-agent",
-  "version": "1.0.0",
-  "description": "Production-grade multi-agent orchestration framework. Model-agnostic, supports team collaboration, task scheduling, and inter-agent communication.",
+  "version": "1.0.1",
+  "description": "TypeScript multi-agent framework — one runTeam() call from goal to result. Auto task decomposition, parallel execution. 3 dependencies, deploys anywhere Node.js runs.",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "test:e2e": "RUN_E2E=1 vitest run tests/e2e/",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
