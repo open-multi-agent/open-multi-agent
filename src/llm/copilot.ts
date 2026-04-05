@@ -313,7 +313,8 @@ export class CopilotAdapter implements LLMAdapter {
       },
     )
 
-    return fromOpenAICompletion(completion)
+    const toolNames = options.tools?.map(t => t.name)
+    return fromOpenAICompletion(completion, toolNames)
   }
 
   // -------------------------------------------------------------------------

@@ -155,6 +155,7 @@ npx tsx examples/01-single-agent.ts
 │  - stream()       │    │  - AnthropicAdapter  │
 └────────┬──────────┘    │  - OpenAIAdapter     │
          │               │  - CopilotAdapter    │
+         │               │  - GeminiAdapter     │
          │               └──────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -181,6 +182,7 @@ npx tsx examples/01-single-agent.ts
 | Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | 已验证 |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | 已验证 |
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | 已验证 |
+| Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | 已验证 |
 | Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | — | 已验证 |
 
 已验证支持 tool-calling 的本地模型：**Gemma 4**（见[示例 08](examples/08-gemma4-local.ts)）。

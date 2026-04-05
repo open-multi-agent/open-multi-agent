@@ -11,6 +11,7 @@
  *
  * const anthropic = createAdapter('anthropic')
  * const openai    = createAdapter('openai', process.env.OPENAI_API_KEY)
+ * const gemini    = createAdapter('gemini', process.env.GEMINI_API_KEY)
  * ```
  */
 
@@ -37,7 +38,7 @@ import type { LLMAdapter } from '../types.js'
  * Additional providers can be integrated by implementing {@link LLMAdapter}
  * directly and bypassing this factory.
  */
-export type SupportedProvider = 'anthropic' | 'copilot' | 'grok' | 'openai'
+export type SupportedProvider = 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -46,6 +47,7 @@ export type SupportedProvider = 'anthropic' | 'copilot' | 'grok' | 'openai'
  * explicitly:
  * - `anthropic` → `ANTHROPIC_API_KEY`
  * - `openai`    → `OPENAI_API_KEY`
+ * - `gemini`    → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
  * - `grok`      → `XAI_API_KEY`
  * - `copilot`   → `GITHUB_COPILOT_TOKEN` / `GITHUB_TOKEN`, or interactive
  *                  OAuth2 device flow if neither is set
@@ -74,6 +76,10 @@ export async function createAdapter(
       }
       const { CopilotAdapter } = await import('./copilot.js')
       return new CopilotAdapter(apiKey)
+    }
+    case 'gemini': {
+      const { GeminiAdapter } = await import('./gemini.js')
+      return new GeminiAdapter(apiKey)
     }
     case 'openai': {
       const { OpenAIAdapter } = await import('./openai.js')

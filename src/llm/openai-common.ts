@@ -25,6 +25,7 @@ import type {
   TextBlock,
   ToolUseBlock,
 } from '../types.js'
+import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
 // ---------------------------------------------------------------------------
 // Framework → OpenAI
@@ -166,8 +167,18 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
  *
  * Takes only the first choice (index 0), consistent with how the framework
  * is designed for single-output agents.
+ *
+ * @param completion      - The raw OpenAI completion.
+ * @param knownToolNames  - Optional whitelist of tool names. When the model
+ *                          returns no `tool_calls` but the text contains JSON
+ *                          that looks like a tool call, the fallback extractor
+ *                          uses this list to validate matches. Pass the names
+ *                          of tools sent in the request for best results.
  */
-export function fromOpenAICompletion(completion: ChatCompletion): LLMResponse {
+export function fromOpenAICompletion(
+  completion: ChatCompletion,
+  knownToolNames?: string[],
+): LLMResponse {
   const choice = completion.choices[0]
   if (choice === undefined) {
     throw new Error('OpenAI returned a completion with no choices')
@@ -201,7 +212,35 @@ export function fromOpenAICompletion(completion: ChatCompletion): LLMResponse {
     content.push(toolUseBlock)
   }
 
-  const stopReason = normalizeFinishReason(choice.finish_reason ?? 'stop')
+  // ---------------------------------------------------------------------------
+  // Fallback: extract tool calls from text when native tool_calls is empty.
+  //
+  // Some local models (Ollama thinking models, misconfigured vLLM) return tool
+  // calls as plain text instead of using the tool_calls wire format.  When we
+  // have text but no tool_calls, try to extract them from the text.
+  // ---------------------------------------------------------------------------
+  const hasNativeToolCalls = (message.tool_calls ?? []).length > 0
+  if (
+    !hasNativeToolCalls &&
+    knownToolNames !== undefined &&
+    knownToolNames.length > 0 &&
+    message.content !== null &&
+    message.content !== undefined &&
+    message.content.length > 0
+  ) {
+    const extracted = extractToolCallsFromText(message.content, knownToolNames)
+    if (extracted.length > 0) {
+      content.push(...extracted)
+    }
+  }
+
+  const hasToolUseBlocks = content.some(b => b.type === 'tool_use')
+  const rawStopReason = choice.finish_reason ?? 'stop'
+  // If we extracted tool calls from text but the finish_reason was 'stop',
+  // correct it to 'tool_use' so the agent runner continues the loop.
+  const stopReason = hasToolUseBlocks && rawStopReason === 'stop'
+    ? 'tool_use'
+    : normalizeFinishReason(rawStopReason)
 
   return {
     id: completion.id,

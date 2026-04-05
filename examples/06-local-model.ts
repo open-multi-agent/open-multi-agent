@@ -64,6 +64,7 @@ Your review MUST include these sections:
 Be specific and constructive. Reference line numbers or function names when possible.`,
   tools: ['file_read'],
   maxTurns: 4,
+  timeoutMs: 120_000, // 2 min — local models can be slow
 }
 
 // ---------------------------------------------------------------------------

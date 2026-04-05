@@ -18,6 +18,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
+      - run: rm -f package-lock.json && npm install
       - run: npm run lint
       - run: npm test

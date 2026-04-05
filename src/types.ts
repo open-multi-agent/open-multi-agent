@@ -194,7 +194,7 @@ export interface BeforeRunHookContext {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
-  readonly provider?: 'anthropic' | 'copilot' | 'grok' | 'openai'
+  readonly provider?: 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
   /**
    * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).
    * Note: local servers that don't require auth still need `apiKey` set to a
@@ -209,6 +209,12 @@ export interface AgentConfig {
   readonly maxTurns?: number
   readonly maxTokens?: number
   readonly temperature?: number
+  /**
+   * Maximum wall-clock time (in milliseconds) for the entire agent run.
+   * When exceeded, the run is aborted via `AbortSignal.timeout()`.
+   * Useful for local models where inference can be unpredictably slow.
+   */
+  readonly timeoutMs?: number
   /**
    * Loop detection configuration. When set, the agent tracks repeated tool
    * calls and text outputs to detect stuck loops before `maxTurns` is reached.
@@ -380,7 +386,7 @@ export interface OrchestratorEvent {
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
   readonly defaultModel?: string
-  readonly defaultProvider?: 'anthropic' | 'copilot' | 'grok' | 'openai'
+  readonly defaultProvider?: 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
   readonly onProgress?: (event: OrchestratorEvent) => void

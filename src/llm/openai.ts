@@ -54,6 +54,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
 } from './openai-common.js'
+import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
 // ---------------------------------------------------------------------------
 // Adapter implementation
@@ -104,7 +105,8 @@ export class OpenAIAdapter implements LLMAdapter {
       },
     )
 
-    return fromOpenAICompletion(completion)
+    const toolNames = options.tools?.map(t => t.name)
+    return fromOpenAICompletion(completion, toolNames)
   }
 
   // -------------------------------------------------------------------------
@@ -241,11 +243,29 @@ export class OpenAIAdapter implements LLMAdapter {
       }
       doneContent.push(...finalToolUseBlocks)
 
+      // Fallback: extract tool calls from text when streaming produced no
+      // native tool_calls (same logic as fromOpenAICompletion).
+      if (finalToolUseBlocks.length === 0 && fullText.length > 0 && options.tools) {
+        const toolNames = options.tools.map(t => t.name)
+        const extracted = extractToolCallsFromText(fullText, toolNames)
+        if (extracted.length > 0) {
+          doneContent.push(...extracted)
+          for (const block of extracted) {
+            yield { type: 'tool_use', data: block } satisfies StreamEvent
+          }
+        }
+      }
+
+      const hasToolUseBlocks = doneContent.some(b => b.type === 'tool_use')
+      const resolvedStopReason = hasToolUseBlocks && finalFinishReason === 'stop'
+        ? 'tool_use'
+        : normalizeFinishReason(finalFinishReason)
+
       const finalResponse: LLMResponse = {
         id: completionId,
         content: doneContent,
         model: completionModel,
-        stop_reason: normalizeFinishReason(finalFinishReason),
+        stop_reason: resolvedStopReason,
         usage: { input_tokens: inputTokens, output_tokens: outputTokens },
       }
 

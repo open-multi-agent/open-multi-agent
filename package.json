@@ -41,7 +41,16 @@
     "openai": "^4.73.0",
     "zod": "^3.23.0"
   },
+  "peerDependencies": {
+    "@google/genai": "^1.48.0"
+  },
+  "peerDependenciesMeta": {
+    "@google/genai": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@google/genai": "^1.48.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.6.0",
