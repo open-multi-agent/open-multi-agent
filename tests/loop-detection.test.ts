@@ -350,6 +350,87 @@ describe('AgentRunner loop detection', () => {
     expect(result.loopDetected).toBeUndefined()
   })
 
+  it('supports async onLoopDetected callback', async () => {
+    const responses = [
+      ...Array.from({ length: 5 }, () => toolUseResponse('echo', { message: 'hi' })),
+      textResponse('done'),
+    ]
+    const callback = vi.fn().mockResolvedValue('terminate')
+    const runner = buildRunner(responses, {
+      maxRepetitions: 3,
+      onLoopDetected: callback,
+    })
+
+    const result = await runner.run([{ role: 'user', content: [{ type: 'text', text: 'go' }] }])
+
+    expect(callback).toHaveBeenCalledOnce()
+    expect(result.loopDetected).toBe(true)
+    expect(result.turns).toBe(3)
+  })
+
+  it('gives a fresh warning cycle after agent recovers from a loop', async () => {
+    // Sequence: 3x same tool (loop #1 warned) → 1x different tool (recovery)
+    //           → 3x same tool again (loop #2 should warn, NOT immediate terminate)
+    //           → 1x more same tool (now terminates after 2nd warning)
+    const responses = [
+      // Loop #1: 3 identical calls → triggers warn
+      toolUseResponse('echo', { message: 'hi' }),
+      toolUseResponse('echo', { message: 'hi' }),
+      toolUseResponse('echo', { message: 'hi' }),
+      // Recovery: different call
+      toolUseResponse('echo', { message: 'different' }),
+      // Loop #2: 3 identical calls → should trigger warn again (not terminate)
+      toolUseResponse('echo', { message: 'stuck again' }),
+      toolUseResponse('echo', { message: 'stuck again' }),
+      toolUseResponse('echo', { message: 'stuck again' }),
+      // 4th identical → second warning, force terminate
+      toolUseResponse('echo', { message: 'stuck again' }),
+      textResponse('done'),
+    ]
+    const warnings: string[] = []
+    const runner = buildRunner(responses, {
+      maxRepetitions: 3,
+      onLoopDetected: 'warn',
+    })
+
+    const result = await runner.run(
+      [{ role: 'user', content: [{ type: 'text', text: 'go' }] }],
+      { onWarning: (msg) => warnings.push(msg) },
+    )
+
+    // Three warnings: loop #1 warn, loop #2 warn, loop #2 force-terminate
+    expect(warnings).toHaveLength(3)
+    expect(result.loopDetected).toBe(true)
+    // Should have run past loop #1 (3 turns) + recovery (1) + loop #2 warn (3) + terminate (1) = 8
+    expect(result.turns).toBe(8)
+  })
+
+  it('injects warning TextBlock into tool-result user message in warn mode', async () => {
+    // 4 identical tool calls: warn fires at turn 3, terminate at turn 4
+    const responses = [
+      ...Array.from({ length: 4 }, () => toolUseResponse('echo', { message: 'hi' })),
+      textResponse('done'),
+    ]
+    const runner = buildRunner(responses, {
+      maxRepetitions: 3,
+      onLoopDetected: 'warn',
+    })
+
+    const result = await runner.run([{ role: 'user', content: [{ type: 'text', text: 'go' }] }])
+
+    // Find user messages that contain a text block with the WARNING string
+    const userMessages = result.messages.filter(m => m.role === 'user')
+    const warningBlocks = userMessages.flatMap(m =>
+      m.content.filter(
+        (b): b is import('../src/types.js').TextBlock =>
+          b.type === 'text' && 'text' in b && (b as import('../src/types.js').TextBlock).text.startsWith('WARNING:'),
+      ),
+    )
+
+    expect(warningBlocks).toHaveLength(1)
+    expect(warningBlocks[0]!.text).toContain('repeating the same tool calls')
+  })
+
   it('does not interfere when loopDetection is not configured', async () => {
     const adapter = mockAdapter([
       ...Array.from({ length: 5 }, () => toolUseResponse('echo', { message: 'hi' })),
