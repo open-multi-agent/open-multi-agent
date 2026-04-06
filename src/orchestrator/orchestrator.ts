@@ -264,6 +264,8 @@ interface RunContext {
   readonly config: OrchestratorConfig
   /** Trace run ID, present when `onTrace` is configured. */
   readonly runId?: string
+  /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
+  readonly abortSignal?: AbortSignal
 }
 
 /**
@@ -295,6 +297,15 @@ async function executeQueue(
     : undefined
 
   while (true) {
+    // Check for cancellation before each dispatch round.
+    if (ctx.abortSignal?.aborted) {
+      // Mark all remaining pending tasks as skipped.
+      for (const t of queue.getByStatus('pending')) {
+        queue.update(t.id, { status: 'skipped' as TaskStatus })
+      }
+      break
+    }
+
     // Re-run auto-assignment each iteration so tasks that were unblocked since
     // the last round (and thus have no assignee yet) get assigned before dispatch.
     scheduler.autoAssign(queue, team.getAgents())
@@ -360,8 +371,8 @@ async function executeQueue(
 
       // Build trace context for this task's agent run
       const traceOptions: Partial<RunOptions> | undefined = config.onTrace
-        ? { onTrace: config.onTrace, runId: ctx.runId ?? '', taskId: task.id, traceAgent: assignee }
-        : undefined
+        ? { onTrace: config.onTrace, runId: ctx.runId ?? '', taskId: task.id, traceAgent: assignee, abortSignal: ctx.abortSignal }
+        : ctx.abortSignal ? { abortSignal: ctx.abortSignal } : undefined
 
       const taskStartMs = config.onTrace ? Date.now() : 0
       let retryCount = 0
@@ -638,7 +649,7 @@ export class OpenMultiAgent {
    * @param team - A team created via {@link createTeam} (or `new Team(...)`).
    * @param goal - High-level natural-language goal for the team.
    */
-  async runTeam(team: Team, goal: string): Promise<TeamRunResult> {
+  async runTeam(team: Team, goal: string, options?: { abortSignal?: AbortSignal }): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
 
     // ------------------------------------------------------------------
@@ -665,8 +676,8 @@ export class OpenMultiAgent {
     })
 
     const decompTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
-      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
-      : undefined
+      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator', abortSignal: options?.abortSignal }
+      : options?.abortSignal ? { abortSignal: options.abortSignal } : undefined
     const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
@@ -712,6 +723,7 @@ export class OpenMultiAgent {
       agentResults,
       config: this.config,
       runId,
+      abortSignal: options?.abortSignal,
     }
 
     await executeQueue(queue, ctx)
@@ -764,6 +776,7 @@ export class OpenMultiAgent {
       retryDelayMs?: number
       retryBackoff?: number
     }>,
+    options?: { abortSignal?: AbortSignal },
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const queue = new TaskQueue()
@@ -794,6 +807,7 @@ export class OpenMultiAgent {
       agentResults,
       config: this.config,
       runId: this.config.onTrace ? generateRunId() : undefined,
+      abortSignal: options?.abortSignal,
     }
 
     await executeQueue(queue, ctx)
