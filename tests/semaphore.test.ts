@@ -6,6 +6,10 @@ describe('Semaphore', () => {
     expect(() => new Semaphore(0)).toThrow()
   })
 
+  it('exposes configured limit', () => {
+    expect(new Semaphore(5).limit).toBe(5)
+  })
+
   it('allows up to max concurrent holders', async () => {
     const sem = new Semaphore(2)
     let running = 0

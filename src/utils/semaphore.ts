@@ -34,6 +34,11 @@ export class Semaphore {
     }
   }
 
+  /** Maximum concurrent holders configured for this semaphore. */
+  get limit(): number {
+    return this.max
+  }
+
   /**
    * Acquire a slot. Resolves immediately when one is free, or waits until a
    * holder calls `release()`.

@@ -77,6 +77,16 @@ export class AgentPool {
     this.semaphore = new Semaphore(maxConcurrency)
   }
 
+  /**
+   * Pool semaphore slots not currently held (`maxConcurrency - active`).
+   * Used to avoid deadlocks when a nested `run()` would wait forever for a slot
+   * held by the parent run. Best-effort only if multiple nested runs start in
+   * parallel after the same synchronous check.
+   */
+  get availableRunSlots(): number {
+    return this.maxConcurrency - this.semaphore.active
+  }
+
   // -------------------------------------------------------------------------
   // Registry operations
   // -------------------------------------------------------------------------

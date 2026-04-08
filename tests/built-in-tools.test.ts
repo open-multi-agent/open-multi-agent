@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, rm, writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -8,9 +8,14 @@ import { fileEditTool } from '../src/tool/built-in/file-edit.js'
 import { bashTool } from '../src/tool/built-in/bash.js'
 import { globTool } from '../src/tool/built-in/glob.js'
 import { grepTool } from '../src/tool/built-in/grep.js'
-import { registerBuiltInTools, BUILT_IN_TOOLS } from '../src/tool/built-in/index.js'
+import {
+  registerBuiltInTools,
+  BUILT_IN_TOOLS,
+  delegateToAgentTool,
+} from '../src/tool/built-in/index.js'
 import { ToolRegistry } from '../src/tool/framework.js'
-import type { ToolUseContext } from '../src/types.js'
+import { InMemoryStore } from '../src/memory/store.js'
+import type { AgentRunResult, ToolUseContext } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +50,13 @@ describe('registerBuiltInTools', () => {
     expect(registry.get('file_edit')).toBeDefined()
     expect(registry.get('grep')).toBeDefined()
     expect(registry.get('glob')).toBeDefined()
+    expect(registry.get('delegate_to_agent')).toBeUndefined()
+  })
+
+  it('registers delegate_to_agent when includeDelegateTool is set', () => {
+    const registry = new ToolRegistry()
+    registerBuiltInTools(registry, { includeDelegateTool: true })
+    expect(registry.get('delegate_to_agent')).toBeDefined()
   })
 
   it('BUILT_IN_TOOLS has correct length', () => {
@@ -487,5 +499,193 @@ describe('grep', () => {
     expect(result.isError).toBe(true)
     // May hit ripgrep path or Node fallback — both report an error
     expect(result.data.toLowerCase()).toContain('no such file')
+  })
+})
+
+// ===========================================================================
+// delegate_to_agent
+// ===========================================================================
+
+const DELEGATE_OK: AgentRunResult = {
+  success: true,
+  output: 'research done',
+  messages: [],
+  tokenUsage: { input_tokens: 1, output_tokens: 2 },
+  toolCalls: [],
+}
+
+describe('delegate_to_agent', () => {
+  it('returns delegated agent output on success', async () => {
+    const runDelegatedAgent = vi.fn().mockResolvedValue(DELEGATE_OK)
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationDepth: 0,
+        maxDelegationDepth: 3,
+        delegationPool: { availableRunSlots: 2 },
+        runDelegatedAgent,
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Summarize X.' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toBe('research done')
+    expect(runDelegatedAgent).toHaveBeenCalledWith('bob', 'Summarize X.')
+  })
+
+  it('errors when delegation is not configured', async () => {
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: { name: 't', agents: ['alice', 'bob'] },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/only available during orchestrated team runs/i)
+  })
+
+  it('errors for unknown target agent', async () => {
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        runDelegatedAgent: vi.fn(),
+        delegationPool: { availableRunSlots: 1 },
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'charlie', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/Unknown agent/)
+  })
+
+  it('errors on self-delegation', async () => {
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        runDelegatedAgent: vi.fn(),
+        delegationPool: { availableRunSlots: 1 },
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'alice', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/yourself/)
+  })
+
+  it('errors when delegation depth limit is reached', async () => {
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationDepth: 3,
+        maxDelegationDepth: 3,
+        runDelegatedAgent: vi.fn(),
+        delegationPool: { availableRunSlots: 1 },
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/Maximum delegation depth/)
+  })
+
+  it('errors fast when pool has no free slots without calling runDelegatedAgent', async () => {
+    const runDelegatedAgent = vi.fn()
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationPool: { availableRunSlots: 0 },
+        runDelegatedAgent,
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/no free concurrency slot/i)
+    expect(runDelegatedAgent).not.toHaveBeenCalled()
+  })
+
+  it('writes unique SharedMemory audit keys for repeated delegations', async () => {
+    const store = new InMemoryStore()
+    const runDelegatedAgent = vi.fn().mockResolvedValue(DELEGATE_OK)
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        sharedMemory: store,
+        delegationPool: { availableRunSlots: 2 },
+        runDelegatedAgent,
+      },
+    }
+
+    await delegateToAgentTool.execute({ target_agent: 'bob', prompt: 'a' }, ctx)
+    await delegateToAgentTool.execute({ target_agent: 'bob', prompt: 'b' }, ctx)
+
+    const keys = (await store.list()).map((e) => e.key)
+    const delegationKeys = keys.filter((k) => k.includes('delegation:bob:'))
+    expect(delegationKeys).toHaveLength(2)
+    expect(delegationKeys[0]).not.toBe(delegationKeys[1])
+  })
+
+  it('returns isError when delegated run reports success false', async () => {
+    const runDelegatedAgent = vi.fn().mockResolvedValue({
+      success: false,
+      output: 'delegated agent failed',
+      messages: [],
+      tokenUsage: { input_tokens: 0, output_tokens: 0 },
+      toolCalls: [],
+    } satisfies AgentRunResult)
+
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationPool: { availableRunSlots: 1 },
+        runDelegatedAgent,
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toBe('delegated agent failed')
   })
 })

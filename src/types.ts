@@ -178,11 +178,29 @@ export interface AgentInfo {
   readonly model: string
 }
 
-/** Descriptor for a team of agents with shared memory. */
+/**
+ * Minimal pool surface used by `delegate_to_agent` to detect nested-run capacity.
+ * {@link AgentPool} satisfies this structurally via {@link AgentPool.availableRunSlots}.
+ */
+export interface DelegationPoolView {
+  readonly availableRunSlots: number
+}
+
+/** Descriptor for a team of agents (orchestrator-injected into tool context). */
 export interface TeamInfo {
   readonly name: string
   readonly agents: readonly string[]
-  readonly sharedMemory: MemoryStore
+  /** When the team has shared memory enabled; used for delegation audit writes. */
+  readonly sharedMemory?: MemoryStore
+  /** Zero-based depth of nested delegation from the root task run. */
+  readonly delegationDepth?: number
+  readonly maxDelegationDepth?: number
+  readonly delegationPool?: DelegationPoolView
+  /**
+   * Run another roster agent to completion and return its result.
+   * Only set during orchestrated pool execution (`runTeam` / `runTasks`).
+   */
+  readonly runDelegatedAgent?: (targetAgent: string, prompt: string) => Promise<AgentRunResult>
 }
 
 /** Value returned by a tool's `execute` function. */
@@ -472,6 +490,11 @@ export interface OrchestratorEvent {
 /** Top-level configuration for the orchestrator. */
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
+  /**
+   * Maximum depth of `delegate_to_agent` chains from a task run (default `3`).
+   * Depth is per nested delegated run, not per team.
+   */
+  readonly maxDelegationDepth?: number
   /** Maximum cumulative tokens (input + output) allowed per orchestrator run. */
   readonly maxTokenBudget?: number
   readonly defaultModel?: string

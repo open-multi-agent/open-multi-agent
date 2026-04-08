@@ -291,5 +291,32 @@ describe('AgentPool', () => {
 
       expect(maxConcurrent).toBeLessThanOrEqual(2)
     })
+
+    it('availableRunSlots matches maxConcurrency when idle', () => {
+      const pool = new AgentPool(3)
+      pool.add(createMockAgent('a'))
+      expect(pool.availableRunSlots).toBe(3)
+    })
+
+    it('availableRunSlots is zero while a run holds the pool slot', async () => {
+      const pool = new AgentPool(1)
+      const agent = createMockAgent('solo')
+      pool.add(agent)
+
+      let finishRun!: (value: AgentRunResult) => void
+      const holdPromise = new Promise<AgentRunResult>((resolve) => {
+        finishRun = resolve
+      })
+      vi.mocked(agent.run).mockReturnValue(holdPromise)
+
+      const runPromise = pool.run('solo', 'hold-slot')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(pool.availableRunSlots).toBe(0)
+
+      finishRun(SUCCESS_RESULT)
+      await runPromise
+      expect(pool.availableRunSlots).toBe(1)
+    })
   })
 })
