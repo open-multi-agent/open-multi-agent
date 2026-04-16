@@ -231,9 +231,9 @@ describe('truncateToolOutput', () => {
 
   it('handles very small maxChars gracefully', () => {
     const data = 'x'.repeat(100)
-    // With maxChars=1, the marker alone exceeds the budget, but it should not crash
+    // With maxChars=1, the marker alone exceeds the budget — falls back to hard slice
     const result = truncateToolOutput(data, 1)
-    expect(result).toContain('[...truncated')
+    expect(result.length).toBeLessThanOrEqual(1)
   })
 })
 

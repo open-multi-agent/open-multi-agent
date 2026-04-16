@@ -220,7 +220,13 @@ export function truncateToolOutput(data: string, maxChars: number): string {
   const markerTemplate = '\n\n[...truncated  characters...]\n\n'
   const markerOverhead = markerTemplate.length + String(data.length).length
 
-  const available = Math.max(0, maxChars - markerOverhead)
+  // When maxChars is too small to fit any content alongside the marker,
+  // fall back to a hard slice so the result never exceeds maxChars.
+  if (maxChars <= markerOverhead) {
+    return data.slice(0, maxChars)
+  }
+
+  const available = maxChars - markerOverhead
   const headChars = Math.floor(available * 0.7)
   const tailChars = available - headChars
   const truncatedCount = data.length - headChars - tailChars

@@ -254,17 +254,17 @@ export interface AgentConfig {
    */
   readonly loopDetection?: LoopDetectionConfig
   /**
-   * Optional Zod schema for structured output.  When set, the agent's final
-   * output is parsed as JSON and validated against this schema.  A single
-   * retry with error feedback is attempted on validation failure.
-   */
-  /**
    * Maximum tool output length in characters for all tools used by this agent.
    * When set, tool outputs exceeding this limit are truncated (head + tail
    * with a marker in between). Per-tool {@link ToolDefinition.maxOutputChars}
    * takes priority over this value.
    */
   readonly maxToolOutputChars?: number
+  /**
+   * Optional Zod schema for structured output.  When set, the agent's final
+   * output is parsed as JSON and validated against this schema.  A single
+   * retry with error feedback is attempted on validation failure.
+   */
   readonly outputSchema?: ZodSchema
   /**
    * Called before each agent run. Receives the prompt and agent config.
