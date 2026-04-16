@@ -70,6 +70,19 @@ export type ContextStrategy =
   | { type: 'sliding-window'; maxTurns: number }
   | { type: 'summarize'; maxTokens: number; summaryModel?: string }
   | {
+    type: 'compact'
+    /** Estimated token threshold that triggers compaction. Compaction is skipped when below this. */
+    maxTokens: number
+    /** Number of recent turn pairs (assistant+user) to keep intact. Default: 4. */
+    preserveRecentTurns?: number
+    /** Minimum chars in a tool_result content to qualify for compaction. Default: 200. */
+    minToolResultChars?: number
+    /** Minimum chars in an assistant text block to qualify for truncation. Default: 2000. */
+    minTextBlockChars?: number
+    /** Maximum chars to keep from a truncated text block (head excerpt). Default: 200. */
+    textBlockExcerptChars?: number
+  }
+  | {
     type: 'custom'
     compress: (
       messages: LLMMessage[],

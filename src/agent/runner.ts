@@ -400,6 +400,10 @@ export class AgentRunner {
       )
     }
 
+    if (strategy.type === 'compact') {
+      return { messages: this.compactMessages(messages, strategy), usage: ZERO_USAGE }
+    }
+
     const estimated = estimateTokens(messages)
     const compressed = await strategy.compress(messages, estimated)
     if (!Array.isArray(compressed) || compressed.length === 0) {
@@ -859,6 +863,133 @@ export class AgentRunner {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Rule-based selective context compaction (no LLM calls).
+   *
+   * Compresses old turns while preserving the conversation skeleton:
+   * - tool_use blocks (decisions) are always kept
+   * - Long tool_result content is replaced with a compact marker
+   * - Long assistant text blocks are truncated with an excerpt
+   * - Error tool_results are never compressed
+   * - Recent turns (within `preserveRecentTurns`) are kept intact
+   */
+  private compactMessages(
+    messages: LLMMessage[],
+    strategy: Extract<ContextStrategy, { type: 'compact' }>,
+  ): LLMMessage[] {
+    const estimated = estimateTokens(messages)
+    if (estimated <= strategy.maxTokens || messages.length < 4) {
+      return messages
+    }
+
+    const preserveRecent = strategy.preserveRecentTurns ?? 4
+    const minToolResultChars = strategy.minToolResultChars ?? 200
+    const minTextBlockChars = strategy.minTextBlockChars ?? 2000
+    const textBlockExcerptChars = strategy.textBlockExcerptChars ?? 200
+
+    // Find the first user message — it is always preserved as-is.
+    const firstUserIndex = messages.findIndex(m => m.role === 'user')
+    if (firstUserIndex < 0 || firstUserIndex === messages.length - 1) {
+      return messages
+    }
+
+    // Walk backward to find the boundary between old and recent turns.
+    // A "turn pair" is an assistant message followed by a user message.
+    let boundary = messages.length
+    let pairsFound = 0
+    for (let i = messages.length - 1; i > firstUserIndex && pairsFound < preserveRecent; i--) {
+      if (messages[i]!.role === 'user' && i > 0 && messages[i - 1]!.role === 'assistant') {
+        pairsFound++
+        boundary = i - 1
+      }
+    }
+
+    // If all turns fit within the recent window, nothing to compact.
+    if (boundary <= firstUserIndex + 1) {
+      return messages
+    }
+
+    // Build a tool_use_id → tool name lookup from old assistant messages.
+    const toolNameMap = new Map<string, string>()
+    for (let i = firstUserIndex + 1; i < boundary; i++) {
+      const msg = messages[i]!
+      if (msg.role !== 'assistant') continue
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') {
+          toolNameMap.set(block.id, block.name)
+        }
+      }
+    }
+
+    // Process old messages (between first user and boundary).
+    let anyChanged = false
+    const result: LLMMessage[] = []
+
+    for (let i = 0; i < messages.length; i++) {
+      // First user message and recent messages: keep intact.
+      if (i <= firstUserIndex || i >= boundary) {
+        result.push(messages[i]!)
+        continue
+      }
+
+      const msg = messages[i]!
+      let msgChanged = false
+      const newContent = msg.content.map((block): ContentBlock => {
+        if (msg.role === 'assistant') {
+          // tool_use blocks: always preserve (decisions).
+          if (block.type === 'tool_use') return block
+          // Long text blocks: truncate with excerpt.
+          if (block.type === 'text' && block.text.length >= minTextBlockChars) {
+            msgChanged = true
+            return {
+              type: 'text',
+              text: `${block.text.slice(0, textBlockExcerptChars)}... [truncated — ${block.text.length} chars total]`,
+            } satisfies TextBlock
+          }
+          // Image blocks in old turns: replace with marker.
+          if (block.type === 'image') {
+            msgChanged = true
+            return { type: 'text', text: '[Image compacted]' } satisfies TextBlock
+          }
+          return block
+        }
+
+        // User messages in old zone.
+        if (block.type === 'tool_result') {
+          // Error results: always preserve.
+          if (block.is_error) return block
+          // Already compressed by compressToolResults or a prior compact pass.
+          if (
+            block.content.startsWith('[Tool output compressed') ||
+            block.content.startsWith('[Tool result:')
+          ) {
+            return block
+          }
+          // Short results: preserve.
+          if (block.content.length < minToolResultChars) return block
+          // Compress.
+          const toolName = toolNameMap.get(block.tool_use_id) ?? 'unknown'
+          msgChanged = true
+          return {
+            type: 'tool_result',
+            tool_use_id: block.tool_use_id,
+            content: `[Tool result: ${toolName} — ${block.content.length} chars, compacted]`,
+          } satisfies ToolResultBlock
+        }
+        return block
+      })
+
+      if (msgChanged) {
+        anyChanged = true
+        result.push({ role: msg.role, content: newContent } as LLMMessage)
+      } else {
+        result.push(msg)
+      }
+    }
+
+    return anyChanged ? result : messages
+  }
 
   /**
    * Replace consumed tool results with compact markers.
