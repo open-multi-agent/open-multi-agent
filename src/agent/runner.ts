@@ -879,7 +879,7 @@ export class AgentRunner {
     strategy: Extract<ContextStrategy, { type: 'compact' }>,
   ): LLMMessage[] {
     const estimated = estimateTokens(messages)
-    if (estimated <= strategy.maxTokens || messages.length < 4) {
+    if (estimated <= strategy.maxTokens) {
       return messages
     }
 
