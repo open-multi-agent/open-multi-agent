@@ -24,6 +24,11 @@ export interface ToolExecutorOptions {
    * Defaults to 4.
    */
   maxConcurrency?: number
+  /**
+   * Agent-level default for maximum tool output length in characters.
+   * Per-tool `maxOutputChars` takes priority over this value.
+   */
+  maxToolOutputChars?: number
 }
 
 /** Describes one call in a batch. */
@@ -47,10 +52,12 @@ export interface BatchToolCall {
 export class ToolExecutor {
   private readonly registry: ToolRegistry
   private readonly semaphore: Semaphore
+  private readonly maxToolOutputChars?: number
 
   constructor(registry: ToolRegistry, options: ToolExecutorOptions = {}) {
     this.registry = registry
     this.semaphore = new Semaphore(options.maxConcurrency ?? 4)
+    this.maxToolOutputChars = options.maxToolOutputChars
   }
 
   // -------------------------------------------------------------------------
@@ -156,7 +163,7 @@ export class ToolExecutor {
     // --- Execute ---
     try {
       const result = await tool.execute(parseResult.data, context)
-      return result
+      return this.maybeTruncate(tool, result)
     } catch (err) {
       const message =
         err instanceof Error
@@ -164,8 +171,24 @@ export class ToolExecutor {
           : typeof err === 'string'
             ? err
             : JSON.stringify(err)
-      return this.errorResult(`Tool "${tool.name}" threw an error: ${message}`)
+      return this.maybeTruncate(tool, this.errorResult(`Tool "${tool.name}" threw an error: ${message}`))
     }
+  }
+
+  /**
+   * Apply truncation to a tool result if a character limit is configured.
+   * Priority: per-tool `maxOutputChars` > agent-level `maxToolOutputChars`.
+   */
+  private maybeTruncate(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tool: ToolDefinition<any>,
+    result: ToolResult,
+  ): ToolResult {
+    const maxChars = tool.maxOutputChars ?? this.maxToolOutputChars
+    if (maxChars === undefined || maxChars <= 0 || result.data.length <= maxChars) {
+      return result
+    }
+    return { ...result, data: truncateToolOutput(result.data, maxChars) }
   }
 
   /** Construct an error ToolResult. */
@@ -175,4 +198,32 @@ export class ToolExecutor {
       isError: true,
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Truncation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Truncate tool output to fit within `maxChars`, preserving the head (~70%)
+ * and tail (~30%) with a marker indicating how many characters were removed.
+ *
+ * The marker itself is counted against the budget so the returned string
+ * never exceeds `maxChars`. When `maxChars` is too small to fit any
+ * content alongside the marker, a marker-only string is returned.
+ */
+export function truncateToolOutput(data: string, maxChars: number): string {
+  if (data.length <= maxChars) return data
+
+  // Estimate marker length (digit count may shrink after subtracting content,
+  // but using data.length gives a safe upper-bound for the digit count).
+  const markerTemplate = '\n\n[...truncated  characters...]\n\n'
+  const markerOverhead = markerTemplate.length + String(data.length).length
+
+  const available = Math.max(0, maxChars - markerOverhead)
+  const headChars = Math.floor(available * 0.7)
+  const tailChars = available - headChars
+  const truncatedCount = data.length - headChars - tailChars
+
+  return `${data.slice(0, headChars)}\n\n[...truncated ${truncatedCount} characters...]\n\n${data.slice(-tailChars)}`
 }

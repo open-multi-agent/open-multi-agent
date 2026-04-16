@@ -194,6 +194,12 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
    * deriving JSON Schema from `inputSchema` (Zod).
    */
   readonly llmInputSchema?: Record<string, unknown>
+  /**
+   * Per-tool maximum output length in characters. When set, tool output
+   * exceeding this limit is truncated (head + tail with a marker in between).
+   * Takes priority over {@link AgentConfig.maxToolOutputChars}.
+   */
+  readonly maxOutputChars?: number
   execute(input: TInput, context: ToolUseContext): Promise<ToolResult>
 }
 
@@ -252,6 +258,13 @@ export interface AgentConfig {
    * output is parsed as JSON and validated against this schema.  A single
    * retry with error feedback is attempted on validation failure.
    */
+  /**
+   * Maximum tool output length in characters for all tools used by this agent.
+   * When set, tool outputs exceeding this limit are truncated (head + tail
+   * with a marker in between). Per-tool {@link ToolDefinition.maxOutputChars}
+   * takes priority over this value.
+   */
+  readonly maxToolOutputChars?: number
   readonly outputSchema?: ZodSchema
   /**
    * Called before each agent run. Receives the prompt and agent config.

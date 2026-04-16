@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { ToolRegistry, defineTool } from '../src/tool/framework.js'
-import { ToolExecutor } from '../src/tool/executor.js'
+import { ToolExecutor, truncateToolOutput } from '../src/tool/executor.js'
 import type { ToolUseContext } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
@@ -189,5 +189,224 @@ describe('ToolRegistry', () => {
     expect(defs).toHaveLength(1)
     expect(defs[0].name).toBe('echo')
     expect(defs[0].inputSchema).toHaveProperty('properties')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// truncateToolOutput
+// ---------------------------------------------------------------------------
+
+describe('truncateToolOutput', () => {
+  it('returns data unchanged when under the limit', () => {
+    const data = 'short output'
+    expect(truncateToolOutput(data, 100)).toBe(data)
+  })
+
+  it('returns data unchanged when exactly at the limit', () => {
+    const data = 'x'.repeat(100)
+    expect(truncateToolOutput(data, 100)).toBe(data)
+  })
+
+  it('truncates data exceeding the limit with head/tail and marker', () => {
+    const data = 'A'.repeat(300) + 'B'.repeat(700)
+    const result = truncateToolOutput(data, 500)
+    expect(result).toContain('[...truncated')
+    expect(result.length).toBeLessThanOrEqual(500)
+    // Head portion starts with As
+    expect(result.startsWith('A')).toBe(true)
+    // Tail portion ends with Bs
+    expect(result.endsWith('B')).toBe(true)
+  })
+
+  it('result never exceeds maxChars', () => {
+    const data = 'x'.repeat(10000)
+    const result = truncateToolOutput(data, 1000)
+    expect(result.length).toBeLessThanOrEqual(1000)
+    expect(result).toContain('[...truncated')
+  })
+
+  it('handles empty string', () => {
+    expect(truncateToolOutput('', 100)).toBe('')
+  })
+
+  it('handles very small maxChars gracefully', () => {
+    const data = 'x'.repeat(100)
+    // With maxChars=1, the marker alone exceeds the budget, but it should not crash
+    const result = truncateToolOutput(data, 1)
+    expect(result).toContain('[...truncated')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tool output truncation (integration)
+// ---------------------------------------------------------------------------
+
+describe('ToolExecutor output truncation', () => {
+  it('truncates output when agent-level maxToolOutputChars is set', async () => {
+    const bigTool = defineTool({
+      name: 'big',
+      description: 'Returns large output.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'x'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(bigTool)
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 200 })
+
+    const result = await executor.execute('big', {}, dummyContext)
+    expect(result.data.length).toBeLessThan(5000)
+    expect(result.data).toContain('[...truncated')
+  })
+
+  it('does not truncate when output is under the limit', async () => {
+    const smallTool = defineTool({
+      name: 'small',
+      description: 'Returns small output.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'hello' }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(smallTool)
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 200 })
+
+    const result = await executor.execute('small', {}, dummyContext)
+    expect(result.data).toBe('hello')
+  })
+
+  it('per-tool maxOutputChars overrides agent-level setting (smaller)', async () => {
+    const toolWithLimit = defineTool({
+      name: 'limited',
+      description: 'Has its own limit.',
+      inputSchema: z.object({}),
+      maxOutputChars: 200,
+      execute: async () => ({ data: 'y'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(toolWithLimit)
+    // Agent-level is 1000 but tool-level is 200 -- tool wins
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 1000 })
+
+    const result = await executor.execute('limited', {}, dummyContext)
+    expect(result.data).toContain('[...truncated')
+    expect(result.data.length).toBeLessThanOrEqual(200)
+  })
+
+  it('per-tool maxOutputChars overrides agent-level setting (larger)', async () => {
+    const toolWithLimit = defineTool({
+      name: 'limited',
+      description: 'Has its own limit.',
+      inputSchema: z.object({}),
+      maxOutputChars: 2000,
+      execute: async () => ({ data: 'y'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(toolWithLimit)
+    // Agent-level is 500 but tool-level is 2000 -- tool wins
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 500 })
+
+    const result = await executor.execute('limited', {}, dummyContext)
+    expect(result.data).toContain('[...truncated')
+    expect(result.data.length).toBeLessThanOrEqual(2000)
+    expect(result.data.length).toBeGreaterThan(500)
+  })
+
+  it('per-tool maxOutputChars works without agent-level setting', async () => {
+    const toolWithLimit = defineTool({
+      name: 'limited',
+      description: 'Has its own limit.',
+      inputSchema: z.object({}),
+      maxOutputChars: 300,
+      execute: async () => ({ data: 'z'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(toolWithLimit)
+    const executor = new ToolExecutor(registry)
+
+    const result = await executor.execute('limited', {}, dummyContext)
+    expect(result.data).toContain('[...truncated')
+    expect(result.data.length).toBeLessThanOrEqual(300)
+  })
+
+  it('truncates error results too', async () => {
+    const errorTool = defineTool({
+      name: 'errorbig',
+      description: 'Throws a huge error.',
+      inputSchema: z.object({}),
+      execute: async () => { throw new Error('E'.repeat(5000)) },
+    })
+    const registry = new ToolRegistry()
+    registry.register(errorTool)
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 200 })
+
+    const result = await executor.execute('errorbig', {}, dummyContext)
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('[...truncated')
+    expect(result.data.length).toBeLessThan(5000)
+  })
+
+  it('no truncation when maxToolOutputChars is 0', async () => {
+    const bigTool = defineTool({
+      name: 'big',
+      description: 'Returns large output.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'x'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(bigTool)
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: 0 })
+
+    const result = await executor.execute('big', {}, dummyContext)
+    expect(result.data.length).toBe(5000)
+  })
+
+  it('no truncation when maxToolOutputChars is negative', async () => {
+    const bigTool = defineTool({
+      name: 'big',
+      description: 'Returns large output.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'x'.repeat(5000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(bigTool)
+    const executor = new ToolExecutor(registry, { maxToolOutputChars: -100 })
+
+    const result = await executor.execute('big', {}, dummyContext)
+    expect(result.data.length).toBe(5000)
+  })
+
+  it('defineTool passes maxOutputChars to the ToolDefinition', () => {
+    const tool = defineTool({
+      name: 'test',
+      description: 'test',
+      inputSchema: z.object({}),
+      maxOutputChars: 500,
+      execute: async () => ({ data: 'ok' }),
+    })
+    expect(tool.maxOutputChars).toBe(500)
+  })
+
+  it('defineTool omits maxOutputChars when not specified', () => {
+    const tool = defineTool({
+      name: 'test',
+      description: 'test',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'ok' }),
+    })
+    expect(tool.maxOutputChars).toBeUndefined()
+  })
+
+  it('no truncation when neither limit is set', async () => {
+    const bigTool = defineTool({
+      name: 'big',
+      description: 'Returns large output.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'x'.repeat(50000) }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(bigTool)
+    const executor = new ToolExecutor(registry)
+
+    const result = await executor.execute('big', {}, dummyContext)
+    expect(result.data.length).toBe(50000)
   })
 })

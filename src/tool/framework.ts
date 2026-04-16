@@ -76,6 +76,12 @@ export function defineTool<TInput>(config: {
    * Optional JSON Schema for the LLM (bypasses Zod → JSON Schema conversion).
    */
   llmInputSchema?: Record<string, unknown>
+  /**
+   * Per-tool maximum output length in characters. When set, tool output
+   * exceeding this limit is truncated (head + tail with a marker in between).
+   * Takes priority over agent-level `maxToolOutputChars`.
+   */
+  maxOutputChars?: number
   execute: (input: TInput, context: ToolUseContext) => Promise<ToolResult>
 }): ToolDefinition<TInput> {
   return {
@@ -84,6 +90,9 @@ export function defineTool<TInput>(config: {
     inputSchema: config.inputSchema,
     ...(config.llmInputSchema !== undefined
       ? { llmInputSchema: config.llmInputSchema }
+      : {}),
+    ...(config.maxOutputChars !== undefined
+      ? { maxOutputChars: config.maxOutputChars }
       : {}),
     execute: config.execute,
   }
