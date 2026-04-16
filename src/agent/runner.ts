@@ -908,6 +908,9 @@ export class AgentRunner {
         // Never compress error results — they carry diagnostic value.
         if (block.is_error) return block
 
+        // Skip already-compressed results — avoid re-compression with wrong char count.
+        if (block.content.startsWith('[Tool output compressed')) return block
+
         // Skip short results — the marker itself has overhead.
         if (block.content.length < minChars) return block
 

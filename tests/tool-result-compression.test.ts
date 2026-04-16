@@ -415,6 +415,48 @@ describe('AgentRunner compressToolResults', () => {
     expect(allToolResults[2]).toBe(longOutput)
   })
 
+  it('does not re-compress already compressed markers with low minChars', async () => {
+    const calls: LLMMessage[][] = []
+    const longOutput = 'x'.repeat(600)
+    const responses = [
+      toolUseResponse('echo', { message: 't1' }),
+      toolUseResponse('echo', { message: 't2' }),
+      toolUseResponse('echo', { message: 't3' }),
+      textResponse('done'),
+    ]
+    let idx = 0
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: [...m.content] })))
+        return responses[idx++]!
+      },
+      async *stream() { /* unused */ },
+    }
+    const { registry, executor } = buildRegistryAndExecutor(longOutput)
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 6,
+      compressToolResults: { minChars: 10 }, // very low threshold
+    })
+
+    await runner.run([{ role: 'user', content: [{ type: 'text', text: 'start' }] }])
+
+    // Turn 4: turn 1 was compressed in turn 3. With minChars=10 the marker
+    // itself (55 chars) exceeds the threshold. Without the guard it would be
+    // re-compressed with a wrong char count (55 instead of 600).
+    const turn4Messages = calls[3]!
+    const allToolResults = extractToolResultContents(turn4Messages)
+
+    // Turn 1 result: should still show original 600 chars, not re-compressed
+    expect(allToolResults[0]).toContain('600 chars')
+    // Turn 2 result: compressed for the first time this turn
+    expect(allToolResults[1]).toContain('600 chars')
+    // Turn 3 result: most recent, preserved in full
+    expect(allToolResults[2]).toBe(longOutput)
+  })
+
   it('works together with contextStrategy', async () => {
     const calls: LLMMessage[][] = []
     const longOutput = 'x'.repeat(600)
