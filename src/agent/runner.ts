@@ -98,6 +98,11 @@ export interface RunnerOptions {
   readonly maxTokenBudget?: number
   /** Optional context compression strategy for long multi-turn runs. */
   readonly contextStrategy?: ContextStrategy
+  /**
+   * Compress tool results that the agent has already processed.
+   * See {@link AgentConfig.compressToolResults} for details.
+   */
+  readonly compressToolResults?: boolean | { readonly minChars?: number }
 }
 
 /**
@@ -175,6 +180,9 @@ function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 }
 
 const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 }
+
+/** Default minimum content length before tool result compression kicks in. */
+const DEFAULT_MIN_COMPRESS_CHARS = 500
 
 /**
  * Prepends synthetic framing text to the first user message so we never emit
@@ -569,6 +577,12 @@ export class AgentRunner {
 
         turns++
 
+        // Compress consumed tool results before context strategy (lightweight,
+        // no LLM calls) so the strategy operates on already-reduced messages.
+        if (this.options.compressToolResults && turns > 1) {
+          conversationMessages = this.compressConsumedToolResults(conversationMessages)
+        }
+
         // Optionally compact context before each LLM call after the first turn.
         if (this.options.contextStrategy && turns > 1) {
           const compacted = await this.applyContextStrategy(
@@ -845,6 +859,75 @@ export class AgentRunner {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Replace consumed tool results with compact markers.
+   *
+   * A tool_result is "consumed" when the assistant has produced a response
+   * after seeing it (i.e. there is an assistant message following the user
+   * message that contains the tool_result).  The most recent user message
+   * with tool results is always kept intact — the LLM is about to see it.
+   *
+   * Error results and results shorter than `minChars` are never compressed.
+   */
+  private compressConsumedToolResults(messages: LLMMessage[]): LLMMessage[] {
+    const config = this.options.compressToolResults
+    if (!config) return messages
+
+    const minChars = typeof config === 'object'
+      ? (config.minChars ?? DEFAULT_MIN_COMPRESS_CHARS)
+      : DEFAULT_MIN_COMPRESS_CHARS
+
+    // Find the last user message that carries tool_result blocks.
+    let lastToolResultUserIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (
+        messages[i]!.role === 'user' &&
+        messages[i]!.content.some(b => b.type === 'tool_result')
+      ) {
+        lastToolResultUserIdx = i
+        break
+      }
+    }
+
+    // Nothing to compress if there's at most one tool-result user message.
+    if (lastToolResultUserIdx <= 0) return messages
+
+    let anyChanged = false
+    const result = messages.map((msg, idx) => {
+      // Only compress user messages that appear before the last one.
+      if (msg.role !== 'user' || idx >= lastToolResultUserIdx) return msg
+
+      const hasToolResult = msg.content.some(b => b.type === 'tool_result')
+      if (!hasToolResult) return msg
+
+      let msgChanged = false
+      const newContent = msg.content.map((block): ContentBlock => {
+        if (block.type !== 'tool_result') return block
+
+        // Never compress error results — they carry diagnostic value.
+        if (block.is_error) return block
+
+        // Skip short results — the marker itself has overhead.
+        if (block.content.length < minChars) return block
+
+        msgChanged = true
+        return {
+          type: 'tool_result',
+          tool_use_id: block.tool_use_id,
+          content: `[Tool output compressed — ${block.content.length} chars, already processed]`,
+        } satisfies ToolResultBlock
+      })
+
+      if (msgChanged) {
+        anyChanged = true
+        return { role: msg.role, content: newContent } as LLMMessage
+      }
+      return msg
+    })
+
+    return anyChanged ? result : messages
+  }
 
   /**
    * Build the {@link ToolUseContext} passed to every tool execution.

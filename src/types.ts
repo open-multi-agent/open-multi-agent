@@ -271,6 +271,21 @@ export interface AgentConfig {
    */
   readonly maxToolOutputChars?: number
   /**
+   * Compress tool results that the agent has already processed.
+   *
+   * In multi-turn runs, tool results persist in the conversation even after the
+   * agent has acted on them. When enabled, consumed tool results (those followed
+   * by an assistant response) are replaced with a short marker before the next
+   * LLM call, freeing context budget for new reasoning.
+   *
+   * - `true` — enable with default threshold (500 chars)
+   * - `{ minChars: N }` — only compress results longer than N characters
+   * - `false` / `undefined` — disabled (default)
+   *
+   * Error tool results are never compressed.
+   */
+  readonly compressToolResults?: boolean | { readonly minChars?: number }
+  /**
    * Optional Zod schema for structured output.  When set, the agent's final
    * output is parsed as JSON and validated against this schema.  A single
    * retry with error feedback is attempted on validation failure.

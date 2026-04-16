@@ -154,6 +154,7 @@ export class Agent {
       loopDetection: this.config.loopDetection,
       maxTokenBudget: this.config.maxTokenBudget,
       contextStrategy: this.config.contextStrategy,
+      compressToolResults: this.config.compressToolResults,
     }
 
     this.runner = new AgentRunner(
