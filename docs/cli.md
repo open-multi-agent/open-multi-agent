@@ -20,7 +20,7 @@ npm run build
 node dist/cli/oma.js help
 ```
 
-Set the usual provider API keys in the environment (see [README](../README.md#quick-start)); the CLI does not read secrets from flags.
+Set the usual provider API keys in the environment (see [README](../README.md#quick-start)); the CLI does not read secrets from flags. MiniMax additionally reads `MINIMAX_BASE_URL` to select the global (`https://api.minimax.io/v1`) or China (`https://api.minimaxi.com/v1`) endpoint.
 
 ---
 
@@ -55,7 +55,7 @@ Global flags: [`--pretty`](#output-flags), [`--include-messages`](#output-flags)
 Read-only helper for wiring JSON configs and env vars.
 
 - **`oma provider`** or **`oma provider list`** — Prints JSON: built-in provider ids, API key environment variable names, whether `baseURL` is supported, and short notes (e.g. OpenAI-compatible servers, Copilot in CI).
-- **`oma provider template <provider>`** — Prints a JSON object with example `orchestrator` and `agent` fields plus placeholder `env` entries. `<provider>` is one of: `anthropic`, `openai`, `gemini`, `grok`, `copilot`.
+- **`oma provider template <provider>`** — Prints a JSON object with example `orchestrator` and `agent` fields plus placeholder `env` entries. `<provider>` is one of: `anthropic`, `openai`, `gemini`, `grok`, `minimax`, `deepseek`, `copilot`.
 
 Supports `--pretty`.
 

@@ -216,8 +216,8 @@ describe('Tool filtering', () => {
       const tools = (runner as any).resolveTools() as LLMToolDef[]
       const toolNames = tools.map((t: LLMToolDef) => t.name).sort()
 
+      // custom_tool is runtime-added but disallowedTools still blocks it
       expect(toolNames).toEqual([
-        'custom_tool',
         'file_edit',
         'file_read',
         'file_write',
@@ -286,7 +286,7 @@ describe('Tool filtering', () => {
       expect(toolNames).toEqual(['custom_tool'])
     })
 
-    it('runtime-added tools bypass filtering regardless of tool name', () => {
+    it('runtime-added tools are blocked by disallowedTools', () => {
       const runtimeBuiltinNamedRegistry = new ToolRegistry()
       runtimeBuiltinNamedRegistry.register(defineTool({
         name: 'file_read',
@@ -306,7 +306,7 @@ describe('Tool filtering', () => {
       )
 
       const tools = (runtimeBuiltinNamedRunner as any).resolveTools() as LLMToolDef[]
-      expect(tools.map(t => t.name)).toEqual(['file_read'])
+      expect(tools.map(t => t.name)).toEqual([])
     })
   })
 

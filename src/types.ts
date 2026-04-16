@@ -229,6 +229,16 @@ export interface AgentConfig {
   /** API key override; falls back to the provider's standard env var. */
   readonly apiKey?: string
   readonly systemPrompt?: string
+  /**
+   * Custom tool definitions to register alongside built-in tools.
+   * Created via `defineTool()`. Custom tools bypass `tools` (allowlist)
+   * and `toolPreset` filtering, but can still be blocked by `disallowedTools`.
+   *
+   * Tool names must not collide with built-in tool names; a duplicate name
+   * will throw at registration time.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly customTools?: readonly ToolDefinition<any>[]
   /** Names of tools (from the tool registry) available to this agent. */
   readonly tools?: readonly string[]
   /** Names of tools explicitly disallowed for this agent. */

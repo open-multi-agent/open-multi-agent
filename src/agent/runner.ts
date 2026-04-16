@@ -448,8 +448,10 @@ export class AgentRunner {
     }
 
     // 3. Apply denylist filter if set
-    if (this.options.disallowedTools) {
-      const denied = new Set(this.options.disallowedTools)
+    const denied = this.options.disallowedTools
+      ? new Set(this.options.disallowedTools)
+      : undefined
+    if (denied) {
       filteredTools = filteredTools.filter(t => !denied.has(t.name))
     }
 
@@ -457,8 +459,11 @@ export class AgentRunner {
     const frameworkDenied = new Set(AGENT_FRAMEWORK_DISALLOWED)
     filteredTools = filteredTools.filter(t => !frameworkDenied.has(t.name))
 
-    // Runtime-added custom tools stay available regardless of filtering rules.
-    return [...filteredTools, ...runtimeCustomTools]
+    // Runtime-added custom tools bypass preset / allowlist but respect denylist.
+    const finalRuntime = denied
+      ? runtimeCustomTools.filter(t => !denied.has(t.name))
+      : runtimeCustomTools
+    return [...filteredTools, ...finalRuntime]
   }
 
   // -------------------------------------------------------------------------

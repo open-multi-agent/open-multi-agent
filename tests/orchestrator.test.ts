@@ -155,6 +155,80 @@ describe('OpenMultiAgent', () => {
       expect(oma.getStatus().completedTasks).toBe(1)
     })
 
+    it('registers customTools so they are available to the LLM', async () => {
+      mockAdapterResponses = ['used custom tool']
+
+      const { z } = await import('zod')
+      const { defineTool } = await import('../src/tool/framework.js')
+
+      const myTool = defineTool({
+        name: 'my_custom_tool',
+        description: 'A custom tool for testing',
+        inputSchema: z.object({ query: z.string() }),
+        execute: async ({ query }) => ({ data: query }),
+      })
+
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      await oma.runAgent(
+        { ...agentConfig('solo'), customTools: [myTool] },
+        'Use the custom tool',
+      )
+
+      const toolNames = capturedChatOptions[0]?.tools?.map(t => t.name) ?? []
+      expect(toolNames).toContain('my_custom_tool')
+    })
+
+    it('customTools bypass tools allowlist and toolPreset filtering', async () => {
+      mockAdapterResponses = ['done']
+
+      const { z } = await import('zod')
+      const { defineTool } = await import('../src/tool/framework.js')
+
+      const myTool = defineTool({
+        name: 'my_custom_tool',
+        description: 'A custom tool for testing',
+        inputSchema: z.object({ query: z.string() }),
+        execute: async ({ query }) => ({ data: query }),
+      })
+
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+
+      // toolPreset 'readonly' only allows file_read, grep, glob — custom tool should still appear
+      await oma.runAgent(
+        { ...agentConfig('solo'), customTools: [myTool], toolPreset: 'readonly' },
+        'test',
+      )
+
+      const toolNames = capturedChatOptions[0]?.tools?.map(t => t.name) ?? []
+      expect(toolNames).toContain('my_custom_tool')
+      // built-in tools outside the preset should be filtered
+      expect(toolNames).not.toContain('bash')
+    })
+
+    it('customTools can be blocked by disallowedTools', async () => {
+      mockAdapterResponses = ['done']
+
+      const { z } = await import('zod')
+      const { defineTool } = await import('../src/tool/framework.js')
+
+      const myTool = defineTool({
+        name: 'my_custom_tool',
+        description: 'A custom tool for testing',
+        inputSchema: z.object({ query: z.string() }),
+        execute: async ({ query }) => ({ data: query }),
+      })
+
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+
+      await oma.runAgent(
+        { ...agentConfig('solo'), customTools: [myTool], disallowedTools: ['my_custom_tool'] },
+        'test',
+      )
+
+      const toolNames = capturedChatOptions[0]?.tools?.map(t => t.name) ?? []
+      expect(toolNames).not.toContain('my_custom_tool')
+    })
+
     it('fires onProgress events', async () => {
       mockAdapterResponses = ['done']
 

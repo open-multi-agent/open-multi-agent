@@ -212,6 +212,11 @@ function resolveTokenBudget(primary?: number, fallback?: number): number | undef
 function buildAgent(config: AgentConfig): Agent {
   const registry = new ToolRegistry()
   registerBuiltInTools(registry)
+  if (config.customTools) {
+    for (const tool of config.customTools) {
+      registry.register(tool, { runtimeAdded: true })
+    }
+  }
   const executor = new ToolExecutor(registry, {
     ...(config.maxToolOutputChars !== undefined
       ? { maxToolOutputChars: config.maxToolOutputChars }
