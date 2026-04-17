@@ -295,13 +295,14 @@ Notes:
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | Verified |
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | Verified |
 | Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | — | Verified |
+| Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | Verified |
 | llama.cpp server | `provider: 'openai'` + `baseURL` | — | Verified |
 
 Gemini requires `npm install @google/genai` (optional peer dependency).
 
 Verified local models with tool-calling: **Gemma 4** (see [example 08](examples/08-gemma4-local.ts)).
 
-Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Groq, Mistral, Qwen, etc.). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
+Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [example 19](examples/19-groq.ts). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
 
 ### Local Model Tool-Calling
 
