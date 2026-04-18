@@ -425,6 +425,7 @@ function buildTaskAgentTeamInfo(
   taskId: string,
   traceBase: Partial<RunOptions>,
   delegationDepth: number,
+  delegationChain: readonly string[],
 ): TeamInfo {
   const sharedMem = ctx.team.getSharedMemoryInstance()
   const maxDepth = ctx.config.maxDelegationDepth
@@ -443,7 +444,13 @@ function buildTaskAgentTeamInfo(
         toolCalls: [],
       }
     }
-    const nestedTeam = buildTaskAgentTeamInfo(ctx, taskId, traceBase, delegationDepth + 1)
+    const nestedTeam = buildTaskAgentTeamInfo(
+      ctx,
+      taskId,
+      traceBase,
+      delegationDepth + 1,
+      [...delegationChain, targetAgent],
+    )
     const childOpts: Partial<RunOptions> = {
       ...traceBase,
       traceAgent: targetAgent,
@@ -460,6 +467,7 @@ function buildTaskAgentTeamInfo(
     delegationDepth,
     maxDelegationDepth: maxDepth,
     delegationPool: ctx.pool,
+    delegationChain,
     runDelegatedAgent,
   }
 }
@@ -576,7 +584,7 @@ async function executeQueue(
       }
       const runOptions: Partial<RunOptions> = {
         ...traceBase,
-        team: buildTaskAgentTeamInfo(ctx, task.id, traceBase, 0),
+        team: buildTaskAgentTeamInfo(ctx, task.id, traceBase, 0, [assignee]),
       }
 
       const taskStartMs = config.onTrace ? Date.now() : 0

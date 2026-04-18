@@ -197,6 +197,11 @@ export interface TeamInfo {
   readonly maxDelegationDepth?: number
   readonly delegationPool?: DelegationPoolView
   /**
+   * Ordered chain of agent names from the root task to the current agent.
+   * Used to block `A -> B -> A` cycles before they burn turns against `maxDelegationDepth`.
+   */
+  readonly delegationChain?: readonly string[]
+  /**
    * Run another roster agent to completion and return its result.
    * Only set during orchestrated pool execution (`runTeam` / `runTasks`).
    */

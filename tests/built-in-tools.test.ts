@@ -539,6 +539,30 @@ describe('delegate_to_agent', () => {
     expect(runDelegatedAgent).toHaveBeenCalledWith('bob', 'Summarize X.')
   })
 
+  it('errors when delegation would form a cycle (A -> B -> A)', async () => {
+    const ctx: ToolUseContext = {
+      agent: { name: 'bob', role: 'worker', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationDepth: 1,
+        maxDelegationDepth: 5,
+        delegationChain: ['alice', 'bob'],
+        delegationPool: { availableRunSlots: 2 },
+        runDelegatedAgent: vi.fn().mockResolvedValue(DELEGATE_OK),
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'alice', prompt: 'loop back' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toMatch(/Delegation cycle detected: alice -> bob -> alice/)
+    expect(ctx.team!.runDelegatedAgent).not.toHaveBeenCalled()
+  })
+
   it('surfaces delegated run tokenUsage via ToolResult.metadata', async () => {
     const runDelegatedAgent = vi.fn().mockResolvedValue({
       success: true,

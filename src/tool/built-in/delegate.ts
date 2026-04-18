@@ -42,15 +42,6 @@ export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = 
       }
     }
 
-    const depth = team.delegationDepth ?? 0
-    const maxDepth = team.maxDelegationDepth ?? 3
-    if (depth >= maxDepth) {
-      return {
-        data: `Maximum delegation depth (${maxDepth}) reached; cannot delegate further.`,
-        isError: true,
-      }
-    }
-
     if (targetAgent === context.agent.name) {
       return {
         data: 'Cannot delegate to yourself; use another team member.',
@@ -61,6 +52,25 @@ export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = 
     if (!team.agents.includes(targetAgent)) {
       return {
         data: `Unknown agent "${targetAgent}". Roster: ${team.agents.join(', ')}`,
+        isError: true,
+      }
+    }
+
+    const chain = team.delegationChain ?? []
+    if (chain.includes(targetAgent)) {
+      return {
+        data:
+          `Delegation cycle detected: ${[...chain, targetAgent].join(' -> ')}. ` +
+          'Pick a different target or restructure the plan.',
+        isError: true,
+      }
+    }
+
+    const depth = team.delegationDepth ?? 0
+    const maxDepth = team.maxDelegationDepth ?? 3
+    if (depth >= maxDepth) {
+      return {
+        data: `Maximum delegation depth (${maxDepth}) reached; cannot delegate further.`,
         isError: true,
       }
     }
