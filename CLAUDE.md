@@ -74,7 +74,21 @@ Optional `maxRetries`, `retryDelayMs`, `retryBackoff` on task config (used via `
 
 ### Built-in Tools
 
-`bash`, `file_read`, `file_write`, `file_edit`, `grep` — registered via `registerBuiltInTools(registry)`.
+`bash`, `file_read`, `file_write`, `file_edit`, `grep`, `glob` — registered via `registerBuiltInTools(registry)`. `delegate_to_agent` is opt-in (`registerBuiltInTools(registry, { includeDelegateTool: true })`) and only wired up inside pool workers by `runTeam`/`runTasks` — see "Agent Delegation" below.
+
+### Agent Delegation
+
+`delegate_to_agent` (in `src/tool/built-in/delegate.ts`) lets an agent synchronously hand a sub-prompt to another roster agent and receive its final output as a tool result. Only active during orchestrated runs; standalone `runAgent` and the `runTeam` short-circuit path (`isSimpleGoal` hit) do not inject it.
+
+Guards (all enforced in the tool itself, before `runDelegatedAgent` is called):
+
+- **Self-delegation:** rejected (`target === context.agent.name`)
+- **Unknown agent:** rejected (target not in team roster)
+- **Cycle detection:** rejected if target already in `TeamInfo.delegationChain` (prevents `A → B → A` from burning tokens up to the depth cap)
+- **Depth cap:** `OrchestratorConfig.maxDelegationDepth` (default 3)
+- **Pool deadlock:** rejected when `AgentPool.availableRunSlots < 1`, without calling the pool
+
+The delegated run's `AgentRunResult.tokenUsage` is surfaced via `ToolResult.metadata.tokenUsage`; the runner accumulates it into `totalUsage` before the next `maxTokenBudget` check, so delegation cannot silently bypass the parent's budget. Delegation tool_result blocks are exempt from `compressToolResults` and the `compact` context strategy so the parent agent retains the full sub-agent output across turns. Best-effort SharedMemory audit writes at `{caller}/delegation:{target}:{timestamp}-{rand}` if the team has shared memory enabled.
 
 ### Adding an LLM Adapter
 
