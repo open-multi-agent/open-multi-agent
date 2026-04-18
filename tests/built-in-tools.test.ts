@@ -539,6 +539,32 @@ describe('delegate_to_agent', () => {
     expect(runDelegatedAgent).toHaveBeenCalledWith('bob', 'Summarize X.')
   })
 
+  it('surfaces delegated run tokenUsage via ToolResult.metadata', async () => {
+    const runDelegatedAgent = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'answer',
+      messages: [],
+      tokenUsage: { input_tokens: 123, output_tokens: 45 },
+      toolCalls: [],
+    } satisfies AgentRunResult)
+    const ctx: ToolUseContext = {
+      agent: { name: 'alice', role: 'lead', model: 'test' },
+      team: {
+        name: 't',
+        agents: ['alice', 'bob'],
+        delegationPool: { availableRunSlots: 2 },
+        runDelegatedAgent,
+      },
+    }
+
+    const result = await delegateToAgentTool.execute(
+      { target_agent: 'bob', prompt: 'Hi' },
+      ctx,
+    )
+
+    expect(result.metadata?.tokenUsage).toEqual({ input_tokens: 123, output_tokens: 45 })
+  })
+
   it('errors when delegation is not configured', async () => {
     const ctx: ToolUseContext = {
       agent: { name: 'alice', role: 'lead', model: 'test' },

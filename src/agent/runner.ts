@@ -744,6 +744,7 @@ export class AgentRunner {
         const executionPromises = toolUseBlocks.map(async (block): Promise<{
           resultBlock: ToolResultBlock
           record: ToolCallRecord
+          delegationUsage?: TokenUsage
         }> => {
           options.onToolCall?.(block.name, block.input)
 
@@ -795,11 +796,45 @@ export class AgentRunner {
             is_error: result.isError,
           }
 
-          return { resultBlock, record }
+          return {
+            resultBlock,
+            record,
+            ...(result.metadata?.tokenUsage !== undefined
+              ? { delegationUsage: result.metadata.tokenUsage }
+              : {}),
+          }
         })
 
         // Wait for every tool in this turn to finish.
         const executions = await Promise.all(executionPromises)
+
+        // Roll up any nested-run token usage surfaced via ToolResult.metadata
+        // (e.g. from delegate_to_agent) so it counts against this agent's budget.
+        let delegationTurnUsage: TokenUsage | undefined
+        for (const ex of executions) {
+          if (ex.delegationUsage !== undefined) {
+            totalUsage = addTokenUsage(totalUsage, ex.delegationUsage)
+            delegationTurnUsage = delegationTurnUsage === undefined
+              ? ex.delegationUsage
+              : addTokenUsage(delegationTurnUsage, ex.delegationUsage)
+          }
+        }
+
+        if (delegationTurnUsage !== undefined && this.options.maxTokenBudget !== undefined) {
+          const totalAfterDelegation = totalUsage.input_tokens + totalUsage.output_tokens
+          if (totalAfterDelegation > this.options.maxTokenBudget) {
+            budgetExceeded = true
+            yield {
+              type: 'budget_exceeded',
+              data: new TokenBudgetExceededError(
+                this.options.agentName ?? 'unknown',
+                totalAfterDelegation,
+                this.options.maxTokenBudget,
+              ),
+            } satisfies StreamEvent
+            break
+          }
+        }
 
         // ------------------------------------------------------------------
         // Step 5: Accumulate results and build the user message that carries

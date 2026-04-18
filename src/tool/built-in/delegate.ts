@@ -17,8 +17,9 @@ const inputSchema = z.object({
  * `runDelegatedAgent` (pool-backed `runTeam` / `runTasks`). Standalone `runAgent`
  * does not register this tool by default.
  *
- * Nested {@link AgentRunResult.tokenUsage} from the delegated run is not merged into
- * the parent agent's run totals (traces may still record usage via `onTrace`).
+ * Nested {@link AgentRunResult.tokenUsage} from the delegated run is surfaced via
+ * {@link ToolResult.metadata} so the parent runner can aggregate it into its total
+ * (keeps `maxTokenBudget` accurate across delegation chains).
  */
 export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = {
   name: 'delegate_to_agent',
@@ -74,7 +75,6 @@ export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = 
     }
 
     const result = await team.runDelegatedAgent(targetAgent, prompt)
-    // Nested run tokenUsage is not merged into the parent agent's AgentRunResult (onTrace may still show it).
 
     if (team.sharedMemory) {
       const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -93,6 +93,7 @@ export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = 
     return {
       data: result.output,
       isError: !result.success,
+      metadata: { tokenUsage: result.tokenUsage },
     }
   },
 }

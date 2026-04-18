@@ -203,10 +203,24 @@ export interface TeamInfo {
   readonly runDelegatedAgent?: (targetAgent: string, prompt: string) => Promise<AgentRunResult>
 }
 
+/**
+ * Optional side-channel metadata a tool may attach to its result.
+ * Not shown to the LLM — the runner reads it for accounting purposes.
+ */
+export interface ToolResultMetadata {
+  /**
+   * Token usage consumed inside the tool execution itself (e.g. nested LLM
+   * calls from `delegate_to_agent`). Accumulated into the parent runner's
+   * total so budgets/cost tracking stay accurate across delegation.
+   */
+  readonly tokenUsage?: TokenUsage
+}
+
 /** Value returned by a tool's `execute` function. */
 export interface ToolResult {
   readonly data: string
   readonly isError?: boolean
+  readonly metadata?: ToolResultMetadata
 }
 
 /**
