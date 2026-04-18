@@ -1009,8 +1009,10 @@ export class AgentRunner {
           }
           // Short results: preserve.
           if (block.content.length < minToolResultChars) return block
-          // Compress.
           const toolName = toolNameMap.get(block.tool_use_id) ?? 'unknown'
+          // Delegation results: preserve — parent agent may still reason over them.
+          if (toolName === 'delegate_to_agent') return block
+          // Compress.
           msgChanged = true
           return {
             type: 'tool_result',
@@ -1065,6 +1067,16 @@ export class AgentRunner {
     // Nothing to compress if there's at most one tool-result user message.
     if (lastToolResultUserIdx <= 0) return messages
 
+    // Build a tool_use_id → tool name map so we can exempt delegation results,
+    // whose full output the parent agent may need to re-read in later turns.
+    const toolNameMap = new Map<string, string>()
+    for (const msg of messages) {
+      if (msg.role !== 'assistant') continue
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') toolNameMap.set(block.id, block.name)
+      }
+    }
+
     let anyChanged = false
     const result = messages.map((msg, idx) => {
       // Only compress user messages that appear before the last one.
@@ -1079,6 +1091,9 @@ export class AgentRunner {
 
         // Never compress error results — they carry diagnostic value.
         if (block.is_error) return block
+
+        // Never compress delegation results — the parent agent relies on the full sub-agent output.
+        if (toolNameMap.get(block.tool_use_id) === 'delegate_to_agent') return block
 
         // Skip already-compressed results — avoid re-compression with wrong char count.
         if (block.content.startsWith('[Tool output compressed')) return block

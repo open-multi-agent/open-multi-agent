@@ -495,4 +495,49 @@ describe('AgentRunner compressToolResults', () => {
     const allToolResults = extractToolResultContents(turn3Messages)
     expect(allToolResults[0]).toContain('compressed')
   })
+
+  it('does NOT compress delegate_to_agent results on turn 3+', async () => {
+    const calls: LLMMessage[][] = []
+    const longOutput = 'y'.repeat(600)
+    const responses = [
+      toolUseResponse('delegate_to_agent', { target_agent: 'bob', prompt: 'do work' }),
+      toolUseResponse('delegate_to_agent', { target_agent: 'bob', prompt: 'do more' }),
+      textResponse('done'),
+    ]
+    let idx = 0
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: [...m.content] })))
+        return responses[idx++]!
+      },
+      async *stream() { /* unused */ },
+    }
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'delegate_to_agent',
+        description: 'Fake delegation tool for test',
+        inputSchema: z.object({ target_agent: z.string(), prompt: z.string() }),
+        async execute() {
+          return { data: longOutput }
+        },
+      }),
+    )
+    const runner = new AgentRunner(adapter, registry, new ToolExecutor(registry), {
+      model: 'mock-model',
+      allowedTools: ['delegate_to_agent'],
+      maxTurns: 5,
+      compressToolResults: true,
+    })
+
+    await runner.run([{ role: 'user', content: [{ type: 'text', text: 'start' }] }])
+
+    // Turn 3: both delegation results should survive unchanged.
+    const turn3Messages = calls[2]!
+    const allToolResults = extractToolResultContents(turn3Messages)
+    expect(allToolResults).toHaveLength(2)
+    expect(allToolResults[0]).toBe(longOutput)
+    expect(allToolResults[1]).toBe(longOutput)
+  })
 })
