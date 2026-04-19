@@ -820,22 +820,6 @@ export class AgentRunner {
           }
         }
 
-        if (delegationTurnUsage !== undefined && this.options.maxTokenBudget !== undefined) {
-          const totalAfterDelegation = totalUsage.input_tokens + totalUsage.output_tokens
-          if (totalAfterDelegation > this.options.maxTokenBudget) {
-            budgetExceeded = true
-            yield {
-              type: 'budget_exceeded',
-              data: new TokenBudgetExceededError(
-                this.options.agentName ?? 'unknown',
-                totalAfterDelegation,
-                this.options.maxTokenBudget,
-              ),
-            } satisfies StreamEvent
-            break
-          }
-        }
-
         // ------------------------------------------------------------------
         // Step 5: Accumulate results and build the user message that carries
         //         them back to the LLM in the next turn.
@@ -868,6 +852,27 @@ export class AgentRunner {
 
         conversationMessages.push(toolResultMessage)
         options.onMessage?.(toolResultMessage)
+
+        // Budget check is deferred until tool_result events have been yielded
+        // and the tool_result user message has been appended, so stream
+        // consumers see matched tool_use/tool_result pairs and the returned
+        // `messages` remain resumable against the Anthropic/OpenAI APIs.
+        if (delegationTurnUsage !== undefined && this.options.maxTokenBudget !== undefined) {
+          const totalAfterDelegation = totalUsage.input_tokens + totalUsage.output_tokens
+          if (totalAfterDelegation > this.options.maxTokenBudget) {
+            budgetExceeded = true
+            finalOutput = turnText
+            yield {
+              type: 'budget_exceeded',
+              data: new TokenBudgetExceededError(
+                this.options.agentName ?? 'unknown',
+                totalAfterDelegation,
+                this.options.maxTokenBudget,
+              ),
+            } satisfies StreamEvent
+            break
+          }
+        }
 
         // Loop back to Step 1 — send updated conversation to the LLM.
       }
