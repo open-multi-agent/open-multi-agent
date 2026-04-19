@@ -4,12 +4,10 @@
 
 CrewAI 是 Python。LangGraph 需要你自己画图。`open-multi-agent` 是你现有 Node.js 后端里 `npm install` 一下就能用的那一层。当你需要让一支 agent 团队围绕一个目标协作时，只提供这个，不多不少。
 
-3 个运行时依赖 · 41 个源文件 · Node.js 能跑的地方都能部署
-
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
+[![coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
 
 [English](./README.md) | **中文**
 
@@ -144,13 +142,12 @@ Tokens: 12847 output tokens
 [`examples/`](./examples/) 按类别组织——basics、providers、patterns、integrations、production。完整索引见 [`examples/README.md`](./examples/README.md)。推荐起步：
 
 - [`basics/team-collaboration`](examples/basics/team-collaboration.ts)：`runTeam()` 协调者模式。
-- [`providers/ollama`](examples/providers/ollama.ts)：通过 `baseURL` 把 Ollama 和 Claude 放在同一条管线。
 - [`patterns/structured-output`](examples/patterns/structured-output.ts)：任意 agent 产出 Zod 校验过的 JSON。
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts)：`delegate_to_agent` 同步子智能体委派。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，为 LLM 调用、工具、任务发出结构化 span。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：通过 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
-- [`providers/minimax`](examples/providers/minimax.ts)、[`providers/deepseek`](examples/providers/deepseek.ts)、[`providers/groq`](examples/providers/groq.ts)：各 provider 的三智能体团队。
-- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用 — OMA `runTeam()` + AI SDK `useChat` 流式输出。
+- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用，OMA `runTeam()` 配合 AI SDK `useChat` 流式输出。
+- **Provider 示例** —— 8 个三智能体团队示例（每个支持的 provider 一个），见 [`examples/providers/`](examples/providers/)。
 
 用 `npx tsx examples/basics/team-collaboration.ts` 运行脚本示例。
 
@@ -453,8 +450,8 @@ const deepseekAgent: AgentConfig = {
 
 欢迎提 Issue、功能需求和 PR。以下方向的贡献尤其有价值：
 
-- **示例** — 真实场景的工作流和用例。
-- **文档** — 指南、教程和 API 文档。
+- **生产级示例** —— 端到端的真实场景工作流。准入标准和提交格式见 [`examples/production/README.md`](./examples/production/README.md)。
+- **文档** —— 指南、教程和 API 文档。
 
 ## 贡献者
 

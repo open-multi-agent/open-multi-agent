@@ -4,12 +4,10 @@ The lightweight multi-agent orchestration engine for TypeScript. Three runtime d
 
 CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent` is the `npm install` you drop into an existing Node.js backend when you need a team of agents to work on a goal together. Nothing more, nothing less.
 
-3 runtime dependencies · 41 source files · Deploys anywhere Node.js runs
-
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
+[![coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
 
 **English** | [中文](./README_zh.md)
 
@@ -144,13 +142,12 @@ For MapReduce-style fan-out without task dependencies, use `AgentPool.runParalle
 [`examples/`](./examples/) is organized by category — basics, providers, patterns, integrations, and production. See [`examples/README.md`](./examples/README.md) for the full index. Highlights:
 
 - [`basics/team-collaboration`](examples/basics/team-collaboration.ts): `runTeam()` coordinator pattern.
-- [`providers/ollama`](examples/providers/ollama.ts): Ollama and Claude in one pipeline via `baseURL`.
 - [`patterns/structured-output`](examples/patterns/structured-output.ts): any agent returns Zod-validated JSON.
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts): synchronous sub-agent delegation via `delegate_to_agent`.
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
-- [`providers/minimax`](examples/providers/minimax.ts), [`providers/deepseek`](examples/providers/deepseek.ts), [`providers/groq`](examples/providers/groq.ts): three-agent teams on each provider.
-- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming.
+- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app combining OMA `runTeam()` with AI SDK `useChat` streaming.
+- **Provider examples** — eight three-agent teams (one per supported provider) under [`examples/providers/`](examples/providers/).
 
 Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
 
@@ -453,7 +450,7 @@ Set `DEEPSEEK_API_KEY`. Available models: `deepseek-chat` (DeepSeek-V3, recommen
 
 Issues, feature requests, and PRs are welcome. Some areas where contributions would be especially valuable:
 
-- **Examples** — Real-world workflows and use cases.
+- **Production examples** — Real-world end-to-end workflows. See [`examples/production/README.md`](./examples/production/README.md) for the acceptance criteria and submission format.
 - **Documentation** — Guides, tutorials, and API docs.
 
 ## Contributors
