@@ -8,7 +8,7 @@ CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent`
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![install size](https://packagephobia.com/badge?p=@jackchen_me/open-multi-agent)](https://packagephobia.com/result?p=@jackchen_me/open-multi-agent)
+[![runtime deps](https://img.shields.io/badge/runtime_deps-3-brightgreen)](https://github.com/JackChen-me/open-multi-agent/blob/main/package.json)
 [![codecov](https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg)](https://codecov.io/gh/JackChen-me/open-multi-agent)
 
 **English** | [中文](./README_zh.md)
