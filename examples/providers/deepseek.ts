@@ -1,28 +1,30 @@
 /**
- * Example 02 — Multi-Agent Team Collaboration
+ * Multi-Agent Team Collaboration with DeepSeek
  *
- * Three specialised agents (architect, developer, reviewer) collaborate on a
- * shared goal. The OpenMultiAgent orchestrator breaks the goal into tasks, assigns
- * them to the right agents, and collects the results.
+ * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
+ * to build a minimal Express.js REST API. Every agent uses DeepSeek's flagship model.
  *
  * Run:
- *   npx tsx examples/02-team-collaboration.ts
+ *   npx tsx examples/providers/deepseek.ts
  *
  * Prerequisites:
- *   ANTHROPIC_API_KEY env var must be set.
+ *   DEEPSEEK_API_KEY environment variable must be set.
+ *
+ * Available models:
+ *   deepseek-chat      — DeepSeek-V3 (non-thinking mode, recommended for coding tasks)
+ *   deepseek-reasoner  — DeepSeek-V3 (thinking mode, for complex reasoning)
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
-// Agent definitions
+// Agent definitions (all using deepseek-chat)
 // ---------------------------------------------------------------------------
-
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model: 'deepseek-reasoner',
+  provider: 'deepseek',
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -33,8 +35,8 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model: 'deepseek-chat',
+  provider: 'deepseek',
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -44,8 +46,8 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model: 'deepseek-chat',
+  provider: 'deepseek',
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -57,41 +59,32 @@ Read files using the tools before reviewing.`,
 // ---------------------------------------------------------------------------
 // Progress tracking
 // ---------------------------------------------------------------------------
-
 const startTimes = new Map<string, number>()
 
 function handleProgress(event: OrchestratorEvent): void {
   const ts = new Date().toISOString().slice(11, 23) // HH:MM:SS.mmm
-
   switch (event.type) {
     case 'agent_start':
       startTimes.set(event.agent ?? '', Date.now())
-      console.log(`[${ts}] AGENT START  → ${event.agent}`)
+      console.log(`[${ts}] AGENT START → ${event.agent}`)
       break
-
     case 'agent_complete': {
       const elapsed = Date.now() - (startTimes.get(event.agent ?? '') ?? Date.now())
-      console.log(`[${ts}] AGENT DONE   ← ${event.agent} (${elapsed}ms)`)
+      console.log(`[${ts}] AGENT DONE ← ${event.agent} (${elapsed}ms)`)
       break
     }
-
     case 'task_start':
-      console.log(`[${ts}] TASK START   ↓ ${event.task}`)
+      console.log(`[${ts}] TASK START ↓ ${event.task}`)
       break
-
     case 'task_complete':
-      console.log(`[${ts}] TASK DONE    ↑ ${event.task}`)
+      console.log(`[${ts}] TASK DONE ↑ ${event.task}`)
       break
-
     case 'message':
-      console.log(`[${ts}] MESSAGE      • ${event.agent} → (team)`)
+      console.log(`[${ts}] MESSAGE • ${event.agent} → (team)`)
       break
-
     case 'error':
-      console.error(`[${ts}] ERROR        ✗ agent=${event.agent} task=${event.task}`)
-      if (event.data instanceof Error) {
-        console.error(`               ${event.data.message}`)
-      }
+      console.error(`[${ts}] ERROR ✗ agent=${event.agent} task=${event.task}`)
+      if (event.data instanceof Error) console.error(` ${event.data.message}`)
       break
   }
 }
@@ -99,10 +92,10 @@ function handleProgress(event: OrchestratorEvent): void {
 // ---------------------------------------------------------------------------
 // Orchestrate
 // ---------------------------------------------------------------------------
-
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
-  maxConcurrency: 1, // run agents sequentially so output is readable
+  defaultModel: 'deepseek-chat',
+  defaultProvider: 'deepseek',
+  maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,
 })
 
@@ -118,9 +111,9 @@ console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
 const goal = `Create a minimal Express.js REST API in /tmp/express-api/ with:
-- GET  /health       → { status: "ok" }
-- GET  /users        → returns a hardcoded array of 2 user objects
-- POST /users        → accepts { name, email } body, logs it, returns 201
+- GET /health → { status: "ok" }
+- GET /users → returns a hardcoded array of 2 user objects
+- POST /users → accepts { name, email } body, logs it, returns 201
 - Proper error handling middleware
 - The server should listen on port 3001
 - Include a package.json with the required dependencies`
@@ -132,7 +125,6 @@ console.log('\n' + '='.repeat(60))
 // ---------------------------------------------------------------------------
 // Results
 // ---------------------------------------------------------------------------
-
 console.log('\nTeam run complete.')
 console.log(`Success: ${result.success}`)
 console.log(`Total tokens — input: ${result.totalTokenUsage.input_tokens}, output: ${result.totalTokenUsage.output_tokens}`)
@@ -141,13 +133,13 @@ console.log('\nPer-agent results:')
 for (const [agentName, agentResult] of result.agentResults) {
   const status = agentResult.success ? 'OK' : 'FAILED'
   const tools = agentResult.toolCalls.length
-  console.log(`  ${agentName.padEnd(12)} [${status}]  tool_calls=${tools}`)
+  console.log(` ${agentName.padEnd(12)} [${status}] tool_calls=${tools}`)
   if (!agentResult.success) {
-    console.log(`    Error: ${agentResult.output.slice(0, 120)}`)
+    console.log(` Error: ${agentResult.output.slice(0, 120)}`)
   }
 }
 
-// Print the developer's final output (the actual code) as a sample
+// Sample outputs
 const developerResult = result.agentResults.get('developer')
 if (developerResult?.success) {
   console.log('\nDeveloper output (last 600 chars):')
@@ -157,7 +149,6 @@ if (developerResult?.success) {
   console.log('─'.repeat(60))
 }
 
-// Print the reviewer's findings
 const reviewerResult = result.agentResults.get('reviewer')
 if (reviewerResult?.success) {
   console.log('\nReviewer output:')

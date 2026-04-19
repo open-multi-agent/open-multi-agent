@@ -1,18 +1,18 @@
 /**
- * Example 01 — Single Agent
+ * Single Agent
  *
  * The simplest possible usage: one agent with bash and file tools, running
  * a coding task. Then shows streaming output using the Agent class directly.
  *
  * Run:
- *   npx tsx examples/01-single-agent.ts
+ *   npx tsx examples/basics/single-agent.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../src/index.js'
-import type { OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../../src/index.js'
+import type { OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Part 1: Single agent via OpenMultiAgent (simplest path)

@@ -1,11 +1,11 @@
 /**
- * Example 16 — MCP GitHub Tools
+ * MCP GitHub Tools
  *
  * Connect an MCP server over stdio and register all exposed MCP tools as
  * standard open-multi-agent tools.
  *
  * Run:
- *   npx tsx examples/16-mcp-github.ts
+ *   npx tsx examples/integrations/mcp-github.ts
  *
  * Prerequisites:
  *   - GEMINI_API_KEY
@@ -13,8 +13,8 @@
  *   - @modelcontextprotocol/sdk installed
  */
 
-import { Agent, ToolExecutor, ToolRegistry, registerBuiltInTools } from '../src/index.js'
-import { connectMCPTools } from '../src/mcp.js'
+import { Agent, ToolExecutor, ToolRegistry, registerBuiltInTools } from '../../src/index.js'
+import { connectMCPTools } from '../../src/mcp.js'
 
 if (!process.env.GITHUB_TOKEN?.trim()) {
   console.error('Missing GITHUB_TOKEN: set a GitHub personal access token in the environment.')

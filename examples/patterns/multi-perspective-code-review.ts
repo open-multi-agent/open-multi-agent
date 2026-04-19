@@ -11,14 +11,14 @@
  *   generator → [security-reviewer, performance-reviewer, style-reviewer] (parallel) → synthesizer
  *
  * Run:
- *   npx tsx examples/14-multi-perspective-code-review.ts
+ *   npx tsx examples/patterns/multi-perspective-code-review.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // API spec to implement

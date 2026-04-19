@@ -1,5 +1,5 @@
 /**
- * Example 07 — Fan-Out / Aggregate (MapReduce) Pattern
+ * Fan-Out / Aggregate (MapReduce) Pattern
  *
  * Demonstrates:
  * - Fan-out: send the same question to N "analyst" agents in parallel
@@ -9,14 +9,14 @@
  * - No tools needed — pure LLM reasoning to keep the focus on the pattern
  *
  * Run:
- *   npx tsx examples/07-fan-out-aggregate.ts
+ *   npx tsx examples/patterns/fan-out-aggregate.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { Agent, AgentPool, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../src/index.js'
-import type { AgentConfig, AgentRunResult } from '../src/types.js'
+import { Agent, AgentPool, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../../src/index.js'
+import type { AgentConfig, AgentRunResult } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Analysis topic

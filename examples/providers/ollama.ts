@@ -1,5 +1,5 @@
 /**
- * Example 06 — Local Model + Cloud Model Team (Ollama + Claude)
+ * Local Model + Cloud Model Team (Ollama + Claude)
  *
  * Demonstrates mixing a local model served by Ollama with a cloud model
  * (Claude) in the same task pipeline. The key technique is using
@@ -14,7 +14,7 @@
  * Just change the baseURL and model name below.
  *
  * Run:
- *   npx tsx examples/06-local-model.ts
+ *   npx tsx examples/providers/ollama.ts
  *
  * Prerequisites:
  *   1. Ollama installed and running: https://ollama.com
@@ -22,8 +22,8 @@
  *   3. ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent, Task } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Agents

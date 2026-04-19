@@ -1,5 +1,5 @@
 /**
- * Example 04 — Multi-Model Team with Custom Tools
+ * Multi-Model Team with Custom Tools
  *
  * Demonstrates:
  * - Mixing Anthropic and OpenAI models in the same team
@@ -8,7 +8,7 @@
  * - Running a team goal that uses the custom tools
  *
  * Run:
- *   npx tsx examples/04-multi-model-team.ts
+ *   npx tsx examples/basics/multi-model-team.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY and OPENAI_API_KEY env vars must be set.
@@ -16,8 +16,8 @@
  */
 
 import { z } from 'zod'
-import { OpenMultiAgent, defineTool } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent, defineTool } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Custom tools — defined with defineTool() + Zod schemas
@@ -113,7 +113,7 @@ const formatCurrencyTool = defineTool({
 // directly through AgentPool rather than through the OpenMultiAgent high-level API.
 // ---------------------------------------------------------------------------
 
-import { Agent, AgentPool, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../src/index.js'
+import { Agent, AgentPool, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../../src/index.js'
 
 /**
  * Build an Agent with both built-in and custom tools registered.

@@ -65,7 +65,7 @@ Requires Node.js >= 18.
 npm install @jackchen_me/open-multi-agent
 ```
 
-Set the API key for your provider. Local models via Ollama require no API key — see [example 06](examples/06-local-model.ts).
+Set the API key for your provider. Local models via Ollama require no API key — see [`providers/ollama`](examples/providers/ollama.ts).
 
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
@@ -137,23 +137,22 @@ Tokens: 12847 output tokens
 | Auto-orchestrated team | `runTeam()` | Give a goal, framework plans and executes |
 | Explicit pipeline | `runTasks()` | You define the task graph and assignments |
 
-For MapReduce-style fan-out without task dependencies, use `AgentPool.runParallel()` directly. See [example 07](examples/07-fan-out-aggregate.ts).
+For MapReduce-style fan-out without task dependencies, use `AgentPool.runParallel()` directly. See [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts).
 
 ## Examples
 
-19 runnable scripts and 1 full-stack demo in [`examples/`](./examples/). Start with these:
+[`examples/`](./examples/) is organized by category — basics, providers, patterns, integrations, and production. See [`examples/README.md`](./examples/README.md) for the full index. Highlights:
 
-- [02 — Team Collaboration](examples/02-team-collaboration.ts): `runTeam()` coordinator pattern.
-- [06 — Local Model](examples/06-local-model.ts): Ollama and Claude in one pipeline via `baseURL`.
-- [09 — Structured Output](examples/09-structured-output.ts): any agent returns Zod-validated JSON.
-- [11 — Trace Observability](examples/11-trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
-- [16 — MCP (GitHub)](examples/16-mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
-- [17 — MiniMax](examples/17-minimax.ts): three-agent team using MiniMax M2.7.
-- [18 — DeepSeek](examples/18-deepseek.ts): three-agent team using DeepSeek Chat.
-- [19 — Groq](examples/19-groq.ts): OpenAI-compatible Groq endpoint with fast free-tier models.
-- [with-vercel-ai-sdk](examples/with-vercel-ai-sdk/): Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming.
+- [`basics/team-collaboration`](examples/basics/team-collaboration.ts): `runTeam()` coordinator pattern.
+- [`providers/ollama`](examples/providers/ollama.ts): Ollama and Claude in one pipeline via `baseURL`.
+- [`patterns/structured-output`](examples/patterns/structured-output.ts): any agent returns Zod-validated JSON.
+- [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts): synchronous sub-agent delegation via `delegate_to_agent`.
+- [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
+- [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
+- [`providers/minimax`](examples/providers/minimax.ts), [`providers/deepseek`](examples/providers/deepseek.ts), [`providers/groq`](examples/providers/groq.ts): three-agent teams on each provider.
+- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming.
 
-Run scripts with `npx tsx examples/02-team-collaboration.ts`.
+Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
 
 ## Architecture
 
@@ -334,7 +333,7 @@ Notes:
 - Current transport support is stdio.
 - MCP input validation is delegated to the MCP server (`inputSchema` is `z.any()`).
 
-See [example 16](examples/16-mcp-github.ts) for a full runnable setup.
+See [`integrations/mcp-github`](examples/integrations/mcp-github.ts) for a full runnable setup.
 
 ## Context Management
 
@@ -379,9 +378,9 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 
 Gemini requires `npm install @google/genai` (optional peer dependency).
 
-Verified local models with tool-calling: **Gemma 4** (see [example 08](examples/08-gemma4-local.ts)).
+Verified local models with tool-calling: **Gemma 4** (see [`providers/gemma4-local`](examples/providers/gemma4-local.ts)).
 
-Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [example 19](examples/19-groq.ts). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
+Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
 
 ### Local Model Tool-Calling
 

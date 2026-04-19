@@ -27,11 +27,11 @@ Chat UI (app/page.tsx) — useChat hook renders streamed response
 
 ```bash
 # 1. From repo root, install OMA dependencies
-cd ../..
+cd ../../..
 npm install
 
 # 2. Back to this example
-cd examples/with-vercel-ai-sdk
+cd examples/integrations/with-vercel-ai-sdk
 npm install
 
 # 3. Set your API key

@@ -1,26 +1,31 @@
 /**
- * Example 12 — Multi-Agent Team Collaboration with Grok (xAI)
+ * Multi-Agent Team Collaboration with MiniMax
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses Grok's coding-optimized model.
+ * to build a minimal Express.js REST API. Every agent uses MiniMax's flagship model.
  *
  * Run:
- *   npx tsx examples/12-grok.ts
+ *   npx tsx examples/providers/minimax.ts
  *
  * Prerequisites:
- *   XAI_API_KEY environment variable must be set.
+ *   MINIMAX_API_KEY environment variable must be set.
+ *   MINIMAX_BASE_URL environment variable can be set to switch to the China mainland endpoint if needed.
+ *
+ * Endpoints:
+ *   Global (default): https://api.minimax.io/v1
+ *   China mainland:   https://api.minimaxi.com/v1  (set MINIMAX_BASE_URL)
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
-// Agent definitions (all using grok-code-fast-1)
+// Agent definitions (all using MiniMax-M2.7)
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'grok-code-fast-1',
-  provider: 'grok',
+  model: 'MiniMax-M2.7',
+  provider: 'minimax',
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -31,8 +36,8 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'grok-code-fast-1',
-  provider: 'grok',
+  model: 'MiniMax-M2.7',
+  provider: 'minimax',
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -42,8 +47,8 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'grok-code-fast-1',
-  provider: 'grok',
+  model: 'MiniMax-M2.7',
+  provider: 'minimax',
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -89,8 +94,8 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'grok-code-fast-1',
-  defaultProvider: 'grok',
+  defaultModel: 'MiniMax-M2.7',
+  defaultProvider: 'minimax',
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,
 })

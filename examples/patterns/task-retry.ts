@@ -1,5 +1,5 @@
 /**
- * Example 10 — Task Retry with Exponential Backoff
+ * Task Retry with Exponential Backoff
  *
  * Demonstrates `maxRetries`, `retryDelayMs`, and `retryBackoff` on task config.
  * When a task fails, the framework automatically retries with exponential
@@ -10,14 +10,14 @@
  * to retry on failure, and the second task (analysis) depends on it.
  *
  * Run:
- *   npx tsx examples/10-task-retry.ts
+ *   npx tsx examples/patterns/task-retry.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Agents

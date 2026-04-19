@@ -1,5 +1,5 @@
 /**
- * Example 11 — Trace Observability
+ * Trace Observability
  *
  * Demonstrates the `onTrace` callback for lightweight observability. Every LLM
  * call, tool execution, task lifecycle, and agent run emits a structured trace
@@ -11,14 +11,14 @@
  * dashboard.
  *
  * Run:
- *   npx tsx examples/11-trace-observability.ts
+ *   npx tsx examples/integrations/trace-observability.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, TraceEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, TraceEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Agents

@@ -1,5 +1,5 @@
 /**
- * Example 16 — Synchronous agent handoff via `delegate_to_agent`
+ * Synchronous agent handoff via `delegate_to_agent`
  *
  * During `runTeam` / `runTasks`, pool agents register the built-in
  * `delegate_to_agent` tool so one specialist can run a sub-prompt on another
@@ -9,14 +9,14 @@
  * standalone `runAgent()` does not register this tool by default.
  *
  * Run:
- *   npx tsx examples/16-agent-handoff.ts
+ *   npx tsx examples/patterns/agent-handoff.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig } from '../../src/types.js'
 
 const researcher: AgentConfig = {
   name: 'researcher',

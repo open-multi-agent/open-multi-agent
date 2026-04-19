@@ -1,5 +1,5 @@
 /**
- * Example 08 — Gemma 4 Local (100% Local, Zero API Cost)
+ * Gemma 4 Local (100% Local, Zero API Cost)
  *
  * Demonstrates both execution modes with a fully local Gemma 4 model via
  * Ollama. No cloud API keys needed — everything runs on your machine.
@@ -13,7 +13,7 @@
  * Gemma 4 e2b (5.1B params) handles both reliably.
  *
  * Run:
- *   no_proxy=localhost npx tsx examples/08-gemma4-local.ts
+ *   no_proxy=localhost npx tsx examples/providers/gemma4-local.ts
  *
  * Prerequisites:
  *   1. Ollama >= 0.20.0 installed and running: https://ollama.com
@@ -26,8 +26,8 @@
  * through the proxy.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent, Task } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Configuration — change this to match your Ollama setup

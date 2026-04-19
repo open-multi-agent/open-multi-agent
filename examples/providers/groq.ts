@@ -1,30 +1,32 @@
 /**
- * Example 18 — Multi-Agent Team Collaboration with DeepSeek
+ * Multi-Agent Team Collaboration with Groq
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses DeepSeek's flagship model.
+ * to build a minimal Express.js REST API. Every agent uses Groq via the OpenAI-compatible adapter.
  *
  * Run:
- *   npx tsx examples/18-deepseek.ts
+ *   npx tsx examples/providers/groq.ts
  *
  * Prerequisites:
- *   DEEPSEEK_API_KEY environment variable must be set.
+ *   GROQ_API_KEY environment variable must be set.
  *
  * Available models:
- *   deepseek-chat      — DeepSeek-V3 (non-thinking mode, recommended for coding tasks)
- *   deepseek-reasoner  — DeepSeek-V3 (thinking mode, for complex reasoning)
+ *   llama-3.3-70b-versatile       — Groq production model (recommended for coding tasks)
+ *   deepseek-r1-distill-llama-70b — Groq reasoning model
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
-// Agent definitions (all using deepseek-chat)
+// Agent definitions (all using Groq via the OpenAI-compatible adapter)
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'deepseek-reasoner',
-  provider: 'deepseek',
+  model: 'deepseek-r1-distill-llama-70b',
+  provider: 'openai',
+  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: process.env.GROQ_API_KEY,
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -35,8 +37,10 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'deepseek-chat',
-  provider: 'deepseek',
+  model: 'llama-3.3-70b-versatile',
+  provider: 'openai',
+  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: process.env.GROQ_API_KEY,
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -46,8 +50,10 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'deepseek-chat',
-  provider: 'deepseek',
+  model: 'llama-3.3-70b-versatile',
+  provider: 'openai',
+  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: process.env.GROQ_API_KEY,
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -93,8 +99,8 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'deepseek-chat',
-  defaultProvider: 'deepseek',
+  defaultModel: 'llama-3.3-70b-versatile',
+  defaultProvider: 'openai',
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,
 })

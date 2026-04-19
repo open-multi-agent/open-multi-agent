@@ -1,5 +1,5 @@
 /**
- * Example 03 — Explicit Task Pipeline with Dependencies
+ * Explicit Task Pipeline with Dependencies
  *
  * Demonstrates how to define tasks with explicit dependency chains
  * (design → implement → test → review) using runTasks(). The TaskQueue
@@ -8,14 +8,14 @@
  * description plus direct dependency results (not unrelated team outputs).
  *
  * Run:
- *   npx tsx examples/03-task-pipeline.ts
+ *   npx tsx examples/basics/task-pipeline.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent, Task } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Agents

@@ -1,32 +1,36 @@
 /**
- * Example 19 — Multi-Agent Team Collaboration with Groq
+ * Multi-Agent Team Collaboration with GitHub Copilot
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses Groq via the OpenAI-compatible adapter.
+ * to build a minimal Express.js REST API. Routes through GitHub Copilot's OpenAI-compatible
+ * endpoint, mixing GPT-4o (architect/reviewer) and Claude Sonnet (developer) in one team.
  *
  * Run:
- *   npx tsx examples/19-groq.ts
+ *   npx tsx examples/providers/copilot.ts
  *
- * Prerequisites:
- *   GROQ_API_KEY environment variable must be set.
+ * Authentication (one of):
+ *   GITHUB_COPILOT_TOKEN env var (preferred)
+ *   GITHUB_TOKEN env var (fallback)
+ *   Otherwise: an interactive OAuth2 device flow starts on first run and prompts
+ *   you to sign in via your browser. Requires an active Copilot subscription.
  *
- * Available models:
- *   llama-3.3-70b-versatile       — Groq production model (recommended for coding tasks)
- *   deepseek-r1-distill-llama-70b — Groq reasoning model
+ * Available models (subset):
+ *   gpt-4o              — included, no premium request
+ *   claude-sonnet-4.5   — premium, 1x multiplier
+ *   claude-sonnet-4.6   — premium, 1x multiplier
+ *   See src/llm/copilot.ts for the full model list and premium multipliers.
  */
 
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig, OrchestratorEvent } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
-// Agent definitions (all using Groq via the OpenAI-compatible adapter)
+// Agent definitions (mixing GPT-4o and Claude Sonnet, both via Copilot)
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'deepseek-r1-distill-llama-70b',
-  provider: 'openai',
-  baseURL: 'https://api.groq.com/openai/v1',
-  apiKey: process.env.GROQ_API_KEY,
+  model: 'gpt-4o',
+  provider: 'copilot',
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -37,10 +41,8 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'llama-3.3-70b-versatile',
-  provider: 'openai',
-  baseURL: 'https://api.groq.com/openai/v1',
-  apiKey: process.env.GROQ_API_KEY,
+  model: 'claude-sonnet-4.5',
+  provider: 'copilot',
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -50,10 +52,8 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'llama-3.3-70b-versatile',
-  provider: 'openai',
-  baseURL: 'https://api.groq.com/openai/v1',
-  apiKey: process.env.GROQ_API_KEY,
+  model: 'gpt-4o',
+  provider: 'copilot',
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -68,7 +68,7 @@ Read files using the tools before reviewing.`,
 const startTimes = new Map<string, number>()
 
 function handleProgress(event: OrchestratorEvent): void {
-  const ts = new Date().toISOString().slice(11, 23) // HH:MM:SS.mmm
+  const ts = new Date().toISOString().slice(11, 23)
   switch (event.type) {
     case 'agent_start':
       startTimes.set(event.agent ?? '', Date.now())
@@ -99,9 +99,9 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'llama-3.3-70b-versatile',
-  defaultProvider: 'openai',
-  maxConcurrency: 1, // sequential for readable output
+  defaultModel: 'gpt-4o',
+  defaultProvider: 'copilot',
+  maxConcurrency: 1,
   onProgress: handleProgress,
 })
 
@@ -116,7 +116,7 @@ console.log(`Team "${team.name}" created with agents: ${team.getAgents().map(a =
 console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
-const goal = `Create a minimal Express.js REST API in /tmp/express-api/ with:
+const goal = `Create a minimal Express.js REST API in /tmp/copilot-api/ with:
 - GET /health → { status: "ok" }
 - GET /users → returns a hardcoded array of 2 user objects
 - POST /users → accepts { name, email } body, logs it, returns 201
@@ -145,7 +145,6 @@ for (const [agentName, agentResult] of result.agentResults) {
   }
 }
 
-// Sample outputs
 const developerResult = result.agentResults.get('developer')
 if (developerResult?.success) {
   console.log('\nDeveloper output (last 600 chars):')

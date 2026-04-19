@@ -1,5 +1,5 @@
 /**
- * Example 09 — Structured Output
+ * Structured Output
  *
  * Demonstrates `outputSchema` on AgentConfig. The agent's response is
  * automatically parsed as JSON and validated against a Zod schema.
@@ -8,15 +8,15 @@
  * The validated result is available via `result.structured`.
  *
  * Run:
- *   npx tsx examples/09-structured-output.ts
+ *   npx tsx examples/patterns/structured-output.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
 import { z } from 'zod'
-import { OpenMultiAgent } from '../src/index.js'
-import type { AgentConfig } from '../src/types.js'
+import { OpenMultiAgent } from '../../src/index.js'
+import type { AgentConfig } from '../../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Define a Zod schema for the expected output
