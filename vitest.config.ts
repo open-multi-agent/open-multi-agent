@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       include: ['src/**'],
+      reporter: ['text', 'html', 'lcov', 'json'],
     },
     exclude: [
       '**/node_modules/**',

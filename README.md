@@ -4,10 +4,12 @@ The lightweight multi-agent orchestration engine for TypeScript. Three runtime d
 
 CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent` is the `npm install` you drop into an existing Node.js backend when you need a team of agents to work on a goal together. Nothing more, nothing less.
 
+[![npm version](https://img.shields.io/npm/v/@jackchen_me/open-multi-agent)](https://www.npmjs.com/package/@jackchen_me/open-multi-agent)
 [![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
 [![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](https://github.com/JackChen-me/open-multi-agent/actions)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@jackchen_me/open-multi-agent)](https://bundlephobia.com/package/@jackchen_me/open-multi-agent)
+[![codecov](https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg)](https://codecov.io/gh/JackChen-me/open-multi-agent)
 
 **English** | [中文](./README_zh.md)
 
@@ -456,7 +458,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260411" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260419" />
 </a>
 
 ## Star History

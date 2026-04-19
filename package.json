@@ -29,6 +29,7 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",
     "test:e2e": "RUN_E2E=1 vitest run tests/e2e/",
     "prepublishOnly": "npm run build"
