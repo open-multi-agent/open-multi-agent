@@ -419,6 +419,12 @@ interface RunContext {
 /**
  * Build {@link TeamInfo} for tool context, including nested `runDelegatedAgent`
  * that respects pool capacity to avoid semaphore deadlocks.
+ *
+ * Delegation always builds a **fresh** Agent instance for the target and runs
+ * it via `pool.runEphemeral` — the pool semaphore still gates total concurrency,
+ * but the per-agent lock is bypassed. This matches `delegate_to_agent`'s "runs
+ * in a fresh conversation for this prompt only" contract and prevents mutual
+ * delegation (A→B while B→A) from deadlocking on each other's agent locks.
  */
 function buildTaskAgentTeamInfo(
   ctx: RunContext,
@@ -429,7 +435,8 @@ function buildTaskAgentTeamInfo(
 ): TeamInfo {
   const sharedMem = ctx.team.getSharedMemoryInstance()
   const maxDepth = ctx.config.maxDelegationDepth
-  const agentNames = ctx.team.getAgents().map((a) => a.name)
+  const agentConfigs = ctx.team.getAgents()
+  const agentNames = agentConfigs.map((a) => a.name)
 
   const runDelegatedAgent = async (targetAgent: string, prompt: string): Promise<AgentRunResult> => {
     const pool = ctx.pool
@@ -444,6 +451,28 @@ function buildTaskAgentTeamInfo(
         toolCalls: [],
       }
     }
+
+    const targetConfig = agentConfigs.find((a) => a.name === targetAgent)
+    if (!targetConfig) {
+      return {
+        success: false,
+        output: `Unknown agent "${targetAgent}" — not in team roster [${agentNames.join(', ')}].`,
+        messages: [],
+        tokenUsage: ZERO_USAGE,
+        toolCalls: [],
+      }
+    }
+
+    // Apply orchestrator-level defaults just like buildPool, then construct a
+    // one-shot Agent for this delegation only.
+    const effective: AgentConfig = {
+      ...targetConfig,
+      provider: targetConfig.provider ?? ctx.config.defaultProvider,
+      baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
+      apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
+    }
+    const tempAgent = buildAgent(effective, { includeDelegateTool: true })
+
     const nestedTeam = buildTaskAgentTeamInfo(
       ctx,
       taskId,
@@ -457,7 +486,7 @@ function buildTaskAgentTeamInfo(
       taskId,
       team: nestedTeam,
     }
-    return pool.run(targetAgent, prompt, childOpts)
+    return pool.runEphemeral(tempAgent, prompt, childOpts)
   }
 
   return {

@@ -168,6 +168,32 @@ export class AgentPool {
   }
 
   /**
+   * Run a prompt on a caller-supplied Agent instance, acquiring only the pool
+   * semaphore — no per-agent lock, no registry lookup.
+   *
+   * Designed for delegation: each delegated call should use a **fresh** Agent
+   * instance (matching `delegate_to_agent`'s "runs in a fresh conversation"
+   * semantics), so the per-agent mutex used by {@link run} would be dead
+   * weight and, worse, a deadlock vector for mutual delegation (A→B while
+   * B→A, each caller holding its own `run`'s agent lock).
+   *
+   * The caller is responsible for constructing the Agent; {@link AgentPool}
+   * does not register or track it.
+   */
+  async runEphemeral(
+    agent: Agent,
+    prompt: string,
+    runOptions?: Partial<RunOptions>,
+  ): Promise<AgentRunResult> {
+    await this.semaphore.acquire()
+    try {
+      return await agent.run(prompt, runOptions)
+    } finally {
+      this.semaphore.release()
+    }
+  }
+
+  /**
    * Run prompts on multiple agents in parallel, subject to the concurrency
    * cap set at construction time.
    *

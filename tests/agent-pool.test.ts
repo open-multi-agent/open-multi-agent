@@ -318,5 +318,66 @@ describe('AgentPool', () => {
       await runPromise
       expect(pool.availableRunSlots).toBe(1)
     })
+
+    it('runEphemeral runs a caller-supplied Agent without touching the agentLock', async () => {
+      // Registered agent's lock is held by a pending pool.run — a second
+      // pool.run() against the same name would queue on the agent lock.
+      // runEphemeral on a fresh Agent instance must NOT block on that lock.
+      const pool = new AgentPool(3)
+      const registered = createMockAgent('alice')
+      pool.add(registered)
+
+      let releaseRegistered!: (v: AgentRunResult) => void
+      vi.mocked(registered.run).mockReturnValue(
+        new Promise<AgentRunResult>((resolve) => {
+          releaseRegistered = resolve
+        }),
+      )
+      const heldRun = pool.run('alice', 'long running')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      const ephemeral = createMockAgent('alice') // same name, fresh instance
+      const ephemeralResult = await pool.runEphemeral(ephemeral, 'quick task')
+
+      expect(ephemeralResult).toBe(SUCCESS_RESULT)
+      expect(ephemeral.run).toHaveBeenCalledWith('quick task', undefined)
+
+      releaseRegistered(SUCCESS_RESULT)
+      await heldRun
+    })
+
+    it('runEphemeral still respects pool semaphore', async () => {
+      const pool = new AgentPool(1)
+      const holder = createMockAgent('holder')
+      pool.add(holder)
+
+      let releaseHolder!: (v: AgentRunResult) => void
+      vi.mocked(holder.run).mockReturnValue(
+        new Promise<AgentRunResult>((resolve) => {
+          releaseHolder = resolve
+        }),
+      )
+      const heldRun = pool.run('holder', 'hold-slot')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(pool.availableRunSlots).toBe(0)
+
+      // Ephemeral agent should queue on the semaphore, not run immediately.
+      const ephemeral = createMockAgent('ephemeral')
+      let ephemeralResolved = false
+      const ephemeralRun = pool.runEphemeral(ephemeral, 'p').then((r) => {
+        ephemeralResolved = true
+        return r
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(ephemeralResolved).toBe(false)
+
+      releaseHolder(SUCCESS_RESULT)
+      await heldRun
+      await ephemeralRun
+      expect(ephemeralResolved).toBe(true)
+    })
   })
 })
