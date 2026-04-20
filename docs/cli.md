@@ -30,7 +30,7 @@ Set the usual provider API keys in the environment (see [README](../README.md#qu
 
 Runs **`OpenMultiAgent.runTeam(team, goal)`**: coordinator decomposition, task queue, optional synthesis.
 
-The **`oma` CLI** writes a static post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html` under the current working directory after each `runTeam` invocation (the library does not write files itself; if you want this outside the CLI, call `renderTeamRunDashboard()` in application code — see `src/dashboard/render-team-run-dashboard.ts`).
+When invoked with `--dashboard`, the **`oma` CLI** writes a static post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html` under the current working directory (the library does not write files itself; if you want this outside the CLI, call `renderTeamRunDashboard(result)` in application code — see `src/dashboard/render-team-run-dashboard.ts`).
 
 The dashboard page loads **Tailwind CSS** (Play CDN), **Google Fonts** (Space Grotesk, Inter, Material Symbols), and **Material Symbols** from the network at view time. Opening the HTML file requires an **online** environment unless you host or inline those assets yourself (a future improvement).
 
@@ -40,6 +40,7 @@ The dashboard page loads **Tailwind CSS** (Play CDN), **Google Fonts** (Space Gr
 | `--team` | Yes | Path to JSON (see [Team file](#team-file)). |
 | `--orchestrator` | No | Path to JSON merged into `new OpenMultiAgent(...)` after any orchestrator fragment from the team file. |
 | `--coordinator` | No | Path to JSON passed as `runTeam(..., { coordinator })` (`CoordinatorConfig`). |
+| `--dashboard` | No | Write a post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html`. |
 
 Global flags: [`--pretty`](#output-flags), [`--include-messages`](#output-flags).
 
