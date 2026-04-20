@@ -1,0 +1,21 @@
+Weekly Engineering Standup — 2026-04-18
+Attendees: Maya (Eng Manager), Raj (Senior Backend), Priya (Frontend Lead), Dan (SRE)
+
+Maya: Quick round-table. Raj, where are we on the billing-v2 migration?
+Raj: Cutover is scheduled for Tuesday the 28th. I want to get the shadow-write harness deployed by Friday so we have a full weekend of production traffic comparisons before the cutover. I'll own that. Concerned about the reconciliation query taking 40 seconds on the biggest accounts; I'll look into adding a covering index before cutover.
+
+Maya: Good. Priya, the checkout redesign?
+Priya: Ship-ready. I finished the accessibility audit yesterday, all high-priority items landed. Two medium items on the backlog I'll tackle next sprint. Planning to flip the feature flag for 5% of traffic on Thursday the 23rd and ramp from there. I've been heads-down on this for three weeks and honestly feeling pretty good about where it landed.
+
+Maya: Great. Dan, Sunday's incident — what's the status on the retro?
+Dan: Retro doc is up. Root cause was the failover script assuming a single-region topology after we moved to multi-region in Q1. The script hasn't been exercised in production since February. I'm frustrated that nobody caught it in review — the change was obvious if you read the diff, but it's twenty pages of YAML. I'm going to propose a rule that multi-region changes need a second reviewer on the SRE team. That's an action for me before the next postmortem, I'll have it drafted by Monday the 27th.
+
+Maya: Reasonable. Anything else? Dan, how are you holding up? You've been on call a lot.
+Dan: Honestly? Tired. The back-to-back incidents took the wind out of me. I'd like to hand off primary next rotation. I'll work with Raj on the handoff doc.
+
+Maya: Noted. Let's make that happen. Priya, anything blocking you?
+Priya: Nope, feeling good.
+
+Raj: Just flagging — I saw the Slack thread about the authz refactor. If we're doing that this quarter, it conflicts with billing-v2 timelines. Can we park it until May?
+
+Maya: Yes, I'll follow up with Len and reply in the thread. Thanks everyone.
