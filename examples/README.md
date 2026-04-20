@@ -44,7 +44,14 @@ Reusable shapes for common multi-agent problems.
 | [`patterns/multi-perspective-code-review`](patterns/multi-perspective-code-review.ts) | Multiple reviewer agents in parallel, then synthesis. |
 | [`patterns/research-aggregation`](patterns/research-aggregation.ts) | Multi-source research collated by a synthesis agent. |
 | [`patterns/agent-handoff`](patterns/agent-handoff.ts) | Synchronous sub-agent delegation via `delegate_to_agent`. |
-| [`patterns/meeting-summarizer`](patterns/meeting-summarizer.ts) | Fan-out post-processing of a transcript into summary, structured action items, and sentiment. |
+
+## cookbook — use-case recipes
+
+End-to-end examples framed around a concrete problem (meeting summarization, translation QA, competitive monitoring, etc.) rather than a single orchestration primitive. Lighter bar than `production/`: no tests or pinned model versions required. Good entry point if you want to see how the patterns compose on a real task.
+
+| Example | Problem solved |
+|---------|----------------|
+| [`cookbook/meeting-summarizer`](cookbook/meeting-summarizer.ts) | Fan-out post-processing of a transcript into summary, structured action items, and sentiment. |
 
 ## integrations — external systems
 
@@ -68,8 +75,9 @@ End-to-end examples wired to real workflows. Higher bar than the categories abov
 |----------------|----------|----------|
 | A new model provider | `providers/` | `<provider-name>.ts` (lowercase, hyphenated) |
 | A reusable orchestration pattern | `patterns/` | `<pattern-name>.ts` |
+| A use-case-driven example (problem-first, uses one or more patterns) | `cookbook/` | `<use-case>.ts` |
 | Integration with an outside system (MCP server, observability backend, framework, app) | `integrations/` | `<system>.ts` or `<system>/` for multi-file |
-| A real-world end-to-end use case | `production/` | `<use-case>/` directory with its own README |
+| A real-world end-to-end use case, production-grade | `production/` | `<use-case>/` directory with its own README |
 
 Conventions:
 
