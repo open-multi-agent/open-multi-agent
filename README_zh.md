@@ -65,6 +65,7 @@ npm install @jackchen_me/open-multi-agent
 根据用的 provider 设对应 API key。通过 Ollama 跑本地模型不用 key，见 [`providers/ollama`](examples/providers/ollama.ts)。
 
 - `ANTHROPIC_API_KEY`
+- `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_DEPLOYMENT`（Azure OpenAI；当 `model` 为空时可用 deployment 环境变量兜底）
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `XAI_API_KEY`（Grok）
@@ -360,6 +361,7 @@ const agent: AgentConfig = {
 |----------|------|----------|------|
 | Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | 已验证 |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | 已验证 |
+| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`（可选：`AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_DEPLOYMENT`） | 已验证 |
 | Grok (xAI)   | `provider: 'grok'` | `XAI_API_KEY` | 已验证 |
 | MiniMax（全球） | `provider: 'minimax'` | `MINIMAX_API_KEY` | 已验证 |
 | MiniMax（国内） | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | 已验证 |

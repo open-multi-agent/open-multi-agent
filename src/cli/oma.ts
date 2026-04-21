@@ -49,6 +49,7 @@ const PROVIDER_REFERENCE: ReadonlyArray<{
   notes?: string
 }> = [
   { id: 'anthropic', apiKeyEnv: ['ANTHROPIC_API_KEY'], baseUrlSupported: true },
+  { id: 'azure-openai', apiKeyEnv: ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_DEPLOYMENT'], baseUrlSupported: true, notes: 'Azure OpenAI requires endpoint URL (e.g., https://my-resource.openai.azure.com) and API key. Optional: AZURE_OPENAI_API_VERSION (defaults to 2024-10-21). Prefer setting deployment on agent.model; AZURE_OPENAI_DEPLOYMENT is a fallback when model is blank.' },
   { id: 'openai', apiKeyEnv: ['OPENAI_API_KEY'], baseUrlSupported: true, notes: 'Set baseURL for Ollama / vLLM / LM Studio; apiKey may be a placeholder.' },
   { id: 'gemini', apiKeyEnv: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], baseUrlSupported: false },
   { id: 'grok', apiKeyEnv: ['XAI_API_KEY'], baseUrlSupported: true },
@@ -262,6 +263,7 @@ function help(): string {
 
 const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   anthropic: 'claude-opus-4-6',
+  'azure-openai': 'gpt-4',
   openai: 'gpt-4o',
   gemini: 'gemini-2.0-flash',
   grok: 'grok-2-latest',

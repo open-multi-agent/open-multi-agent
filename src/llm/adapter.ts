@@ -38,21 +38,22 @@ import type { LLMAdapter } from '../types.js'
  * Additional providers can be integrated by implementing {@link LLMAdapter}
  * directly and bypassing this factory.
  */
-export type SupportedProvider = 'anthropic' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
  *
  * API keys fall back to the standard environment variables when not supplied
  * explicitly:
- * - `anthropic` → `ANTHROPIC_API_KEY`
- * - `openai`    → `OPENAI_API_KEY`
- * - `gemini`    → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
- * - `grok`      → `XAI_API_KEY`
- * - `minimax`   → `MINIMAX_API_KEY`
- * - `deepseek`  → `DEEPSEEK_API_KEY`
- * - `copilot`   → `GITHUB_COPILOT_TOKEN` / `GITHUB_TOKEN`, or interactive
- *                  OAuth2 device flow if neither is set
+ * - `anthropic`    → `ANTHROPIC_API_KEY`
+ * - `azure-openai` → `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`
+ * - `openai`       → `OPENAI_API_KEY`
+ * - `gemini`       → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
+ * - `grok`         → `XAI_API_KEY`
+ * - `minimax`      → `MINIMAX_API_KEY`
+ * - `deepseek`     → `DEEPSEEK_API_KEY`
+ * - `copilot`      → `GITHUB_COPILOT_TOKEN` / `GITHUB_TOKEN`, or interactive
+ *                     OAuth2 device flow if neither is set
  *
  * Adapters are imported lazily so that projects using only one provider
  * are not forced to install the SDK for the other.
@@ -98,6 +99,12 @@ export async function createAdapter(
     case 'deepseek': {
       const { DeepSeekAdapter } = await import('./deepseek.js')
       return new DeepSeekAdapter(apiKey, baseURL)
+    }
+    case 'azure-openai': {
+      // For azure-openai, the `baseURL` parameter serves as the Azure endpoint URL.
+      // To override the API version, set AZURE_OPENAI_API_VERSION env var.
+      const { AzureOpenAIAdapter } = await import('./azure-openai.js')
+      return new AzureOpenAIAdapter(apiKey, baseURL)
     }
     default: {
       // The `never` cast here makes TypeScript enforce exhaustiveness.

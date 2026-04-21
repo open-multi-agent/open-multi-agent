@@ -68,6 +68,7 @@ npm install @jackchen_me/open-multi-agent
 Set the API key for your provider. Local models via Ollama require no API key. See [`providers/ollama`](examples/providers/ollama.ts).
 
 - `ANTHROPIC_API_KEY`
+- `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT` (for Azure OpenAI; deployment is optional fallback when `model` is blank)
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `XAI_API_KEY` (for Grok)
@@ -365,6 +366,7 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 |----------|--------|---------|--------|
 | Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | Verified |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | Verified |
+| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (+ optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`) | Verified |
 | Grok (xAI)   | `provider: 'grok'` | `XAI_API_KEY` | Verified |
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | Verified |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | Verified |
