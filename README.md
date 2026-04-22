@@ -21,25 +21,6 @@ CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent`
 
 Other features (MCP integration, context strategies, structured output, task retry, human-in-the-loop, lifecycle hooks, loop detection, observability) live below the fold and in [`examples/`](./examples/).
 
-## Philosophy: what we build, what we don't
-
-Our goal is to be the simplest multi-agent framework for TypeScript. Simplicity does not mean closed. We believe the long-term value of a framework is the size of the network it connects to, not its feature checklist.
-
-**We build:**
-- A coordinator that decomposes a goal into a task DAG.
-- A task queue that runs independent tasks in parallel and cascades failures to dependents.
-- A shared memory and message bus so agents can see each other's output.
-- Multi-model teams where each agent can use a different LLM provider.
-
-**We don't build:**
-- **Agent handoffs.** If agent A needs to transfer mid-conversation to agent B, use [OpenAI Agents SDK](https://github.com/openai/openai-agents-python). In our model, each agent owns one task end-to-end, with no mid-conversation transfers.
-- **State persistence / checkpointing.** Not planned for now. Adding a storage backend would break the three-dependency promise, and our workflows run in seconds to minutes, not hours. If real usage shifts toward long-running workflows, we will revisit.
-
-**Tracking:**
-- **A2A protocol.** Watching, will move when production adoption is real.
-
-See [`DECISIONS.md`](./DECISIONS.md) for the full rationale.
-
 ## How is this different from X?
 
 **vs. [LangGraph JS](https://github.com/langchain-ai/langgraphjs).** LangGraph is declarative graph orchestration: you define nodes, edges, and conditional routing, then `compile()` and `invoke()`. `open-multi-agent` is goal-driven: you declare a team and a goal, a coordinator decomposes it into a task DAG at runtime. LangGraph gives you total control of topology (great for fixed production workflows). This gives you less typing and faster iteration (great for exploratory multi-agent work). LangGraph also has mature checkpointing; we do not.
@@ -48,14 +29,28 @@ See [`DECISIONS.md`](./DECISIONS.md) for the full rationale.
 
 **vs. [Vercel AI SDK](https://github.com/vercel/ai).** AI SDK is the LLM call layer: a unified TypeScript client for 60+ providers with streaming, tool calls, and structured outputs. It does not orchestrate multi-agent teams. `open-multi-agent` sits on top when you need that. They compose: use AI SDK for single-agent work, reach for this when you need a team.
 
-## Used by
+## Ecosystem
 
-`open-multi-agent` is a new project (launched 2026-04-01, MIT, 5,500+ stars). The ecosystem is still forming, so the list below is short and honest:
+`open-multi-agent` is a new project (launched 2026-04-01, MIT, 5,500+ stars). The ecosystem is still forming, so the lists below are short and honest.
+
+### In production
 
 - **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~50 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly in its Docker runtime. Confirmed production use.
 - **Cybersecurity SOC (home lab).** A private setup running Qwen 2.5 + DeepSeek Coder entirely offline via Ollama, building an autonomous SOC pipeline on Wazuh + Proxmox. Early user, not yet public.
 
 Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) and we will list it here.
+
+### Integrations (free)
+
+- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+
+Built an integration? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) to get listed.
+
+### Featured Partner ($3,000 / year)
+
+12 months of prominent placement: logo, 100-word description, and a maintainer endorsement quote. For products or platforms already integrated with `open-multi-agent`.
+
+[Inquire about Featured Partner](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry)
 
 ## Quick Start
 
