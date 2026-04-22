@@ -119,20 +119,22 @@ const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY)
 const hasOpenAI = Boolean(process.env.OPENAI_API_KEY)
 const hasGemini = Boolean(process.env.GEMINI_API_KEY)
 
-if (!hasAnthropic || (!hasOpenAI && !hasGemini)) {
+if (!hasAnthropic || (!hasGemini && !hasOpenAI)) {
   console.log(
-    '[skip] This example needs ANTHROPIC_API_KEY plus OPENAI_API_KEY or GEMINI_API_KEY.',
+    '[skip] This example needs ANTHROPIC_API_KEY plus GEMINI_API_KEY or OPENAI_API_KEY.',
   )
   process.exit(0)
 }
 
-const backProvider: 'openai' | 'gemini' = hasOpenAI ? 'openai' : 'gemini'
+// Prefer native Gemini when GEMINI_API_KEY is available.
+// Fall back to OpenAI otherwise.
+const backProvider: 'gemini' | 'openai' = hasGemini ? 'gemini' : 'openai'
 
-// 如果你们仓库 Gemini 的模型名不是这个，后面改这一行即可
-const backModel = hasOpenAI 
-  ? (process.env.OPENAI_MODEL || 'gemini-2.5-pro')
-  : 'gemini-2.5-pro'
-
+const backModel =
+  backProvider === 'gemini'
+    ? 'gemini-2.5-pro'
+    : (process.env.OPENAI_MODEL || 'gpt-5.4')
+    
 // ---------------------------------------------------------------------------
 // Agent configs
 // ---------------------------------------------------------------------------
@@ -172,7 +174,6 @@ Return JSON only, matching the schema exactly.`,
   temperature: 0,
   outputSchema: BacktranslationBatch,
 }
-
 // Agent C ---------------------------------------------------------------
 // 比较原文和回译文，判断语义漂移
 const reviewerConfig: AgentConfig = {
