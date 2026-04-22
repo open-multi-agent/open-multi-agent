@@ -15,14 +15,20 @@
  *   npx tsx examples/patterns/multi-perspective-code-review.ts
  *
  * Prerequisites:
- *   Default free-provider order is Gemini → Groq → OpenRouter.
+ *   If LLM_PROVIDER is unset, this example auto-selects the first available key
+ *   in this fixed order: Gemini → Groq → OpenRouter → Anthropic.
+ *   This precedence is this example's implementation choice for satisfying
+ *   "default to whichever key is present".
  *   Override with LLM_PROVIDER=gemini|groq|openrouter|anthropic.
  *
  *   Supported env vars:
  *   - Gemini: GEMINI_API_KEY, GOOGLE_API_KEY, or GOOGLE_AI_STUDIO_API_KEY
  *   - Groq: GROQ_API_KEY
- *   - OpenRouter: OPENROUTER_API_KEY (optionally OPENROUTER_MODEL)
+ *   - OpenRouter: OPENROUTER_API_KEY
  *   - Anthropic: ANTHROPIC_API_KEY
+ *
+ *   Anthropic support is kept for backward compatibility with the original
+ *   example. It is not part of the free-provider path.
  */
 
 import { z } from 'zod'
@@ -123,7 +129,7 @@ function getProviderConfigs(provider: ProviderId): {
         },
         strong: {
           provider: 'gemini',
-          model: 'gemini-2.5-pro',
+          model: 'gemini-2.5-flash',
           apiKey,
         },
       }
@@ -159,21 +165,18 @@ function getProviderConfigs(provider: ProviderId): {
         throw new Error('LLM_PROVIDER=openrouter requires OPENROUTER_API_KEY.')
       }
 
-      const fastModel = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash'
-      const strongModel = process.env.OPENROUTER_STRONG_MODEL ?? fastModel
-
       return {
-        defaultModel: fastModel,
+        defaultModel: 'google/gemini-2.5-flash',
         defaultProvider: 'openai',
         fast: {
           provider: 'openai',
-          model: fastModel,
+          model: 'google/gemini-2.5-flash',
           apiKey,
           baseURL: 'https://openrouter.ai/api/v1',
         },
         strong: {
           provider: 'openai',
-          model: strongModel,
+          model: 'google/gemini-2.5-flash',
           apiKey,
           baseURL: 'https://openrouter.ai/api/v1',
         },
@@ -322,7 +325,7 @@ const tasks = [
   },
   {
     title: 'Synthesize feedback',
-    description: 'Synthesize all review feedback and the original code into a unified, prioritized action item report.',
+    description: 'Synthesize all review feedback and the original code into a unified, prioritized structured findings array.',
     assignee: 'synthesizer',
     dependsOn: ['Security review', 'Performance review', 'Style review'],
   },
@@ -366,7 +369,7 @@ if (synthResult?.structured) {
   console.log(JSON.stringify(synthResult.structured, null, 2))
 } else if (synthResult) {
   console.log('\n' + '='.repeat(60))
-  console.log('STRUCTURED OUTPUT VALIDATION FAILED')
+  console.log('SYNTHESIZER OUTPUT FAILED SCHEMA VALIDATION OR DID NOT PRODUCE VALID JSON')
   console.log('='.repeat(60))
   console.log()
   console.log(synthResult.output.slice(0, 1200))
