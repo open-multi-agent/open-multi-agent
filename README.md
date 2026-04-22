@@ -17,7 +17,7 @@ CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent`
 
 - **Goal to result in one call.** `runTeam(team, "Build a REST API")` kicks off a coordinator agent that decomposes the goal into a task DAG, resolves dependencies, runs independent tasks in parallel, and synthesizes the final output. No graph to draw, no tasks to wire up.
 - **TypeScript-native, three runtime dependencies.** `@anthropic-ai/sdk`, `openai`, `zod`. That is the whole runtime. Embed in Express, Next.js, serverless functions, or CI/CD pipelines. No Python runtime, no subprocess bridge, no cloud sidecar.
-- **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.6, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
+- **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.7, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
 
 Other features (MCP integration, context strategies, structured output, task retry, human-in-the-loop, lifecycle hooks, loop detection, observability) live below the fold and in [`examples/`](./examples/).
 
@@ -31,7 +31,7 @@ Other features (MCP integration, context strategies, structured output, task ret
 
 ## Ecosystem
 
-`open-multi-agent` is a new project (launched 2026-04-01, MIT, 5,500+ stars). The ecosystem is still forming, so the lists below are short and honest.
+`open-multi-agent` is a new project (launched 2026-04-01, MIT). The ecosystem is still forming, so the lists below are short and honest.
 
 ### In production
 
@@ -72,7 +72,9 @@ Set the API key for your provider. Local models via Ollama require no API key. S
 - `DEEPSEEK_API_KEY` (for DeepSeek)
 - `GITHUB_TOKEN` (for Copilot)
 
-**CLI (`oma`).** For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
+### CLI (`oma`)
+
+For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
 
 Three agents, one goal. The framework handles the rest:
 
@@ -176,16 +178,17 @@ Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
          │               └───────────────────────┘
 ┌────────▼──────────┐
 │  Agent            │
-│  - run()          │    ┌──────────────────────┐
-│  - prompt()       │───►│  LLMAdapter          │
-│  - stream()       │    │  - AnthropicAdapter  │
-└────────┬──────────┘    │  - OpenAIAdapter     │
-         │               │  - CopilotAdapter    │
-         │               │  - GeminiAdapter     │
-         │               │  - GrokAdapter       │
-         │               │  - MiniMaxAdapter    │
-         │               │  - DeepSeekAdapter   │
-         │               └──────────────────────┘
+│  - run()          │    ┌────────────────────────┐
+│  - prompt()       │───►│  LLMAdapter            │
+│  - stream()       │    │  - AnthropicAdapter    │
+└────────┬──────────┘    │  - OpenAIAdapter       │
+         │               │  - AzureOpenAIAdapter  │
+         │               │  - CopilotAdapter      │
+         │               │  - GeminiAdapter       │
+         │               │  - GrokAdapter         │
+         │               │  - MiniMaxAdapter      │
+         │               │  - DeepSeekAdapter     │
+         │               └────────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
 │  - conversation   │───►│  ToolRegistry        │
@@ -374,8 +377,6 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 
 Gemini requires `npm install @google/genai` (optional peer dependency).
 
-Verified local models with tool-calling: **Gemma 4** (see [`providers/gemma4-local`](examples/providers/gemma4-local.ts)).
-
 Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
 
 ### Local Model Tool-Calling
@@ -455,16 +456,16 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260419" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260423" />
 </a>
 
 ## Star History
 
 <a href="https://star-history.com/#JackChen-me/open-multi-agent&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark&v=20260423" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260423" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260423" />
  </picture>
 </a>
 
