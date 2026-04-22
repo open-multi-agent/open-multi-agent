@@ -355,5 +355,31 @@ describe('OpenAIAdapter', () => {
       expect((toolEvents[0].data as ToolUseBlock).name).toBe('search')
       expect((toolEvents[1].data as ToolUseBlock).name).toBe('read')
     })
+
+    it('falls back to extracting tool calls from streamed text when no native tool deltas exist', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        textChunk('```json\n{"name":"search","input":{"query":"fallback"}}\n```', 'stop'),
+        { id: 'chatcmpl-123', model: 'gpt-4o', choices: [], usage: { prompt_tokens: 6, completion_tokens: 4 } },
+      ]))
+
+      const events = await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Search for fallback handling')],
+          chatOpts({ tools: [toolDef('search')] }),
+        ),
+      )
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect(toolEvents).toHaveLength(1)
+      expect(toolEvents[0].data).toEqual({
+        type: 'tool_use',
+        id: expect.any(String),
+        name: 'search',
+        input: { query: 'fallback' },
+      })
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('tool_use')
+    })
   })
 })

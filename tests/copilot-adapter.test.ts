@@ -115,6 +115,62 @@ describe('CopilotAdapter', () => {
   // =========================================================================
 
   describe('token management', () => {
+    it('uses the device flow when no GitHub token is available', async () => {
+      vi.useFakeTimers()
+      const onDeviceCode = vi.fn()
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            device_code: 'device-code',
+            user_code: 'ABCD-EFGH',
+            verification_uri: 'https://github.com/login/device',
+            interval: 0,
+            expires_in: 600,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ access_token: 'oauth_token' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            token: 'session_from_device_flow',
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          }),
+          text: () => Promise.resolve(''),
+        })
+
+      const adapter = new CopilotAdapter({ onDeviceCode })
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      const responsePromise = adapter.chat([textMsg('user', 'Hi')], chatOpts())
+      await vi.runAllTimersAsync()
+      await responsePromise
+
+      expect(onDeviceCode).toHaveBeenCalledWith(
+        'https://github.com/login/device',
+        'ABCD-EFGH',
+      )
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(
+        3,
+        'https://api.github.com/copilot_internal/v2/token',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'token oauth_token',
+          }),
+        }),
+      )
+      expect(OpenAIMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'session_from_device_flow',
+        }),
+      )
+
+      vi.useRealTimers()
+    })
+
     it('exchanges GitHub token for Copilot session token', async () => {
       const fetchMock = mockFetchForToken('session_xyz')
       globalThis.fetch = fetchMock
@@ -343,6 +399,23 @@ describe('CopilotAdapter', () => {
       const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
 
       expect(events.filter(e => e.type === 'error')).toHaveLength(1)
+    })
+
+    it('handles malformed streamed tool arguments JSON', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        {
+          id: 'c1', model: 'gpt-4o',
+          choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'search', arguments: '{broken' } }] }, finish_reason: 'tool_calls' }],
+          usage: null,
+        },
+        { id: 'c1', model: 'gpt-4o', choices: [], usage: { prompt_tokens: 5, completion_tokens: 3 } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect(toolEvents).toHaveLength(1)
+      expect((toolEvents[0].data as ToolUseBlock).input).toEqual({})
     })
   })
 

@@ -120,6 +120,29 @@ describe('GeminiAdapter (contract)', () => {
       expect(parts[0].functionResponse.name).toBe('unknown_id')
     })
 
+    it('serializes non-string tool_result content to JSON', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      await adapter.chat(
+        [{
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: 'call_1',
+            content: { answer: 42 } as never,
+            is_error: false,
+          } as never],
+        }],
+        chatOpts(),
+      )
+
+      const parts = mockGenerateContent.mock.calls[0][0].contents[0].parts
+      expect(parts[0].functionResponse.response).toEqual({
+        content: '{"answer":42}',
+        isError: false,
+      })
+    })
+
     it('converts image blocks to inlineData parts', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
 
@@ -264,6 +287,17 @@ describe('GeminiAdapter (contract)', () => {
       const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
 
       expect(result.content).toEqual([])
+    })
+
+    it('throws for unsupported message block types', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      await expect(adapter.chat([
+        {
+          role: 'user',
+          content: [{ type: 'unsupported' } as never],
+        },
+      ], chatOpts())).rejects.toThrow('Unhandled content block type')
     })
   })
 
