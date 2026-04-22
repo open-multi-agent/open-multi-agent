@@ -234,12 +234,16 @@ export interface ToolResult {
  * `inputSchema` is a Zod schema used for validation before `execute` is called.
  * At API call time it is converted to JSON Schema for {@link LLMToolDef}, unless
  * `llmInputSchema` is set (e.g. MCP tools ship JSON Schema from the server).
+ *
+ * `outputSchema` is optional runtime validation for `ToolResult.data`.  When
+ * set and validation fails, execution returns an error ToolResult instead of
+ * propagating invalid output.
  */
 export interface ToolDefinition<TInput = Record<string, unknown>, TOutput = string> {
   readonly name: string
   readonly description: string
   readonly inputSchema: ZodSchema<TInput>
-  /** optional outputSchema to detect invalid output */
+  /** Optional runtime validator for `ToolResult.data`. */
   readonly outputSchema?: ZodSchema<TOutput>
   /**
    * When present, used as {@link LLMToolDef.inputSchema} as-is instead of

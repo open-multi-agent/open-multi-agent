@@ -68,11 +68,16 @@ export type JSONSchemaProperty =
  * })
  * ```
  */
-export function defineTool<TInput, TOutput>(config: {
+export function defineTool<TInput, TOutput = string>(config: {
   name: string
   description: string
   inputSchema: ZodSchema<TInput>
-  /** optional outputScehma */
+  /**
+   * Optional runtime validator for `ToolResult.data`.
+   * When omitted, output validation is skipped.
+   *
+   * `TOutput` defaults to `string` because `ToolResult.data` is string-based.
+   */
   outputSchema?: ZodSchema<TOutput>
   /**
    * Optional JSON Schema for the LLM (bypasses Zod → JSON Schema conversion).

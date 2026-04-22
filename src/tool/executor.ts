@@ -1,9 +1,10 @@
 /**
  * Parallel tool executor with concurrency control and error isolation.
  *
- * Validates input via Zod schemas, enforces a maximum concurrency limit using
- * a lightweight semaphore, tracks execution duration, and surfaces any
- * execution errors as ToolResult objects rather than thrown exceptions.
+ * Validates input via Zod schemas, optionally validates tool output via
+ * `tool.outputSchema`, enforces a maximum concurrency limit using a lightweight
+ * semaphore, and surfaces any execution errors as ToolResult objects rather
+ * than thrown exceptions.
  *
  * Types are imported from `../types` to ensure consistency with the rest of
  * the framework.
@@ -134,6 +135,8 @@ export class ToolExecutor {
 
   /**
    * Validate input with the tool's Zod schema, then call `execute`.
+   * When configured, output is validated against `tool.outputSchema` before
+   * truncation is applied.
    * Any synchronous or asynchronous error is caught and turned into an error
    * ToolResult.
    */
@@ -181,6 +184,7 @@ export class ToolExecutor {
     }
   }
 
+  /** Run a Zod schema and return a flattened issue string on failure. */
   private runZodSchema<T>(schema: ZodSchema<T>, rawInput: T) {
     const parseResult = schema.safeParse(rawInput)
     if (!parseResult.success) {

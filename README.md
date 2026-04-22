@@ -267,8 +267,8 @@ import { z } from 'zod'
 const weatherTool = defineTool({
   name: 'get_weather',
   description: 'Look up current weather for a city.',
-  schema: z.object({ city: z.string() }),
-  execute: async ({ city }) => ({ content: await fetchWeather(city) }),
+  inputSchema: z.object({ city: z.string() }),
+  execute: async ({ city }) => ({ data: await fetchWeather(city) }),
 })
 
 const agent: AgentConfig = {
@@ -283,6 +283,25 @@ const agent: AgentConfig = {
 ### Tool Output Control
 
 Long tool outputs can blow up conversation size and cost. Two controls work together.
+
+**Validation (optional).** Add `outputSchema` to catch malformed tool results before they are forwarded:
+
+```typescript
+const jsonTool = defineTool({
+  name: 'json_tool',
+  description: 'Return JSON payload as string.',
+  inputSchema: z.object({}),
+  outputSchema: z.string().refine((value) => {
+    try {
+      JSON.parse(value)
+      return true
+    } catch {
+      return false
+    }
+  }, 'Output must be valid JSON'),
+  execute: async () => ({ data: '{"ok": true}' }),
+})
+```
 
 **Truncation.** Cap an individual tool result to a head + tail excerpt with a marker in between:
 

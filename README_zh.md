@@ -262,8 +262,8 @@ import { z } from 'zod'
 const weatherTool = defineTool({
   name: 'get_weather',
   description: '查询某城市当前天气。',
-  schema: z.object({ city: z.string() }),
-  execute: async ({ city }) => ({ content: await fetchWeather(city) }),
+  inputSchema: z.object({ city: z.string() }),
+  execute: async ({ city }) => ({ data: await fetchWeather(city) }),
 })
 
 const agent: AgentConfig = {
@@ -278,6 +278,25 @@ const agent: AgentConfig = {
 ### 工具输出控制
 
 工具返回太长会快速撑大对话和成本。两个开关配合着用。
+
+**校验（可选）。** 给工具加 `outputSchema`，在结果回传前拦截结构错误：
+
+```typescript
+const jsonTool = defineTool({
+  name: 'json_tool',
+  description: '以字符串返回 JSON 载荷。',
+  inputSchema: z.object({}),
+  outputSchema: z.string().refine((value) => {
+    try {
+      JSON.parse(value)
+      return true
+    } catch {
+      return false
+    }
+  }, '输出必须是合法 JSON'),
+  execute: async () => ({ data: '{"ok": true}' }),
+})
+```
 
 **截断。** 把单次工具结果压成 head + tail 摘要（中间放一个标记）：
 
