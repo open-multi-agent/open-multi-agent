@@ -48,6 +48,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JackChen-me/open-multi-agent.git"
+  },
+  "homepage": "https://github.com/JackChen-me/open-multi-agent#readme",
+  "bugs": {
+    "url": "https://github.com/JackChen-me/open-multi-agent/issues"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
