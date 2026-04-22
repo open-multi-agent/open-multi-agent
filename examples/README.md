@@ -53,6 +53,7 @@ End-to-end examples framed around a concrete problem (meeting summarization, tra
 | Example | Problem solved |
 |---------|----------------|
 | [`cookbook/meeting-summarizer`](cookbook/meeting-summarizer.ts) | Fan-out post-processing of a transcript into summary, structured action items, and sentiment. |
+| [`cookbook/competitive-monitoring`](cookbook/competitive-monitoring.ts) | Parallel source monitoring (Twitter/Reddit/News), contradiction detection, and aggregated intelligence reporting. |
 
 ## integrations — external systems
 

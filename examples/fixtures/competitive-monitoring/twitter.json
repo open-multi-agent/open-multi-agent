@@ -1,0 +1,62 @@
+[
+  {
+    "claim": "Competitor X launches AI-powered analytics dashboard with real-time metrics",
+    "date": "2026-04-15",
+    "source_url": "https://twitter.com/CompetitorX/status/1234567890",
+    "confidence": 0.95
+  },
+  {
+    "claim": "Company Y raises $50M funding round led by Sequoia Capital",
+    "date": "2026-04-12",
+    "source_url": "https://twitter.com/CompanyY/status/1234567891",
+    "confidence": 0.98
+  },
+  {
+    "claim": "Market leader announces 40% price reduction for enterprise plans",
+    "date": "2026-04-10",
+    "source_url": "https://twitter.com/MarketLeader/status/1234567892",
+    "confidence": 0.92
+  },
+  {
+    "claim": "New startup releases open-source alternative to industry standard tool",
+    "date": "2026-04-18",
+    "source_url": "https://twitter.com/NewStartup/status/1234567893",
+    "confidence": 0.88
+  },
+  {
+    "claim": "Competitor X acquires 3 enterprise customers in APAC region",
+    "date": "2026-04-13",
+    "source_url": "https://twitter.com/TechNews/status/1234567894",
+    "confidence": 0.75
+  },
+  {
+    "claim": "TechConf2026 major announcement: Company Z partners with top 5 cloud providers",
+    "date": "2026-04-20",
+    "source_url": "https://twitter.com/TechConf/status/1234567895",
+    "confidence": 0.89
+  },
+  {
+    "claim": "Industry report: AI automation market grows 200% year-over-year",
+    "date": "2026-04-11",
+    "source_url": "https://twitter.com/IndustryAnalyst/status/1234567896",
+    "confidence": 0.85
+  },
+  {
+    "claim": "Competitor launches mobile app with offline-first architecture",
+    "date": "2026-04-17",
+    "source_url": "https://twitter.com/CompetitorNews/status/1234567897",
+    "confidence": 0.82
+  },
+  {
+    "claim": "Market consolidation: Two major players announce 6-month integration timeline",
+    "date": "2026-03-28",
+    "source_url": "https://twitter.com/BreakingNews/status/1234567898",
+    "confidence": 0.91
+  },
+  {
+    "claim": "Competitor X releases v5.0 with 60% improvement in query performance",
+    "date": "2026-04-19",
+    "source_url": "https://twitter.com/CompetitorX/status/1234567899",
+    "confidence": 0.80
+  }
+]

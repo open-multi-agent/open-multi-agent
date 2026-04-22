@@ -1,0 +1,62 @@
+[
+  {
+    "claim": "Competitor X announces major product release on April 16, 2026",
+    "date": "2026-04-16",
+    "source_url": "https://technews.com/competitor-x-announcement-april-2026",
+    "confidence": 0.93
+  },
+  {
+    "claim": "Company Y closes Series C funding at $50M valuation from Sequoia and others",
+    "date": "2026-04-12",
+    "source_url": "https://venturebeat.com/company-y-funding",
+    "confidence": 0.96
+  },
+  {
+    "claim": "Market leader initiates aggressive pricing strategy amid competitive pressure",
+    "date": "2026-04-10",
+    "source_url": "https://businesstoday.com/market-leader-pricing",
+    "confidence": 0.89
+  },
+  {
+    "claim": "Open-source project reaches 10,000 GitHub stars in 3 months",
+    "date": "2026-04-18",
+    "source_url": "https://hackernews.com/opensource-success",
+    "confidence": 0.87
+  },
+  {
+    "claim": "Competitor X closes deals with major enterprise accounts in Southeast Asia",
+    "date": "2026-04-13",
+    "source_url": "https://asiapacifictech.com/competitor-expansion",
+    "confidence": 0.84
+  },
+  {
+    "claim": "TechConf2026 hosts record attendance with focus on AI integration partnerships",
+    "date": "2026-04-20",
+    "source_url": "https://techconf.com/2026-recap",
+    "confidence": 0.91
+  },
+  {
+    "claim": "Global AI automation market to reach $500B by end of 2026",
+    "date": "2026-04-11",
+    "source_url": "https://gartnerreport.com/ai-market-2026",
+    "confidence": 0.88
+  },
+  {
+    "claim": "Competitor releases cross-platform application supporting offline-first design",
+    "date": "2026-04-17",
+    "source_url": "https://techcrunch.com/competitor-mobile-launch",
+    "confidence": 0.85
+  },
+  {
+    "claim": "Industry consolidation accelerates: Two major players merge operations",
+    "date": "2026-03-28",
+    "source_url": "https://bloomberg.com/tech-merger",
+    "confidence": 0.94
+  },
+  {
+    "claim": "Competitor X publishes benchmark showing 55% database query performance improvement in latest release",
+    "date": "2026-04-19",
+    "source_url": "https://competitor-blog.com/v5-benchmark",
+    "confidence": 0.79
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "claim": "Competitor X launches AI-powered analytics dashboard with real-time metrics",
+    "date": "2026-04-14",
+    "source_url": "https://reddit.com/r/tech/comments/competitorx_launch",
+    "confidence": 0.82
+  },
+  {
+    "claim": "User report: New product has data privacy concerns in GDPR compliance",
+    "date": "2026-04-16",
+    "source_url": "https://reddit.com/r/privacy/comments/gdpr_concerns",
+    "confidence": 0.65
+  },
+  {
+    "claim": "Company Y's $50M funding is significantly overvalued according to industry experts",
+    "date": "2026-04-13",
+    "source_url": "https://reddit.com/r/startups/comments/company_y_valuation",
+    "confidence": 0.58
+  },
+  {
+    "claim": "Market leader's price reduction driven by declining market share",
+    "date": "2026-04-10",
+    "source_url": "https://reddit.com/r/business/comments/price_war",
+    "confidence": 0.72
+  },
+  {
+    "claim": "Open-source tool gaining serious traction among enterprise users",
+    "date": "2026-04-19",
+    "source_url": "https://reddit.com/r/opensource/comments/new_tool",
+    "confidence": 0.79
+  },
+  {
+    "claim": "Competitor's APAC expansion facing regulatory obstacles in China",
+    "date": "2026-04-14",
+    "source_url": "https://reddit.com/r/tech/comments/apac_regulation",
+    "confidence": 0.68
+  },
+  {
+    "claim": "TechConf2026: Major vendor partnerships are key differentiator this year",
+    "date": "2026-04-20",
+    "source_url": "https://reddit.com/r/technology/comments/techconf_analysis",
+    "confidence": 0.81
+  },
+  {
+    "claim": "AI market size estimates vary wildly; some analysts say 150% growth instead of 200%",
+    "date": "2026-04-12",
+    "source_url": "https://reddit.com/r/dataisbeautiful/comments/ai_market",
+    "confidence": 0.73
+  },
+  {
+    "claim": "Mobile-first apps becoming standard; offline sync is table stakes now",
+    "date": "2026-04-18",
+    "source_url": "https://reddit.com/r/webdev/comments/mobile_trends",
+    "confidence": 0.86
+  },
+  {
+    "claim": "Big consolidation wave expected in next 12-18 months across the sector",
+    "date": "2026-04-09",
+    "source_url": "https://reddit.com/r/investing/comments/consolidation",
+    "confidence": 0.74
+  }
+]
