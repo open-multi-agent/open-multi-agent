@@ -38,6 +38,38 @@ function makeExecutor(...tools: ReturnType<typeof defineTool>[]) {
   return { executor: new ToolExecutor(registry), registry }
 }
 
+function jsonPayloadStringSchema() {
+  return z.string().superRefine((value, ctx) => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Output must be valid JSON',
+      })
+      return
+    }
+    const shape = z.object({
+      ok: z.boolean(),
+      payload: z.object({
+        id: z.string(),
+      }),
+      traceId: z.string(),
+    })
+    const result = shape.safeParse(parsed)
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: issue.message,
+          path: issue.path,
+        })
+      }
+    }
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -408,5 +440,61 @@ describe('ToolExecutor output truncation', () => {
 
     const result = await executor.execute('big', {}, dummyContext)
     expect(result.data.length).toBe(50000)
+  })
+})
+
+describe('ToolExecutor outputSchema validation', () => {
+  it('valid output passes schema validation', async () => {
+    const tool = defineTool({
+      name: 'json-ok',
+      description: 'Returns valid JSON output.',
+      inputSchema: z.object({}),
+      outputSchema: jsonPayloadStringSchema(),
+      execute: async () => ({
+        data: JSON.stringify({ ok: true, payload: { id: 'abc-123' }, traceId: 'trace-1' }),
+      }),
+    })
+    const { executor } = makeExecutor(tool)
+    const result = await executor.execute('json-ok', {}, dummyContext)
+    expect(result.isError).toBeFalsy()
+    expect(result.data).toBe(JSON.stringify({ ok: true, payload: { id: 'abc-123' }, traceId: 'trace-1' }))
+  })
+
+  it('truncated JSON fails output schema validation', async () => {
+    const fullJson = JSON.stringify({
+      ok: true,
+      payload: { id: 'x'.repeat(200) },
+      traceId: 'trace-2',
+    })
+    // Simulate "broken but deceptive" truncation: payload looks complete, but
+    // the outer object is missing its final `}` and ends with punctuation.
+    // Example shape: {"ok":...,"payload":{"id":"..." }
+    const brokenButDeceptiveJson = fullJson
+      .replace(/,"traceId":"[^"]*"/, '')
+      .slice(0, -1)
+    const tool = defineTool({
+      name: 'json-truncated',
+      description: 'Returns broken-but-deceptive JSON output.',
+      inputSchema: z.object({}),
+      outputSchema: jsonPayloadStringSchema(),
+      execute: async () => ({ data: brokenButDeceptiveJson }),
+    })
+    const { executor } = makeExecutor(tool)
+    const result = await executor.execute('json-truncated', {}, dummyContext)
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('Invalid output for tool "json-truncated"')
+  })
+
+  it('missing outputSchema is a no-op', async () => {
+    const tool = defineTool({
+      name: 'no-schema',
+      description: 'No output schema configured.',
+      inputSchema: z.object({}),
+      execute: async () => ({ data: 'not-json-but-valid-without-schema' }),
+    })
+    const { executor } = makeExecutor(tool)
+    const result = await executor.execute('no-schema', {}, dummyContext)
+    expect(result.isError).toBeFalsy()
+    expect(result.data).toBe('not-json-but-valid-without-schema')
   })
 })

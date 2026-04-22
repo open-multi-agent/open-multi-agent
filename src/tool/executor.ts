@@ -13,6 +13,7 @@ import type { ToolResult, ToolUseContext } from '../types.js'
 import type { ToolDefinition } from '../types.js'
 import { ToolRegistry } from './framework.js'
 import { Semaphore } from '../utils/semaphore.js'
+import type { ZodSchema } from 'zod'
 
 // ---------------------------------------------------------------------------
 // ToolExecutor
@@ -143,13 +144,10 @@ export class ToolExecutor {
     context: ToolUseContext,
   ): Promise<ToolResult> {
     // --- Zod validation ---
-    const parseResult = tool.inputSchema.safeParse(rawInput)
-    if (!parseResult.success) {
-      const issues = parseResult.error.issues
-        .map((issue) => `  • ${issue.path.join('.')}: ${issue.message}`)
-        .join('\n')
+    const inputParseResult = this.runZodSchema(tool.inputSchema, rawInput);
+    if (!inputParseResult.success) {
       return this.errorResult(
-        `Invalid input for tool "${tool.name}":\n${issues}`,
+        `Invalid input for tool "${tool.name}":\n${inputParseResult.issuesMessage}`,
       )
     }
 
@@ -162,7 +160,15 @@ export class ToolExecutor {
 
     // --- Execute ---
     try {
-      const result = await tool.execute(parseResult.data, context)
+      const result = await tool.execute(inputParseResult.data, context)
+      if (tool.outputSchema) {
+        const outputParseResult = this.runZodSchema(tool.outputSchema, result.data);
+        if (!outputParseResult.success) {
+          return this.errorResult(
+            `Invalid output for tool "${tool.name}":\n${outputParseResult.issuesMessage}`,
+          )
+        }
+      }
       return this.maybeTruncate(tool, result)
     } catch (err) {
       const message =
@@ -173,6 +179,20 @@ export class ToolExecutor {
             : JSON.stringify(err)
       return this.maybeTruncate(tool, this.errorResult(`Tool "${tool.name}" threw an error: ${message}`))
     }
+  }
+
+  private runZodSchema<T>(schema: ZodSchema<T>, rawInput: T) {
+    const parseResult = schema.safeParse(rawInput)
+    if (!parseResult.success) {
+      const issuesMessage = parseResult.error.issues
+        .map((issue) => `  • ${issue.path.join('.')}: ${issue.message}`)
+        .join('\n')
+      return {
+        ...parseResult,
+        issuesMessage,
+      }
+    }
+    return parseResult;
   }
 
   /**

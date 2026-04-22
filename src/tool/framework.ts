@@ -68,10 +68,12 @@ export type JSONSchemaProperty =
  * })
  * ```
  */
-export function defineTool<TInput>(config: {
+export function defineTool<TInput, TOutput>(config: {
   name: string
   description: string
   inputSchema: ZodSchema<TInput>
+  /** optional outputScehma */
+  outputSchema?: ZodSchema<TOutput>
   /**
    * Optional JSON Schema for the LLM (bypasses Zod → JSON Schema conversion).
    */
@@ -83,11 +85,14 @@ export function defineTool<TInput>(config: {
    */
   maxOutputChars?: number
   execute: (input: TInput, context: ToolUseContext) => Promise<ToolResult>
-}): ToolDefinition<TInput> {
+}): ToolDefinition<TInput, TOutput> {
   return {
     name: config.name,
     description: config.description,
     inputSchema: config.inputSchema,
+    ...(config.outputSchema !== undefined
+      ? { outputSchema: config.outputSchema }
+      : {}),
     ...(config.llmInputSchema !== undefined
       ? { llmInputSchema: config.llmInputSchema }
       : {}),

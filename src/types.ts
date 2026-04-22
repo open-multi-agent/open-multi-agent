@@ -235,10 +235,12 @@ export interface ToolResult {
  * At API call time it is converted to JSON Schema for {@link LLMToolDef}, unless
  * `llmInputSchema` is set (e.g. MCP tools ship JSON Schema from the server).
  */
-export interface ToolDefinition<TInput = Record<string, unknown>> {
+export interface ToolDefinition<TInput = Record<string, unknown>, TOutput = string> {
   readonly name: string
   readonly description: string
   readonly inputSchema: ZodSchema<TInput>
+  /** optional outputSchema to detect invalid output */
+  readonly outputSchema?: ZodSchema<TOutput>
   /**
    * When present, used as {@link LLMToolDef.inputSchema} as-is instead of
    * deriving JSON Schema from `inputSchema` (Zod).
