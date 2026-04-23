@@ -497,4 +497,24 @@ describe('ToolExecutor outputSchema validation', () => {
     expect(result.isError).toBeFalsy()
     expect(result.data).toBe('not-json-but-valid-without-schema')
   })
+
+  it('error result bypasses outputSchema validation and forwards original message', async () => {
+    const originalErrorMessage = 'upstream service unavailable'
+    const tool = defineTool({
+      name: 'json-errored',
+      description: 'Always fails with a non-JSON error message.',
+      inputSchema: z.object({}),
+      outputSchema: jsonPayloadStringSchema(),
+      execute: async () => ({ data: originalErrorMessage, isError: true }),
+    })
+    const { executor } = makeExecutor(tool)
+
+    // Should not throw; errors from execute are surfaced as ToolResult.
+    const result = await executor.execute('json-errored', {}, dummyContext)
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toBe(originalErrorMessage)
+    // Ensure the error was NOT rewritten by the outputSchema validator.
+    expect(result.data).not.toContain('Invalid output for tool')
+  })
 })

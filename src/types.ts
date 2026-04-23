@@ -239,12 +239,18 @@ export interface ToolResult {
  * set and validation fails, execution returns an error ToolResult instead of
  * propagating invalid output.
  */
-export interface ToolDefinition<TInput = Record<string, unknown>, TOutput = string> {
+export interface ToolDefinition<TInput = Record<string, unknown>> {
   readonly name: string
   readonly description: string
   readonly inputSchema: ZodSchema<TInput>
-  /** Optional runtime validator for `ToolResult.data`. */
-  readonly outputSchema?: ZodSchema<TOutput>
+  /**
+   * Optional runtime validator for `ToolResult.data` (always a string).
+   *
+   * **Not to be confused with {@link AgentConfig.outputSchema}**, which
+   * validates an agent's final JSON answer. This one only guards a single
+   * tool's serialised output.
+   */
+  readonly outputSchema?: ZodSchema<string>
   /**
    * When present, used as {@link LLMToolDef.inputSchema} as-is instead of
    * deriving JSON Schema from `inputSchema` (Zod).
@@ -345,6 +351,10 @@ export interface AgentConfig {
    * Optional Zod schema for structured output.  When set, the agent's final
    * output is parsed as JSON and validated against this schema.  A single
    * retry with error feedback is attempted on validation failure.
+   *
+   * **Distinct from {@link ToolDefinition.outputSchema}**, which validates an
+   * individual tool's `ToolResult.data` string. This one operates on the
+   * agent's final answer as parsed JSON.
    */
   readonly outputSchema?: ZodSchema
   /**

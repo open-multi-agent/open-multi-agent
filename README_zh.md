@@ -281,6 +281,14 @@ const agent: AgentConfig = {
 
 **校验（可选）。** 给工具加 `outputSchema`，在结果回传前拦截结构错误：
 
+> **注意 —— 有两个同名的 `outputSchema`。** 这里 `defineTool()` / `ToolDefinition`
+> 上的 `outputSchema`（下例所示）校验的是单个**工具**的 `ToolResult.data`，类型
+> 固定为 `ZodSchema<string>`，因为工具输出始终以字符串形式序列化。
+> [`AgentConfig`](examples/patterns/structured-output.ts) 上同名的 `outputSchema`
+> 则完全不同：它把 **agent 的最终回答**按 JSON 解析后，用任意 Zod schema 进行
+> 校验（详见 `examples/` 里的"结构化输出"示例）。两者类型和作用域都不一样，
+> 且 TypeScript 不会提示混用，请根据所处层级选用对应的那个。
+
 ```typescript
 const jsonTool = defineTool({
   name: 'json_tool',

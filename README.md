@@ -286,6 +286,15 @@ Long tool outputs can blow up conversation size and cost. Two controls work toge
 
 **Validation (optional).** Add `outputSchema` to catch malformed tool results before they are forwarded:
 
+> **Note — two different `outputSchema` fields.** The one on `defineTool()` /
+> `ToolDefinition` (shown below) validates a single **tool's** `ToolResult.data`
+> — it is always a `ZodSchema<string>` because tool output is serialised as
+> text. The `outputSchema` on [`AgentConfig`](examples/patterns/structured-output.ts)
+> is different: it validates the **agent's final answer** as parsed JSON
+> against an arbitrary Zod schema (see _Structured output_ in `examples/`).
+> Different types, different scopes — TypeScript won't warn you if you mix
+> them up, so pick the one that matches the layer you're working at.
+
 ```typescript
 const jsonTool = defineTool({
   name: 'json_tool',

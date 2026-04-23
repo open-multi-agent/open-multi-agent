@@ -135,10 +135,14 @@ export class ToolExecutor {
 
   /**
    * Validate input with the tool's Zod schema, then call `execute`.
-   * When configured, output is validated against `tool.outputSchema` before
-   * truncation is applied.
-   * Any synchronous or asynchronous error is caught and turned into an error
-   * ToolResult.
+   *
+   * When `tool.outputSchema` is configured and the tool returned a
+   * **non-error** result, `result.data` is validated against the schema
+   * before truncation is applied. Error results are forwarded as-is so the
+   * LLM still sees the original failure message.
+   *
+   * Any synchronous or asynchronous error thrown by the tool is caught and
+   * turned into an error {@link ToolResult} instead of propagating.
    */
   private async runTool(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +151,7 @@ export class ToolExecutor {
     context: ToolUseContext,
   ): Promise<ToolResult> {
     // --- Zod validation ---
-    const inputParseResult = this.runZodSchema(tool.inputSchema, rawInput);
+    const inputParseResult = this.runZodSchema(tool.inputSchema, rawInput)
     if (!inputParseResult.success) {
       return this.errorResult(
         `Invalid input for tool "${tool.name}":\n${inputParseResult.issuesMessage}`,
@@ -164,8 +168,8 @@ export class ToolExecutor {
     // --- Execute ---
     try {
       const result = await tool.execute(inputParseResult.data, context)
-      if (tool.outputSchema) {
-        const outputParseResult = this.runZodSchema(tool.outputSchema, result.data);
+      if (!result.isError && tool.outputSchema) {
+        const outputParseResult = this.runZodSchema(tool.outputSchema, result.data)
         if (!outputParseResult.success) {
           return this.errorResult(
             `Invalid output for tool "${tool.name}":\n${outputParseResult.issuesMessage}`,
@@ -196,7 +200,7 @@ export class ToolExecutor {
         issuesMessage,
       }
     }
-    return parseResult;
+    return parseResult
   }
 
   /**

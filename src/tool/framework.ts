@@ -68,7 +68,7 @@ export type JSONSchemaProperty =
  * })
  * ```
  */
-export function defineTool<TInput, TOutput = string>(config: {
+export function defineTool<TInput>(config: {
   name: string
   description: string
   inputSchema: ZodSchema<TInput>
@@ -76,9 +76,11 @@ export function defineTool<TInput, TOutput = string>(config: {
    * Optional runtime validator for `ToolResult.data`.
    * When omitted, output validation is skipped.
    *
-   * `TOutput` defaults to `string` because `ToolResult.data` is string-based.
+   * `ToolResult.data` is always a `string`, so the schema is fixed to
+   * `ZodSchema<string>` — use `z.string().refine(...)` / `z.string().regex(...)`
+   * (or similar) to enforce structural constraints on the serialised output.
    */
-  outputSchema?: ZodSchema<TOutput>
+  outputSchema?: ZodSchema<string>
   /**
    * Optional JSON Schema for the LLM (bypasses Zod → JSON Schema conversion).
    */
@@ -90,7 +92,7 @@ export function defineTool<TInput, TOutput = string>(config: {
    */
   maxOutputChars?: number
   execute: (input: TInput, context: ToolUseContext) => Promise<ToolResult>
-}): ToolDefinition<TInput, TOutput> {
+}): ToolDefinition<TInput> {
   return {
     name: config.name,
     description: config.description,
