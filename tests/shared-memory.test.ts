@@ -246,5 +246,43 @@ describe('SharedMemory', () => {
       expect(team.getSharedMemoryInstance()).toBeDefined()
       expect(team.getSharedMemory()).toBeDefined()
     })
+
+    // -----------------------------------------------------------------------
+    // Shape validation — defends against malformed `sharedMemoryStore`
+    // (e.g. plain objects from untrusted JSON) reaching SharedMemory.
+    // -----------------------------------------------------------------------
+
+    it('SharedMemory throws when store is a plain object missing methods', () => {
+      const plain = { foo: 'bar' } as unknown as MemoryStore
+      expect(() => new SharedMemory(plain)).toThrow(TypeError)
+      expect(() => new SharedMemory(plain)).toThrow(/MemoryStore interface/)
+    })
+
+    it('SharedMemory throws when store is missing a single method', () => {
+      const partial = {
+        get: async () => null,
+        set: async () => undefined,
+        list: async () => [],
+        delete: async () => undefined,
+        // `clear` missing
+      } as unknown as MemoryStore
+      expect(() => new SharedMemory(partial)).toThrow(TypeError)
+    })
+
+    it('SharedMemory throws when store is null (cast)', () => {
+      expect(() => new SharedMemory(null as unknown as MemoryStore)).toThrow(TypeError)
+    })
+
+    it('Team throws early on malformed `sharedMemoryStore`', () => {
+      const bogus = { not: 'a store' } as unknown as MemoryStore
+      expect(
+        () =>
+          new Team({
+            name: 'bad-team',
+            agents: [{ name: 'alice', model: 'claude-sonnet-4-6' }],
+            sharedMemoryStore: bogus,
+          }),
+      ).toThrow(TypeError)
+    })
   })
 })
