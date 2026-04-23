@@ -46,7 +46,7 @@ This is the framework's key feature. When `runTeam()` is called:
 | Task | `task/queue.ts`, `task/task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
 | Tool | `tool/framework.ts`, `tool/executor.ts`, `tool/built-in/` | `defineTool()` with Zod schemas, ToolRegistry, parallel batch execution with concurrency semaphore |
 | LLM | `llm/adapter.ts`, `llm/anthropic.ts`, `llm/openai.ts` | `LLMAdapter` interface (`chat` + `stream`), factory `createAdapter()` |
-| Memory | `memory/shared.ts`, `memory/store.ts` | Namespaced key-value store (`agentName/key`), markdown summary injection into prompts |
+| Memory | `memory/shared.ts`, `memory/store.ts` | Namespaced key-value store (`agentName/key`), markdown summary injection into prompts. Custom backends via `TeamConfig.sharedMemoryStore` (any `MemoryStore` impl); `sharedMemory: true` uses the default in-process store |
 | Types | `types.ts` | All interfaces in one file to avoid circular deps |
 | Exports | `index.ts` | Public API surface |
 

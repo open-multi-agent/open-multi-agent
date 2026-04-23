@@ -11,6 +11,25 @@ import type { MemoryEntry, MemoryStore } from '../types.js'
 import { InMemoryStore } from './store.js'
 
 // ---------------------------------------------------------------------------
+// Runtime shape check
+// ---------------------------------------------------------------------------
+
+const STORE_METHODS = ['get', 'set', 'list', 'delete', 'clear'] as const
+
+/**
+ * Returns true when `v` structurally implements {@link MemoryStore}.
+ *
+ * Used to defend against malformed `sharedMemoryStore` values reaching
+ * {@link SharedMemory} (e.g. a plain object deserialized from JSON that
+ * cannot actually satisfy the interface at runtime).
+ */
+function isMemoryStore(v: unknown): v is MemoryStore {
+  if (v === null || typeof v !== 'object') return false
+  const obj = v as Record<string, unknown>
+  return STORE_METHODS.every((m) => typeof obj[m] === 'function')
+}
+
+// ---------------------------------------------------------------------------
 // SharedMemory
 // ---------------------------------------------------------------------------
 
@@ -34,10 +53,25 @@ import { InMemoryStore } from './store.js'
  * ```
  */
 export class SharedMemory {
-  private readonly store: InMemoryStore
+  private readonly store: MemoryStore
 
-  constructor() {
-    this.store = new InMemoryStore()
+  /**
+   * @param store - Optional custom {@link MemoryStore} backing this shared memory.
+   *                Defaults to an in-process {@link InMemoryStore}. Custom stores
+   *                receive namespaced keys (`<agentName>/<key>`) opaque to them.
+   *
+   * @throws {TypeError} when `store` is provided but does not structurally
+   *                     implement {@link MemoryStore} (fails fast on malformed
+   *                     values, e.g. plain objects from untrusted JSON config).
+   */
+  constructor(store?: MemoryStore) {
+    if (store !== undefined && !isMemoryStore(store)) {
+      throw new TypeError(
+        'SharedMemory: `store` must implement the MemoryStore interface ' +
+          `(methods: ${STORE_METHODS.join(', ')}).`,
+      )
+    }
+    this.store = store ?? new InMemoryStore()
   }
 
   // ---------------------------------------------------------------------------

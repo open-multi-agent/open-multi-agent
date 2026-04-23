@@ -141,6 +141,17 @@ function asTeamConfig(v: unknown, label: string): TeamConfig {
       throw new OmaValidationError(`agent.model required for "${String(a['name'])}"`)
     }
   }
+  // `sharedMemoryStore` is a runtime MemoryStore instance and cannot survive
+  // JSON round-tripping. Reject it here with a clear pointer to the SDK path,
+  // otherwise the plain object would reach `new SharedMemory(...)` and crash on
+  // the first read/write.
+  if ('sharedMemoryStore' in v) {
+    throw new OmaValidationError(
+      `${label}.sharedMemoryStore: SDK-only; cannot be set from JSON config. ` +
+        'Use `sharedMemory: true` for the default in-memory store, or wire a ' +
+        'custom MemoryStore in TypeScript via `orchestrator.createTeam()`.',
+    )
+  }
   return v as unknown as TeamConfig
 }
 

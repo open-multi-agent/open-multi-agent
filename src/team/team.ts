@@ -103,7 +103,18 @@ export class Team {
     this.agentMap = new Map(config.agents.map((a) => [a.name, a]))
     this.bus = new MessageBus()
     this.queue = new TaskQueue()
-    this.memory = config.sharedMemory ? new SharedMemory() : undefined
+    // Resolve shared memory:
+    //   - `sharedMemoryStore` takes precedence when present (enables memory regardless of boolean).
+    //   - `sharedMemory: true` with no custom store → default in-memory store.
+    //   - otherwise → no shared memory.
+    // Use `!== undefined` rather than a truthy check so that malformed falsy
+    // values (null, 0, '') still reach SharedMemory's shape validation and
+    // fail fast, instead of silently falling back and hiding the config bug.
+    this.memory = config.sharedMemoryStore !== undefined
+      ? new SharedMemory(config.sharedMemoryStore)
+      : config.sharedMemory
+        ? new SharedMemory()
+        : undefined
     this.events = new EventBus()
 
     // Bridge queue events onto the team's event bus.
