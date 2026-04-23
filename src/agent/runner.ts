@@ -374,12 +374,10 @@ export class AgentRunner {
       : '[Conversation summary unavailable]'
 
     this.summarizeCache = { oldSignature, summaryPrefix }
-    
     const mergedRecent = prependSyntheticPrefixToFirstUser(
       recentPortion,
       `${summaryPrefix}\n\n`,
     )
-    
     return {
       messages: [firstUser, ...mergedRecent],
       usage: summaryResponse.usage,

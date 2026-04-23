@@ -85,6 +85,11 @@ export type ContextStrategy =
     }
   | {
     type: 'custom'
+    /**
+     * Compaction callback. Invoked before every LLM turn including the first,
+     * so implementations that should only fire past a token threshold must
+     * self-gate inside this function.
+     */
     compress: (
       messages: LLMMessage[],
       estimatedTokens: number,

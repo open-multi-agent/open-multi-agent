@@ -205,13 +205,7 @@ describe('AgentRunner contextStrategy', () => {
 
     const result = await runner.run(initialMessages)
 
-    // 2 new messages were generated (the tool use, and the tool result).
-    // The `done` response is returned but not pushed as a new message to the list in `run()`.
-    // Wait, the `done` text response *is* pushed.
-    // Let's verify the exact length of new messages.
-    // The stream loop pushes the assistant message (tool use), then the user message (tool result),
-    // then loops back and pushes the final assistant message (text).
-    // So 3 new messages are added during this run.
+    // Three new messages produced: assistant tool_use, user tool_result, assistant text.
     expect(result.messages).toHaveLength(3)
     expect(result.messages[0]!.role).toBe('assistant')
     expect(result.messages[1]!.role).toBe('user') // The tool_result
