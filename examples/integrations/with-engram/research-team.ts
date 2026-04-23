@@ -47,7 +47,7 @@ import {
   ToolRegistry,
   registerBuiltInTools,
 } from '../../../src/index.js'
-import type { SupportedProvider } from '../../../src/llm/adapter.js'
+import type { SupportedProvider } from '../../../src/index.js'
 import { EngramToolkit } from './engram-toolkit.js'
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ function buildAgent(config: {
     {
       name: config.name,
       model: MODEL,
-      provider: PROVIDER as AgentProvider,
+      provider: PROVIDER,
       tools: engramTools,
       systemPrompt: config.systemPrompt,
     },
@@ -108,9 +108,6 @@ function buildAgent(config: {
     executor,
   )
 }
-
-// The AgentConfig.provider type is narrower than SupportedProvider — cast once.
-type AgentProvider = 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
 
 // ---------------------------------------------------------------------------
 // Agents

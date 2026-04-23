@@ -34,10 +34,10 @@ import { InMemoryStore } from './store.js'
  * ```
  */
 export class SharedMemory {
-  private readonly store: InMemoryStore
+  private readonly store: MemoryStore
 
-  constructor() {
-    this.store = new InMemoryStore()
+  constructor(store?: MemoryStore) {
+    this.store = store ?? new InMemoryStore()
   }
 
   // ---------------------------------------------------------------------------
