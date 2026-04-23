@@ -262,8 +262,8 @@ Rules:
 - Merge overlapping reviewer comments into a single finding when they describe the same issue.
 - Use category "security", "performance", or "style" only.
 - Use priority "critical", "high", "medium", or "low" only.
-- `issue` should describe the problem, not the fix.
-- `fix_hint` should be specific and actionable.
+- issue should describe the problem, not the fix.
+- fix_hint should be specific and actionable.
 - If the code looks clean, return an empty JSON array.`,
   maxTurns: 2,
   outputSchema: ReviewFindings,
