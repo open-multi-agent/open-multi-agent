@@ -6,6 +6,7 @@
  */
 
 import type { ZodSchema } from 'zod'
+import type { SupportedProvider } from './llm/adapter.js'
 
 // ---------------------------------------------------------------------------
 // Content blocks
@@ -269,7 +270,7 @@ export interface BeforeRunHookContext {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
-  readonly provider?: 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
+  readonly provider?: SupportedProvider
   /**
    * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).
    * Note: local servers that don't require auth still need `apiKey` set to a
@@ -550,7 +551,7 @@ export interface OrchestratorConfig {
   /** Maximum cumulative tokens (input + output) allowed per orchestrator run. */
   readonly maxTokenBudget?: number
   readonly defaultModel?: string
-  readonly defaultProvider?: 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
+  readonly defaultProvider?: SupportedProvider
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
   readonly onProgress?: (event: OrchestratorEvent) => void
@@ -583,7 +584,7 @@ export interface OrchestratorConfig {
 export interface CoordinatorConfig {
   /** Coordinator model. Defaults to `OrchestratorConfig.defaultModel`. */
   readonly model?: string
-  readonly provider?: 'anthropic' | 'copilot' | 'grok' | 'openai' | 'gemini'
+  readonly provider?: SupportedProvider
   readonly baseURL?: string
   readonly apiKey?: string
   /**
