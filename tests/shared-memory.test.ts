@@ -284,5 +284,30 @@ describe('SharedMemory', () => {
           }),
       ).toThrow(TypeError)
     })
+
+    it('Team throws on falsy-but-present sharedMemoryStore (null)', () => {
+      // `null` is falsy but present; a truthy gate would silently drop it.
+      // The `!== undefined` gate routes it through SharedMemory's shape check
+      // so config bugs fail fast instead of being silently downgraded.
+      expect(
+        () =>
+          new Team({
+            name: 'null-store-team',
+            agents: [{ name: 'alice', model: 'claude-sonnet-4-6' }],
+            sharedMemoryStore: null as unknown as MemoryStore,
+          }),
+      ).toThrow(TypeError)
+    })
+
+    it('Team: omitting sharedMemoryStore entirely still honors sharedMemory: true', () => {
+      // Sanity check that the `!== undefined` gate does not accidentally
+      // enable memory when the field is absent.
+      const team = new Team({
+        name: 'absent-store-team',
+        agents: [{ name: 'alice', model: 'claude-sonnet-4-6' }],
+        sharedMemory: true,
+      })
+      expect(team.getSharedMemoryInstance()).toBeDefined()
+    })
   })
 })

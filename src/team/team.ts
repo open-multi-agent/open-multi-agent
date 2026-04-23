@@ -104,10 +104,13 @@ export class Team {
     this.bus = new MessageBus()
     this.queue = new TaskQueue()
     // Resolve shared memory:
-    //   - `sharedMemoryStore` takes precedence when provided (enables memory regardless of boolean).
+    //   - `sharedMemoryStore` takes precedence when present (enables memory regardless of boolean).
     //   - `sharedMemory: true` with no custom store → default in-memory store.
     //   - otherwise → no shared memory.
-    this.memory = config.sharedMemoryStore
+    // Use `!== undefined` rather than a truthy check so that malformed falsy
+    // values (null, 0, '') still reach SharedMemory's shape validation and
+    // fail fast, instead of silently falling back and hiding the config bug.
+    this.memory = config.sharedMemoryStore !== undefined
       ? new SharedMemory(config.sharedMemoryStore)
       : config.sharedMemory
         ? new SharedMemory()
