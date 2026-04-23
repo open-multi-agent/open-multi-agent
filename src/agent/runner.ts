@@ -374,10 +374,12 @@ export class AgentRunner {
       : '[Conversation summary unavailable]'
 
     this.summarizeCache = { oldSignature, summaryPrefix }
+    
     const mergedRecent = prependSyntheticPrefixToFirstUser(
       recentPortion,
       `${summaryPrefix}\n\n`,
     )
+    
     return {
       messages: [firstUser, ...mergedRecent],
       usage: summaryResponse.usage,
@@ -538,6 +540,7 @@ export class AgentRunner {
   ): AsyncGenerator<StreamEvent> {
     // Working copy of the conversation — mutated as turns progress.
     let conversationMessages: LLMMessage[] = [...initialMessages]
+    const newMessages: LLMMessage[] = []
 
     // Accumulated state across all turns.
     let totalUsage: TokenUsage = ZERO_USAGE
@@ -593,8 +596,8 @@ export class AgentRunner {
           conversationMessages = this.compressConsumedToolResults(conversationMessages)
         }
 
-        // Optionally compact context before each LLM call after the first turn.
-        if (this.options.contextStrategy && turns > 1) {
+        // Optionally compact context before each LLM call.
+        if (this.options.contextStrategy) {
           const compacted = await this.applyContextStrategy(
             conversationMessages,
             this.options.contextStrategy,
@@ -639,6 +642,7 @@ export class AgentRunner {
         }
 
         conversationMessages.push(assistantMessage)
+        newMessages.push(assistantMessage)
         options.onMessage?.(assistantMessage)
 
         // Yield text deltas so streaming callers can display them promptly.
@@ -851,6 +855,7 @@ export class AgentRunner {
         }
 
         conversationMessages.push(toolResultMessage)
+        newMessages.push(toolResultMessage)
         options.onMessage?.(toolResultMessage)
 
         // Budget check is deferred until tool_result events have been yielded
@@ -894,7 +899,7 @@ export class AgentRunner {
 
     const runResult: RunResult = {
       // Return only the messages added during this run (not the initial seed).
-      messages: conversationMessages.slice(initialMessages.length),
+      messages: newMessages,
       output: finalOutput,
       toolCalls: allToolCalls,
       tokenUsage: totalUsage,

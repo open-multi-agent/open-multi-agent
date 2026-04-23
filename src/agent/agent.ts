@@ -206,7 +206,7 @@ export class Agent {
 
     const result = await this.executeRun([...this.messageHistory])
 
-    // Persist the new messages into history so the next `prompt` sees them.
+    // Persist the new messages into history so the next prompt sees them.
     for (const msg of result.messages) {
       this.messageHistory.push(msg)
     }

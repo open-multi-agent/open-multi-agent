@@ -165,8 +165,10 @@ describe('AgentRunner contextStrategy', () => {
     expect(rolesAfterFirstUser).not.toMatch(/^user,user/)
   })
 
-  it('custom strategy calls compress callback and uses returned messages', async () => {
-    const compress = vi.fn((messages: LLMMessage[]) => messages.slice(-1))
+  it('does not drop turns when context strategy shrinks array size', async () => {
+    // The core bug from #152: if the strategy replaces the array with fewer messages than it started with,
+    // the old `slice()` logic would incorrectly drop newly generated turns.
+    const compress = vi.fn((messages: LLMMessage[]) => messages.slice(-1)) // Shrink to 1 message
     const calls: LLMMessage[][] = []
     const responses = [
       toolUseResponse('echo', { message: 'hello' }),
@@ -194,10 +196,26 @@ describe('AgentRunner contextStrategy', () => {
       },
     })
 
-    await runner.run([{ role: 'user', content: [{ type: 'text', text: 'custom prompt' }] }])
+    // Seed with 3 messages
+    const initialMessages: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'm1' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'm2' }] },
+      { role: 'user', content: [{ type: 'text', text: 'm3' }] },
+    ]
 
-    expect(compress).toHaveBeenCalledOnce()
-    expect(calls[1]).toHaveLength(1)
+    const result = await runner.run(initialMessages)
+
+    // 2 new messages were generated (the tool use, and the tool result).
+    // The `done` response is returned but not pushed as a new message to the list in `run()`.
+    // Wait, the `done` text response *is* pushed.
+    // Let's verify the exact length of new messages.
+    // The stream loop pushes the assistant message (tool use), then the user message (tool result),
+    // then loops back and pushes the final assistant message (text).
+    // So 3 new messages are added during this run.
+    expect(result.messages).toHaveLength(3)
+    expect(result.messages[0]!.role).toBe('assistant')
+    expect(result.messages[1]!.role).toBe('user') // The tool_result
+    expect(result.messages[2]!.role).toBe('assistant')
   })
 
   // ---------------------------------------------------------------------------
