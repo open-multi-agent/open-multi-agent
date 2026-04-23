@@ -331,6 +331,34 @@ await disconnect()
 
 完整例子见 [`integrations/mcp-github`](examples/integrations/mcp-github.ts)。
 
+## 共享内存
+
+团队可以共用一个命名空间化的 key-value 存储，让后续 agent 看到前面 agent 的发现。用布尔值启用默认的进程内存储：
+
+```typescript
+const team = orchestrator.createTeam('research-team', {
+  name: 'research-team',
+  agents: [researcher, writer],
+  sharedMemory: true,
+})
+```
+
+需要持久化或跨进程的后端（Redis、Postgres、Engram 等）？实现 `MemoryStore` 接口并通过 `sharedMemoryStore` 注入，键仍会在到达 store 前按 `<agentName>/<key>` 做命名空间封装：
+
+```typescript
+import type { MemoryStore } from '@jackchen_me/open-multi-agent'
+
+class RedisStore implements MemoryStore { /* get/set/list/delete/clear */ }
+
+const team = orchestrator.createTeam('durable-team', {
+  name: 'durable-team',
+  agents: [researcher, writer],
+  sharedMemoryStore: new RedisStore(),
+})
+```
+
+两者都提供时，`sharedMemoryStore` 优先。此字段仅 SDK 可用，CLI 无法序列化运行时对象。
+
 ## 上下文管理
 
 长时间运行的 agent 很容易撞上输入 token 上限。在 `AgentConfig` 里设 `contextStrategy`，控制对话变长时怎么收缩：

@@ -435,6 +435,15 @@ export interface TeamConfig {
   readonly name: string
   readonly agents: readonly AgentConfig[]
   readonly sharedMemory?: boolean
+  /**
+   * Custom {@link MemoryStore} backing the team's shared memory (e.g. Redis,
+   * Postgres, or a remote service). When provided, shared memory is enabled
+   * regardless of `sharedMemory`. When both are set, `sharedMemoryStore` wins.
+   * When omitted and `sharedMemory` is `true`, the default in-memory store is used.
+   *
+   * SDK-only: the CLI (`oma`) cannot pass runtime objects through its JSON config.
+   */
+  readonly sharedMemoryStore?: MemoryStore
   readonly maxConcurrency?: number
 }
 

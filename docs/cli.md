@@ -121,6 +121,8 @@ Validation rules enforced by the CLI:
 
 Any other fields are passed through to the library as in TypeScript.
 
+**SDK-only fields**: `sharedMemoryStore` (custom `MemoryStore` instance) cannot be set from JSON since it is a runtime object. Use `sharedMemory: true` for the default in-memory store, or wire a custom store in TypeScript via `orchestrator.createTeam()`.
+
 ### Tasks file
 
 Used with **`oma task --file`**.

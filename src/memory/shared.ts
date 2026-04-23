@@ -34,10 +34,15 @@ import { InMemoryStore } from './store.js'
  * ```
  */
 export class SharedMemory {
-  private readonly store: InMemoryStore
+  private readonly store: MemoryStore
 
-  constructor() {
-    this.store = new InMemoryStore()
+  /**
+   * @param store - Optional custom {@link MemoryStore} backing this shared memory.
+   *                Defaults to an in-process {@link InMemoryStore}. Custom stores
+   *                receive namespaced keys (`<agentName>/<key>`) opaque to them.
+   */
+  constructor(store?: MemoryStore) {
+    this.store = store ?? new InMemoryStore()
   }
 
   // ---------------------------------------------------------------------------
