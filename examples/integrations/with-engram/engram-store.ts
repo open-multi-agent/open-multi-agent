@@ -21,6 +21,7 @@ import type { MemoryEntry, MemoryStore } from '../../../src/types.js'
 
 interface EngramFact {
   fact_id: string
+  lineage_id: string
   content: string
   scope: string
   agent_id?: string
@@ -105,14 +106,25 @@ export class EngramMemoryStore implements MemoryStore {
   }
 
   /**
-   * Soft-delete a key by committing a `delete` operation.
-   * Engram preserves audit history — the fact is retired, not erased.
+   * Retire the most recent fact for `key` (scope) by its lineage ID.
+   *
+   * Engram's `delete` operation requires `corrects_lineage` — it retires a
+   * specific lineage rather than deleting by scope. We look up the latest
+   * fact first to obtain its `lineage_id`, then issue the delete.
+   *
+   * No-op when no fact exists for the key.
    */
   async delete(key: string): Promise<void> {
+    // Look up the latest fact to get its lineage_id.
+    const entry = await this.getFact(key)
+    if (!entry) return
+
     await this.post('/api/commit', {
       scope: key,
-      content: '',
+      content: `Retired by MemoryStore.delete("${key}")`,
+      confidence: this.confidence,
       operation: 'delete',
+      corrects_lineage: entry.lineage_id,
     })
   }
 
@@ -135,6 +147,18 @@ export class EngramMemoryStore implements MemoryStore {
     }
   }
 
+  /**
+   * Fetch the most recent raw fact for a scope.
+   * Used internally by `delete()` to obtain the `lineage_id`.
+   */
+  private async getFact(scope: string): Promise<EngramFact | null> {
+    const url = `${this.baseUrl}/api/facts?scope=${encodeURIComponent(scope)}&limit=1`
+    const res = await fetch(url, { headers: this.headers() })
+    if (!res.ok) return null
+    const facts: EngramFact[] = await res.json()
+    return facts.length > 0 ? facts[0] : null
+  }
+
   private async post(path: string, body: Record<string, unknown>): Promise<void> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
@@ -154,6 +178,7 @@ export class EngramMemoryStore implements MemoryStore {
       value: fact.content,
       metadata: {
         fact_id: fact.fact_id,
+        lineage_id: fact.lineage_id,
         agent_id: fact.agent_id,
       },
       createdAt: new Date(fact.committed_at),
