@@ -44,10 +44,19 @@ export class EngramToolkit {
    * Register all four Engram tools with the given registry.
    */
   registerAll(registry: ToolRegistry): void {
-    registry.register(this.commitTool())
-    registry.register(this.queryTool())
-    registry.register(this.conflictsTool())
-    registry.register(this.resolveTool())
+    for (const tool of this.getTools()) {
+      registry.register(tool)
+    }
+  }
+
+  /**
+   * Returns all four Engram tool definitions as an array.
+   * Use this with `AgentConfig.customTools` so the orchestrator's per-agent
+   * registry picks them up automatically (instead of a shared outer registry
+   * that `runTeam` / `buildPool` never sees).
+   */
+  getTools() {
+    return [this.commitTool(), this.queryTool(), this.conflictsTool(), this.resolveTool()]
   }
 
   // ---------------------------------------------------------------------------

@@ -28,11 +28,7 @@
  *   - ENGRAM_INVITE_KEY env var
  */
 
-import {
-  OpenMultiAgent,
-  ToolRegistry,
-  registerBuiltInTools,
-} from '../../../src/index.js'
+import { OpenMultiAgent } from '../../../src/index.js'
 import type {
   AgentConfig,
   OrchestratorEvent,
@@ -77,15 +73,12 @@ if (!process.env.ENGRAM_INVITE_KEY?.trim()) {
 const engramStore = new EngramMemoryStore()
 
 // ---------------------------------------------------------------------------
-// Register Engram tools so agents can query/audit beyond the automatic
-// shared-memory plumbing.
+// Engram tools via customTools so the orchestrator's per-agent registry
+// picks them up (runTeam builds its own registry per agent from built-ins
+// plus AgentConfig.customTools — an outer ToolRegistry is never seen).
 // ---------------------------------------------------------------------------
 
-const registry = new ToolRegistry()
-registerBuiltInTools(registry)
-new EngramToolkit().registerAll(registry)
-
-const engramToolNames = ['engram_commit', 'engram_query', 'engram_conflicts', 'engram_resolve']
+const engramTools = new EngramToolkit().getTools()
 
 // ---------------------------------------------------------------------------
 // Agent configs
@@ -107,7 +100,7 @@ Your job:
 3. Commit at least 5 distinct facts covering different aspects.
 
 Be specific and cite concrete systems or papers where possible.`,
-  tools: [...engramToolNames],
+  customTools: engramTools,
   maxTurns: 10,
 }
 
@@ -125,7 +118,7 @@ const factChecker: AgentConfig = {
    auto-resolved conflicts. You are auditing the resolutions — do NOT manually
    resolve them unless an auto-resolution is clearly wrong.
 5. Summarize your findings at the end.`,
-  tools: [...engramToolNames],
+  customTools: engramTools,
   maxTurns: 10,
 }
 
@@ -142,7 +135,7 @@ const writer: AgentConfig = {
 4. Only include claims that are grounded in the queried facts — do not
    fabricate or speculate beyond what the team has verified.
 5. Output the briefing as your final response.`,
-  tools: [...engramToolNames],
+  customTools: engramTools,
   maxTurns: 6,
 }
 
