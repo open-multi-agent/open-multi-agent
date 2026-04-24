@@ -17,7 +17,7 @@ CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent`
 
 - **Goal to result in one call.** `runTeam(team, "Build a REST API")` kicks off a coordinator agent that decomposes the goal into a task DAG, resolves dependencies, runs independent tasks in parallel, and synthesizes the final output. No graph to draw, no tasks to wire up.
 - **TypeScript-native, three runtime dependencies.** `@anthropic-ai/sdk`, `openai`, `zod`. That is the whole runtime. Embed in Express, Next.js, serverless functions, or CI/CD pipelines. No Python runtime, no subprocess bridge, no cloud sidecar.
-- **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.7, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
+- **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Qiniu, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.7, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
 
 Other features (MCP integration, context strategies, structured output, task retry, human-in-the-loop, lifecycle hooks, loop detection, observability) live below the fold and in [`examples/`](./examples/).
 
@@ -70,6 +70,7 @@ Set the API key for your provider. Local models via Ollama require no API key. S
 - `MINIMAX_API_KEY` (for MiniMax)
 - `MINIMAX_BASE_URL` (for MiniMax, optional, selects endpoint)
 - `DEEPSEEK_API_KEY` (for DeepSeek)
+- `QINIU_API_KEY` (for Qiniu)
 - `GITHUB_TOKEN` (for Copilot)
 
 ### CLI (`oma`)
@@ -188,6 +189,7 @@ Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
          │               │  - GrokAdapter         │
          │               │  - MiniMaxAdapter      │
          │               │  - DeepSeekAdapter     │
+         │               │  - QiniuAdapter        │
          │               └────────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -397,6 +399,7 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | Verified |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | Verified |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | Verified |
+| Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | Verified |
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | Verified |
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | Verified |
 | Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | none | Verified |
@@ -405,7 +408,7 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 
 Gemini requires `npm install @google/genai` (optional peer dependency).
 
-Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, and DeepSeek now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, and `provider: 'deepseek'`.
+Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, DeepSeek, and Qiniu now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, `provider: 'deepseek'`, and `provider: 'qiniu'`.
 
 ### Local Model Tool-Calling
 
@@ -473,6 +476,17 @@ const deepseekAgent: AgentConfig = {
 ```
 
 Set `DEEPSEEK_API_KEY`. Available models: `deepseek-chat` (DeepSeek-V3, recommended for coding) and `deepseek-reasoner` (thinking mode).
+
+```typescript
+const qiniuAgent: AgentConfig = {
+  name: 'qiniu-agent',
+  provider: 'qiniu',
+  model: 'deepseek-v3',
+  systemPrompt: 'You are a helpful assistant.',
+}
+```
+
+Set `QINIU_API_KEY`. Qiniu hosts multiple model families behind a single OpenAI-compatible endpoint at `https://api.qnaigc.com/v1`; see the [Qiniu AI inference docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api) for the current model list. Pass `baseURL` in `AgentConfig` to override the default endpoint.
 
 ## Contributing
 
