@@ -22,6 +22,8 @@ node dist/cli/oma.js help
 
 Set the usual provider API keys in the environment (see [README](../README.md#quick-start)); the CLI does not read secrets from flags. MiniMax additionally reads `MINIMAX_BASE_URL` to select the global (`https://api.minimax.io/v1`) or China (`https://api.minimaxi.com/v1`) endpoint.
 
+OpenRouter works through the OpenAI-compatible adapter: set `provider` to `openai`, `baseURL` to `https://openrouter.ai/api/v1`, and pass `OPENROUTER_API_KEY` as the agent or orchestrator `apiKey`.
+
 ---
 
 ## Commands
@@ -61,6 +63,8 @@ Read-only helper for wiring JSON configs and env vars.
 
 - **`oma provider`** or **`oma provider list`** — Prints JSON: built-in provider ids, API key environment variable names, whether `baseURL` is supported, and short notes (e.g. OpenAI-compatible servers, Copilot in CI).
 - **`oma provider template <provider>`** — Prints a JSON object with example `orchestrator` and `agent` fields plus placeholder `env` entries. `<provider>` is one of: `anthropic`, `openai`, `gemini`, `grok`, `minimax`, `deepseek`, `qiniu`, `copilot`.
+
+For OpenRouter, use the `openai` provider template, set `baseURL` to `https://openrouter.ai/api/v1`, and set `apiKey` from `OPENROUTER_API_KEY` in your JSON config.
 
 Supports `--pretty`.
 
@@ -259,4 +263,3 @@ esac
 - No built-in **`cwd`** or metadata passed into `ToolUseContext` (tools use process cwd unless the library adds other hooks later).
 - No **`onApproval`** from JSON; non-interactive batch only.
 - Coordinator **`runTeam`** path still requires network and API keys like any other run.
-

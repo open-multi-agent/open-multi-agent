@@ -31,6 +31,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/gemini`](providers/gemini.ts) | Google Gemini | `GEMINI_API_KEY` |
 | [`providers/minimax`](providers/minimax.ts) | MiniMax M2.7 | `MINIMAX_API_KEY` |
 | [`providers/deepseek`](providers/deepseek.ts) | DeepSeek Chat | `DEEPSEEK_API_KEY` |
+| [`providers/openrouter`](providers/openrouter.ts) | OpenRouter (OpenAI-compatible) | `OPENROUTER_API_KEY` |
 | [`providers/groq`](providers/groq.ts) | Groq (OpenAI-compatible) | `GROQ_API_KEY` |
 
 ## patterns — orchestration patterns

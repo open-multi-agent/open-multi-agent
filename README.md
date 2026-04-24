@@ -65,6 +65,7 @@ Set the API key for your provider. Local models via Ollama require no API key. S
 - `ANTHROPIC_API_KEY`
 - `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT` (for Azure OpenAI; deployment is optional fallback when `model` is blank)
 - `OPENAI_API_KEY`
+- `OPENROUTER_API_KEY` (for OpenRouter via the OpenAI-compatible adapter)
 - `GEMINI_API_KEY`
 - `XAI_API_KEY` (for Grok)
 - `MINIMAX_API_KEY` (for MiniMax)
@@ -148,7 +149,7 @@ For MapReduce-style fan-out without task dependencies, use `AgentPool.runParalle
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app combining OMA `runTeam()` with AI SDK `useChat` streaming.
-- **Provider examples**: eight three-agent teams (one per supported provider) under [`examples/providers/`](examples/providers/).
+- **Provider examples**: three-agent teams under [`examples/providers/`](examples/providers/), including hosted providers, OpenAI-compatible endpoints, and local models.
 
 Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
 
@@ -431,12 +432,13 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | Verified |
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | Verified |
 | Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | none | Verified |
+| OpenRouter | `provider: 'openai'` + `baseURL` + `apiKey` | `OPENROUTER_API_KEY` | Verified via [`providers/openrouter`](examples/providers/openrouter.ts) |
 | Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | Verified |
 | llama.cpp server | `provider: 'openai'` + `baseURL` | none | Verified |
 
 Gemini requires `npm install @google/genai` (optional peer dependency).
 
-Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). Groq is now verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, DeepSeek, and Qiniu now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, `provider: 'deepseek'`, and `provider: 'qiniu'`.
+Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). OpenRouter is verified in [`providers/openrouter`](examples/providers/openrouter.ts); pass `process.env.OPENROUTER_API_KEY` as `apiKey` because the `openai` adapter otherwise reads `OPENAI_API_KEY`. Groq is verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, DeepSeek, and Qiniu now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, `provider: 'deepseek'`, and `provider: 'qiniu'`.
 
 ### Local Model Tool-Calling
 
