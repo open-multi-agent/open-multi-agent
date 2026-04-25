@@ -1079,6 +1079,7 @@ export class OpenMultiAgent {
       topP: coordinatorOverrides?.topP,
       topK: coordinatorOverrides?.topK,
       minP: coordinatorOverrides?.minP,
+      parallelToolCalls: coordinatorOverrides?.parallelToolCalls,
       frequencyPenalty: coordinatorOverrides?.frequencyPenalty,
       presencePenalty: coordinatorOverrides?.presencePenalty,
       extraBody: coordinatorOverrides?.extraBody,

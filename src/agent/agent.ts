@@ -149,6 +149,7 @@ export class Agent {
       topP: this.config.topP,
       topK: this.config.topK,
       minP: this.config.minP,
+      parallelToolCalls: this.config.parallelToolCalls,
       frequencyPenalty: this.config.frequencyPenalty,
       presencePenalty: this.config.presencePenalty,
       extraBody: this.config.extraBody,

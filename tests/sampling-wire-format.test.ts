@@ -91,6 +91,42 @@ describe('OpenAI adapter wire format', () => {
     expect(body['stream']).toBe(false)
   })
 
+  it('forwards parallelToolCalls=false as parallel_tool_calls in the chat payload', async () => {
+    mockOpenAICreate.mockResolvedValueOnce(okOpenAIResponse)
+
+    const adapter = new OpenAIAdapter('test-key')
+    await adapter.chat([userMessage], {
+      model: 'gpt-test',
+      parallelToolCalls: false,
+    })
+
+    const body = mockOpenAICreate.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(body['parallel_tool_calls']).toBe(false)
+  })
+
+  it('forwards parallelToolCalls=true as parallel_tool_calls in the chat payload', async () => {
+    mockOpenAICreate.mockResolvedValueOnce(okOpenAIResponse)
+
+    const adapter = new OpenAIAdapter('test-key')
+    await adapter.chat([userMessage], {
+      model: 'gpt-test',
+      parallelToolCalls: true,
+    })
+
+    const body = mockOpenAICreate.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(body['parallel_tool_calls']).toBe(true)
+  })
+
+  it('omits parallel_tool_calls when parallelToolCalls is undefined', async () => {
+    mockOpenAICreate.mockResolvedValueOnce(okOpenAIResponse)
+
+    const adapter = new OpenAIAdapter('test-key')
+    await adapter.chat([userMessage], { model: 'gpt-test' })
+
+    const body = mockOpenAICreate.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(body['parallel_tool_calls']).toBeUndefined()
+  })
+
   it('refuses to let extraBody override transport-level fields (model, stream)', async () => {
     mockOpenAICreate.mockResolvedValueOnce(okOpenAIResponse)
 

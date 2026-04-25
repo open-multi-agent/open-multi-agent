@@ -349,6 +349,21 @@ export interface AgentConfig {
    */
   readonly minP?: number
   /**
+   * Whether the model may emit multiple tool calls in a single assistant
+   * turn. Forwarded to OpenAI cloud and OpenAI-compatible local servers as
+   * `parallel_tool_calls`. The Anthropic adapter ignores this field.
+   *
+   * - `undefined` (default): omit the field, server default applies. Cloud
+   *   OpenAI defaults to `true`.
+   * - `false`: force serial tool calling. Required by some local servers
+   *   (vLLM, llama-server, certain quantized setups) that truncate
+   *   concurrent `tool_call` deltas during streaming or return malformed
+   *   `tool_calls` when more than one is emitted.
+   * - `true`: explicit opt-in (matches the cloud default; no behavior
+   *   change for cloud OpenAI users).
+   */
+  readonly parallelToolCalls?: boolean
+  /**
    * Adapter-specific escape hatch merged into the outgoing request payload.
    * Spread between the sampling params and the structural fields, so values
    * here can override the standard sampling defaults (`temperature`, `topP`,
@@ -669,6 +684,8 @@ export interface CoordinatorConfig {
   readonly topK?: number
   /** See {@link AgentConfig.minP}. */
   readonly minP?: number
+  /** See {@link AgentConfig.parallelToolCalls}. */
+  readonly parallelToolCalls?: boolean
   /**
    * Adapter-specific escape hatch merged into the outgoing request payload.
    * Spread between the sampling params and the structural fields, so values
@@ -792,6 +809,8 @@ export interface LLMChatOptions {
   readonly topK?: number
   /** See {@link AgentConfig.minP}. */
   readonly minP?: number
+  /** See {@link AgentConfig.parallelToolCalls}. */
+  readonly parallelToolCalls?: boolean
   /**
    * Adapter-specific escape hatch merged into the outgoing request payload.
    * Spread between the sampling params and the structural fields, so values

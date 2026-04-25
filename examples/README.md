@@ -25,7 +25,7 @@ One example per supported provider. All follow the same three-agent (architect /
 |---------|----------|---------|
 | [`providers/ollama`](providers/ollama.ts) | Ollama (local) + Claude | `ANTHROPIC_API_KEY` |
 | [`providers/gemma4-local`](providers/gemma4-local.ts) | Gemma 4 via Ollama (100% local) | — |
-| [`providers/local-quantized`](providers/local-quantized.ts) | Quantized MoE on vLLM / llama-server with tuned sampling (`topK` / `minP` / `frequencyPenalty` / `extraBody.repetition_penalty`) | — |
+| [`providers/local-quantized`](providers/local-quantized.ts) | Quantized MoE on vLLM / llama-server with tuned sampling (`topK` / `minP` / `frequencyPenalty` / `parallelToolCalls` / `extraBody.repetition_penalty`) | — |
 | [`providers/copilot`](providers/copilot.ts) | GitHub Copilot (GPT-4o + Claude) | `GITHUB_TOKEN` |
 | [`providers/azure-openai`](providers/azure-openai.ts) | Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (+ optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`) |
 | [`providers/grok`](providers/grok.ts) | xAI Grok | `XAI_API_KEY` |

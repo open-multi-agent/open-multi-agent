@@ -50,6 +50,7 @@ describe('Advanced Sampling Parameters', () => {
       minP: 0.05,
       frequencyPenalty: 1.2,
       presencePenalty: 0.5,
+      parallelToolCalls: false,
       extraBody: { custom: 'value' },
     }
 
@@ -62,6 +63,7 @@ describe('Advanced Sampling Parameters', () => {
     expect(call?.minP).toBe(0.05)
     expect(call?.frequencyPenalty).toBe(1.2)
     expect(call?.presencePenalty).toBe(0.5)
+    expect(call?.parallelToolCalls).toBe(false)
     expect(call?.extraBody).toEqual({ custom: 'value' })
   })
 
@@ -104,6 +106,7 @@ describe('Advanced Sampling Parameters', () => {
           minP: 0.03,
           frequencyPenalty: 0.8,
           presencePenalty: 0.2,
+          parallelToolCalls: false,
           extraBody: { coordinator_only: true },
         },
       },
@@ -117,6 +120,7 @@ describe('Advanced Sampling Parameters', () => {
     expect(coord?.minP).toBe(0.03)
     expect(coord?.frequencyPenalty).toBe(0.8)
     expect(coord?.presencePenalty).toBe(0.2)
+    expect(coord?.parallelToolCalls).toBe(false)
     expect(coord?.extraBody).toEqual({ coordinator_only: true })
   })
 })

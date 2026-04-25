@@ -90,6 +90,12 @@ export interface RunnerOptions {
    */
   readonly minP?: number
   /**
+   * Whether the model may emit multiple tool calls in a single assistant
+   * turn. Forwarded to OpenAI cloud and OpenAI-compatible local servers as
+   * `parallel_tool_calls`. The Anthropic adapter ignores this field.
+   */
+  readonly parallelToolCalls?: boolean
+  /**
    * Frequency penalty. Forwarded to OpenAI cloud and OpenAI-compatible local
    * servers. The Anthropic adapter ignores this field.
    */
@@ -589,6 +595,7 @@ export class AgentRunner {
       topP: this.options.topP,
       topK: this.options.topK,
       minP: this.options.minP,
+      parallelToolCalls: this.options.parallelToolCalls,
       frequencyPenalty: this.options.frequencyPenalty,
       presencePenalty: this.options.presencePenalty,
       extraBody: this.options.extraBody,

@@ -2,9 +2,9 @@
  * Local Quantized Model with Tuned Sampling (vLLM / llama-server)
  *
  * Demonstrates the sampling parameters exposed in v1.3+ — `topK`, `minP`,
- * `frequencyPenalty`, `presencePenalty`, and the `extraBody` escape hatch —
- * applied to a quantized MoE model served by an OpenAI-compatible local
- * inference server.
+ * `frequencyPenalty`, `presencePenalty`, `parallelToolCalls`, and the
+ * `extraBody` escape hatch — applied to a quantized MoE model served by an
+ * OpenAI-compatible local inference server.
  *
  * Why this example exists:
  *   Highly quantized MoE models (e.g. Qwen2.5-MoE @ Q4, DeepSeek-MoE @ Q4)
@@ -29,6 +29,9 @@
  *   • topK                                 — Anthropic + OpenAI-compatible local
  *   • minP                                 — OpenAI-compatible local only
  *   • frequencyPenalty / presencePenalty  — OpenAI track only
+ *   • parallelToolCalls                    — OpenAI track only; set `false` for
+ *                                            local servers that mishandle
+ *                                            concurrent tool_call deltas
  *   • extraBody                            — adapter-specific escape hatch
  *
  * Cloud OpenAI rejects `top_k` and `min_p`; this example is not portable to
