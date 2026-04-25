@@ -42,6 +42,7 @@ import type {
   LLMMessage,
   LLMResponse,
   LLMStreamOptions,
+  ReasoningBlock,
   LLMToolDef,
   StreamEvent,
   TextBlock,
@@ -62,6 +63,10 @@ import type {
  */
 function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam {
   switch (block.type) {
+    case 'reasoning': {
+      const param: TextBlockParam = { type: 'text', text: `<think>${block.text}</think>` }
+      return param
+    }
     case 'text': {
       const param: TextBlockParam = { type: 'text', text: block.text }
       return param
@@ -145,28 +150,37 @@ function toAnthropicTools(tools: readonly LLMToolDef[]): AnthropicTool[] {
  * Convert an Anthropic SDK `ContentBlock` into a framework {@link ContentBlock}.
  *
  * We only map the subset of SDK types that the framework exposes. Unknown
- * variants (thinking, server_tool_use, etc.) are converted to a text block
- * carrying a stringified representation so data is never silently dropped.
+ * variants are converted to a text block carrying a stringified
+ * representation so data is never silently dropped.
  */
 function fromAnthropicContentBlock(
   block: Anthropic.Messages.ContentBlock,
 ): ContentBlock {
-  switch (block.type) {
+  const blockType = (block as { type: string }).type
+
+  switch (blockType) {
+    case 'thinking': {
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: (block as { thinking: string }).thinking,
+      }
+      return reasoning
+    }
     case 'text': {
-      const text: TextBlock = { type: 'text', text: block.text }
+      const text: TextBlock = { type: 'text', text: (block as { text: string }).text }
       return text
     }
     case 'tool_use': {
       const toolUse: ToolUseBlock = {
         type: 'tool_use',
-        id: block.id,
-        name: block.name,
-        input: block.input as Record<string, unknown>,
+        id: (block as { id: string }).id,
+        name: (block as { name: string }).name,
+        input: (block as { input: Record<string, unknown> }).input,
       }
       return toolUse
     }
     default: {
-      // Graceful degradation for SDK types we don't model (thinking, etc.).
+      // Graceful degradation for SDK types we don't model.
       const fallback: TextBlock = {
         type: 'text',
         text: `[unsupported block type: ${(block as { type: string }).type}]`,
@@ -257,6 +271,7 @@ export class AnthropicAdapter implements LLMAdapter {
    *
    * Sequence guarantees:
    * - Zero or more `text` events containing incremental deltas
+   * - Zero or more `reasoning` events containing incremental thinking deltas
    * - Zero or more `tool_use` events when the model calls a tool (emitted once
    *   per tool use, after input JSON has been fully assembled)
    * - Exactly one terminal event: `done` (with the complete {@link LLMResponse}
@@ -308,14 +323,24 @@ export class AnthropicAdapter implements LLMAdapter {
 
           case 'content_block_delta': {
             const delta = event.delta
+            const deltaType = (delta as { type: string }).type
 
-            if (delta.type === 'text_delta') {
-              const textEvent: StreamEvent = { type: 'text', data: delta.text }
+            if (deltaType === 'text_delta') {
+              const textEvent: StreamEvent = {
+                type: 'text',
+                data: (delta as { text: string }).text,
+              }
               yield textEvent
-            } else if (delta.type === 'input_json_delta') {
+            } else if (deltaType === 'thinking_delta') {
+              const reasoningEvent: StreamEvent = {
+                type: 'reasoning',
+                data: (delta as { thinking: string }).thinking,
+              }
+              yield reasoningEvent
+            } else if (deltaType === 'input_json_delta') {
               const buf = toolInputBuffers.get(event.index)
               if (buf !== undefined) {
-                buf.json += delta.partial_json
+                buf.json += (delta as { partial_json: string }).partial_json
               }
             }
             break

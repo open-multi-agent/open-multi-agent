@@ -85,6 +85,9 @@ function toGeminiContents(messages: LLMMessage[]): Content[] {
   return messages.map((msg): Content => {
     const parts: Part[] = msg.content.map((block): Part => {
       switch (block.type) {
+        case 'reasoning':
+          return { text: `<think>${block.text}</think>` }
+
         case 'text':
           return { text: block.text }
 

@@ -55,6 +55,7 @@ import {
   fromOpenAICompletion,
   normalizeFinishReason,
   buildOpenAIMessageList,
+  getOpenAIReasoningText,
 } from './openai-common.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
@@ -132,6 +133,7 @@ export class OpenAIAdapter implements LLMAdapter {
    *
    * Sequence guarantees match {@link AnthropicAdapter.stream}:
    * - Zero or more `text` events
+   * - Zero or more `reasoning` events
    * - Zero or more `tool_use` events (emitted once per tool call, after
    *   arguments have been fully assembled)
    * - Exactly one terminal event: `done` or `error`
@@ -179,6 +181,7 @@ export class OpenAIAdapter implements LLMAdapter {
     >()
 
     // Full text accumulator for the `done` response.
+    let fullReasoning = ''
     let fullText = ''
 
     try {
@@ -202,6 +205,14 @@ export class OpenAIAdapter implements LLMAdapter {
           fullText += delta.content
           const textEvent: StreamEvent = { type: 'text', data: delta.content }
           yield textEvent
+        }
+
+        // --- reasoning delta ---
+        const reasoningDelta = getOpenAIReasoningText(delta)
+        if (reasoningDelta.length > 0) {
+          fullReasoning += reasoningDelta
+          const reasoningEvent: StreamEvent = { type: 'reasoning', data: reasoningDelta }
+          yield reasoningEvent
         }
 
         // --- tool call delta ---
@@ -258,6 +269,9 @@ export class OpenAIAdapter implements LLMAdapter {
 
       // Build the complete content array for the done response.
       const doneContent: ContentBlock[] = []
+      if (fullReasoning.length > 0) {
+        doneContent.push({ type: 'reasoning', text: fullReasoning })
+      }
       if (fullText.length > 0) {
         const textBlock: TextBlock = { type: 'text', text: fullText }
         doneContent.push(textBlock)

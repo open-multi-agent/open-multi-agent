@@ -220,7 +220,7 @@ describe('AnthropicAdapter', () => {
       expect(result.stop_reason).toBe('tool_use')
     })
 
-    it('gracefully degrades unknown block types to text', async () => {
+    it('maps thinking blocks to reasoning content', async () => {
       mockCreate.mockResolvedValue(makeAnthropicResponse({
         content: [{ type: 'thinking', thinking: 'hmm...' }],
       }))
@@ -228,8 +228,8 @@ describe('AnthropicAdapter', () => {
       const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
 
       expect(result.content[0]).toEqual({
-        type: 'text',
-        text: '[unsupported block type: thinking]',
+        type: 'reasoning',
+        text: 'hmm...',
       })
     })
 
@@ -271,6 +271,37 @@ describe('AnthropicAdapter', () => {
       expect(textEvents).toEqual([
         { type: 'text', data: 'Hello' },
         { type: 'text', data: ' world' },
+      ])
+    })
+
+    it('yields reasoning events from thinking_delta and retains them in done content', async () => {
+      const streamObj = makeStreamMock(
+        [
+          { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'step 1' } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: ' -> step 2' } },
+          { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Answer' } },
+        ],
+        makeAnthropicResponse({
+          content: [
+            { type: 'thinking', thinking: 'step 1 -> step 2' },
+            { type: 'text', text: 'Answer' },
+          ],
+        }),
+      )
+      mockStream.mockReturnValue(streamObj)
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const reasoningEvents = events.filter(e => e.type === 'reasoning')
+      expect(reasoningEvents).toEqual([
+        { type: 'reasoning', data: 'step 1' },
+        { type: 'reasoning', data: ' -> step 2' },
+      ])
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).content).toEqual([
+        { type: 'reasoning', text: 'step 1 -> step 2' },
+        { type: 'text', text: 'Answer' },
       ])
     })
 

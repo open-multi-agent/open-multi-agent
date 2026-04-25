@@ -60,6 +60,19 @@ function textChunk(text: string, finish_reason: string | null = null, usage: Rec
   }
 }
 
+function reasoningChunk(reasoning: string, finish_reason: string | null = null, usage: Record<string, number> | null = null) {
+  return {
+    id: 'chatcmpl-123',
+    model: 'gpt-4o',
+    choices: [{
+      index: 0,
+      delta: { reasoning_content: reasoning },
+      finish_reason,
+    }],
+    usage,
+  }
+}
+
 function toolCallChunk(index: number, id: string | undefined, name: string | undefined, args: string, finish_reason: string | null = null) {
   return {
     id: 'chatcmpl-123',
@@ -186,6 +199,28 @@ describe('OpenAIAdapter', () => {
       expect(result.stop_reason).toBe('tool_use')
     })
 
+    it('retains reasoning_content as a reasoning block', async () => {
+      mockCreate.mockResolvedValue(makeCompletion({
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'Final answer',
+            reasoning_content: 'step 1 -> step 2',
+            tool_calls: undefined,
+          },
+          finish_reason: 'stop',
+        }],
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content).toEqual([
+        { type: 'reasoning', text: 'step 1 -> step 2' },
+        { type: 'text', text: 'Final answer' },
+      ])
+    })
+
     it('passes tool names for fallback text extraction', async () => {
       // When native tool_calls is empty but text contains tool JSON, the adapter
       // should invoke extractToolCallsFromText with known tool names.
@@ -251,6 +286,29 @@ describe('OpenAIAdapter', () => {
       expect(textEvents).toEqual([
         { type: 'text', data: 'Hello' },
         { type: 'text', data: ' world' },
+      ])
+    })
+
+    it('yields reasoning events from reasoning_content deltas and retains them in done content', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        reasoningChunk('first thought'),
+        reasoningChunk(' then second thought'),
+        textChunk('Answer', 'stop'),
+        { id: 'chatcmpl-123', model: 'gpt-4o', choices: [], usage: { prompt_tokens: 8, completion_tokens: 5 } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const reasoningEvents = events.filter(e => e.type === 'reasoning')
+      expect(reasoningEvents).toEqual([
+        { type: 'reasoning', data: 'first thought' },
+        { type: 'reasoning', data: ' then second thought' },
+      ])
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).content).toEqual([
+        { type: 'reasoning', text: 'first thought then second thought' },
+        { type: 'text', text: 'Answer' },
       ])
     })
 

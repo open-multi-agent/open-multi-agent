@@ -128,6 +128,7 @@ export { SharedMemory } from './memory/shared.js'
 
 export type {
   // Content blocks
+  ReasoningBlock,
   TextBlock,
   ToolUseBlock,
   ToolResultBlock,

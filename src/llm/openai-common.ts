@@ -22,6 +22,7 @@ import type {
   LLMMessage,
   LLMResponse,
   LLMToolDef,
+  ReasoningBlock,
   TextBlock,
   ToolUseBlock,
 } from '../types.js'
@@ -43,6 +44,36 @@ export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
       parameters: tool.inputSchema as Record<string, unknown>,
     },
   }
+}
+
+function toThinkTag(text: string): string {
+  return `<think>${text}</think>`
+}
+
+function extractReasoningText(value: unknown): string {
+  if (typeof value === 'string') return value
+
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part === null || typeof part !== 'object') return ''
+
+        const record = part as Record<string, unknown>
+        if (typeof record['text'] === 'string') return record['text']
+        if (typeof record['content'] === 'string') return record['content']
+        if (typeof record['reasoning_content'] === 'string') return record['reasoning_content']
+        return ''
+      })
+      .join('')
+  }
+
+  return ''
+}
+
+export function getOpenAIReasoningText(source: unknown): string {
+  if (source === null || typeof source !== 'object') return ''
+  return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
 }
 
 /**
@@ -109,6 +140,8 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
   for (const block of msg.content) {
     if (block.type === 'text') {
       parts.push({ type: 'text', text: block.text })
+    } else if (block.type === 'reasoning') {
+      parts.push({ type: 'text', text: toThinkTag(block.text) })
     } else if (block.type === 'image') {
       parts.push({
         type: 'image_url',
@@ -143,6 +176,8 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
       })
     } else if (block.type === 'text') {
       textParts.push(block.text)
+    } else if (block.type === 'reasoning') {
+      textParts.push(toThinkTag(block.text))
     }
   }
 
@@ -186,6 +221,12 @@ export function fromOpenAICompletion(
 
   const content: ContentBlock[] = []
   const message = choice.message
+
+  const reasoningText = getOpenAIReasoningText(message)
+  if (reasoningText.length > 0) {
+    const reasoningBlock: ReasoningBlock = { type: 'reasoning', text: reasoningText }
+    content.push(reasoningBlock)
+  }
 
   if (message.content !== null && message.content !== undefined) {
     const textBlock: TextBlock = { type: 'text', text: message.content }

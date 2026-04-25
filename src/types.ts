@@ -18,6 +18,12 @@ export interface TextBlock {
   readonly text: string
 }
 
+/** Provider-native reasoning / thinking content emitted alongside normal text. */
+export interface ReasoningBlock {
+  readonly type: 'reasoning'
+  readonly text: string
+}
+
 /**
  * A request by the model to invoke a named tool with a structured input.
  * The `id` is unique per turn and is referenced by {@link ToolResultBlock}.
@@ -51,7 +57,7 @@ export interface ImageBlock {
 }
 
 /** Union of all content block variants that may appear in a message. */
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock
+export type ContentBlock = ReasoningBlock | TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock
 
 // ---------------------------------------------------------------------------
 // LLM messages & responses
@@ -119,6 +125,7 @@ export interface LLMResponse {
  * A discrete event emitted during streaming generation.
  *
  * - `text`        — incremental text delta
+ * - `reasoning`   — incremental reasoning / thinking delta
  * - `tool_use`    — the model has begun or completed a tool-use block
  * - `tool_result` — a tool result has been appended to the stream
  * - `budget_exceeded` — token budget threshold reached for this run
@@ -126,7 +133,7 @@ export interface LLMResponse {
  * - `error`       — an unrecoverable error occurred; `data` is an `Error`
  */
 export interface StreamEvent {
-  readonly type: 'text' | 'tool_use' | 'tool_result' | 'loop_detected' | 'budget_exceeded' | 'done' | 'error'
+  readonly type: 'text' | 'reasoning' | 'tool_use' | 'tool_result' | 'loop_detected' | 'budget_exceeded' | 'done' | 'error'
   readonly data: unknown
 }
 

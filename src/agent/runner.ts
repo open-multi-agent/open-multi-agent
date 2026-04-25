@@ -191,11 +191,14 @@ export interface RunResult {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Extract every TextBlock from a content array and join them. */
+/** Extract renderable assistant text, including reasoning blocks as `<think>` tags. */
 function extractText(content: readonly ContentBlock[]): string {
   return content
-    .filter((b): b is TextBlock => b.type === 'text')
-    .map(b => b.text)
+    .flatMap((b): string[] => {
+      if (b.type === 'reasoning') return [`<think>${b.text}</think>`]
+      if (b.type === 'text') return [b.text]
+      return []
+    })
     .join('')
 }
 
