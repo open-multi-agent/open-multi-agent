@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/brand/logo-mark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset=".github/brand/logo-mark-light.svg">
-    <img alt="Open Multi-Agent" src=".github/brand/logo-mark-light.svg" width="96">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg">
+    <img alt="Open Multi-Agent" src="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="96">
   </picture>
 </p>
 
