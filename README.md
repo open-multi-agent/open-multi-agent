@@ -57,9 +57,7 @@ Set the API key for your provider. Local models via Ollama require no API key. S
 - `QINIU_API_KEY` (for Qiniu)
 - `GITHUB_TOKEN` (for Copilot)
 
-### CLI (`oma`)
-
-For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
+### Run a team in TypeScript
 
 Three agents, one goal. The framework handles the rest:
 
@@ -111,6 +109,10 @@ agent_complete coordinator        // synthesizes final result
 Success: true
 Tokens: 12847 output tokens
 ```
+
+### Run from the shell
+
+For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
 
 ## Three Ways to Run
 
@@ -429,26 +431,35 @@ Pairs well with `compressToolResults` and `maxToolOutputChars` above.
 
 ## Supported Providers
 
-| Provider | Config | Env var | Status |
-|----------|--------|---------|--------|
-| Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | Verified |
-| OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | Verified |
-| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (+ optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`) | Verified |
-| Grok (xAI)   | `provider: 'grok'` | `XAI_API_KEY` | Verified |
-| MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | Verified |
-| MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | Verified |
-| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | Verified |
-| Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | Verified |
-| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | Verified |
-| Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | Verified |
-| Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | none | Verified |
-| OpenRouter | `provider: 'openai'` + `baseURL` + `apiKey` | `OPENROUTER_API_KEY` | Verified via [`providers/openrouter`](examples/providers/openrouter.ts) |
-| Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | Verified |
-| llama.cpp server | `provider: 'openai'` + `baseURL` | none | Verified |
+The pattern is the same across providers — change `provider`, `model`, and set the env var:
 
-Gemini requires `npm install @google/genai` (optional peer dependency).
+```typescript
+const agent: AgentConfig = {
+  name: 'my-agent',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  systemPrompt: 'You are a helpful assistant.',
+}
+```
 
-Any OpenAI-compatible API should work via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.). OpenRouter is verified in [`providers/openrouter`](examples/providers/openrouter.ts); pass `process.env.OPENROUTER_API_KEY` as `apiKey` because the `openai` adapter otherwise reads `OPENAI_API_KEY`. Groq is verified in [`providers/groq`](examples/providers/groq.ts). **Grok, MiniMax, DeepSeek, and Qiniu now have first-class support** via `provider: 'grok'`, `provider: 'minimax'`, `provider: 'deepseek'`, and `provider: 'qiniu'`.
+| Provider | Config | Env var | Example model | Notes |
+|----------|--------|---------|--------------|-------|
+| Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | — |
+| OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | `gpt-4o` | — |
+| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT` |
+| Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | `gemini-2.5-pro` | Requires `npm install @google/genai` |
+| Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | — |
+| MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | — |
+| MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1` |
+| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-chat` | `deepseek-chat` (V3, coding) or `deepseek-reasoner` (thinking mode) |
+| Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api) |
+| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | `gpt-4o` | — |
+| Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | none | `llama3.1` | Local OpenAI-compatible servers (Ollama: `http://localhost:11434/v1`) |
+| OpenRouter | `provider: 'openai'` + `baseURL` + `apiKey` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | Pass `OPENROUTER_API_KEY` as `apiKey`; the `openai` adapter otherwise reads `OPENAI_API_KEY` |
+| Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | OpenAI-compatible endpoint |
+| llama.cpp server | `provider: 'openai'` + `baseURL` | none | (server-loaded) | OpenAI-compatible local server |
+
+Any other OpenAI-compatible API works via `provider: 'openai'` + `baseURL` (Mistral, Qwen, Moonshot, Doubao, etc.).
 
 ### Local Model Tool-Calling
 
@@ -478,57 +489,6 @@ const localAgent: AgentConfig = {
 - Model not calling tools? Ensure it appears in Ollama's [Tools category](https://ollama.com/search?c=tools). Not all models support tool-calling.
 - Using Ollama? Update to the latest version (`ollama update`). Older versions have known tool-calling bugs.
 - Proxy interfering? Use `no_proxy=localhost` when running against local servers.
-
-### LLM Configuration Examples
-
-```typescript
-const grokAgent: AgentConfig = {
-  name: 'grok-agent',
-  provider: 'grok',
-  model: 'grok-4',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-(Set your `XAI_API_KEY` environment variable, no `baseURL` needed.)
-
-```typescript
-const minimaxAgent: AgentConfig = {
-  name: 'minimax-agent',
-  provider: 'minimax',
-  model: 'MiniMax-M2.7',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-Set `MINIMAX_API_KEY`. The adapter selects the endpoint via `MINIMAX_BASE_URL`:
-
-- `https://api.minimax.io/v1` Global, default
-- `https://api.minimaxi.com/v1` China mainland endpoint
-
-You can also pass `baseURL` directly in `AgentConfig` to override the env var.
-
-```typescript
-const deepseekAgent: AgentConfig = {
-  name: 'deepseek-agent',
-  provider: 'deepseek',
-  model: 'deepseek-chat',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-Set `DEEPSEEK_API_KEY`. Available models: `deepseek-chat` (DeepSeek-V3, recommended for coding) and `deepseek-reasoner` (thinking mode).
-
-```typescript
-const qiniuAgent: AgentConfig = {
-  name: 'qiniu-agent',
-  provider: 'qiniu',
-  model: 'deepseek-v3',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-Set `QINIU_API_KEY`. Qiniu hosts multiple model families behind a single OpenAI-compatible endpoint at `https://api.qnaigc.com/v1`; see the [Qiniu AI inference docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api) for the current model list. Pass `baseURL` in `AgentConfig` to override the default endpoint.
 
 ## Contributing
 

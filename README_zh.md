@@ -57,9 +57,7 @@ npm install @jackchen_me/open-multi-agent
 - `QINIU_API_KEY`（Qiniu）
 - `GITHUB_TOKEN`（Copilot）
 
-### CLI（`oma`）
-
-包里还自带一个叫 `oma` 的命令行工具，给 shell 和 CI 场景用，输出都是 JSON。`oma run`、`oma task`、`oma provider`、退出码、文件格式都在 [docs/cli.md](./docs/cli.md) 里。
+### 用 TypeScript 运行一个团队
 
 下面用三个 agent 协作做一个 REST API：
 
@@ -111,6 +109,10 @@ agent_complete coordinator        // 综合所有结果
 Success: true
 Tokens: 12847 output tokens
 ```
+
+### 从命令行运行
+
+包里还自带一个叫 `oma` 的命令行工具，给 shell 和 CI 场景用，输出都是 JSON。`oma run`、`oma task`、`oma provider`、退出码、文件格式都在 [docs/cli.md](./docs/cli.md) 里。
 
 ## 三种运行模式
 
@@ -426,26 +428,35 @@ const agent: AgentConfig = {
 
 ## 支持的 Provider
 
-| Provider | 配置 | 环境变量 | 状态 |
-|----------|------|----------|------|
-| Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | 已验证 |
-| OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | 已验证 |
-| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`（可选：`AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_DEPLOYMENT`） | 已验证 |
-| Grok (xAI)   | `provider: 'grok'` | `XAI_API_KEY` | 已验证 |
-| MiniMax（全球） | `provider: 'minimax'` | `MINIMAX_API_KEY` | 已验证 |
-| MiniMax（国内） | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | 已验证 |
-| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | 已验证 |
-| Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | 已验证 |
-| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | 已验证 |
-| Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | 已验证 |
-| Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | 无 | 已验证 |
-| OpenRouter | `provider: 'openai'` + `baseURL` + `apiKey` | `OPENROUTER_API_KEY` | 已通过 [`providers/openrouter`](examples/providers/openrouter.ts) 验证 |
-| Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | 已验证 |
-| llama.cpp server | `provider: 'openai'` + `baseURL` | 无 | 已验证 |
+各家 provider 写法基本一致，改 `provider`、`model`，设好对应的环境变量：
 
-Gemini 需要 `npm install @google/genai`（optional peer dependency）。
+```typescript
+const agent: AgentConfig = {
+  name: 'my-agent',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  systemPrompt: 'You are a helpful assistant.',
+}
+```
 
-OpenAI 兼容的 API 都能用 `provider: 'openai'` + `baseURL` 接（Mistral、Qwen、Moonshot、Doubao 等）。OpenRouter 在 [`providers/openrouter`](examples/providers/openrouter.ts) 里验证过；要把 `process.env.OPENROUTER_API_KEY` 显式传给 `apiKey`，否则 `openai` 适配器默认读 `OPENAI_API_KEY`。Groq 在 [`providers/groq`](examples/providers/groq.ts) 里验证过。**Grok、MiniMax、DeepSeek、Qiniu 现已第一类支持**，分别用 `provider: 'grok'`、`provider: 'minimax'`、`provider: 'deepseek'`、`provider: 'qiniu'`。
+| Provider | 配置 | 环境变量 | 示例 model | 备注 |
+|----------|------|----------|-----------|------|
+| Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | — |
+| OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | `gpt-4o` | — |
+| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | 可选 `AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_DEPLOYMENT` |
+| Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | `gemini-2.5-pro` | 需要 `npm install @google/genai` |
+| Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | — |
+| MiniMax（全球） | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | — |
+| MiniMax（国内） | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | 设 `MINIMAX_BASE_URL=https://api.minimaxi.com/v1` |
+| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-chat` | `deepseek-chat`（V3，写代码）或 `deepseek-reasoner`（思考模式） |
+| Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | 端点 `https://api.qnaigc.com/v1`；多模型族，见 [Qiniu AI 文档](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api) |
+| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | `gpt-4o` | — |
+| Ollama / vLLM / LM Studio | `provider: 'openai'` + `baseURL` | 无 | `llama3.1` | 本地 OpenAI 兼容服务（Ollama：`http://localhost:11434/v1`） |
+| OpenRouter | `provider: 'openai'` + `baseURL` + `apiKey` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | 把 `OPENROUTER_API_KEY` 显式传给 `apiKey`，否则 `openai` 适配器默认读 `OPENAI_API_KEY` |
+| Groq | `provider: 'openai'` + `baseURL` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | OpenAI 兼容端点 |
+| llama.cpp server | `provider: 'openai'` + `baseURL` | 无 | （由 server 加载） | 本地 OpenAI 兼容服务 |
+
+其他 OpenAI 兼容的 API 都能用 `provider: 'openai'` + `baseURL` 接（Mistral、Qwen、Moonshot、Doubao 等）。
 
 ### 本地模型 Tool-Calling
 
@@ -475,57 +486,6 @@ const localAgent: AgentConfig = {
 - 模型不调用工具？先确认它在 Ollama 的 [Tools 分类](https://ollama.com/search?c=tools) 里，不是所有模型都支持。
 - 把 Ollama 升到最新版（`ollama update`），旧版本有 tool-calling bug。
 - 代理挡住了？本地服务用 `no_proxy=localhost` 跳过代理。
-
-### LLM 配置示例
-
-```typescript
-const grokAgent: AgentConfig = {
-  name: 'grok-agent',
-  provider: 'grok',
-  model: 'grok-4',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-（设好 `XAI_API_KEY` 就行，不用配 `baseURL`。）
-
-```typescript
-const minimaxAgent: AgentConfig = {
-  name: 'minimax-agent',
-  provider: 'minimax',
-  model: 'MiniMax-M2.7',
-  systemPrompt: 'You are a helpful assistant.',
-}
-```
-
-设好 `MINIMAX_API_KEY`。端点用 `MINIMAX_BASE_URL` 选：
-
-- `https://api.minimax.io/v1` 全球端点，默认
-- `https://api.minimaxi.com/v1` 中国大陆端点
-
-也可以直接在 `AgentConfig` 里传 `baseURL`，覆盖环境变量。
-
-```typescript
-const deepseekAgent: AgentConfig = {
-  name: 'deepseek-agent',
-  provider: 'deepseek',
-  model: 'deepseek-chat',
-  systemPrompt: '你是一个有用的助手。',
-}
-```
-
-设好 `DEEPSEEK_API_KEY`。两个模型：`deepseek-chat`（DeepSeek-V3，写代码选这个）和 `deepseek-reasoner`（思考模式）。
-
-```typescript
-const qiniuAgent: AgentConfig = {
-  name: 'qiniu-agent',
-  provider: 'qiniu',
-  model: 'deepseek-v3',
-  systemPrompt: '你是一个有用的助手。',
-}
-```
-
-设好 `QINIU_API_KEY`。Qiniu 在统一的 OpenAI 兼容端点 `https://api.qnaigc.com/v1` 后挂了多个模型族，当前模型清单见 [Qiniu AI 推理文档](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api)。要换端点直接在 `AgentConfig` 里传 `baseURL` 覆盖即可。
 
 ## 参与贡献
 
