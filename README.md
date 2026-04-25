@@ -1,3 +1,5 @@
+<br />
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
@@ -5,6 +7,8 @@
     <img alt="Open Multi-Agent" src="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="96">
   </picture>
 </p>
+
+<br />
 
 <h1 align="center">Open Multi-Agent</h1>
 
@@ -25,7 +29,7 @@
   <strong>English</strong> · <a href="./README_zh.md">中文</a>
 </p>
 
----
+<br />
 
 `open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend, so your engineers describe the goal, not the graph.
 

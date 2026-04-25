@@ -1,3 +1,5 @@
+<br />
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
@@ -5,6 +7,8 @@
     <img alt="Open Multi-Agent" src="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="96">
   </picture>
 </p>
+
+<br />
 
 <h1 align="center">Open Multi-Agent</h1>
 
@@ -25,7 +29,7 @@
   <a href="./README.md">English</a> · <strong>中文</strong>
 </p>
 
----
+<br />
 
 `open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端，让工程师专注于目标，而非任务图。
 
