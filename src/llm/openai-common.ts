@@ -60,6 +60,16 @@ function hasToolResults(msg: LLMMessage): boolean {
  * `tool_result` blocks are expanded into top-level `tool`-role messages
  * because OpenAI uses a dedicated role for tool results rather than embedding
  * them inside user-content arrays.
+ *
+ * For mixed user messages (tool_result + text/image), the tool messages are
+ * emitted FIRST so they sit immediately after the assistant's `tool_calls`.
+ * The OpenAI Chat Completions API requires every assistant `tool_calls` block
+ * to be answered by tool-role messages before any subsequent user-role
+ * message; inserting a user message between them produces a 400 error
+ * ("messages with role 'tool' must be a response to a preceding message
+ * with 'tool_calls'"). This path is exercised in practice by the agent
+ * runner's loop-detection warning injection (see {@link AgentRunner}, which
+ * appends a text warning to a tool_result message when a loop is detected).
  */
 export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
@@ -72,11 +82,7 @@ export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageP
       if (!hasToolResults(msg)) {
         result.push(toOpenAIUserMessage(msg))
       } else {
-        const nonToolBlocks = msg.content.filter((b) => b.type !== 'tool_result')
-        if (nonToolBlocks.length > 0) {
-          result.push(toOpenAIUserMessage({ role: 'user', content: nonToolBlocks }))
-        }
-
+        // Emit tool messages first to satisfy OpenAI's strict ordering rule.
         for (const block of msg.content) {
           if (block.type === 'tool_result') {
             const toolMsg: ChatCompletionToolMessageParam = {
@@ -86,6 +92,11 @@ export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageP
             }
             result.push(toolMsg)
           }
+        }
+
+        const nonToolBlocks = msg.content.filter((b) => b.type !== 'tool_result')
+        if (nonToolBlocks.length > 0) {
+          result.push(toOpenAIUserMessage({ role: 'user', content: nonToolBlocks }))
         }
       }
     }

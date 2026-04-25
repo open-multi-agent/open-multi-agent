@@ -158,7 +158,10 @@ describe('toOpenAIMessages', () => {
     })
   })
 
-  it('handles mixed user message with text and tool_result', () => {
+  it('handles mixed user message with text and tool_result (tool first, then user)', () => {
+    // OpenAI requires every assistant tool_calls block to be answered by tool
+    // messages BEFORE any subsequent user-role message — inserting a user
+    // message between them produces a 400 error.
     const msgs: LLMMessage[] = [
       {
         role: 'user',
@@ -171,14 +174,94 @@ describe('toOpenAIMessages', () => {
 
     const result = toOpenAIMessages(msgs)
 
-    // Should produce a user message for text, then a tool message for result
     expect(result.length).toBeGreaterThanOrEqual(2)
-    expect(result[0]).toEqual({ role: 'user', content: 'context' })
+    expect(result[0]).toEqual({
+      role: 'tool',
+      tool_call_id: 'tc1',
+      content: 'data',
+    })
+    expect(result[1]).toEqual({ role: 'user', content: 'context' })
+  })
+
+  it('preserves tool-first ordering when text is appended after tool_result (loop-detector path)', () => {
+    // Reproduces the agent runner's loop-detection injection path: a user
+    // message that starts with one or more tool_result blocks followed by a
+    // synthetic warning text block. See AgentRunner injectWarning handling.
+    const msgs: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'tc1', name: 'search', input: { q: 'x' } },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'tc1', content: 'data' },
+          { type: 'text', text: 'WARNING: stuck in a loop' },
+        ],
+      },
+    ]
+
+    const result = toOpenAIMessages(msgs)
+
+    expect(result).toHaveLength(3)
+    expect((result[0] as any).role).toBe('assistant')
+    expect((result[0] as any).tool_calls).toHaveLength(1)
     expect(result[1]).toEqual({
       role: 'tool',
       tool_call_id: 'tc1',
       content: 'data',
     })
+    expect(result[2]).toEqual({ role: 'user', content: 'WARNING: stuck in a loop' })
+  })
+
+  it('emits all tool messages before a trailing user message when multiple tool_results are present', () => {
+    const msgs: LLMMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'tc1', content: 'a' },
+          { type: 'tool_result', tool_use_id: 'tc2', content: 'b' },
+          { type: 'text', text: 'note' },
+        ],
+      },
+    ]
+
+    const result = toOpenAIMessages(msgs)
+
+    expect(result).toHaveLength(3)
+    expect((result[0] as any).role).toBe('tool')
+    expect((result[0] as any).tool_call_id).toBe('tc1')
+    expect((result[1] as any).role).toBe('tool')
+    expect((result[1] as any).tool_call_id).toBe('tc2')
+    expect(result[2]).toEqual({ role: 'user', content: 'note' })
+  })
+
+  it('emits tool messages before a user message containing image content', () => {
+    // Mixed tool_result + image (no text) — the image must still be carried
+    // in a user-role message that follows the tool messages.
+    const msgs: LLMMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'tc1', content: 'looked up' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+          },
+        ],
+      },
+    ]
+
+    const result = toOpenAIMessages(msgs)
+
+    expect(result).toHaveLength(2)
+    expect((result[0] as any).role).toBe('tool')
+    expect((result[1] as any).role).toBe('user')
+    const userContent = (result[1] as any).content
+    expect(Array.isArray(userContent)).toBe(true)
+    expect(userContent[0].type).toBe('image_url')
   })
 
   it('handles image blocks in user messages', () => {
