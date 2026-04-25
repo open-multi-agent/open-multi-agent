@@ -32,7 +32,7 @@
 ## What else you get
 
 - **Tool framework with delegation.** Built-in tools (`bash`, `file_*`, `grep`, `glob`) executed in parallel by default. Define your own with `defineTool()` and Zod schemas. Agents can delegate sub-tasks to other roster agents via `delegate_to_agent`.
-- **Production-ready features.** MCP server integration, streaming with reasoning events, structured outputs (Zod-validated), context management strategies, task retry with exponential backoff, lifecycle hooks for traces and metrics, post-run HTML dashboard of the task DAG. See [`examples/`](./examples/) for each.
+- **Production-ready features.** MCP server integration, streaming, structured outputs (Zod-validated), context management strategies, task retry with exponential backoff, lifecycle hooks for traces and metrics, post-run HTML dashboard of the task DAG. See [`examples/`](./examples/) for each.
 - **Mix providers in one team.** Claude, GPT, Gemini, Grok, and local models all in the same `runTeam()` call. Full list and config in [Supported Providers](#supported-providers).
 
 ## Quick Start

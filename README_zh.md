@@ -32,7 +32,7 @@
 ## 更多能力
 
 - **工具框架与委托**。内置工具（`bash`、`file_*`、`grep`、`glob`）默认并行执行。用 `defineTool()` + Zod schema 自定义工具。Agent 可以通过 `delegate_to_agent` 把子任务交给同队其他 agent。
-- **生产级特性**。MCP server 集成、带 reasoning 事件的流式输出、结构化输出（Zod 校验）、上下文管理策略、任务重试（指数退避）、生命周期钩子用于 trace 和 metrics、运行结束后渲染任务 DAG 的 HTML dashboard。具体例子见 [`examples/`](./examples/)。
+- **生产级特性**。MCP server 集成、流式输出、结构化输出（Zod 校验）、上下文管理策略、任务重试（指数退避）、生命周期钩子用于 trace 和 metrics、运行结束后渲染任务 DAG 的 HTML dashboard。具体例子见 [`examples/`](./examples/)。
 - **同队混用 provider**。Claude、GPT、Gemini、Grok、本地模型全可以在同一次 `runTeam()` 调用里。完整列表和配置见 [支持的 Provider](#支持的-provider)。
 
 ## 快速开始
