@@ -1,25 +1,39 @@
-# Open Multi-Agent
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/brand/logo-mark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset=".github/brand/logo-mark-light.svg">
+    <img alt="Open Multi-Agent" src=".github/brand/logo-mark-light.svg" width="96">
+  </picture>
+</p>
 
-The lightweight multi-agent orchestration engine for TypeScript. Three runtime dependencies, zero config, goal to result in one `runTeam()` call.
+<h1 align="center">Open Multi-Agent</h1>
 
-CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent` is the `npm install` you drop into an existing Node.js backend when you need a team of agents to work on a goal together. Nothing more, nothing less.
+<p align="center">
+  Lightweight multi-agent orchestration for TypeScript.
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@jackchen_me/open-multi-agent)](https://www.npmjs.com/package/@jackchen_me/open-multi-agent)
-[![GitHub stars](https://img.shields.io/github/stars/JackChen-me/open-multi-agent)](https://github.com/JackChen-me/open-multi-agent/stargazers)
-[![license](https://img.shields.io/github/license/JackChen-me/open-multi-agent)](./LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
-[![runtime deps](https://img.shields.io/badge/runtime_deps-3-brightgreen)](https://github.com/JackChen-me/open-multi-agent/blob/main/package.json)
-[![codecov](https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg)](https://codecov.io/gh/JackChen-me/open-multi-agent)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/v/@jackchen_me/open-multi-agent" alt="npm version"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/JackChen-me/open-multi-agent" alt="license"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
+  <a href="https://codecov.io/gh/JackChen-me/open-multi-agent"><img src="https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg" alt="codecov"></a>
+  <a href="https://github.com/JackChen-me/open-multi-agent/blob/main/package.json"><img src="https://img.shields.io/badge/runtime_deps-3-brightgreen" alt="runtime deps"></a>
+  <a href="https://github.com/JackChen-me/open-multi-agent/stargazers"><img src="https://img.shields.io/github/stars/JackChen-me/open-multi-agent" alt="GitHub stars"></a>
+</p>
 
-**English** | [中文](./README_zh.md)
+<p align="center">
+  <strong>English</strong> · <a href="./README_zh.md">中文</a>
+</p>
 
-## What you actually get
+---
 
-- **Goal to result in one call.** `runTeam(team, "Build a REST API")` kicks off a coordinator agent that decomposes the goal into a task DAG, resolves dependencies, runs independent tasks in parallel, and synthesizes the final output. No graph to draw, no tasks to wire up.
-- **TypeScript-native, three runtime dependencies.** `@anthropic-ai/sdk`, `openai`, `zod`. That is the whole runtime. Embed in Express, Next.js, serverless functions, or CI/CD pipelines. No Python runtime, no subprocess bridge, no cloud sidecar.
-- **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Qiniu, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.7, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
+`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend, so your engineers describe the goal, not the graph.
 
-Other features (MCP integration, context strategies, structured output, task retry, observability) live below the fold and in [`examples/`](./examples/).
+## What else you get
+
+- **Tool framework with delegation.** Built-in tools (`bash`, `file_*`, `grep`, `glob`) executed in parallel by default. Define your own with `defineTool()` and Zod schemas. Agents can delegate sub-tasks to other roster agents via `delegate_to_agent`.
+- **Production-ready features.** MCP server integration, streaming with reasoning events, structured outputs (Zod-validated), context management strategies, task retry with exponential backoff, lifecycle hooks for traces and metrics, post-run HTML dashboard of the task DAG. See [`examples/`](./examples/) for each.
+- **Mix providers in one team.** Claude, GPT, Gemini, Grok, and local models all in the same `runTeam()` call. Full list and config in [Supported Providers](#supported-providers).
 
 ## Quick Start
 
@@ -126,6 +140,8 @@ Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
 
 **vs. [LangGraph JS](https://github.com/langchain-ai/langgraphjs).** LangGraph is declarative graph orchestration: you define nodes, edges, and conditional routing, then `compile()` and `invoke()`. `open-multi-agent` is goal-driven: you declare a team and a goal, a coordinator decomposes it into a task DAG at runtime. LangGraph gives you total control of topology (great for fixed production workflows). This gives you less typing and faster iteration (great for exploratory multi-agent work). LangGraph also has mature checkpointing; we do not.
 
+**vs. [Mastra](https://github.com/mastra-ai/mastra).** Mastra ships a Supervisor pattern: you define agents, define a workflow, and wire the Supervisor manually. `open-multi-agent` ships a different mechanism: a Coordinator that decomposes a goal into a task DAG automatically. The entry point is `runTeam(team, "Build a REST API")`. Mastra gives you explicit topology; this gives you goal-to-result automation. Choose on which abstraction fits the work.
+
 **vs. [CrewAI](https://github.com/crewAIInc/crewAI).** CrewAI is the mature Python choice. If your stack is Python, use CrewAI. `open-multi-agent` is TypeScript-native: three runtime dependencies, embeds directly in Node.js without a subprocess bridge. Roughly comparable capability on the orchestration side. Choose on language fit.
 
 **vs. [Vercel AI SDK](https://github.com/vercel/ai).** AI SDK is the LLM call layer: a unified TypeScript client for 60+ providers with streaming, tool calls, and structured outputs. It does not orchestrate multi-agent teams. `open-multi-agent` sits on top when you need that. They compose: use AI SDK for single-agent work, reach for this when you need a team.
@@ -141,17 +157,11 @@ Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
 
 Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) and we will list it here.
 
-### Integrations (free)
+### Integrations
 
 - **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
 
 Built an integration? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) to get listed.
-
-### Featured Partner ($3,000 / year)
-
-12 months of prominent placement: logo, 100-word description, and a maintainer endorsement quote. For products or platforms already integrated with `open-multi-agent`.
-
-[Inquire about Featured Partner](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry)
 
 ## Architecture
 
@@ -526,6 +536,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 
 - **Production examples.** Real-world end-to-end workflows. See [`examples/production/README.md`](./examples/production/README.md) for the acceptance criteria and submission format.
 - **Documentation.** Guides, tutorials, and API docs.
+- **Translations.** Help translate this README into other languages. [Open a PR](https://github.com/JackChen-me/open-multi-agent/pulls).
 
 ## Contributors
 
@@ -543,9 +554,11 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
  </picture>
 </a>
 
-## Translations
+## Featured Partner ($3,000 / year)
 
-Help translate this README. [Open a PR](https://github.com/JackChen-me/open-multi-agent/pulls).
+12 months of prominent placement: logo, 100-word description, and a maintainer endorsement quote. For products or platforms already integrated with `open-multi-agent`.
+
+[Inquire about Featured Partner](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry)
 
 ## License
 
