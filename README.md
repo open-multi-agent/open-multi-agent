@@ -19,38 +19,7 @@ CrewAI is Python. LangGraph makes you draw the graph by hand. `open-multi-agent`
 - **TypeScript-native, three runtime dependencies.** `@anthropic-ai/sdk`, `openai`, `zod`. That is the whole runtime. Embed in Express, Next.js, serverless functions, or CI/CD pipelines. No Python runtime, no subprocess bridge, no cloud sidecar.
 - **Multi-model teams.** Claude, GPT, Gemini, Grok, MiniMax, DeepSeek, Qiniu, Copilot, or any OpenAI-compatible local model (Ollama, vLLM, LM Studio, llama.cpp) in the same team. Run the architect on Opus 4.7, the developer on GPT-5.4, the reviewer on local Gemma 4, all in one `runTeam()` call. Gemini ships as an optional peer dependency: `npm install @google/genai` to enable.
 
-Other features (MCP integration, context strategies, structured output, task retry, human-in-the-loop, lifecycle hooks, loop detection, observability) live below the fold and in [`examples/`](./examples/).
-
-## How is this different from X?
-
-**vs. [LangGraph JS](https://github.com/langchain-ai/langgraphjs).** LangGraph is declarative graph orchestration: you define nodes, edges, and conditional routing, then `compile()` and `invoke()`. `open-multi-agent` is goal-driven: you declare a team and a goal, a coordinator decomposes it into a task DAG at runtime. LangGraph gives you total control of topology (great for fixed production workflows). This gives you less typing and faster iteration (great for exploratory multi-agent work). LangGraph also has mature checkpointing; we do not.
-
-**vs. [CrewAI](https://github.com/crewAIInc/crewAI).** CrewAI is the mature Python choice. If your stack is Python, use CrewAI. `open-multi-agent` is TypeScript-native: three runtime dependencies, embeds directly in Node.js without a subprocess bridge. Roughly comparable capability on the orchestration side. Choose on language fit.
-
-**vs. [Vercel AI SDK](https://github.com/vercel/ai).** AI SDK is the LLM call layer: a unified TypeScript client for 60+ providers with streaming, tool calls, and structured outputs. It does not orchestrate multi-agent teams. `open-multi-agent` sits on top when you need that. They compose: use AI SDK for single-agent work, reach for this when you need a team.
-
-## Ecosystem
-
-`open-multi-agent` is a new project (launched 2026-04-01, MIT). The ecosystem is still forming, so the lists below are short and honest.
-
-### In production
-
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~50 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly in its Docker runtime. Confirmed production use.
-- **Cybersecurity SOC (home lab).** A private setup running Qwen 2.5 + DeepSeek Coder entirely offline via Ollama, building an autonomous SOC pipeline on Wazuh + Proxmox. Early user, not yet public.
-
-Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) and we will list it here.
-
-### Integrations (free)
-
-- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
-
-Built an integration? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) to get listed.
-
-### Featured Partner ($3,000 / year)
-
-12 months of prominent placement: logo, 100-word description, and a maintainer endorsement quote. For products or platforms already integrated with `open-multi-agent`.
-
-[Inquire about Featured Partner](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry)
+Other features (MCP integration, context strategies, structured output, task retry, observability) live below the fold and in [`examples/`](./examples/).
 
 ## Quick Start
 
@@ -152,6 +121,37 @@ For MapReduce-style fan-out without task dependencies, use `AgentPool.runParalle
 - **Provider examples**: three-agent teams under [`examples/providers/`](examples/providers/), including hosted providers, OpenAI-compatible endpoints, and local models.
 
 Run scripts with `npx tsx examples/basics/team-collaboration.ts`.
+
+## How is this different from X?
+
+**vs. [LangGraph JS](https://github.com/langchain-ai/langgraphjs).** LangGraph is declarative graph orchestration: you define nodes, edges, and conditional routing, then `compile()` and `invoke()`. `open-multi-agent` is goal-driven: you declare a team and a goal, a coordinator decomposes it into a task DAG at runtime. LangGraph gives you total control of topology (great for fixed production workflows). This gives you less typing and faster iteration (great for exploratory multi-agent work). LangGraph also has mature checkpointing; we do not.
+
+**vs. [CrewAI](https://github.com/crewAIInc/crewAI).** CrewAI is the mature Python choice. If your stack is Python, use CrewAI. `open-multi-agent` is TypeScript-native: three runtime dependencies, embeds directly in Node.js without a subprocess bridge. Roughly comparable capability on the orchestration side. Choose on language fit.
+
+**vs. [Vercel AI SDK](https://github.com/vercel/ai).** AI SDK is the LLM call layer: a unified TypeScript client for 60+ providers with streaming, tool calls, and structured outputs. It does not orchestrate multi-agent teams. `open-multi-agent` sits on top when you need that. They compose: use AI SDK for single-agent work, reach for this when you need a team.
+
+## Ecosystem
+
+`open-multi-agent` is a new project (launched 2026-04-01, MIT). The ecosystem is still forming, so the lists below are short and honest.
+
+### In production
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~50 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly in its Docker runtime. Confirmed production use.
+- **Cybersecurity SOC (home lab).** A private setup running Qwen 2.5 + DeepSeek Coder entirely offline via Ollama, building an autonomous SOC pipeline on Wazuh + Proxmox. Early user, not yet public.
+
+Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) and we will list it here.
+
+### Integrations (free)
+
+- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+
+Built an integration? [Open a discussion](https://github.com/JackChen-me/open-multi-agent/discussions) to get listed.
+
+### Featured Partner ($3,000 / year)
+
+12 months of prominent placement: logo, 100-word description, and a maintainer endorsement quote. For products or platforms already integrated with `open-multi-agent`.
+
+[Inquire about Featured Partner](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry)
 
 ## Architecture
 
@@ -462,6 +462,8 @@ const localAgent: AgentConfig = {
 }
 ```
 
+**Quantized model tuning.** Highly quantized MoE models on consumer hardware (Qwen2.5-MoE @ Q4, DeepSeek-MoE @ Q4, etc.) tend to fall into repetition loops or hallucinate tool-call schemas under default sampling. `AgentConfig` exposes `topK`, `minP`, `frequencyPenalty`, `presencePenalty`, `parallelToolCalls` (set `false` to force one tool call per turn on shaky tool-callers), and an `extraBody` escape hatch for server-specific knobs (e.g. vLLM's `repetition_penalty`). Cloud OpenAI users do not need these — defaults are tuned for full-precision models. See [`providers/local-quantized`](examples/providers/local-quantized.ts) for a full setup.
+
 **Troubleshooting:**
 - Model not calling tools? Ensure it appears in Ollama's [Tools category](https://ollama.com/search?c=tools). Not all models support tool-calling.
 - Using Ollama? Update to the latest version (`ollama update`). Older versions have known tool-calling bugs.
@@ -528,16 +530,16 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260423" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260425" />
 </a>
 
 ## Star History
 
 <a href="https://star-history.com/#JackChen-me/open-multi-agent&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark&v=20260423" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260423" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260423" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark&v=20260425" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260425" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260425" />
  </picture>
 </a>
 
