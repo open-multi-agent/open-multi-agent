@@ -415,8 +415,47 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 
 ## Contributors
 
+**Project lead:** [Jack Chen](https://github.com/JackChen-me)
+
+**Framework features**
+
+- [@ibrahimkzmv](https://github.com/ibrahimkzmv) (token budget, context strategy, dependency-scoped context, tool presets, glob, MCP integration, configurable coordinator, CLI, dashboard rendering)
+- [@apollo-mg](https://github.com/apollo-mg) (context compaction fix, sampling parameters)
+- [@tizerluo](https://github.com/tizerluo) (onPlanReady, onAgentStream)
+- [@Xin-Mai](https://github.com/Xin-Mai) (output schema validation)
+- [@JasonOA888](https://github.com/JasonOA888) (AbortSignal support)
+- [@EchoOfZion](https://github.com/EchoOfZion) (coordinator skip for simple goals)
+- [@voidborne-d](https://github.com/voidborne-d) (OpenAI mixed content fix)
+- [@hamzarstar](https://github.com/hamzarstar) (agent delegation co-author)
+
+**Provider integrations**
+
+- [@ibrahimkzmv](https://github.com/ibrahimkzmv) (Gemini)
+- [@hkalex](https://github.com/hkalex) (DeepSeek, MiniMax)
+- [@marceloceccon](https://github.com/marceloceccon) (Grok)
+- [@Klarline](https://github.com/Klarline) (Azure OpenAI)
+- [@Deathwing](https://github.com/Deathwing) (GitHub Copilot)
+- [@JackChiang233](https://github.com/JackChiang233) and [@jiangzhuo](https://github.com/jiangzhuo) (Qiniu)
+
+**Examples & cookbook**
+
+- [@mvanhorn](https://github.com/mvanhorn) (research aggregation, code review, meeting summarizer, Groq example)
+- [@Kinoo0](https://github.com/Kinoo0) (code review upgrade)
+- [@Optimisttt](https://github.com/Optimisttt) (research aggregation upgrade)
+- [@Agentscreator](https://github.com/Agentscreator) (Engram memory integration)
+- [@fault-segment](https://github.com/fault-segment) and yanzizheng (contract-review DAG)
+- [@HuXiangyu123](https://github.com/HuXiangyu123) (cost-tiered example)
+- [@zouhh22333-beep](https://github.com/zouhh22333-beep) (translation/backtranslation)
+- [@pei-pei45](https://github.com/pei-pei45) (competitive monitoring)
+
+**Docs & tests**
+
+- [@tmchow](https://github.com/tmchow) (llama.cpp docs)
+- [@kenrogers](https://github.com/kenrogers) (OpenRouter docs)
+- [@jadegold55](https://github.com/jadegold55) (LLM adapter test coverage)
+
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260425" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260427" />
 </a>
 
 ## Star History

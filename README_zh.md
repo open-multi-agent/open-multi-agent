@@ -415,8 +415,47 @@ Issue、feature request、PR 都欢迎。特别想要：
 
 ## 贡献者
 
+**项目负责人：** [Jack Chen](https://github.com/JackChen-me)
+
+**框架功能**
+
+- [@ibrahimkzmv](https://github.com/ibrahimkzmv)（token 预算、上下文策略、依赖隔离上下文、工具预设、glob、MCP 集成、可配置 Coordinator、CLI、Dashboard 渲染）
+- [@apollo-mg](https://github.com/apollo-mg)（上下文压缩修复、采样参数）
+- [@tizerluo](https://github.com/tizerluo)（onPlanReady、onAgentStream）
+- [@Xin-Mai](https://github.com/Xin-Mai)（output schema 验证）
+- [@JasonOA888](https://github.com/JasonOA888)（AbortSignal 支持）
+- [@EchoOfZion](https://github.com/EchoOfZion)（简单目标跳过 Coordinator）
+- [@voidborne-d](https://github.com/voidborne-d)（OpenAI 混合内容修复）
+- [@hamzarstar](https://github.com/hamzarstar)（agent 委托机制共建）
+
+**Provider 集成**
+
+- [@ibrahimkzmv](https://github.com/ibrahimkzmv)（Gemini）
+- [@hkalex](https://github.com/hkalex)（DeepSeek、MiniMax）
+- [@marceloceccon](https://github.com/marceloceccon)（Grok）
+- [@Klarline](https://github.com/Klarline)（Azure OpenAI）
+- [@Deathwing](https://github.com/Deathwing)（GitHub Copilot）
+- [@JackChiang233](https://github.com/JackChiang233) 与 [@jiangzhuo](https://github.com/jiangzhuo)（七牛云）
+
+**示例与 Cookbook**
+
+- [@mvanhorn](https://github.com/mvanhorn)（多源研究聚合、代码评审、会议总结、Groq 示例）
+- [@Kinoo0](https://github.com/Kinoo0)（代码评审升级）
+- [@Optimisttt](https://github.com/Optimisttt)（研究聚合升级）
+- [@Agentscreator](https://github.com/Agentscreator)（Engram 记忆集成）
+- [@fault-segment](https://github.com/fault-segment) 与 yanzizheng（合同审查 DAG）
+- [@HuXiangyu123](https://github.com/HuXiangyu123)（分级成本示例）
+- [@zouhh22333-beep](https://github.com/zouhh22333-beep)（翻译/回译）
+- [@pei-pei45](https://github.com/pei-pei45)（竞品监测）
+
+**文档与测试**
+
+- [@tmchow](https://github.com/tmchow)（llama.cpp 文档）
+- [@kenrogers](https://github.com/kenrogers)（OpenRouter 文档）
+- [@jadegold55](https://github.com/jadegold55)（LLM adapter 测试覆盖）
+
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=20&v=20260425" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260427" />
 </a>
 
 ## Star 趋势
