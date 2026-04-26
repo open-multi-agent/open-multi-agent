@@ -55,7 +55,7 @@ Every PR must pass `npm run lint && npm test`. CI runs both automatically on Nod
 
 ## Architecture Overview
 
-See the [README](./README.md#architecture) for an architecture diagram. Key entry points:
+See the [README](../README.md#architecture) for an architecture diagram. Key entry points:
 
 - **Orchestrator**: `src/orchestrator/orchestrator.ts` — top-level API
 - **Task system**: `src/task/queue.ts`, `src/task/task.ts` — dependency DAG
