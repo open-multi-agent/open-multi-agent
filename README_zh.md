@@ -297,206 +297,30 @@ const reviewer: AgentConfig = {
 
 ## 工具配置
 
-三层叠起来用：preset（预设）、tools（白名单）、disallowedTools（黑名单）。
+- **选预设。** `toolPreset: 'readonly' | 'readwrite' | 'full'` 覆盖大部分 agent。
+- **再细化。** 在预设之上叠加 `tools`（白名单）和 `disallowedTools`（黑名单）。
+- **接自家工具。** `defineTool()` + `customTools`，或运行时 `agent.addTool()`。
+- **管输出成本。** `outputSchema`、`maxToolOutputChars`、`compressToolResults`。
+- **MCP。** 通过 `open-multi-agent/mcp` 的 `connectMCPTools()` 接外部服务器。
 
-### 工具预设
-
-三种内置 preset：
-
-```typescript
-const readonlyAgent: AgentConfig = {
-  name: 'reader',
-  model: 'claude-sonnet-4-6',
-  toolPreset: 'readonly',  // file_read, grep, glob
-}
-
-const readwriteAgent: AgentConfig = {
-  name: 'editor',
-  model: 'claude-sonnet-4-6',
-  toolPreset: 'readwrite',  // file_read, file_write, file_edit, grep, glob
-}
-
-const fullAgent: AgentConfig = {
-  name: 'executor',
-  model: 'claude-sonnet-4-6',
-  toolPreset: 'full',  // file_read, file_write, file_edit, grep, glob, bash
-}
-```
-
-### 高级过滤
-
-```typescript
-const customAgent: AgentConfig = {
-  name: 'custom',
-  model: 'claude-sonnet-4-6',
-  toolPreset: 'readwrite',        // 起点：file_read, file_write, file_edit, grep, glob
-  tools: ['file_read', 'grep'],   // 白名单：与预设取交集 = file_read, grep
-  disallowedTools: ['grep'],      // 黑名单：再减去 = 只剩 file_read
-}
-```
-
-**解析顺序：** preset → allowlist → denylist → 框架安全护栏。
-
-### 自定义工具
-
-装一个不在内置集里的工具，有两种方式。
-
-**配置时注入。** 通过 `AgentConfig.customTools` 传入。编排层统一挂工具的时候用这个。这里定义的工具会绕过 preset 和白名单，但仍受 `disallowedTools` 限制。
-
-```typescript
-import { defineTool } from '@jackchen_me/open-multi-agent'
-import { z } from 'zod'
-
-const weatherTool = defineTool({
-  name: 'get_weather',
-  description: '查询某城市当前天气。',
-  inputSchema: z.object({ city: z.string() }),
-  execute: async ({ city }) => ({ data: await fetchWeather(city) }),
-})
-
-const agent: AgentConfig = {
-  name: 'assistant',
-  model: 'claude-sonnet-4-6',
-  customTools: [weatherTool],
-}
-```
-
-**运行时注册。** `agent.addTool(tool)`。这种方式加的工具始终可用，不受任何过滤规则影响。
-
-### 工具输出控制
-
-工具返回太长会快速撑大对话和成本。两个开关配合着用。
-
-**校验（可选）。** 给工具加 `outputSchema`，在结果回传前拦截结构错误：
-
-> **注意 —— 有两个同名的 `outputSchema`。** 这里 `defineTool()` / `ToolDefinition`
-> 上的 `outputSchema`（下例所示）校验的是单个**工具**的 `ToolResult.data`，类型
-> 固定为 `ZodSchema<string>`，因为工具输出始终以字符串形式序列化。
-> [`AgentConfig`](examples/patterns/structured-output.ts) 上同名的 `outputSchema`
-> 则完全不同：它把 **agent 的最终回答**按 JSON 解析后，用任意 Zod schema 进行
-> 校验（详见 `examples/` 里的"结构化输出"示例）。两者类型和作用域都不一样，
-> 且 TypeScript 不会提示混用，请根据所处层级选用对应的那个。
-
-```typescript
-const jsonTool = defineTool({
-  name: 'json_tool',
-  description: '以字符串返回 JSON 载荷。',
-  inputSchema: z.object({}),
-  outputSchema: z.string().refine((value) => {
-    try {
-      JSON.parse(value)
-      return true
-    } catch {
-      return false
-    }
-  }, '输出必须是合法 JSON'),
-  execute: async () => ({ data: '{"ok": true}' }),
-})
-```
-
-**截断。** 把单次工具结果压成 head + tail 摘要（中间放一个标记）：
-
-```typescript
-const agent: AgentConfig = {
-  // ...
-  maxToolOutputChars: 10_000, // 该 agent 所有工具的默认上限
-}
-
-// 单工具覆盖（优先级高于 AgentConfig.maxToolOutputChars）：
-const bigQueryTool = defineTool({
-  // ...
-  maxOutputChars: 50_000,
-})
-```
-
-**消费后压缩。** agent 用完某个工具结果之后，把历史副本压缩掉，后续每轮就不再重复消耗输入 token。错误结果不压缩。
-
-```typescript
-const agent: AgentConfig = {
-  // ...
-  compressToolResults: true,                 // 默认阈值 500 字符
-  // 或：compressToolResults: { minChars: 2_000 }
-}
-```
-
-### MCP 工具（Model Context Protocol）
-
-可以连任意 MCP 服务器，把它的工具直接给 agent 用。
-
-```typescript
-import { connectMCPTools } from '@jackchen_me/open-multi-agent/mcp'
-
-const { tools, disconnect } = await connectMCPTools({
-  command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-github'],
-  env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN },
-  namePrefix: 'github',
-})
-
-// 把每个 MCP 工具注册进你的 ToolRegistry，然后在 AgentConfig.tools 里引用它们的名字
-// 用完别忘了清理
-await disconnect()
-```
-
-注意事项：
-- `@modelcontextprotocol/sdk` 是 optional peer dependency，只在用 MCP 时才要装。
-- 当前只支持 stdio transport。
-- MCP 的入参校验交给 MCP 服务器自己（`inputSchema` 是 `z.any()`）。
-
-完整例子见 [`integrations/mcp-github`](examples/integrations/mcp-github.ts)。
+完整文档：[docs/tool-configuration.md](./docs/tool-configuration.md)。
 
 ## 共享内存
 
-团队可以共用一个命名空间化的 key-value 存储，让后续 agent 看到前面 agent 的发现。用布尔值启用默认的进程内存储：
+团队可以共用一个命名空间化的 key-value 存储，让后续 agent 看到前面 agent 的发现。`sharedMemory: true` 启用默认的进程内存储；要 Redis、Postgres、Engram 这类后端，实现 `MemoryStore` 接口并通过 `sharedMemoryStore` 传入即可。键到 store 之前会按 `<agentName>/<key>` 做命名空间封装。仅 SDK 可用，CLI 无法序列化运行时对象。
 
-```typescript
-const team = orchestrator.createTeam('research-team', {
-  name: 'research-team',
-  agents: [researcher, writer],
-  sharedMemory: true,
-})
-```
-
-需要持久化或跨进程的后端（Redis、Postgres、Engram 等）？实现 `MemoryStore` 接口并通过 `sharedMemoryStore` 注入，键仍会在到达 store 前按 `<agentName>/<key>` 做命名空间封装：
-
-```typescript
-import type { MemoryStore } from '@jackchen_me/open-multi-agent'
-
-class RedisStore implements MemoryStore { /* get/set/list/delete/clear */ }
-
-const team = orchestrator.createTeam('durable-team', {
-  name: 'durable-team',
-  agents: [researcher, writer],
-  sharedMemoryStore: new RedisStore(),
-})
-```
-
-两者都提供时，`sharedMemoryStore` 优先。此字段仅 SDK 可用，CLI 无法序列化运行时对象。
+详见 [docs/shared-memory.md](./docs/shared-memory.md)。
 
 ## 上下文管理
 
-长时间运行的 agent 很容易撞上输入 token 上限。在 `AgentConfig` 里设 `contextStrategy`，控制对话变长时怎么收缩：
+长时间运行的 agent 很容易撞上输入 token 上限。`AgentConfig.contextStrategy` 决定对话变长时怎么收缩：
 
-```typescript
-const agent: AgentConfig = {
-  name: 'long-runner',
-  model: 'claude-sonnet-4-6',
-  // 选一种：
-  contextStrategy: { type: 'sliding-window', maxTurns: 20 },
-  // contextStrategy: { type: 'summarize', maxTokens: 80_000, summaryModel: 'claude-haiku-4-5' },
-  // contextStrategy: { type: 'compact', maxTokens: 100_000, preserveRecentTurns: 4 },
-  // contextStrategy: { type: 'custom', compress: (messages, estimatedTokens, ctx) => ... },
-}
-```
+- `sliding-window`：只保留最近 N 轮，其余丢弃。最省事。
+- `summarize`：老对话发给摘要模型，用摘要替代原文。
+- `compact`：基于规则截断，不额外调用 LLM。
+- `custom`：传入自己的 `compress(messages, estimatedTokens, ctx)` 函数。
 
-| 策略 | 什么时候用 |
-|------|------------|
-| `sliding-window` | 最省事。只保留最近 N 轮，其余丢弃。 |
-| `summarize` | 老对话发给摘要模型，用摘要替代原文。 |
-| `compact` | 基于规则：截断过长的 assistant 文本块和 tool 结果，保留最近若干轮。不额外调用 LLM。 |
-| `custom` | 传入自己的 `compress(messages, estimatedTokens, ctx)` 函数。 |
-
-和上面的 `compressToolResults`、`maxToolOutputChars` 搭着用效果更好。
+详见 [docs/context-management.md](./docs/context-management.md)。
 
 ## 支持的 Provider
 
