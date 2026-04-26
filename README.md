@@ -13,11 +13,13 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  Lightweight multi-agent orchestration for TypeScript.
+  <strong>From a goal to a task DAG, automatically.</strong><br/>
+  TypeScript-native multi-agent orchestration. Three runtime dependencies.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/v/@jackchen_me/open-multi-agent" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/dm/@jackchen_me/open-multi-agent" alt="npm downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/JackChen-me/open-multi-agent" alt="license"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
   <a href="https://codecov.io/gh/JackChen-me/open-multi-agent"><img src="https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg" alt="codecov"></a>
@@ -31,30 +33,47 @@
 
 <br />
 
-`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend, so your engineers describe the goal, not the graph.
+`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend.
+
+> **Your engineers describe the goal, not the graph.**
+
+A typical run, streamed live through `onProgress`:
+
+```
+agent_start coordinator
+task_start design-api
+task_complete design-api
+task_start implement-handlers
+task_start scaffold-tests         // independent tasks run in parallel
+task_complete scaffold-tests
+task_complete implement-handlers
+task_start review-code            // unblocked after implementation
+task_complete review-code
+agent_complete coordinator        // synthesizes final result
+Success: true
+Tokens: 12847 output tokens
+```
 
 ## Features
 
 | Capability | What you get |
 |------------|--------------|
-| **Tools + delegation** | 6 built-in (`bash`, `file_read`, `file_write`, `file_edit`, `grep`, `glob`), plus opt-in `delegate_to_agent`. Define your own with `defineTool()` and Zod schemas. |
-| **MCP integration** | Connect to any MCP server via `connectMCPTools()`. ([`mcp-github`](examples/integrations/mcp-github.ts)) |
-| **Mix providers in one team** | Anthropic, OpenAI, Azure, Gemini, Grok, DeepSeek, MiniMax, Qiniu, Copilot native; Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full list](#supported-providers)) |
+| **Goal-driven coordinator** | One `runTeam(team, goal)` call. The coordinator decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. |
+| **Mix providers in one team** | 9 native: Anthropic, OpenAI, Azure, Gemini, Grok, DeepSeek, MiniMax, Qiniu, Copilot. Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full list](#supported-providers)) |
+| **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent`, custom tools via `defineTool()` + Zod, any MCP server via `connectMCPTools()`. |
 | **Streaming + structured output** | Token-by-token streaming on every adapter; Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
-| **Context strategies** | `sliding-window`, `summarize`, `compact`, or a custom compressor. Keeps long-running agents under the token ceiling. |
-| **Task retry with backoff** | Per-task `maxRetries` with exponential backoff capped at 30s. ([`task-retry`](examples/patterns/task-retry.ts)) |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. ([`trace-observability`](examples/integrations/trace-observability.ts)) |
-| **Loop detection** | Sliding-window detector hashes tool-call signatures and text outputs to catch agents stuck repeating themselves. |
-| **Tool output control** | Per-tool truncation, post-consumption compression, optional Zod validation on tool results. |
-| **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / Engram by implementing `MemoryStore`. |
+| **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. |
+
+Production controls (context strategies, task retry with backoff, loop detection, tool output truncation/compression) are covered in the [Production Checklist](#production-checklist).
 
 ## Quick Start
 
 Requires Node.js >= 18.
 
-### Run a working team in 30 seconds
+### Try it locally
 
-The fastest way to see the framework in action: clone, install, run.
+Clone, install, run.
 
 ```bash
 git clone https://github.com/JackChen-me/open-multi-agent && cd open-multi-agent
@@ -79,6 +98,28 @@ Three agents, one goal. The framework handles the rest:
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
 import type { AgentConfig } from '@jackchen_me/open-multi-agent'
 
+const orchestrator = new OpenMultiAgent({
+  defaultModel: 'claude-sonnet-4-6',
+  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
+})
+
+const team = orchestrator.createTeam('api-team', {
+  name: 'api-team',
+  agents: [architect, developer, reviewer],
+  sharedMemory: true,
+})
+
+// Describe a goal. The framework breaks it into tasks and orchestrates execution
+const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
+
+console.log(`Success: ${result.success}`)
+console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
+```
+
+<details>
+<summary>Agent definitions (architect, developer, reviewer)</summary>
+
+```typescript
 const architect: AgentConfig = {
   name: 'architect',
   model: 'claude-sonnet-4-6',
@@ -99,47 +140,11 @@ const reviewer: AgentConfig = {
   systemPrompt: 'You review code for correctness, security, and clarity.',
   tools: ['file_read', 'grep'],
 }
-
-const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
-  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
-})
-
-const team = orchestrator.createTeam('api-team', {
-  name: 'api-team',
-  agents: [architect, developer, reviewer],
-  sharedMemory: true,
-})
-
-// Describe a goal. The framework breaks it into tasks and orchestrates execution
-const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
-
-console.log(`Success: ${result.success}`)
-console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 ```
 
-What happens under the hood:
+</details>
 
-```
-agent_start coordinator
-task_start design-api
-task_complete design-api
-task_start implement-handlers
-task_start scaffold-tests         // independent tasks run in parallel
-task_complete scaffold-tests
-task_complete implement-handlers
-task_start review-code            // unblocked after implementation
-task_complete review-code
-agent_complete coordinator        // synthesizes final result
-Success: true
-Tokens: 12847 output tokens
-```
-
-### Run from the shell
-
-For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
-
-## Three Ways to Run
+### Three Ways to Run
 
 | Mode | Method | When to use | Example |
 |------|--------|-------------|---------|
@@ -148,6 +153,10 @@ For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./d
 | Explicit pipeline | `runTasks()` | You define the task graph and assignments | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
 For MapReduce-style fan-out without task dependencies, use `AgentPool.runParallel()` directly. See [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts).
+
+### Run from the shell
+
+For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.
 
 ## Examples
 
@@ -176,17 +185,27 @@ Run any script with `npx tsx examples/<path>.ts`.
 
 ## How is this different from X?
 
-**vs. [LangGraph JS](https://github.com/langchain-ai/langgraphjs).** LangGraph is declarative graph orchestration: you define nodes, edges, and conditional routing, then `compile()` and `invoke()`. `open-multi-agent` is goal-driven: a coordinator decomposes the goal into a task DAG at runtime. Pick LangGraph for fixed production topology with mature checkpointing; pick this for less typing and faster iteration on multi-agent flows.
+A quick router. Mechanism breakdown follows.
 
-**vs. [Mastra](https://github.com/mastra-ai/mastra).** Mastra ships a Supervisor pattern with manually wired agents and workflows; `open-multi-agent` ships a Coordinator that auto-decomposes the goal, with `runTeam(team, "Build a REST API")` as the entry point. Choose explicit topology (Mastra) versus goal-to-result automation (us) based on whether the workflow is known up front.
+| If you need | Pick |
+|-------------|------|
+| Fixed production topology with mature checkpointing | [LangGraph JS](https://github.com/langchain-ai/langgraphjs) |
+| Explicit Supervisor + hand-wired workflows | [Mastra](https://github.com/mastra-ai/mastra) |
+| Python stack with mature multi-agent ecosystem | [CrewAI](https://github.com/crewAIInc/crewAI) |
+| Single-agent LLM call layer for 60+ providers | [Vercel AI SDK](https://github.com/vercel/ai) |
+| **TypeScript, goal to result with auto task decomposition** | **open-multi-agent** |
 
-**vs. [CrewAI](https://github.com/crewAIInc/crewAI).** CrewAI is the mature Python choice; if your stack is Python, use CrewAI. `open-multi-agent` is TypeScript-native: 3 runtime dependencies, embeds directly in Node.js, with roughly comparable orchestration capability. Choose on language fit.
+**vs. LangGraph JS.** LangGraph compiles a declarative graph (nodes, edges, conditional routing) into an invokable. `open-multi-agent` runs a Coordinator that decomposes the goal into a task DAG at runtime, then auto-parallelizes independents. Same end (orchestrated execution), opposite directions: LangGraph is graph-first, OMA is goal-first.
 
-**vs. [Vercel AI SDK](https://github.com/vercel/ai).** AI SDK is the LLM call layer: a unified TypeScript client for 60+ providers with streaming, tool calls, and structured outputs. It does not orchestrate multi-agent teams. They compose: use AI SDK for single-agent work, reach for this when you need a team.
+**vs. Mastra.** Both are TypeScript-native. Mastra's Supervisor pattern requires you to wire agents and workflows by hand; OMA's Coordinator does the wiring at runtime from the goal string. If the workflow is known up front, Mastra's explicitness pays off. If you'd rather not enumerate every step, OMA's `runTeam(team, goal)` is one call.
+
+**vs. CrewAI.** CrewAI is the mature multi-agent option in Python. OMA targets TypeScript backends with three runtime dependencies and direct Node.js embedding. Roughly comparable orchestration surface; the choice is language stack.
+
+**vs. Vercel AI SDK.** AI SDK is the LLM call layer (unified client for 60+ providers, streaming, tool calls, structured outputs). It does not orchestrate multi-agent teams. The two compose: AI SDK for single-agent work, OMA when you need a team.
 
 ## Ecosystem
 
-`open-multi-agent` is a new project (launched 2026-04-01, MIT). The ecosystem is still forming, so the lists below are short and honest.
+`open-multi-agent` launched 2026-04-01 under MIT. Public users and integrations to date:
 
 ### In production
 

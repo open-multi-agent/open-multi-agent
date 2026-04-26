@@ -13,11 +13,13 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  面向 TypeScript 的轻量多智能体编排框架。
+  <strong>给一个目标，自动得到任务 DAG。</strong><br/>
+  原生 TypeScript 多智能体编排，3 个运行时依赖。
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/v/@jackchen_me/open-multi-agent" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/dm/@jackchen_me/open-multi-agent" alt="npm downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/JackChen-me/open-multi-agent" alt="license"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
   <a href="https://codecov.io/gh/JackChen-me/open-multi-agent"><img src="https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg" alt="codecov"></a>
@@ -31,30 +33,47 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端，让工程师专注于目标，而非任务图。
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端。
+
+> **工程师只描述目标，不画任务图。**
+
+通过 `onProgress` 实时流出来的一次典型运行：
+
+```
+agent_start coordinator
+task_start design-api
+task_complete design-api
+task_start implement-handlers
+task_start scaffold-tests         // 无依赖的任务并行执行
+task_complete scaffold-tests
+task_complete implement-handlers
+task_start review-code            // 实现完成后自动解锁
+task_complete review-code
+agent_complete coordinator        // 综合所有结果
+Success: true
+Tokens: 12847 output tokens
+```
 
 ## 功能一览
 
 | 能力 | 说明 |
 |------|------|
-| **工具与委托** | 6 个内置工具（`bash`、`file_read`、`file_write`、`file_edit`、`grep`、`glob`），加可选启用的 `delegate_to_agent`。用 `defineTool()` + Zod 自定义工具。 |
-| **MCP 集成** | 通过 `connectMCPTools()` 接入任意 MCP server。([`mcp-github`](examples/integrations/mcp-github.ts)) |
-| **同队混用 provider** | Anthropic、OpenAI、Azure、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot 原生支持；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整列表](#支持的-provider)) |
+| **目标驱动协调者** | 一句 `runTeam(team, goal)`，协调者把目标拆成任务 DAG，并行执行独立任务，合成最终结果。 |
+| **同队混用 provider** | 9 家原生：Anthropic、OpenAI、Azure、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整列表](#支持的-provider)) |
+| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`，用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。 |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
-| **上下文策略** | `sliding-window`、`summarize`、`compact`，或自定义压缩函数，把长跑 agent 控制在 token 上限内。 |
-| **任务重试** | 每个任务可设 `maxRetries`，指数退避封顶 30 秒。([`task-retry`](examples/patterns/task-retry.ts)) |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。([`trace-observability`](examples/integrations/trace-observability.ts)) |
-| **循环检测** | 滑动窗口检测器对工具调用签名和文本输出做哈希，提前发现卡死的 agent。 |
-| **工具输出控制** | 单工具截断、消费后压缩、可选用 Zod 校验工具返回值。 |
-| **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / Engram。 |
+| **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自家后端。 |
+
+生产化控制（上下文策略、任务重试退避、循环检测、工具输出截断/压缩）见 [生产化清单](#生产化清单)。
 
 ## 快速开始
 
 要求 Node.js >= 18。
 
-### 30 秒跑通一个团队
+### 本地试跑
 
-最快的体验路径，克隆、安装、跑就行：
+克隆、安装、跑：
 
 ```bash
 git clone https://github.com/JackChen-me/open-multi-agent && cd open-multi-agent
@@ -79,6 +98,28 @@ npm install @jackchen_me/open-multi-agent
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
 import type { AgentConfig } from '@jackchen_me/open-multi-agent'
 
+const orchestrator = new OpenMultiAgent({
+  defaultModel: 'claude-sonnet-4-6',
+  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
+})
+
+const team = orchestrator.createTeam('api-team', {
+  name: 'api-team',
+  agents: [architect, developer, reviewer],
+  sharedMemory: true,
+})
+
+// 描述一个目标，框架负责拆解成任务并编排执行
+const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
+
+console.log(`Success: ${result.success}`)
+console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
+```
+
+<details>
+<summary>三个 agent 的完整定义（architect、developer、reviewer）</summary>
+
+```typescript
 const architect: AgentConfig = {
   name: 'architect',
   model: 'claude-sonnet-4-6',
@@ -99,47 +140,11 @@ const reviewer: AgentConfig = {
   systemPrompt: 'You review code for correctness, security, and clarity.',
   tools: ['file_read', 'grep'],
 }
-
-const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
-  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
-})
-
-const team = orchestrator.createTeam('api-team', {
-  name: 'api-team',
-  agents: [architect, developer, reviewer],
-  sharedMemory: true,
-})
-
-// 描述一个目标，框架负责拆解成任务并编排执行
-const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
-
-console.log(`Success: ${result.success}`)
-console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 ```
 
-执行过程：
+</details>
 
-```
-agent_start coordinator
-task_start design-api
-task_complete design-api
-task_start implement-handlers
-task_start scaffold-tests         // 无依赖的任务并行执行
-task_complete scaffold-tests
-task_complete implement-handlers
-task_start review-code            // 实现完成后自动解锁
-task_complete review-code
-agent_complete coordinator        // 综合所有结果
-Success: true
-Tokens: 12847 output tokens
-```
-
-### 从命令行运行
-
-包里还自带一个叫 `oma` 的命令行工具，给 shell 和 CI 场景用，输出都是 JSON。`oma run`、`oma task`、`oma provider`、退出码、文件格式都在 [docs/cli.md](./docs/cli.md) 里。
-
-## 三种运行模式
+### 三种运行模式
 
 | 模式 | 方法 | 适用场景 | 示例 |
 |------|------|----------|------|
@@ -148,6 +153,10 @@ Tokens: 12847 output tokens
 | 显式任务管线 | `runTasks()` | 你自己定义任务图和分配 | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
 要 MapReduce 风格的 fan-out 但不需要任务依赖，直接用 `AgentPool.runParallel()`。例子见 [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)。
+
+### 从命令行运行
+
+包里还自带一个叫 `oma` 的命令行工具，给 shell 和 CI 场景用，输出都是 JSON。`oma run`、`oma task`、`oma provider`、退出码、文件格式都在 [docs/cli.md](./docs/cli.md) 里。
 
 ## 示例
 
@@ -176,17 +185,27 @@ Tokens: 12847 output tokens
 
 ## 和其他框架怎么选
 
-**对比 [LangGraph JS](https://github.com/langchain-ai/langgraphjs)。** LangGraph 是声明式图编排：自己定义节点、边、条件路由，再 `compile()` + `invoke()`。`open-multi-agent` 是目标驱动：协调者在运行时把目标拆成任务 DAG。要锁定生产拓扑、有成熟 checkpoint 选 LangGraph；想少写代码、快速迭代多智能体方案选这边。
+按需求快速选型。下面有逐个机制对比。
 
-**对比 [Mastra](https://github.com/mastra-ai/mastra)。** Mastra 走 Supervisor 模式，agent、workflow、Supervisor 都得手接；`open-multi-agent` 走 Coordinator 自动拆解，入口就是一句 `runTeam(team, "构建一个 REST API")`。流程已经定型选显式拓扑（Mastra），还是给目标让框架决策（这边），按工作流是否已知来定。
+| 你的需求 | 选 |
+|----------|----|
+| 固定的生产拓扑 + 成熟的 checkpoint | [LangGraph JS](https://github.com/langchain-ai/langgraphjs) |
+| 显式 Supervisor + 手写 workflow | [Mastra](https://github.com/mastra-ai/mastra) |
+| Python 栈 + 成熟多智能体生态 | [CrewAI](https://github.com/crewAIInc/crewAI) |
+| 60+ provider 的单智能体 LLM 调用层 | [Vercel AI SDK](https://github.com/vercel/ai) |
+| **TypeScript + 一句话从目标到结果，自动拆任务** | **open-multi-agent** |
 
-**对比 [CrewAI](https://github.com/crewAIInc/crewAI)。** CrewAI 是 Python 阵营成熟方案，栈是 Python 用它就行。`open-multi-agent` 走 TypeScript 原生：3 个运行时依赖、直接嵌入 Node.js、编排能力大致持平。按语言栈选。
+**对比 LangGraph JS。** LangGraph 把声明式图（节点、边、条件路由）编译成可调用对象。`open-multi-agent` 是 Coordinator 在运行时把目标拆成任务 DAG，再自动并行无依赖项。终点一样（编排执行），方向相反：LangGraph 图优先，OMA 目标优先。
 
-**对比 [Vercel AI SDK](https://github.com/vercel/ai)。** AI SDK 是 LLM 调用层：统一的 TypeScript 客户端，覆盖 60+ provider，支持流式、tool call、结构化输出。它不做多智能体编排。两者互补：单智能体用 AI SDK，需要团队协作叠在上面用这个。
+**对比 Mastra。** 两者都原生 TypeScript。Mastra 的 Supervisor 模式要你手接 agent 和 workflow；OMA 的 Coordinator 在运行时从目标字符串自动接好。流程已经定型，Mastra 的显式性能赚回成本；不想枚举每一步，OMA 一句 `runTeam(team, goal)` 就够。
+
+**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 面向 TypeScript 后端，3 个运行时依赖，直接嵌入 Node.js。编排能力大致持平，按语言栈选。
+
+**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（统一客户端，覆盖 60+ provider，支持流式、tool call、结构化输出）。它不做多智能体编排。两者互补：单智能体用 AI SDK，需要团队协作叠在上面用 OMA。
 
 ## 生态
 
-项目 2026-04-01 发布，MIT 协议。生态还在成型，下面的列表不长，但都是真的。
+2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
 
 ### 生产环境在用
 
