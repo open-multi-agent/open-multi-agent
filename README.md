@@ -98,28 +98,6 @@ Three agents, one goal. The framework handles the rest:
 import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
 import type { AgentConfig } from '@jackchen_me/open-multi-agent'
 
-const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
-  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
-})
-
-const team = orchestrator.createTeam('api-team', {
-  name: 'api-team',
-  agents: [architect, developer, reviewer],
-  sharedMemory: true,
-})
-
-// Describe a goal. The framework breaks it into tasks and orchestrates execution
-const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
-
-console.log(`Success: ${result.success}`)
-console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
-```
-
-<details>
-<summary>Agent definitions (architect, developer, reviewer)</summary>
-
-```typescript
 const architect: AgentConfig = {
   name: 'architect',
   model: 'claude-sonnet-4-6',
@@ -140,9 +118,24 @@ const reviewer: AgentConfig = {
   systemPrompt: 'You review code for correctness, security, and clarity.',
   tools: ['file_read', 'grep'],
 }
-```
 
-</details>
+const orchestrator = new OpenMultiAgent({
+  defaultModel: 'claude-sonnet-4-6',
+  onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
+})
+
+const team = orchestrator.createTeam('api-team', {
+  name: 'api-team',
+  agents: [architect, developer, reviewer],
+  sharedMemory: true,
+})
+
+// Describe a goal. The framework breaks it into tasks and orchestrates execution
+const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
+
+console.log(`Success: ${result.success}`)
+console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
+```
 
 ### Three Ways to Run
 
