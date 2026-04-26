@@ -1177,14 +1177,15 @@ export class OpenMultiAgent {
     }
 
     if (this.config.onPlanReady) {
-      const tasks = queue.list()
-      const approved = await this.config.onPlanReady(tasks)
+      const planTasks = queue.list()
+      let approved: boolean
+      try {
+        approved = await this.config.onPlanReady(planTasks)
+      } catch {
+        return { ...this.buildTeamRunResult(agentResults, goal, []), success: false }
+      }
       if (!approved) {
-        return {
-          success: false,
-          agentResults: new Map(),
-          totalTokenUsage: { input_tokens: 0, output_tokens: 0 },
-        }
+        return { ...this.buildTeamRunResult(agentResults, goal, []), success: false }
       }
     }
 

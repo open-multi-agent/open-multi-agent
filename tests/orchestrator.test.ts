@@ -567,4 +567,73 @@ describe('OpenMultiAgent', () => {
       expect(result.agentResults.size).toBeLessThanOrEqual(1)
     })
   })
+
+  describe('onPlanReady gate', () => {
+    const complexGoal = 'First research the topic, then write a comprehensive guide based on the findings'
+
+    it('aborts when callback returns false, preserving coordinator token usage', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+      ]
+      const onPlanReadySpy = vi.fn().mockResolvedValue(false)
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onPlanReady: onPlanReadySpy,
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal)
+
+      expect(result.success).toBe(false)
+      expect(result.agentResults.has('coordinator')).toBe(true)
+      expect(result.totalTokenUsage.input_tokens).toBe(10)
+      expect(result.totalTokenUsage.output_tokens).toBe(20)
+      expect(onPlanReadySpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('aborts when callback throws, treating it as a controlled abort', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+      ]
+      const onPlanReadySpy = vi.fn().mockRejectedValue(new Error('boom'))
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onPlanReady: onPlanReadySpy,
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal)
+
+      expect(result.success).toBe(false)
+      expect(result.agentResults.has('coordinator')).toBe(true)
+      expect(result.totalTokenUsage.input_tokens).toBe(10)
+      expect(result.totalTokenUsage.output_tokens).toBe(20)
+      expect(onPlanReadySpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('proceeds when callback returns true, receiving the decomposed plan', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+        'worker output',
+        'final synthesis',
+      ]
+      const onPlanReadySpy = vi.fn().mockResolvedValue(true)
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onPlanReady: onPlanReadySpy,
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal)
+
+      expect(result.success).toBe(true)
+      expect(result.agentResults.has('worker')).toBe(true)
+      expect(result.agentResults.has('coordinator')).toBe(true)
+      expect(onPlanReadySpy).toHaveBeenCalledTimes(1)
+      const tasksArg = onPlanReadySpy.mock.calls[0]?.[0] as { title: string }[] | undefined
+      expect(Array.isArray(tasksArg)).toBe(true)
+      expect(tasksArg).toHaveLength(1)
+      expect(tasksArg?.[0]?.title).toBe('Research')
+    })
+  })
 })

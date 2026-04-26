@@ -646,11 +646,21 @@ export interface OrchestratorConfig {
    */
   readonly onApproval?: (completedTasks: readonly Task[], nextTasks: readonly Task[]) => Promise<boolean>
   /**
-   * Called after the coordinator decomposes the goal into tasks and before
-   * execution begins. Return true to proceed, false to abort.
-   * Only invoked by runTeam(). Not called for runAgent() or runTasks().
+   * Optional approval gate called once after the coordinator decomposes the
+   * goal into tasks and before execution begins.
+   *
+   * Receives the full plan as a {@link Task} array. Return `true` to proceed
+   * or `false` to abort. A thrown callback is treated as an abort.
+   *
+   * Only invoked by `runTeam()`. `runAgent()` and `runTasks()` are
+   * unaffected. The `TeamRunResult` returned on abort still reflects the
+   * coordinator's decomposition tokens.
+   *
+   * **Note:** Do not mutate the {@link Task} objects passed to this
+   * callback. They are live references to queue state; mutation is
+   * undefined behavior.
    */
-  readonly onPlanReady?: (tasks: Task[]) => Promise<boolean>
+  readonly onPlanReady?: (tasks: readonly Task[]) => Promise<boolean>
 }
 
 /**
