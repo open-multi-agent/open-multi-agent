@@ -318,7 +318,7 @@ Long-running agents hit input token ceilings fast. `AgentConfig.contextStrategy`
 - `sliding-window`: keep the last N turns, drop the rest. Cheapest.
 - `summarize`: send old turns to a summary model, keep the summary in place.
 - `compact`: rule-based truncation, no extra LLM call.
-- `custom`: supply your own `compress(messages, estimatedTokens, ctx)`.
+- `custom`: supply your own `compress(messages, estimatedTokens)`.
 
 See [docs/context-management.md](./docs/context-management.md).
 
@@ -347,7 +347,7 @@ The framework ships a wired-in provider name for each of these. You set `provide
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | `gemini-2.5-pro` | Native Google GenAI SDK. Requires `npm install @google/genai`. |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | `gpt-4o` | |
 | Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`. |
-| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
+| GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN` (falls back to `GITHUB_TOKEN`) | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-chat` | OpenAI-compatible. `deepseek-chat` (V3, coding) or `deepseek-reasoner` (thinking mode). |
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI-compatible. |
