@@ -318,7 +318,7 @@ const reviewer: AgentConfig = {
 - `sliding-window`：只保留最近 N 轮，其余丢弃。最省事。
 - `summarize`：老对话发给摘要模型，用摘要替代原文。
 - `compact`：基于规则截断，不额外调用 LLM。
-- `custom`：传入自己的 `compress(messages, estimatedTokens, ctx)` 函数。
+- `custom`：传入自己的 `compress(messages, estimatedTokens)` 函数。
 
 详见 [docs/context-management.md](./docs/context-management.md)。
 
@@ -347,7 +347,7 @@ const agent: AgentConfig = {
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY` | `gemini-2.5-pro` | 原生 Google GenAI SDK，需 `npm install @google/genai`。 |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | `gpt-4o` | |
 | Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT` | `gpt-4` | 可选 `AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_DEPLOYMENT`。 |
-| GitHub Copilot | `provider: 'copilot'` | `GITHUB_TOKEN` | `gpt-4o` | OpenAI 协议 + 自定义 token 交换流程。 |
+| GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN`（回退到 `GITHUB_TOKEN`） | `gpt-4o` | OpenAI 协议 + 自定义 token 交换流程。 |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI 兼容，端点 `api.x.ai/v1`。 |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-chat` | OpenAI 兼容。`deepseek-chat`（V3，写代码）或 `deepseek-reasoner`（思考模式）。 |
 | MiniMax（全球） | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI 兼容。 |
