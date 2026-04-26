@@ -209,7 +209,7 @@ const reviewer: AgentConfig = {
 
 ### 生产环境在用
 
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 50 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
 - **家用服务器 Cybersecurity SOC。** 本地完全离线跑 Qwen 2.5 + DeepSeek Coder（通过 Ollama），在 Wazuh + Proxmox 上搭自主 SOC 流水线。早期用户，未公开。
 
 如果你在生产或 side project 里用了 `open-multi-agent`，[请开个 Discussion](https://github.com/JackChen-me/open-multi-agent/discussions)，我加上来。
@@ -586,8 +586,6 @@ const localAgent: AgentConfig = {
 | 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
-
-完整的端到端生产化样例都在 [`examples/production/`](./examples/production/) 下。
 
 ## 参与贡献
 
