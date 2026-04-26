@@ -162,7 +162,14 @@ export class AgentPool {
         if (streamCallback) {
           let result: AgentRunResult | null = null
           for await (const event of agent.stream(prompt, runOptions)) {
-            streamCallback(event)
+            try {
+              streamCallback(event)
+            } catch {
+              // Streaming callback must not affect execution; mirrors the
+              // observability contract of `emitTrace`. A throwing callback
+              // here would otherwise be caught by `executeWithRetry` and
+              // burn another LLM call on every retry until exhausted.
+            }
             if (event.type === 'done') result = event.data as AgentRunResult
             if (event.type === 'error') throw event.data as Error
           }

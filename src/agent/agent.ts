@@ -537,7 +537,10 @@ export class Agent {
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
 
-      for await (const event of runner.stream(messages, effectiveAbort ? { abortSignal: effectiveAbort } : {})) {
+      for await (const event of runner.stream(messages, {
+        ...callerOptions,
+        ...(effectiveAbort ? { abortSignal: effectiveAbort } : {}),
+      })) {
         if (event.type === 'done') {
           const result = event.data as import('./runner.js').RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
