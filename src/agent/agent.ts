@@ -11,15 +11,28 @@
  *
  * @example
  * ```ts
- * const agent = new Agent({
- *   name: 'researcher',
- *   model: 'claude-opus-4-6',
- *   systemPrompt: 'You are a rigorous research assistant.',
- *   tools: ['web_search', 'read_file'],
- * })
+ * import { Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from 'open-multi-agent'
  *
- * const result = await agent.run('Summarise the last 3 IPCC reports.')
+ * const registry = new ToolRegistry()
+ * registerBuiltInTools(registry)
+ * const executor = new ToolExecutor(registry)
+ *
+ * const agent = new Agent(
+ *   {
+ *     name: 'researcher',
+ *     model: 'claude-sonnet-4-6',
+ *     systemPrompt: 'You are a rigorous research assistant.',
+ *     tools: ['file_read', 'grep'],
+ *   },
+ *   registry,
+ *   executor,
+ * )
+ *
+ * const result = await agent.run('Summarise the project README.')
  * console.log(result.output)
+ *
+ * // For one-shot runs without managing the Agent instance, use
+ * // `new OpenMultiAgent().runAgent(config, prompt)` instead.
  * ```
  */
 
