@@ -1,0 +1,54 @@
+[
+  {
+    "sha": "3f12a7b",
+    "author": "lan@internal",
+    "deployed_at": "2026-04-22T12:18:44Z",
+    "changed_paths": [
+      "web/src/pages/landing.tsx",
+      "web/src/components/Hero.tsx",
+      "web/public/images/hero-bg.png"
+    ],
+    "summary": "Landing page hero refresh and image swap"
+  },
+  {
+    "sha": "c8a7019",
+    "author": "raj@internal",
+    "deployed_at": "2026-04-22T13:02:11Z",
+    "changed_paths": [
+      "docs/runbooks/oncall.md",
+      "docs/architecture/services.md"
+    ],
+    "summary": "Docs update: oncall runbook + services overview"
+  },
+  {
+    "sha": "5d2bf30",
+    "author": "ines@internal",
+    "deployed_at": "2026-04-22T13:41:27Z",
+    "changed_paths": [
+      "services/recommend/model_loader.py",
+      "services/recommend/cache.py"
+    ],
+    "summary": "recommend-svc: bump cache TTL and lazy-load model artifacts"
+  },
+  {
+    "sha": "9b34ee2",
+    "author": "meera@internal",
+    "deployed_at": "2026-04-22T14:09:52Z",
+    "changed_paths": [
+      "services/checkout/handler.ts",
+      "services/checkout/db.ts",
+      "services/checkout/retry.ts"
+    ],
+    "summary": "Refactor checkout retry logic"
+  },
+  {
+    "sha": "2e780af",
+    "author": "tomas@internal",
+    "deployed_at": "2026-04-22T14:21:05Z",
+    "changed_paths": [
+      "infra/terraform/cdn.tf",
+      "infra/terraform/dns.tf"
+    ],
+    "summary": "Infra: tighten CDN cache rules and rotate DNS TTLs"
+  }
+]

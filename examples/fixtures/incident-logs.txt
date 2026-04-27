@@ -1,0 +1,206 @@
+2026-04-22T14:00:03Z INFO  api-gateway   request_id=a01 method=GET path=/api/health status=200 duration_ms=4
+2026-04-22T14:00:11Z INFO  api-gateway   request_id=a02 method=GET path=/api/products status=200 duration_ms=87
+2026-04-22T14:00:18Z INFO  api-gateway   request_id=a03 method=POST path=/api/cart/add status=200 duration_ms=112 user_id=u8821
+2026-04-22T14:00:24Z INFO  api-gateway   request_id=a04 method=GET path=/api/products/4711 status=200 duration_ms=63
+2026-04-22T14:00:29Z INFO  api-gateway   request_id=a05 method=POST path=/api/checkout status=200 duration_ms=341 user_id=u8821 order_id=o7711
+2026-04-22T14:00:35Z INFO  api-gateway   request_id=a06 method=GET path=/api/products status=200 duration_ms=92
+2026-04-22T14:00:41Z WARN  search-svc    cache_miss key=trending_24h fallback=db duration_ms=210
+2026-04-22T14:00:47Z INFO  api-gateway   request_id=a07 method=POST path=/api/cart/add status=200 duration_ms=98 user_id=u3120
+2026-04-22T14:00:53Z INFO  api-gateway   request_id=a08 method=POST path=/api/checkout status=200 duration_ms=298 user_id=u3120 order_id=o7712
+2026-04-22T14:01:01Z INFO  recommend-svc model=collab-v2 latency_ms=58 hit=cache
+2026-04-22T14:01:07Z INFO  api-gateway   request_id=a09 method=GET path=/api/orders status=200 duration_ms=44 user_id=u4002
+2026-04-22T14:01:14Z INFO  api-gateway   request_id=a10 method=POST path=/api/checkout status=200 duration_ms=312 user_id=u4002 order_id=o7713
+2026-04-22T14:01:21Z INFO  api-gateway   request_id=a11 method=GET path=/api/products status=200 duration_ms=81
+2026-04-22T14:01:28Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=alerts@internal
+2026-04-22T14:01:35Z INFO  email-svc     send_ok attempt=2 to=alerts@internal
+2026-04-22T14:01:43Z INFO  api-gateway   request_id=a12 method=POST path=/api/cart/add status=200 duration_ms=104 user_id=u9913
+2026-04-22T14:01:51Z INFO  api-gateway   request_id=a13 method=POST path=/api/checkout status=200 duration_ms=327 user_id=u9913 order_id=o7714
+2026-04-22T14:02:00Z INFO  api-gateway   request_id=a14 method=GET path=/api/products/8810 status=200 duration_ms=58
+2026-04-22T14:02:08Z INFO  api-gateway   request_id=a15 method=GET path=/api/health status=200 duration_ms=3
+2026-04-22T14:02:14Z INFO  api-gateway   request_id=a16 method=POST path=/api/checkout status=200 duration_ms=305 user_id=u1188 order_id=o7715
+2026-04-22T14:02:22Z INFO  recommend-svc model=collab-v2 latency_ms=61 hit=cache
+2026-04-22T14:02:30Z INFO  api-gateway   request_id=a17 method=GET path=/api/products status=200 duration_ms=85
+2026-04-22T14:02:38Z INFO  api-gateway   request_id=a18 method=POST path=/api/cart/add status=200 duration_ms=99 user_id=u2244
+2026-04-22T14:02:46Z INFO  api-gateway   request_id=a19 method=POST path=/api/checkout status=200 duration_ms=318 user_id=u2244 order_id=o7716
+2026-04-22T14:02:55Z WARN  search-svc    slow_query qid=q9912 duration_ms=812
+2026-04-22T14:03:04Z INFO  api-gateway   request_id=a20 method=GET path=/api/orders status=200 duration_ms=47 user_id=u5500
+2026-04-22T14:03:12Z INFO  api-gateway   request_id=a21 method=POST path=/api/checkout status=200 duration_ms=289 user_id=u5500 order_id=o7717
+2026-04-22T14:03:20Z INFO  api-gateway   request_id=a22 method=GET path=/api/products status=200 duration_ms=78
+2026-04-22T14:03:29Z INFO  api-gateway   request_id=a23 method=POST path=/api/cart/add status=200 duration_ms=106 user_id=u6601
+2026-04-22T14:03:37Z INFO  api-gateway   request_id=a24 method=POST path=/api/checkout status=200 duration_ms=331 user_id=u6601 order_id=o7718
+2026-04-22T14:03:45Z INFO  recommend-svc model=collab-v2 latency_ms=55 hit=cache
+2026-04-22T14:03:52Z INFO  api-gateway   request_id=a25 method=GET path=/api/products/2298 status=200 duration_ms=64
+2026-04-22T14:04:01Z INFO  api-gateway   request_id=a26 method=POST path=/api/checkout status=200 duration_ms=302 user_id=u7720 order_id=o7719
+2026-04-22T14:04:09Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=ops@internal
+2026-04-22T14:04:16Z INFO  email-svc     send_ok attempt=2 to=ops@internal
+2026-04-22T14:04:24Z INFO  api-gateway   request_id=a27 method=GET path=/api/products status=200 duration_ms=88
+2026-04-22T14:04:32Z INFO  api-gateway   request_id=a28 method=POST path=/api/cart/add status=200 duration_ms=101 user_id=u8330
+2026-04-22T14:04:40Z INFO  api-gateway   request_id=a29 method=POST path=/api/checkout status=200 duration_ms=295 user_id=u8330 order_id=o7720
+2026-04-22T14:04:49Z INFO  api-gateway   request_id=a30 method=GET path=/api/orders status=200 duration_ms=43 user_id=u9001
+2026-04-22T14:04:57Z INFO  api-gateway   request_id=a31 method=POST path=/api/checkout status=200 duration_ms=320 user_id=u9001 order_id=o7721
+2026-04-22T14:05:06Z INFO  api-gateway   request_id=a32 method=GET path=/api/products status=200 duration_ms=82
+2026-04-22T14:05:14Z INFO  api-gateway   request_id=a33 method=POST path=/api/cart/add status=200 duration_ms=97 user_id=u1102
+2026-04-22T14:05:22Z INFO  api-gateway   request_id=a34 method=POST path=/api/checkout status=200 duration_ms=308 user_id=u1102 order_id=o7722
+2026-04-22T14:05:30Z INFO  recommend-svc model=collab-v2 latency_ms=59 hit=cache
+2026-04-22T14:05:38Z INFO  api-gateway   request_id=a35 method=GET path=/api/products/3399 status=200 duration_ms=66
+2026-04-22T14:05:46Z INFO  api-gateway   request_id=a36 method=POST path=/api/checkout status=200 duration_ms=314 user_id=u2203 order_id=o7723
+2026-04-22T14:05:55Z WARN  search-svc    cache_miss key=top_sellers fallback=db duration_ms=187
+2026-04-22T14:06:03Z INFO  api-gateway   request_id=a37 method=GET path=/api/products status=200 duration_ms=80
+2026-04-22T14:06:11Z INFO  api-gateway   request_id=a38 method=POST path=/api/cart/add status=200 duration_ms=103 user_id=u3304
+2026-04-22T14:06:19Z INFO  api-gateway   request_id=a39 method=POST path=/api/checkout status=200 duration_ms=299 user_id=u3304 order_id=o7724
+2026-04-22T14:06:27Z INFO  api-gateway   request_id=a40 method=GET path=/api/orders status=200 duration_ms=46 user_id=u4405
+2026-04-22T14:06:36Z INFO  api-gateway   request_id=a41 method=POST path=/api/checkout status=200 duration_ms=325 user_id=u4405 order_id=o7725
+2026-04-22T14:06:44Z INFO  api-gateway   request_id=a42 method=GET path=/api/products status=200 duration_ms=86
+2026-04-22T14:06:52Z INFO  api-gateway   request_id=a43 method=POST path=/api/cart/add status=200 duration_ms=100 user_id=u5506
+2026-04-22T14:07:00Z INFO  api-gateway   request_id=a44 method=POST path=/api/checkout status=200 duration_ms=311 user_id=u5506 order_id=o7726
+2026-04-22T14:07:09Z INFO  recommend-svc model=collab-v2 latency_ms=62 hit=cache
+2026-04-22T14:07:17Z INFO  api-gateway   request_id=a45 method=GET path=/api/products/5500 status=200 duration_ms=68
+2026-04-22T14:07:25Z INFO  api-gateway   request_id=a46 method=POST path=/api/checkout status=200 duration_ms=304 user_id=u6607 order_id=o7727
+2026-04-22T14:07:33Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=billing@internal
+2026-04-22T14:07:40Z INFO  email-svc     send_ok attempt=2 to=billing@internal
+2026-04-22T14:07:48Z INFO  api-gateway   request_id=a47 method=GET path=/api/products status=200 duration_ms=83
+2026-04-22T14:07:56Z INFO  api-gateway   request_id=a48 method=POST path=/api/cart/add status=200 duration_ms=102 user_id=u7708
+2026-04-22T14:08:04Z INFO  api-gateway   request_id=a49 method=POST path=/api/checkout status=200 duration_ms=316 user_id=u7708 order_id=o7728
+2026-04-22T14:08:13Z INFO  api-gateway   request_id=a50 method=GET path=/api/orders status=200 duration_ms=45 user_id=u8809
+2026-04-22T14:08:21Z INFO  api-gateway   request_id=a51 method=POST path=/api/checkout status=200 duration_ms=322 user_id=u8809 order_id=o7729
+2026-04-22T14:08:29Z INFO  api-gateway   request_id=a52 method=GET path=/api/products status=200 duration_ms=79
+2026-04-22T14:08:37Z INFO  api-gateway   request_id=a53 method=POST path=/api/cart/add status=200 duration_ms=98 user_id=u9910
+2026-04-22T14:08:45Z INFO  api-gateway   request_id=a54 method=POST path=/api/checkout status=200 duration_ms=307 user_id=u9910 order_id=o7730
+2026-04-22T14:08:54Z INFO  recommend-svc model=collab-v2 latency_ms=57 hit=cache
+2026-04-22T14:09:02Z INFO  api-gateway   request_id=a55 method=GET path=/api/products/6611 status=200 duration_ms=65
+2026-04-22T14:09:10Z INFO  api-gateway   request_id=a56 method=POST path=/api/checkout status=200 duration_ms=300 user_id=u1011 order_id=o7731
+2026-04-22T14:09:18Z INFO  api-gateway   request_id=a57 method=GET path=/api/products status=200 duration_ms=84
+2026-04-22T14:09:26Z INFO  api-gateway   request_id=a58 method=POST path=/api/cart/add status=200 duration_ms=104 user_id=u2122
+2026-04-22T14:09:34Z INFO  api-gateway   request_id=a59 method=POST path=/api/checkout status=200 duration_ms=313 user_id=u2122 order_id=o7732
+2026-04-22T14:09:43Z WARN  search-svc    slow_query qid=q9988 duration_ms=905
+2026-04-22T14:09:51Z INFO  api-gateway   request_id=a60 method=GET path=/api/orders status=200 duration_ms=48 user_id=u3233
+2026-04-22T14:10:00Z INFO  api-gateway   request_id=a61 method=POST path=/api/checkout status=200 duration_ms=329 user_id=u3233 order_id=o7733
+2026-04-22T14:10:08Z INFO  deploy-svc    deploy_started sha=9b34ee2 service=checkout author=meera@internal
+2026-04-22T14:10:14Z INFO  deploy-svc    deploy_complete sha=9b34ee2 service=checkout duration_s=42
+2026-04-22T14:10:21Z INFO  api-gateway   request_id=a62 method=GET path=/api/products status=200 duration_ms=81
+2026-04-22T14:10:29Z INFO  api-gateway   request_id=a63 method=POST path=/api/cart/add status=200 duration_ms=99 user_id=u4344
+2026-04-22T14:10:37Z INFO  api-gateway   request_id=a64 method=POST path=/api/checkout status=200 duration_ms=298 user_id=u4344 order_id=o7734
+2026-04-22T14:10:45Z INFO  api-gateway   request_id=a65 method=GET path=/api/products/7722 status=200 duration_ms=63
+2026-04-22T14:10:53Z INFO  api-gateway   request_id=a66 method=POST path=/api/checkout status=200 duration_ms=309 user_id=u5455 order_id=o7735
+2026-04-22T14:11:01Z INFO  recommend-svc model=collab-v2 latency_ms=60 hit=cache
+2026-04-22T14:11:09Z INFO  api-gateway   request_id=a67 method=GET path=/api/products status=200 duration_ms=87
+2026-04-22T14:11:17Z INFO  api-gateway   request_id=a68 method=POST path=/api/cart/add status=200 duration_ms=101 user_id=u6566
+2026-04-22T14:11:25Z INFO  api-gateway   request_id=a69 method=POST path=/api/checkout status=200 duration_ms=331 user_id=u6566 order_id=o7736
+2026-04-22T14:11:33Z INFO  api-gateway   request_id=a70 method=GET path=/api/orders status=200 duration_ms=44 user_id=u7677
+2026-04-22T14:11:41Z INFO  api-gateway   request_id=a71 method=POST path=/api/checkout status=200 duration_ms=315 user_id=u7677 order_id=o7737
+2026-04-22T14:11:50Z INFO  api-gateway   request_id=a72 method=GET path=/api/products status=200 duration_ms=82
+2026-04-22T14:11:58Z INFO  api-gateway   request_id=a73 method=POST path=/api/cart/add status=200 duration_ms=98 user_id=u8788
+2026-04-22T14:12:04Z ERROR checkout-svc  request_id=a74 user_id=u8788 error=db_pool_exhausted message="checkout retry handler opened transaction without releasing connection" path=/api/checkout
+2026-04-22T14:12:04Z ERROR api-gateway   request_id=a74 method=POST path=/api/checkout status=500 duration_ms=4812 user_id=u8788 upstream=checkout-svc
+2026-04-22T14:12:11Z WARN  search-svc    cache_miss key=trending_24h fallback=db duration_ms=192
+2026-04-22T14:12:18Z ERROR checkout-svc  request_id=a75 user_id=u9899 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:12:18Z ERROR api-gateway   request_id=a75 method=POST path=/api/checkout status=500 duration_ms=5021 user_id=u9899 upstream=checkout-svc
+2026-04-22T14:12:25Z INFO  api-gateway   request_id=a76 method=GET path=/api/products status=200 duration_ms=86
+2026-04-22T14:12:32Z ERROR checkout-svc  request_id=a77 user_id=u1900 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:12:32Z ERROR api-gateway   request_id=a77 method=POST path=/api/checkout status=500 duration_ms=5008 user_id=u1900 upstream=checkout-svc
+2026-04-22T14:12:40Z INFO  api-gateway   request_id=a78 method=POST path=/api/cart/add status=200 duration_ms=103 user_id=u2911
+2026-04-22T14:12:47Z ERROR checkout-svc  request_id=a79 user_id=u2911 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:12:47Z ERROR api-gateway   request_id=a79 method=POST path=/api/checkout status=500 duration_ms=5014 user_id=u2911 upstream=checkout-svc
+2026-04-22T14:12:55Z INFO  api-gateway   request_id=a80 method=GET path=/api/orders status=200 duration_ms=47 user_id=u3922
+2026-04-22T14:13:02Z ERROR checkout-svc  request_id=a81 user_id=u3922 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:13:02Z ERROR api-gateway   request_id=a81 method=POST path=/api/checkout status=500 duration_ms=5009 user_id=u3922 upstream=checkout-svc
+2026-04-22T14:13:09Z INFO  api-gateway   request_id=a82 method=GET path=/api/products status=200 duration_ms=80
+2026-04-22T14:13:16Z ERROR checkout-svc  request_id=a83 user_id=u4933 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:13:16Z ERROR api-gateway   request_id=a83 method=POST path=/api/checkout status=500 duration_ms=5012 user_id=u4933 upstream=checkout-svc
+2026-04-22T14:13:23Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=alerts@internal
+2026-04-22T14:13:30Z INFO  email-svc     send_ok attempt=2 to=alerts@internal
+2026-04-22T14:13:38Z INFO  api-gateway   request_id=a84 method=POST path=/api/cart/add status=200 duration_ms=99 user_id=u5944
+2026-04-22T14:13:45Z ERROR checkout-svc  request_id=a85 user_id=u5944 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:13:45Z ERROR api-gateway   request_id=a85 method=POST path=/api/checkout status=500 duration_ms=5005 user_id=u5944 upstream=checkout-svc
+2026-04-22T14:13:53Z INFO  api-gateway   request_id=a86 method=GET path=/api/products/8833 status=200 duration_ms=64
+2026-04-22T14:14:00Z ERROR checkout-svc  request_id=a87 user_id=u6955 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:14:00Z ERROR api-gateway   request_id=a87 method=POST path=/api/checkout status=500 duration_ms=5018 user_id=u6955 upstream=checkout-svc
+2026-04-22T14:14:08Z WARN  checkout-svc  pool_stats active=50 idle=0 waiting=27 max=50
+2026-04-22T14:14:15Z ERROR checkout-svc  request_id=a88 user_id=u7966 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:14:15Z ERROR api-gateway   request_id=a88 method=POST path=/api/checkout status=500 duration_ms=5011 user_id=u7966 upstream=checkout-svc
+2026-04-22T14:14:22Z INFO  api-gateway   request_id=a89 method=GET path=/api/products status=200 duration_ms=83
+2026-04-22T14:14:30Z ERROR checkout-svc  request_id=a90 user_id=u8977 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:14:30Z ERROR api-gateway   request_id=a90 method=POST path=/api/checkout status=500 duration_ms=5006 user_id=u8977 upstream=checkout-svc
+2026-04-22T14:14:38Z INFO  recommend-svc model=collab-v2 latency_ms=58 hit=cache
+2026-04-22T14:14:46Z ERROR checkout-svc  request_id=a91 user_id=u9088 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:14:46Z ERROR api-gateway   request_id=a91 method=POST path=/api/checkout status=500 duration_ms=5013 user_id=u9088 upstream=checkout-svc
+2026-04-22T14:14:54Z WARN  search-svc    slow_query qid=q1019 duration_ms=738
+2026-04-22T14:15:01Z ERROR checkout-svc  request_id=a92 user_id=u1099 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:15:01Z ERROR api-gateway   request_id=a92 method=POST path=/api/checkout status=500 duration_ms=5007 user_id=u1099 upstream=checkout-svc
+2026-04-22T14:15:09Z INFO  api-gateway   request_id=a93 method=POST path=/api/cart/add status=200 duration_ms=100 user_id=u2110
+2026-04-22T14:15:16Z ERROR checkout-svc  request_id=a94 user_id=u2110 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:15:16Z ERROR api-gateway   request_id=a94 method=POST path=/api/checkout status=500 duration_ms=5010 user_id=u2110 upstream=checkout-svc
+2026-04-22T14:15:24Z WARN  checkout-svc  pool_stats active=50 idle=0 waiting=33 max=50
+2026-04-22T14:15:32Z ERROR checkout-svc  request_id=a95 user_id=u3221 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:15:32Z ERROR api-gateway   request_id=a95 method=POST path=/api/checkout status=500 duration_ms=5015 user_id=u3221 upstream=checkout-svc
+2026-04-22T14:15:40Z INFO  api-gateway   request_id=a96 method=GET path=/api/orders status=200 duration_ms=46 user_id=u4332
+2026-04-22T14:15:48Z ERROR checkout-svc  request_id=a97 user_id=u4332 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:15:48Z ERROR api-gateway   request_id=a97 method=POST path=/api/checkout status=500 duration_ms=5004 user_id=u4332 upstream=checkout-svc
+2026-04-22T14:15:56Z INFO  api-gateway   request_id=a98 method=GET path=/api/products status=200 duration_ms=85
+2026-04-22T14:16:04Z ERROR checkout-svc  request_id=a99 user_id=u5443 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:16:04Z ERROR api-gateway   request_id=a99 method=POST path=/api/checkout status=500 duration_ms=5009 user_id=u5443 upstream=checkout-svc
+2026-04-22T14:16:12Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=ops@internal
+2026-04-22T14:16:19Z INFO  email-svc     send_ok attempt=2 to=ops@internal
+2026-04-22T14:16:27Z ERROR checkout-svc  request_id=b01 user_id=u6554 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:16:27Z ERROR api-gateway   request_id=b01 method=POST path=/api/checkout status=500 duration_ms=5012 user_id=u6554 upstream=checkout-svc
+2026-04-22T14:16:35Z INFO  api-gateway   request_id=b02 method=POST path=/api/cart/add status=200 duration_ms=102 user_id=u7665
+2026-04-22T14:16:43Z ERROR checkout-svc  request_id=b03 user_id=u7665 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:16:43Z ERROR api-gateway   request_id=b03 method=POST path=/api/checkout status=500 duration_ms=5008 user_id=u7665 upstream=checkout-svc
+2026-04-22T14:16:51Z WARN  checkout-svc  pool_stats active=50 idle=0 waiting=41 max=50
+2026-04-22T14:16:59Z ERROR checkout-svc  request_id=b04 user_id=u8776 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:16:59Z ERROR api-gateway   request_id=b04 method=POST path=/api/checkout status=500 duration_ms=5011 user_id=u8776 upstream=checkout-svc
+2026-04-22T14:17:07Z INFO  api-gateway   request_id=b05 method=GET path=/api/products status=200 duration_ms=81
+2026-04-22T14:17:15Z ERROR checkout-svc  request_id=b06 user_id=u9887 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:17:15Z ERROR api-gateway   request_id=b06 method=POST path=/api/checkout status=500 duration_ms=5006 user_id=u9887 upstream=checkout-svc
+2026-04-22T14:17:23Z INFO  api-gateway   request_id=b07 method=GET path=/api/products/9944 status=200 duration_ms=67
+2026-04-22T14:17:31Z ERROR checkout-svc  request_id=b08 user_id=u1098 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:17:31Z ERROR api-gateway   request_id=b08 method=POST path=/api/checkout status=500 duration_ms=5013 user_id=u1098 upstream=checkout-svc
+2026-04-22T14:17:39Z INFO  recommend-svc model=collab-v2 latency_ms=63 hit=cache
+2026-04-22T14:17:47Z ERROR checkout-svc  request_id=b09 user_id=u2109 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:17:47Z ERROR api-gateway   request_id=b09 method=POST path=/api/checkout status=500 duration_ms=5005 user_id=u2109 upstream=checkout-svc
+2026-04-22T14:17:55Z WARN  checkout-svc  pool_stats active=50 idle=0 waiting=48 max=50
+2026-04-22T14:18:03Z ERROR checkout-svc  request_id=b10 user_id=u3210 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:18:03Z ERROR api-gateway   request_id=b10 method=POST path=/api/checkout status=500 duration_ms=5010 user_id=u3210 upstream=checkout-svc
+2026-04-22T14:18:11Z INFO  api-gateway   request_id=b11 method=GET path=/api/orders status=200 duration_ms=45 user_id=u4321
+2026-04-22T14:18:19Z ERROR checkout-svc  request_id=b12 user_id=u4321 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:18:19Z ERROR api-gateway   request_id=b12 method=POST path=/api/checkout status=500 duration_ms=5014 user_id=u4321 upstream=checkout-svc
+2026-04-22T14:18:27Z INFO  api-gateway   request_id=b13 method=GET path=/api/products status=200 duration_ms=84
+2026-04-22T14:18:35Z ERROR checkout-svc  request_id=b14 user_id=u5432 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:18:35Z ERROR api-gateway   request_id=b14 method=POST path=/api/checkout status=500 duration_ms=5009 user_id=u5432 upstream=checkout-svc
+2026-04-22T14:18:43Z INFO  api-gateway   request_id=b15 method=POST path=/api/cart/add status=200 duration_ms=98 user_id=u6543
+2026-04-22T14:18:51Z ERROR checkout-svc  request_id=b16 user_id=u6543 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:18:51Z ERROR api-gateway   request_id=b16 method=POST path=/api/checkout status=500 duration_ms=5007 user_id=u6543 upstream=checkout-svc
+2026-04-22T14:19:00Z WARN  search-svc    cache_miss key=top_sellers fallback=db duration_ms=205
+2026-04-22T14:19:08Z ERROR checkout-svc  request_id=b17 user_id=u7654 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:19:08Z ERROR api-gateway   request_id=b17 method=POST path=/api/checkout status=500 duration_ms=5012 user_id=u7654 upstream=checkout-svc
+2026-04-22T14:19:16Z INFO  api-gateway   request_id=b18 method=GET path=/api/products status=200 duration_ms=82
+2026-04-22T14:19:24Z ERROR checkout-svc  request_id=b19 user_id=u8765 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:19:24Z ERROR api-gateway   request_id=b19 method=POST path=/api/checkout status=500 duration_ms=5008 user_id=u8765 upstream=checkout-svc
+2026-04-22T14:19:32Z INFO  api-gateway   request_id=b20 method=GET path=/api/products/1077 status=200 duration_ms=66
+2026-04-22T14:19:40Z ERROR checkout-svc  request_id=b21 user_id=u9876 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:19:40Z ERROR api-gateway   request_id=b21 method=POST path=/api/checkout status=500 duration_ms=5011 user_id=u9876 upstream=checkout-svc
+2026-04-22T14:19:48Z INFO  api-gateway   request_id=b22 method=POST path=/api/cart/add status=200 duration_ms=104 user_id=u1098
+2026-04-22T14:19:56Z ERROR checkout-svc  request_id=b23 user_id=u1098 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:19:56Z ERROR api-gateway   request_id=b23 method=POST path=/api/checkout status=500 duration_ms=5006 user_id=u1098 upstream=checkout-svc
+2026-04-22T14:20:04Z INFO  recommend-svc model=collab-v2 latency_ms=60 hit=cache
+2026-04-22T14:20:12Z ERROR checkout-svc  request_id=b24 user_id=u2109 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:20:12Z ERROR api-gateway   request_id=b24 method=POST path=/api/checkout status=500 duration_ms=5013 user_id=u2109 upstream=checkout-svc
+2026-04-22T14:20:20Z WARN  checkout-svc  pool_stats active=50 idle=0 waiting=52 max=50
+2026-04-22T14:20:28Z ERROR checkout-svc  request_id=b25 user_id=u3210 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:20:28Z ERROR api-gateway   request_id=b25 method=POST path=/api/checkout status=500 duration_ms=5010 user_id=u3210 upstream=checkout-svc
+2026-04-22T14:20:36Z INFO  api-gateway   request_id=b26 method=GET path=/api/orders status=200 duration_ms=44 user_id=u4321
+2026-04-22T14:20:44Z ERROR checkout-svc  request_id=b27 user_id=u4321 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:20:44Z ERROR api-gateway   request_id=b27 method=POST path=/api/checkout status=500 duration_ms=5005 user_id=u4321 upstream=checkout-svc
+2026-04-22T14:20:52Z INFO  api-gateway   request_id=b28 method=GET path=/api/products status=200 duration_ms=87
+2026-04-22T14:21:00Z ERROR checkout-svc  request_id=b29 user_id=u5432 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:21:00Z ERROR api-gateway   request_id=b29 method=POST path=/api/checkout status=500 duration_ms=5009 user_id=u5432 upstream=checkout-svc
+2026-04-22T14:21:08Z WARN  email-svc     transient_smtp_timeout retrying attempt=1 to=billing@internal
+2026-04-22T14:21:15Z INFO  email-svc     send_ok attempt=2 to=billing@internal
+2026-04-22T14:21:23Z ERROR checkout-svc  request_id=b30 user_id=u6543 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:21:23Z ERROR api-gateway   request_id=b30 method=POST path=/api/checkout status=500 duration_ms=5014 user_id=u6543 upstream=checkout-svc
+2026-04-22T14:21:31Z INFO  api-gateway   request_id=b31 method=POST path=/api/cart/add status=200 duration_ms=101 user_id=u7654
+2026-04-22T14:21:39Z ERROR checkout-svc  request_id=b32 user_id=u7654 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:21:39Z ERROR api-gateway   request_id=b32 method=POST path=/api/checkout status=500 duration_ms=5008 user_id=u7654 upstream=checkout-svc
+2026-04-22T14:21:47Z INFO  api-gateway   request_id=b33 method=GET path=/api/products status=200 duration_ms=83
+2026-04-22T14:21:55Z ERROR checkout-svc  request_id=b34 user_id=u8765 error=db_pool_exhausted message="acquire connection timeout after 5000ms" path=/api/checkout
+2026-04-22T14:21:55Z ERROR api-gateway   request_id=b34 method=POST path=/api/checkout status=500 duration_ms=5012 user_id=u8765 upstream=checkout-svc
