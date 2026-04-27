@@ -4,11 +4,11 @@
  * Demonstrates DAG task orchestration with three independent root tasks
  * fanning out from t=0, then synthesizing into a final postmortem document.
  *
- *   [Task 1: extract-log-patterns] â”€â”€â”? *   [Task 2: correlate-deploys]    â”€â”€â”¼â”€â†?[Task 4: hypothesize-cause] â”€â”? *   [Task 3: analyze-blast-radius] â”€â”€â”?                               â”œâ”€â†?[Task 5: write-postmortem] â†?Markdown
- *                                                                     â”? *   Tasks 1 + 3 also feed Task 5 directly via shared memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”? *
- * Mirrors examples/cookbook/contract-review-dag.ts for style. Notable
+ *   log-pattern-extractor   |
+ *   correlate-deploys       |--> root-cause-hypothesizer --> postmortem-writer
+ *   analyze-blast-radius    |
  * departures from that template:
- *   - No FORCE_FAIL / retry-demonstration machinery â€?this example's
+ *   - No FORCE_FAIL / retry-demonstration machinery -- this example's
  *     theme is parallel fan-out + multi-source synthesis, not retry.
  *   - Three parallel root tasks (instead of two), so the parallelism
  *     check asserts that all three start within a 500ms window.
@@ -275,7 +275,7 @@ function verifyParallelism(): void {
 // Step 5: Orchestrator and Team configuration
 // ---------------------------------------------------------------------------
 
-// Local validation hatch â€?flip every agent's provider/model to a free
+// Local validation hatch -- flip every agent's provider/model to a free
 // OpenRouter model when EXAMPLE_PROVIDER=openrouter. The committed
 // AgentConfig values above remain anthropic / claude-sonnet-4-6.
 const useOpenRouter = process.env.EXAMPLE_PROVIDER === 'openrouter'
@@ -389,7 +389,7 @@ async function main(): Promise<void> {
     console.log(`Total tasks: ${result.tasks?.length ?? taskConfigs.length}`)
     console.log(`Total token usage: ${result.totalTokenUsage.input_tokens} input, ${result.totalTokenUsage.output_tokens} output`)
 
-    // Cost estimate on claude-sonnet-4-6 â€?even when running on OpenRouter,
+    // Cost estimate on claude-sonnet-4-6 -- even when running on OpenRouter,
     // this represents what the same token volume would cost on Anthropic.
     const inputCost = (result.totalTokenUsage.input_tokens / 1_000_000) * 3
     const outputCost = (result.totalTokenUsage.output_tokens / 1_000_000) * 15
