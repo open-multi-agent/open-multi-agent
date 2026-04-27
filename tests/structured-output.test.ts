@@ -9,7 +9,7 @@ import { Agent } from '../src/agent/agent.js'
 import { AgentRunner } from '../src/agent/runner.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 import { ToolExecutor } from '../src/tool/executor.js'
-import type { AgentConfig, LLMAdapter, LLMResponse } from '../src/types.js'
+import type { AgentConfig, ContentBlock, LLMAdapter, LLMResponse } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Mock LLM adapter factory
@@ -24,6 +24,26 @@ function mockAdapter(responses: string[]): LLMAdapter {
       return {
         id: `mock-${callIndex}`,
         content: [{ type: 'text' as const, text }],
+        model: 'mock-model',
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 10, output_tokens: 20 },
+      } satisfies LLMResponse
+    },
+    async *stream() {
+      /* unused in these tests */
+    },
+  }
+}
+
+function mockContentAdapter(responses: ContentBlock[][]): LLMAdapter {
+  let callIndex = 0
+  return {
+    name: 'mock',
+    async chat() {
+      const content = responses[callIndex++] ?? []
+      return {
+        id: `mock-${callIndex}`,
+        content,
         model: 'mock-model',
         stop_reason: 'end_turn',
         usage: { input_tokens: 10, output_tokens: 20 },
@@ -168,7 +188,10 @@ describe('buildStructuredOutputInstruction', () => {
  * directly into the Agent's private `runner` field, bypassing `createAdapter`.
  */
 function buildMockAgent(config: AgentConfig, responses: string[]): Agent {
-  const adapter = mockAdapter(responses)
+  return buildMockAgentWithAdapter(config, mockAdapter(responses))
+}
+
+function buildMockAgentWithAdapter(config: AgentConfig, adapter: LLMAdapter): Agent {
   const registry = new ToolRegistry()
   const executor = new ToolExecutor(registry)
   const agent = new Agent(config, registry, executor)
@@ -278,6 +301,26 @@ describe('Agent structured output (end-to-end)', () => {
     const result = await agent.run('Analyze')
 
     expect(result.success).toBe(true)
+    expect(result.structured).toEqual({
+      summary: 'ok',
+      sentiment: 'neutral',
+      confidence: 0.5,
+    })
+  })
+
+  it('ignores reasoning blocks when validating structured output', async () => {
+    const agent = buildMockAgentWithAdapter(
+      baseConfig,
+      mockContentAdapter([[
+        { type: 'reasoning', text: 'scratchpad with misleading { partial json' },
+        { type: 'text', text: '{"summary":"ok","sentiment":"neutral","confidence":0.5}' },
+      ]]),
+    )
+
+    const result = await agent.run('Analyze')
+
+    expect(result.success).toBe(true)
+    expect(result.output).toBe('{"summary":"ok","sentiment":"neutral","confidence":0.5}')
     expect(result.structured).toEqual({
       summary: 'ok',
       sentiment: 'neutral',

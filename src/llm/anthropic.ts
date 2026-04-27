@@ -156,26 +156,24 @@ function toAnthropicTools(tools: readonly LLMToolDef[]): AnthropicTool[] {
 function fromAnthropicContentBlock(
   block: Anthropic.Messages.ContentBlock,
 ): ContentBlock {
-  const blockType = (block as { type: string }).type
-
-  switch (blockType) {
+  switch (block.type) {
     case 'thinking': {
       const reasoning: ReasoningBlock = {
         type: 'reasoning',
-        text: (block as { thinking: string }).thinking,
+        text: block.thinking,
       }
       return reasoning
     }
     case 'text': {
-      const text: TextBlock = { type: 'text', text: (block as { text: string }).text }
+      const text: TextBlock = { type: 'text', text: block.text }
       return text
     }
     case 'tool_use': {
       const toolUse: ToolUseBlock = {
         type: 'tool_use',
-        id: (block as { id: string }).id,
-        name: (block as { name: string }).name,
-        input: (block as { input: Record<string, unknown> }).input,
+        id: block.id,
+        name: block.name,
+        input: block.input as Record<string, unknown>,
       }
       return toolUse
     }
@@ -323,25 +321,27 @@ export class AnthropicAdapter implements LLMAdapter {
 
           case 'content_block_delta': {
             const delta = event.delta
-            const deltaType = (delta as { type: string }).type
 
-            if (deltaType === 'text_delta') {
-              const textEvent: StreamEvent = {
-                type: 'text',
-                data: (delta as { text: string }).text,
+            switch (delta.type) {
+              case 'text_delta': {
+                const textEvent: StreamEvent = { type: 'text', data: delta.text }
+                yield textEvent
+                break
               }
-              yield textEvent
-            } else if (deltaType === 'thinking_delta') {
-              const reasoningEvent: StreamEvent = {
-                type: 'reasoning',
-                data: (delta as { thinking: string }).thinking,
+              case 'thinking_delta': {
+                const reasoningEvent: StreamEvent = { type: 'reasoning', data: delta.thinking }
+                yield reasoningEvent
+                break
               }
-              yield reasoningEvent
-            } else if (deltaType === 'input_json_delta') {
-              const buf = toolInputBuffers.get(event.index)
-              if (buf !== undefined) {
-                buf.json += (delta as { partial_json: string }).partial_json
+              case 'input_json_delta': {
+                const buf = toolInputBuffers.get(event.index)
+                if (buf !== undefined) {
+                  buf.json += delta.partial_json
+                }
+                break
               }
+              default:
+                break
             }
             break
           }
