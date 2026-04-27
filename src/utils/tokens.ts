@@ -11,6 +11,8 @@ export function estimateTokens(messages: LLMMessage[]): number {
     for (const block of message.content) {
       if (block.type === 'text') {
         chars += block.text.length
+      } else if (block.type === 'reasoning') {
+        chars += block.text.length
       } else if (block.type === 'tool_result') {
         chars += block.content.length
       } else if (block.type === 'tool_use') {
