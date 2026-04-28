@@ -46,10 +46,6 @@ export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
   }
 }
 
-function toThinkTag(text: string): string {
-  return `<think>${text}</think>`
-}
-
 function extractReasoningText(value: unknown): string {
   if (typeof value === 'string') return value
 
@@ -140,8 +136,6 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
   for (const block of msg.content) {
     if (block.type === 'text') {
       parts.push({ type: 'text', text: block.text })
-    } else if (block.type === 'reasoning') {
-      parts.push({ type: 'text', text: toThinkTag(block.text) })
     } else if (block.type === 'image') {
       parts.push({
         type: 'image_url',
@@ -176,8 +170,6 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
       })
     } else if (block.type === 'text') {
       textParts.push(block.text)
-    } else if (block.type === 'reasoning') {
-      textParts.push(toThinkTag(block.text))
     }
   }
 

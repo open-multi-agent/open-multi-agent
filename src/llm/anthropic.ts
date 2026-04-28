@@ -54,6 +54,12 @@ import type {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+type SerializableContentBlock = Exclude<ContentBlock, ReasoningBlock>
+
+function isSerializableContentBlock(block: ContentBlock): block is SerializableContentBlock {
+  return block.type !== 'reasoning'
+}
+
 /**
  * Convert a single framework {@link ContentBlock} into an Anthropic
  * {@link ContentBlockParam} suitable for the `messages` array.
@@ -61,12 +67,8 @@ import type {
  * `tool_result` blocks are only valid inside `user`-role messages, which is
  * handled by {@link toAnthropicMessages} based on role context.
  */
-function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam {
+function toAnthropicContentBlockParam(block: SerializableContentBlock): ContentBlockParam {
   switch (block.type) {
-    case 'reasoning': {
-      const param: TextBlockParam = { type: 'text', text: `<think>${block.text}</think>` }
-      return param
-    }
     case 'text': {
       const param: TextBlockParam = { type: 'text', text: block.text }
       return param
@@ -125,7 +127,9 @@ function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam {
 function toAnthropicMessages(messages: LLMMessage[]): MessageParam[] {
   return messages.map((msg): MessageParam => ({
     role: msg.role,
-    content: msg.content.map(toAnthropicContentBlockParam),
+    content: msg.content
+      .filter(isSerializableContentBlock)
+      .map(toAnthropicContentBlockParam),
   }))
 }
 

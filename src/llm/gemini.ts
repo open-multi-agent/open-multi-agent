@@ -52,6 +52,12 @@ import type {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+type SerializableContentBlock = Exclude<ContentBlock, { type: 'reasoning' }>
+
+function isSerializableContentBlock(block: ContentBlock): block is SerializableContentBlock {
+  return block.type !== 'reasoning'
+}
+
 /**
  * Map framework role names to Gemini role names.
  *
@@ -83,11 +89,10 @@ function toGeminiContents(messages: LLMMessage[]): Content[] {
   }
 
   return messages.map((msg): Content => {
-    const parts: Part[] = msg.content.map((block): Part => {
+    const parts: Part[] = msg.content
+      .filter(isSerializableContentBlock)
+      .map((block): Part => {
       switch (block.type) {
-        case 'reasoning':
-          return { text: `<think>${block.text}</think>` }
-
         case 'text':
           return { text: block.text }
 
