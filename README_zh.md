@@ -14,7 +14,8 @@
 
 <p align="center">
   <strong>给一个目标，自动得到任务 DAG。</strong><br/>
-  原生 TypeScript 多智能体编排，3 个运行时依赖。
+  原生 TypeScript 多智能体编排，3 个运行时依赖。<br/>
+  9 个原生 LLM 适配器 · MCP · token 预算 · 重试 · 上下文压缩 · 实时追踪。
 </p>
 
 <p align="center">

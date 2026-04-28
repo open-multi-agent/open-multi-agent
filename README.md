@@ -14,7 +14,8 @@
 
 <p align="center">
   <strong>From a goal to a task DAG, automatically.</strong><br/>
-  TypeScript-native multi-agent orchestration. Three runtime dependencies.
+  TypeScript-native multi-agent orchestration. Three runtime dependencies.<br/>
+  9 native LLM adapters · MCP · token budgets · retries · context compaction · live tracing.
 </p>
 
 <p align="center">
