@@ -14,6 +14,7 @@
  *   PORT (optional, default 3000)
  */
 
+import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { z } from 'zod'
 import { OpenMultiAgent } from '../../../src/index.js'
@@ -149,30 +150,49 @@ export function createApp() {
       return
     }
 
-    const abort = AbortSignal.timeout(60_000)
+    // `runTasks` resolves normally on abort (skipRemaining → success: false), so
+    // race it against a sentinel to distinguish a 60s timeout from a generic
+    // pipeline failure. Keep the AbortSignal wired through so in-flight LLM
+    // fetches still get cancelled when the timer fires.
+    const TIMEOUT_MS = 60_000
+    const abortController = new AbortController()
+    const timeoutSentinel = Symbol('timeout')
+    const timeoutHandle = setTimeout(() => abortController.abort(), TIMEOUT_MS)
+    const timeoutPromise = new Promise<typeof timeoutSentinel>((resolve) => {
+      abortController.signal.addEventListener('abort', () => resolve(timeoutSentinel), { once: true })
+    })
 
     try {
       const ticketContext = `Subject: "${subject}"\nBody: "${body}"`
-      const result = await orchestrator.runTasks(team, [
-        {
-          title: 'Classify ticket',
-          description: `Classify the following support ticket.\n\n${ticketContext}`,
-          assignee: 'classifier',
-        },
-        {
-          title: 'Draft reply',
-          description: `Write a customer-facing reply for the following support ticket.\n\n${ticketContext}`,
-          assignee: 'drafter',
-          dependsOn: ['Classify ticket'],
-        },
-        {
-          title: 'QA review',
-          description: `Review the draft reply for tone, empathy, and accuracy.\n\n${ticketContext}`,
-          assignee: 'qa-reviewer',
-          dependsOn: ['Classify ticket', 'Draft reply'],
-        },
-      ], { abortSignal: abort })
+      const raced = await Promise.race([
+        orchestrator.runTasks(team, [
+          {
+            title: 'Classify ticket',
+            description: `Classify the following support ticket.\n\n${ticketContext}`,
+            assignee: 'classifier',
+          },
+          {
+            title: 'Draft reply',
+            description: `Write a customer-facing reply for the following support ticket.\n\n${ticketContext}`,
+            assignee: 'drafter',
+            dependsOn: ['Classify ticket'],
+          },
+          {
+            title: 'QA review',
+            description: `Review the draft reply for tone, empathy, and accuracy.\n\n${ticketContext}`,
+            assignee: 'qa-reviewer',
+            dependsOn: ['Classify ticket', 'Draft reply'],
+          },
+        ], { abortSignal: abortController.signal }),
+        timeoutPromise,
+      ])
 
+      if (raced === timeoutSentinel) {
+        res.status(504).json({ error: 'Pipeline timed out after 60 seconds' })
+        return
+      }
+
+      const result = raced
       if (!result.success) {
         res.status(502).json({ error: 'Pipeline did not complete successfully' })
         return
@@ -199,18 +219,20 @@ export function createApp() {
       }
       res.json(response)
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'TimeoutError') {
-        res.status(504).json({ error: 'Pipeline timed out after 60 seconds' })
-        return
-      }
       const message = err instanceof Error ? err.message : String(err)
       res.status(502).json({ error: `LLM pipeline failed: ${message}` })
+    } finally {
+      clearTimeout(timeoutHandle)
     }
   })
 
   return app
 }
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10)
-const app  = createApp()
-app.listen(PORT, () => console.log(`Support API listening on http://localhost:${PORT}`))
+// Only start the server when this file is executed directly (e.g. `npm start`).
+// Importers like the smoke test get the factory + schema with no side effects,
+// so they can bind their own ephemeral port without colliding on PORT 3000.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const PORT = parseInt(process.env.PORT ?? '3000', 10)
+  createApp().listen(PORT, () => console.log(`Support API listening on http://localhost:${PORT}`))
+}

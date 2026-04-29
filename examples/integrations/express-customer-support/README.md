@@ -1,10 +1,12 @@
 # Express Customer Support
 
-An Express REST API that wraps OMA's `runTeam()` coordinator pattern behind a single `POST /tickets` endpoint. A three-agent pipeline runs on every request:
+An Express REST API that wraps OMA's `runTasks()` explicit-DAG pipeline behind a single `POST /tickets` endpoint. A three-agent pipeline runs on every request:
 
 1. **classifier** (`claude-haiku-4-5-20251001`) — categorises the ticket and assigns urgency
-2. **drafter** (`claude-sonnet-4-6`) — writes a polished customer-facing reply
-3. **qa-reviewer** (`claude-opus-4-7`) — reviews the draft for tone and accuracy
+2. **drafter** (`claude-sonnet-4-6`) — writes a polished customer-facing reply (depends on classifier)
+3. **qa-reviewer** (`claude-opus-4-7`) — reviews the draft for tone and accuracy (depends on classifier + drafter)
+
+`runTasks()` is the right primitive here because the pipeline shape is fixed: a coordinator-decomposed `runTeam()` would re-derive the same DAG and pay for an extra synthesis call on every request. With `runTasks()` the dependency graph is declared once at the route handler and OMA executes it in topological order, writing each agent's output into the next agent's prompt via the shared-memory dependency-context block.
 
 Each agent uses a Zod `outputSchema`; the endpoint assembles the three structured results into one JSON response. Each agent's model **and** provider are independently swappable via env vars so a free-tier setup can mix providers (see [Swapping providers](#swapping-providers) below).
 
@@ -56,9 +58,10 @@ Exits 0 and prints the structured response on success, exits 1 on failure.
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Missing or non-string `subject` / `body` fields |
-| 502 | Pipeline failed or an agent produced no structured output |
-| 504 | Pipeline exceeded the 60-second timeout |
+| 200 | Pipeline completed; body matches the `SupportTicketResponse` schema |
+| 400 | Invalid JSON body, or missing / non-string `subject` / `body` fields |
+| 502 | Pipeline failed, an agent produced no structured output, or an LLM call threw |
+| 504 | Pipeline exceeded the 60-second timeout (in-flight LLM calls are aborted) |
 
 ## Environment variables
 
