@@ -6,7 +6,7 @@ An Express REST API that wraps OMA's `runTasks()` explicit-DAG pipeline behind a
 2. **drafter** (`claude-sonnet-4-6`) — writes a polished customer-facing reply (depends on classifier)
 3. **qa-reviewer** (`claude-opus-4-7`) — reviews the draft for tone and accuracy (depends on classifier + drafter)
 
-`runTasks()` is the right primitive here because the pipeline shape is fixed: a coordinator-decomposed `runTeam()` would re-derive the same DAG and pay for an extra synthesis call on every request. With `runTasks()` the dependency graph is declared once at the route handler and OMA executes it in topological order, writing each agent's output into the next agent's prompt via the shared-memory dependency-context block.
+`runTasks()` is the right primitive here because the pipeline shape is fixed: a coordinator-decomposed `runTeam()` would re-derive the same DAG and pay for an extra synthesis call on every request. With `runTasks()` the dependency graph is declared once at the route handler and OMA executes it in topological order, writing each agent's output into the next agent's prompt via the `## Context from prerequisite tasks` block that `runTasks()` injects from each completed task's result.
 
 Each agent uses a Zod `outputSchema`; the endpoint assembles the three structured results into one JSON response. Each agent's model **and** provider are independently swappable via env vars so a free-tier setup can mix providers (see [Swapping providers](#swapping-providers) below).
 
@@ -68,7 +68,13 @@ Exits 0 and prints the structured response on success, exits 1 on failure.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | *(required for default provider)* | Anthropic API key |
-| `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` / `DEEPSEEK_API_KEY` | — | Required only if the matching provider is selected for any agent |
+| `OPENAI_API_KEY` | — | Required if `openai` is selected for any agent |
+| `GEMINI_API_KEY` | — | Required if `gemini` is selected for any agent |
+| `XAI_API_KEY` | — | Required if `grok` is selected for any agent |
+| `DEEPSEEK_API_KEY` | — | Required if `deepseek` is selected for any agent |
+| `GITHUB_TOKEN` | — | Required if `copilot` is selected for any agent |
+| `MINIMAX_API_KEY` | — | Required if `minimax` is selected for any agent |
+| `AZURE_OPENAI_API_KEY` | — | Required if `azure-openai` is selected for any agent |
 | `CLASSIFIER_PROVIDER` | `anthropic` | Provider for the classifier agent |
 | `CLASSIFIER_MODEL`    | `claude-haiku-4-5-20251001` | Model for the classifier agent |
 | `DRAFTER_PROVIDER`    | `anthropic` | Provider for the drafter agent |
@@ -77,7 +83,7 @@ Exits 0 and prints the structured response on success, exits 1 on failure.
 | `QA_MODEL`            | `claude-opus-4-7` | Model for the QA reviewer agent |
 | `PORT` | `3000` | Port the server listens on |
 
-Supported `*_PROVIDER` values: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`. Other providers supported by the framework will also work as long as their corresponding API key is set in the environment.
+Supported `*_PROVIDER` values with startup key validation: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `copilot`, `minimax`, `azure-openai`. Providers not in this list are supported by the framework but are not mapped in this file's startup check — a missing key will surface as a 502 mid-request rather than a startup error.
 
 ## Swapping providers
 

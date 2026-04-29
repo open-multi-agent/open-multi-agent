@@ -140,7 +140,6 @@ export function createApp() {
   const team = orchestrator.createTeam('support-team', {
     name: 'support-team',
     agents: [classifier, drafter, qaReviewer],
-    sharedMemory: true,
   })
 
   app.post('/tickets', async (req, res) => {
