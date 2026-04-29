@@ -1,0 +1,103 @@
+# Express Customer Support
+
+An Express REST API that wraps OMA's `runTeam()` coordinator pattern behind a single `POST /tickets` endpoint. A three-agent pipeline runs on every request:
+
+1. **classifier** (`claude-haiku-4-5-20251001`) — categorises the ticket and assigns urgency
+2. **drafter** (`claude-sonnet-4-6`) — writes a polished customer-facing reply
+3. **qa-reviewer** (`claude-opus-4-7`) — reviews the draft for tone and accuracy
+
+Each agent uses a Zod `outputSchema`; the endpoint assembles the three structured results into one JSON response. Each agent's model **and** provider are independently swappable via env vars so a free-tier setup can mix providers (see [Swapping providers](#swapping-providers) below).
+
+## Setup
+
+```bash
+cd examples/integrations/express-customer-support
+npm install
+export ANTHROPIC_API_KEY=sk-ant-...    # default — all three agents use Anthropic
+```
+
+## Start the server
+
+```bash
+npm start
+# Support API listening on http://localhost:3000
+```
+
+## Send a ticket
+
+```bash
+curl -s -X POST http://localhost:3000/tickets \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":"My order never arrived","body":"I placed order #12345 two weeks ago and it still has not shipped. Please help!"}' | jq .
+```
+
+Expected response shape:
+
+```json
+{
+  "category":    "shipping",
+  "urgency":     "high",
+  "draft_reply": "Thank you for reaching out...",
+  "qa_notes":    "Tone is empathetic and professional. Accuracy: ..."
+}
+```
+
+## Smoke test
+
+Runs a real request against a local server (requires `ANTHROPIC_API_KEY`):
+
+```bash
+npm run smoke
+```
+
+Exits 0 and prints the structured response on success, exits 1 on failure.
+
+## HTTP error codes
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Missing or non-string `subject` / `body` fields |
+| 502 | Pipeline failed or an agent produced no structured output |
+| 504 | Pipeline exceeded the 60-second timeout |
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | *(required for default provider)* | Anthropic API key |
+| `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` / `DEEPSEEK_API_KEY` | — | Required only if the matching provider is selected for any agent |
+| `CLASSIFIER_PROVIDER` | `anthropic` | Provider for the classifier agent |
+| `CLASSIFIER_MODEL`    | `claude-haiku-4-5-20251001` | Model for the classifier agent |
+| `DRAFTER_PROVIDER`    | `anthropic` | Provider for the drafter agent |
+| `DRAFTER_MODEL`       | `claude-sonnet-4-6` | Model for the drafter agent |
+| `QA_PROVIDER`         | `anthropic` | Provider for the QA reviewer agent |
+| `QA_MODEL`            | `claude-opus-4-7` | Model for the QA reviewer agent |
+| `PORT` | `3000` | Port the server listens on |
+
+Supported `*_PROVIDER` values: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`. Other providers supported by the framework will also work as long as their corresponding API key is set in the environment.
+
+## Swapping providers
+
+The defaults run the full pipeline on Anthropic across the cheap/mid/strong tier. Each agent can be moved to a different provider independently — useful when only some providers offer a free tier.
+
+Run the cheap classifier on Gemini's free tier and keep the rest on Anthropic:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export GEMINI_API_KEY=...
+export CLASSIFIER_PROVIDER=gemini
+export CLASSIFIER_MODEL=gemini-2.5-flash
+npm start
+```
+
+Run the entire pipeline on OpenAI:
+
+```bash
+export OPENAI_API_KEY=sk-...
+export CLASSIFIER_PROVIDER=openai CLASSIFIER_MODEL=gpt-4o-mini
+export DRAFTER_PROVIDER=openai    DRAFTER_MODEL=gpt-4o
+export QA_PROVIDER=openai         QA_MODEL=gpt-4o
+npm start
+```
+
+If the API key for a chosen provider is missing, the server fails fast at startup with a clear message rather than erroring during a request.

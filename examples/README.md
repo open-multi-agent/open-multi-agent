@@ -69,6 +69,7 @@ Hooking the framework up to outside-the-box tooling.
 | [`integrations/trace-observability`](integrations/trace-observability.ts) | `onTrace` spans for LLM calls, tools, and tasks. |
 | [`integrations/mcp-github`](integrations/mcp-github.ts) | An MCP server's tools exposed to an agent via `connectMCPTools()`. |
 | [`integrations/with-vercel-ai-sdk/`](integrations/with-vercel-ai-sdk/) | Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming. |
+| [`integrations/express-customer-support/`](integrations/express-customer-support/) | Express REST API — `runTasks()` behind POST /tickets with per-agent Zod output schemas, mix-and-match provider env vars, and HTTP error mapping (400/502/504). |
 
 ## production — real-world use cases
 
