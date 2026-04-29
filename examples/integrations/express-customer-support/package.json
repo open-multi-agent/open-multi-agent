@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "cd ../../.. && npm run build",
-    "start":   "tsx index.ts",
+    "prestart": "cd ../../.. && npm run build",
+    "start":    "tsx index.ts",
     "smoke":   "tsx smoke.ts"
   },
   "dependencies": {
