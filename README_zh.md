@@ -348,7 +348,7 @@ const agent: AgentConfig = {
 | MiniMax（全球） | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI 兼容。 |
 | MiniMax（国内） | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | 设 `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`。 |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI 兼容。端点 `https://api.qnaigc.com/v1`；多模型族，见 [Qiniu AI 文档](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api)。 |
-| AWS Bedrock | `provider: 'bedrock'` | 无（AWS SDK 凭证链） | `anthropic.claude-sonnet-4-6` | 无 API Key。通过 `AWS_REGION` 或 `createAdapter` 第 4 个参数传入 region；凭证来自环境变量、共享配置或 IAM 角色。同样支持 Llama、Mistral、Cohere——见 [`providers/bedrock`](examples/providers/bedrock.ts) 示例。需 `npm install @aws-sdk/client-bedrock-runtime`。 |
+| AWS Bedrock | `provider: 'bedrock'` | 无（AWS SDK 凭证链） | `anthropic.claude-3-5-haiku-20241022-v1:0` | 无 API Key。通过 `AWS_REGION` 或 `createAdapter` 第 4 个参数传入 region；凭证来自环境变量、共享配置或 IAM 角色。较新的 Claude 模型（Sonnet 4.x、Haiku 4.x）需要跨区域推理配置前缀（如 `us.`）——具体可用 ID 请查看 Bedrock 控制台。同样支持 Llama、Mistral、Cohere——见 [`providers/bedrock`](examples/providers/bedrock.ts) 示例。需 `npm install @aws-sdk/client-bedrock-runtime`。 |
 
 ### 二类：其他 OpenAI 兼容服务（自己写 `baseURL`）
 

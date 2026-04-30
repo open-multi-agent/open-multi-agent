@@ -348,7 +348,7 @@ The framework ships a wired-in provider name for each of these. You set `provide
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI-compatible. |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`. |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |
-| AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `anthropic.claude-sonnet-4-6` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials from env vars, shared config, or IAM role. Also supports Llama, Mistral, Cohere — see [`providers/bedrock`](examples/providers/bedrock.ts) example. Requires `npm install @aws-sdk/client-bedrock-runtime`. |
+| AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `anthropic.claude-3-5-haiku-20241022-v1:0` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials from env vars, shared config, or IAM role. Newer Claude models (Sonnet 4.x, Haiku 4.x) require a cross-region inference profile prefix like `us.` — check the Bedrock console for IDs available in your region. Also supports Llama, Mistral, Cohere — see [`providers/bedrock`](examples/providers/bedrock.ts) example. Requires `npm install @aws-sdk/client-bedrock-runtime`. |
 
 ### Anything else OpenAI-compatible (manual `baseURL`)
 

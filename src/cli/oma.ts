@@ -289,7 +289,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   minimax: 'MiniMax-M2.7',
   deepseek: 'deepseek-chat',
   qiniu: 'deepseek-v3',
-  bedrock: 'anthropic.claude-sonnet-4-6',
+  bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
 }
 
 async function cmdProvider(sub: string | undefined, arg: string | undefined, pretty: boolean): Promise<number> {
