@@ -109,6 +109,63 @@ describe('AgentRunner contextStrategy', () => {
     expect(flattenedText.some(c => c.type === 'text' && c.text.includes('truncated'))).toBe(true)
   })
 
+  it('sliding-window keeps tool_use/tool_result pairs together', async () => {
+    // Regression: previously truncateToSlidingWindow sliced by message count
+    // (`afterFirst.slice(-maxTurns * 2)`), which could drop an `assistant` block
+    // carrying a `tool_use` while keeping the matching `user` `tool_result`.
+    // This produces an orphan `tool_use_id` that Anthropic's API rejects.
+    const calls: LLMMessage[][] = []
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        return textResponse('ack')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      // maxTurns=2 + a 6-message history is sized so the naive slice(-4)
+      // lands on the user_tool_result, leaving its tool_use upstream.
+      contextStrategy: { type: 'sliding-window', maxTurns: 2 },
+    })
+
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'hi' } },
+      ] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'tu-1', content: 'hi' },
+      ] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response 1' }] },
+      { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response 2' }] },
+    ]
+
+    await runner.run(history)
+
+    // Every tool_result reaching the adapter must reference a tool_use that
+    // also reached the adapter. Otherwise the API call is invalid.
+    const sent = calls[0]!
+    const toolUseIds = new Set<string>()
+    const toolResultIds: string[] = []
+    for (const msg of sent) {
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') toolUseIds.add(block.id)
+        if (block.type === 'tool_result') toolResultIds.push(block.tool_use_id)
+      }
+    }
+    for (const trId of toolResultIds) {
+      expect(toolUseIds.has(trId)).toBe(true)
+    }
+  })
+
   it('summarize strategy replaces old context and emits summary trace call', async () => {
     const calls: Array<{ messages: LLMMessage[]; options: LLMChatOptions }> = []
     const traces: TraceEvent[] = []

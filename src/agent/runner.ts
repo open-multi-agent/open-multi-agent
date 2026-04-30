@@ -210,6 +210,56 @@ function extractToolUseBlocks(content: readonly ContentBlock[]): ToolUseBlock[] 
   return content.filter((b): b is ToolUseBlock => b.type === 'tool_use')
 }
 
+/**
+ * Boundaries (`startIndex` inclusive, `endIndex` exclusive) of a single
+ * atomic conversation turn within a flat message array.
+ */
+interface Turn {
+  startIndex: number
+  endIndex: number
+}
+
+/**
+ * Group a flat message array into atomic turns so context-management
+ * strategies can split on safe boundaries.
+ *
+ * A turn is one of:
+ *   - a single user / assistant text message, or
+ *   - an assistant message containing one or more `tool_use` blocks plus the
+ *     immediately following user message containing the matching `tool_result`
+ *     blocks (kept together so neither half can be dropped on its own).
+ *
+ * Splitting on turn boundaries — instead of slicing by raw message count —
+ * prevents orphaned `tool_use_id` references that the Anthropic and OpenAI
+ * APIs reject. Modelled on `groupIntoTurns` from the context-chef library.
+ */
+function groupIntoTurns(messages: LLMMessage[]): Turn[] {
+  const turns: Turn[] = []
+  let i = 0
+  while (i < messages.length) {
+    const msg = messages[i]!
+    const hasToolUse =
+      msg.role === 'assistant' && msg.content.some(b => b.type === 'tool_use')
+    if (hasToolUse) {
+      const start = i
+      i++
+      // Absorb the matching tool_result user message, when present.
+      if (
+        i < messages.length
+        && messages[i]!.role === 'user'
+        && messages[i]!.content.some(b => b.type === 'tool_result')
+      ) {
+        i++
+      }
+      turns.push({ startIndex: start, endIndex: i })
+    } else {
+      turns.push({ startIndex: i, endIndex: i + 1 })
+      i++
+    }
+  }
+  return turns
+}
+
 /** Add two {@link TokenUsage} values together, returning a new object. */
 function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
@@ -296,21 +346,28 @@ export class AgentRunner {
       ? messages.slice(firstUserIndex + 1)
       : messages.slice()
 
-    if (afterFirst.length <= maxTurns * 2) {
+    // Split on atomic turn boundaries so a tool_use is never separated from
+    // its tool_result. Slicing raw message count (the pre-fix behaviour) could
+    // strand a tool_result whose tool_use was just dropped — and the LLM API
+    // rejects orphan tool_use_id references.
+    const turns = groupIntoTurns(afterFirst)
+    if (turns.length <= maxTurns) {
       return messages
     }
 
-    const kept = afterFirst.slice(-maxTurns * 2)
-    const result: LLMMessage[] = []
+    const keptTurns = turns.slice(-maxTurns)
+    const keepStartIdx = keptTurns[0]!.startIndex
+    const kept = afterFirst.slice(keepStartIdx)
+    const droppedTurns = turns.length - keptTurns.length
 
+    const result: LLMMessage[] = []
     if (firstUser !== null) {
       result.push(firstUser)
     }
 
-    const droppedPairs = Math.floor((afterFirst.length - kept.length) / 2)
-    if (droppedPairs > 0) {
+    if (droppedTurns > 0) {
       const notice =
-        `[Earlier conversation history truncated — ${droppedPairs} turn(s) removed]\n\n`
+        `[Earlier conversation history truncated — ${droppedTurns} turn(s) removed]\n\n`
       result.push(...prependSyntheticPrefixToFirstUser(kept, notice))
       return result
     }
