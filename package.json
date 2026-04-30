@@ -81,7 +81,7 @@
     }
   },
   "devDependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1040.0",
     "@google/genai": "^1.48.0",
     "@modelcontextprotocol/sdk": "^1.18.0",
     "@types/node": "^22.0.0",

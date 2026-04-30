@@ -37,8 +37,10 @@ import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 // Agent definitions
 // ---------------------------------------------------------------------------
 
-// Claude — cheapest smoke-test model; swap to 'anthropic.claude-sonnet-4-6' for higher capability.
-const HAIKU_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
+// Claude — cheapest smoke-test model; swap to 'us.anthropic.claude-sonnet-4-6-20250514-v1:0' for higher capability.
+// Newer Claude models require a cross-region inference profile prefix (e.g. 'us.') — bare model IDs
+// are not supported for on-demand throughput. See the comments at the top of this file.
+const HAIKU_MODEL = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 // Llama — uncomment to run the same team on Meta's Llama 4 instead:
 // const HAIKU_MODEL = 'meta.llama4-maverick-17b-instruct-v1:0'
 
@@ -125,11 +127,32 @@ console.log(`Team "${team.name}" created with agents: ${team.getAgents().map(a =
 console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
-const goal = `Write a short developer blog paragraph about AWS Bedrock's Converse API.
-The researcher should gather 3 key facts, the writer should draft the paragraph,
-and the editor should polish the final text.`
+// Use runTasks() for this fixed 3-stage pipeline so every agent always runs.
+// runTeam() short-circuits on short goals and would only invoke the best-match agent.
+const tasks = [
+  {
+    title: 'Research: AWS Bedrock Converse API',
+    description: `Produce a concise 3-bullet summary of key facts about AWS Bedrock's Converse API.
+Cover: what it is, which model families it supports, and one key developer benefit.`,
+    assignee: 'researcher',
+  },
+  {
+    title: 'Write: developer blog paragraph',
+    description: `Using the research summary, write a short paragraph (3-4 sentences) suitable for
+a developer blog. Use clear, plain language. Do not invent facts beyond the research provided.`,
+    assignee: 'writer',
+    dependsOn: ['Research: AWS Bedrock Converse API'],
+  },
+  {
+    title: 'Edit: polish the draft paragraph',
+    description: `Review the draft paragraph and return the final polished version.
+Fix grammar, tighten prose, ensure the tone is professional.`,
+    assignee: 'editor',
+    dependsOn: ['Write: developer blog paragraph'],
+  },
+]
 
-const result = await orchestrator.runTeam(team, goal)
+const result = await orchestrator.runTasks(team, tasks)
 
 console.log('\n' + '='.repeat(60))
 console.log('\nTeam run complete.')
