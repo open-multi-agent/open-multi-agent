@@ -62,6 +62,12 @@ const PROVIDER_REFERENCE: ReadonlyArray<{
     baseUrlSupported: false,
     notes: 'If no token env is set, Copilot adapter may start an interactive OAuth device flow (avoid in CI).',
   },
+  {
+    id: 'bedrock',
+    apiKeyEnv: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'],
+    baseUrlSupported: false,
+    notes: 'No API key. Credentials via AWS SDK default provider chain (env vars, shared config, IAM role). Set AWS_REGION or pass region as the fourth arg to createAdapter; defaults to us-east-1. Requires npm install @aws-sdk/client-bedrock-runtime.',
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -283,6 +289,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   minimax: 'MiniMax-M2.7',
   deepseek: 'deepseek-chat',
   qiniu: 'deepseek-v3',
+  bedrock: 'anthropic.claude-sonnet-4-6',
 }
 
 async function cmdProvider(sub: string | undefined, arg: string | undefined, pretty: boolean): Promise<number> {

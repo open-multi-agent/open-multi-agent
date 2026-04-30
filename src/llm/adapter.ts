@@ -38,7 +38,7 @@ import type { LLMAdapter } from '../types.js'
  * Additional providers can be integrated by implementing {@link LLMAdapter}
  * directly and bypassing this factory.
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -53,6 +53,9 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'copilot' | 'deep
  * - `minimax`      → `MINIMAX_API_KEY`
  * - `deepseek`     → `DEEPSEEK_API_KEY`
  * - `qiniu`        → `QINIU_API_KEY`
+ * - `bedrock`      → no API key; credentials via AWS SDK default provider chain
+ *                     (env vars, shared config, IAM role). Pass `region` (4th arg)
+ *                     or set `AWS_REGION`; falls back to `'us-east-1'`.
  * - `copilot`      → `GITHUB_COPILOT_TOKEN` / `GITHUB_TOKEN`, or interactive
  *                     OAuth2 device flow if neither is set
  *
@@ -60,14 +63,16 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'copilot' | 'deep
  * are not forced to install the SDK for the other.
  *
  * @param provider - Which LLM provider to target.
- * @param apiKey   - Optional API key override; falls back to env var.
- * @param baseURL  - Optional base URL for OpenAI-compatible APIs (Ollama, vLLM, etc.).
+ * @param apiKey   - Optional API key override; falls back to env var. Not used for `bedrock`.
+ * @param baseURL  - Optional base URL for OpenAI-compatible APIs (Ollama, vLLM, etc.). Not used for `bedrock`.
+ * @param region   - Optional AWS region for `bedrock`; falls back to `AWS_REGION` env var, then `'us-east-1'`. Ignored by all other providers.
  * @throws {Error} When the provider string is not recognised.
  */
 export async function createAdapter(
   provider: SupportedProvider,
   apiKey?: string,
   baseURL?: string,
+  region?: string,
 ): Promise<LLMAdapter> {
   switch (provider) {
     case 'anthropic': {
@@ -110,6 +115,11 @@ export async function createAdapter(
       // To override the API version, set AZURE_OPENAI_API_VERSION env var.
       const { AzureOpenAIAdapter } = await import('./azure-openai.js')
       return new AzureOpenAIAdapter(apiKey, baseURL)
+    }
+    case 'bedrock': {
+      if (baseURL) console.warn('[open-multi-agent] baseURL is ignored for bedrock; pass region as the fourth arg or set AWS_REGION.')
+      const { BedrockAdapter } = await import('./bedrock.js')
+      return new BedrockAdapter(region)
     }
     default: {
       // The `never` cast here makes TypeScript enforce exhaustiveness.
