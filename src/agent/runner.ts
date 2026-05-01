@@ -260,6 +260,33 @@ function groupIntoTurns(messages: LLMMessage[]): Turn[] {
   return turns
 }
 
+/**
+ * Replace `image` blocks with text placeholders so binary attachment data
+ * never leaks into the summarisation prompt.
+ *
+ * `summarizeMessages` flattens old turns via `JSON.stringify(message)` and
+ * inlines the result into a text user-message it ships to the summary model.
+ * For an `ImageBlock`, that serialisation includes the full base64 payload —
+ * a 1MB image would balloon the "compression" call by ~250k tokens, defeating
+ * its purpose and risking context-limit rejection.
+ *
+ * The placeholder still tells the summariser that media was present at this
+ * turn, so the produced summary can reference it. Modelled on chef Janitor's
+ * `stripAttachmentsForCompression`.
+ */
+function stripImageBlocksForSummary(messages: LLMMessage[]): LLMMessage[] {
+  return messages.map((msg) => {
+    if (!msg.content.some(b => b.type === 'image')) return msg
+    const newContent: ContentBlock[] = msg.content.map((block) => {
+      if (block.type === 'image') {
+        return { type: 'text', text: `[image: ${block.source.media_type}]` } satisfies TextBlock
+      }
+      return block
+    })
+    return { role: msg.role, content: newContent }
+  })
+}
+
 /** Add two {@link TokenUsage} values together, returning a new object. */
 function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
@@ -417,7 +444,14 @@ export class AgentRunner {
     const oldPortion = rest.slice(0, splitAt)
     const recentPortion = rest.slice(splitAt)
 
-    const oldSignature = oldPortion.map(m => this.serializeMessage(m)).join('\n')
+    // Strip image attachments before serialising — JSON.stringify on an
+    // ImageBlock would inline the entire base64 payload into the summary
+    // prompt, so a 1MB image would defeat the very purpose of compression.
+    // The placeholder still flags that media existed at this turn so the
+    // summariser can mention it. recentPortion is untouched (returned to
+    // the caller verbatim, never serialised here).
+    const oldPortionForSummary = stripImageBlocksForSummary(oldPortion)
+    const oldSignature = oldPortionForSummary.map(m => this.serializeMessage(m)).join('\n')
     if (this.summarizeCache !== null && this.summarizeCache.oldSignature === oldSignature) {
       const mergedRecent = prependSyntheticPrefixToFirstUser(
         recentPortion,

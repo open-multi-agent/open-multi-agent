@@ -284,6 +284,78 @@ describe('AgentRunner contextStrategy', () => {
     expect(rolesAfterFirstUser).not.toMatch(/^user,user/)
   })
 
+  it('summarize strategy strips image attachments before compression call', async () => {
+    // Bug: summarizeMessages serializes oldPortion via JSON.stringify and
+    // splices the result into the summary prompt text. ImageBlock.source.data
+    // is a base64 string — when present, the entire base64 payload leaks
+    // into the compression call, blowing token cost and risking context-limit
+    // rejection on the very call meant to *reduce* context.
+    const FAKE_IMAGE_DATA = 'A'.repeat(100_000)
+    // estimateTokens charges only 64 chars per ImageBlock, so summarize must
+    // be triggered by surrounding text. Stuff some text-heavy turns alongside.
+    const FILLER = 'lorem ipsum dolor sit amet '.repeat(50)  // ~1.3k chars
+    const calls: { messages: LLMMessage[]; options: LLMChatOptions }[] = []
+    let callCount = 0
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages, options) {
+        calls.push({ messages, options })
+        callCount++
+        if (callCount === 1) {
+          return toolUseResponse('echo', { message: 'x' })
+        }
+        return textResponse('done')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 8,
+      contextStrategy: { type: 'summarize', maxTokens: 100 },
+    })
+
+    const history: LLMMessage[] = [
+      // firstUser (preserved as-is, never enters oldPortion)
+      { role: 'user', content: [{ type: 'text', text: 'start' }] },
+      { role: 'assistant', content: [{ type: 'text', text: FILLER }] },
+      // Image is on a NON-first user message so it lands in oldPortion
+      // (the slice that gets serialised into the summary prompt).
+      { role: 'user', content: [
+        { type: 'text', text: 'analyze this image' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: FAKE_IMAGE_DATA } },
+      ] },
+      { role: 'assistant', content: [{ type: 'text', text: FILLER }] },
+      { role: 'user', content: [{ type: 'text', text: FILLER }] },
+      { role: 'assistant', content: [{ type: 'text', text: FILLER }] },
+    ]
+
+    await runner.run(history)
+
+    // Summary call signature: no tools, exactly one synthesised user message.
+    const summaryCall = calls.find(
+      c => c.options.tools === undefined && c.messages.length === 1,
+    )
+    expect(summaryCall).toBeDefined()
+
+    const promptText = summaryCall!.messages[0]!.content
+      .filter((b): b is import('../src/types.js').TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+
+    // Base64 payload must NOT have leaked into the compression prompt.
+    expect(promptText.includes(FAKE_IMAGE_DATA)).toBe(false)
+    // Sanity: the prompt should be small. 100k base64 chars + JSON overhead
+    // would push it well past 100k chars without the strip.
+    expect(promptText.length).toBeLessThan(10_000)
+    // The image should still be referenced by some placeholder so the
+    // summarizer knows media existed at that point.
+    expect(promptText.toLowerCase().includes('image')).toBe(true)
+  })
+
   it('does not drop turns when context strategy shrinks array size', async () => {
     // The core bug from #152: if the strategy replaces the array with fewer messages than it started with,
     // the old `slice()` logic would incorrectly drop newly generated turns.
