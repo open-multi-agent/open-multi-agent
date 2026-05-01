@@ -920,6 +920,8 @@ export class AgentRunner {
               agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
               tool: block.name,
               isError: result.isError ?? false,
+              input: block.input,
+              output: result.data,
               startMs: startTime,
               endMs: endTime,
               durationMs: duration,

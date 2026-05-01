@@ -246,6 +246,8 @@ describe('AgentRunner trace events', () => {
     expect(tool.agent).toBe('tooler')
     expect(tool.tool).toBe('echo')
     expect(tool.isError).toBe(false)
+    expect(tool.input).toEqual({ msg: 'hello' })
+    expect(tool.output).toBe('hello')
     expect(tool.durationMs).toBeGreaterThanOrEqual(0)
   })
 
@@ -279,6 +281,52 @@ describe('AgentRunner trace events', () => {
     const toolTraces = traces.filter(t => t.type === 'tool_call')
     expect(toolTraces).toHaveLength(1)
     expect(toolTraces[0]!.isError).toBe(true)
+    // The tool's thrown error message must be surfaced via `output` so trace
+    // consumers can diagnose failures without reaching for separate channels.
+    expect(toolTraces[0]!.output).toContain('fail')
+    expect(toolTraces[0]!.input).toEqual({})
+  })
+
+  it('tool_call trace.output reflects executor truncation', async () => {
+    // Pins the jsdoc contract on `ToolCallTrace.output`: whatever truncation
+    // ToolExecutor applies (per-tool maxOutputChars or agent-level maxToolOutputChars)
+    // must already be reflected in the trace event — trace consumers should
+    // never see raw, untruncated tool output that the LLM itself never saw.
+    const traces: TraceEvent[] = []
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'big_output',
+        description: 'returns a large string',
+        inputSchema: z.object({}),
+        maxOutputChars: 50,
+        execute: async () => ({ data: 'X'.repeat(200) }),
+      }),
+    )
+    const executor = new ToolExecutor(registry)
+    const adapter = mockAdapter([
+      toolUseResponse('big_output', {}),
+      textResponse('done'),
+    ])
+
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'test-model',
+      agentName: 'tooler',
+    })
+
+    await runner.run(
+      [{ role: 'user', content: [{ type: 'text', text: 'test' }] }],
+      { onTrace: (e) => { traces.push(e) }, runId: 'run-trunc', traceAgent: 'tooler' },
+    )
+
+    const toolTraces = traces.filter(t => t.type === 'tool_call')
+    expect(toolTraces).toHaveLength(1)
+    const out = toolTraces[0]!.output
+    // Length stays within the per-tool cap (executor honours `maxOutputChars`).
+    expect(out.length).toBeLessThanOrEqual(50)
+    // The raw 200-char payload was rewritten to a head + truncation marker + tail.
+    expect(out).toContain('truncated')
+    expect(out).not.toBe('X'.repeat(200))
   })
 
   it('does not call Date.now for LLM timing when onTrace is absent', async () => {

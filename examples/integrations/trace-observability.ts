@@ -42,6 +42,11 @@ const writer: AgentConfig = {
 // Trace handler — log every span with timing
 // ---------------------------------------------------------------------------
 
+/** Truncate long strings for log readability — full payload stays in the event. */
+function truncate(s: string, max = 80): string {
+  return s.length > max ? `${s.slice(0, max)}…(+${s.length - max} chars)` : s
+}
+
 function handleTrace(event: TraceEvent): void {
   const dur = `${event.durationMs}ms`.padStart(7)
 
@@ -53,9 +58,14 @@ function handleTrace(event: TraceEvent): void {
       )
       break
     case 'tool_call':
+      // Truncation here is for log readability only — the full payload remains
+      // on `event.input` / `event.output` for downstream consumers (OpenTelemetry,
+      // structured log shippers, audit pipelines, etc.).
       console.log(
         `  [TOOL]  ${dur}  agent=${event.agent}  tool=${event.tool}` +
-        `  error=${event.isError}`,
+        `  error=${event.isError}` +
+        `  input=${truncate(JSON.stringify(event.input))}` +
+        `  output=${truncate(event.output)}`,
       )
       break
     case 'task':
