@@ -346,16 +346,27 @@ export class AgentRunner {
       ? messages.slice(firstUserIndex + 1)
       : messages.slice()
 
-    // Split on atomic turn boundaries so a tool_use is never separated from
-    // its tool_result. Slicing raw message count (the pre-fix behaviour) could
-    // strand a tool_result whose tool_use was just dropped — and the LLM API
-    // rejects orphan tool_use_id references.
-    const turns = groupIntoTurns(afterFirst)
-    if (turns.length <= maxTurns) {
+    // Walk turns from the tail, accumulating message count until we have at
+    // least `maxTurns * 2` messages — preserving the historical "message-pair
+    // count" semantics of `maxTurns` for plain conversations while never
+    // splitting a tool_use/tool_result pair (see `groupIntoTurns`). The kept
+    // slice may exceed the target by one message when the boundary lands
+    // inside an atomic tool turn — that's the smallest safe slice.
+    const target = maxTurns * 2
+    if (afterFirst.length <= target) {
       return messages
     }
 
-    const keptTurns = turns.slice(-maxTurns)
+    const turns = groupIntoTurns(afterFirst)
+    let cumulative = 0
+    let cutoffTurnIdx = turns.length
+    for (let i = turns.length - 1; i >= 0; i--) {
+      cumulative += turns[i]!.endIndex - turns[i]!.startIndex
+      cutoffTurnIdx = i
+      if (cumulative >= target) break
+    }
+
+    const keptTurns = turns.slice(cutoffTurnIdx)
     const keepStartIdx = keptTurns[0]!.startIndex
     const kept = afterFirst.slice(keepStartIdx)
     const droppedTurns = turns.length - keptTurns.length

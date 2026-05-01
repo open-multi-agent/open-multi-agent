@@ -166,6 +166,68 @@ describe('AgentRunner contextStrategy', () => {
     }
   })
 
+  it('sliding-window preserves message-pair count for plain conversations', async () => {
+    // The bug fix above changes how we slice (turn boundaries instead of raw
+    // message count), but `maxTurns` must still mean "message pair count" for
+    // plain text histories — i.e. `maxTurns=N` keeps the last `2*N` messages
+    // when no tool round-trips are involved. This test pins that contract.
+    const calls: LLMMessage[][] = []
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        return textResponse('ack')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      contextStrategy: { type: 'sliding-window', maxTurns: 2 },
+    })
+
+    // 7-message plain history. afterFirst = 6 msgs, target = maxTurns*2 = 4.
+    // Expected kept slice (excluding the always-preserved first user): last 4.
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'q1' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'a1' }] },
+      { role: 'user', content: [{ type: 'text', text: 'q2' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'a2' }] },
+      { role: 'user', content: [{ type: 'text', text: 'q3' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'a3' }] },
+      { role: 'user', content: [{ type: 'text', text: 'q4' }] },
+    ]
+
+    await runner.run(history)
+
+    const sent = calls[0]!
+    // Expected: [q1 (firstUser), a2, u3 (with truncation notice), a3, q4]
+    // = 1 firstUser + last 4 of afterFirst = 5 messages.
+    expect(sent).toHaveLength(5)
+    expect(sent[0]!.content[0]).toMatchObject({ type: 'text', text: 'q1' })
+
+    // Confirm the kept slice carries exactly the last 4 messages of the
+    // pre-truncation history (a2, q3, a3, q4) — i.e. `maxTurns=2` kept 4 msgs.
+    const keptText = sent.slice(1).flatMap(m =>
+      m.content
+        .filter((c): c is import('../src/types.js').TextBlock => c.type === 'text')
+        .map(c => c.text)
+    )
+    expect(keptText.some(t => t.includes('a2'))).toBe(true)
+    expect(keptText.some(t => t === 'q3')).toBe(true)
+    expect(keptText.some(t => t.includes('a3'))).toBe(true)
+    expect(keptText.some(t => t === 'q4')).toBe(true)
+    // q2 and a1 must have been truncated away.
+    expect(keptText.every(t => !t.includes('q2'))).toBe(true)
+    expect(keptText.every(t => !t.includes('a1'))).toBe(true)
+
+    expect(keptText.some(t => t.includes('truncated'))).toBe(true)
+  })
+
   it('summarize strategy replaces old context and emits summary trace call', async () => {
     const calls: Array<{ messages: LLMMessage[]; options: LLMChatOptions }> = []
     const traces: TraceEvent[] = []
