@@ -586,11 +586,39 @@ export interface TeamConfig {
   readonly maxConcurrency?: number
 }
 
+/**
+ * Per-call options for {@link OpenMultiAgent.runTeam}. Differs from
+ * {@link OrchestratorConfig} by being scoped to a single invocation.
+ */
+export interface RunTeamOptions {
+  readonly abortSignal?: AbortSignal
+  readonly coordinator?: CoordinatorConfig
+  /**
+   * When true, the coordinator decomposes the goal but no task agents run.
+   * The returned {@link TeamRunResult} has `planOnly: true`, `success: true`,
+   * `tasks` populated (all `pending`, no metrics), and `agentResults`
+   * containing only the coordinator's decomposition call. `totalTokenUsage`
+   * reflects the coordinator only.
+   *
+   * Bypasses the simple-goal short-circuit so the coordinator always runs.
+   *
+   * If {@link OrchestratorConfig.onPlanReady} is wired up and returns false,
+   * the rejection wins: result is `success: false` and `planOnly` is undefined.
+   */
+  readonly planOnly?: boolean
+}
+
 /** Aggregated result for a full team run. */
 export interface TeamRunResult {
   readonly success: boolean
   readonly goal?: string
   readonly tasks?: readonly TaskExecutionRecord[]
+  /**
+   * True when the run was a plan-only invocation (`runTeam(team, goal, { planOnly: true })`).
+   * The coordinator decomposed the goal but no task agents executed.
+   * Undefined on normal runs and on `onPlanReady`-rejection results.
+   */
+  readonly planOnly?: boolean
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage

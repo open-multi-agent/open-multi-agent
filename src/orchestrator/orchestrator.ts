@@ -45,6 +45,7 @@ import type {
   AgentConfig,
   AgentRunResult,
   CoordinatorConfig,
+  RunTeamOptions,
   OrchestratorConfig,
   OrchestratorEvent,
   Task,
@@ -998,7 +999,7 @@ export class OpenMultiAgent {
   async runTeam(
     team: Team,
     goal: string,
-    options?: { abortSignal?: AbortSignal; coordinator?: CoordinatorConfig },
+    options?: RunTeamOptions,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const coordinatorOverrides = options?.coordinator
@@ -1013,7 +1014,7 @@ export class OpenMultiAgent {
     // The best-matching agent is selected via keyword affinity scoring
     // (same algorithm as the `capability-match` scheduler strategy).
     // ------------------------------------------------------------------
-    if (agentConfigs.length > 0 && isSimpleGoal(goal)) {
+    if (!options?.planOnly && agentConfigs.length > 0 && isSimpleGoal(goal)) {
       const bestAgent = selectBestAgent(goal, agentConfigs)
 
       // Use buildAgent() + agent.run() directly instead of this.runAgent()
@@ -1224,6 +1225,21 @@ export class OpenMultiAgent {
     }
     if (!approved) {
       return { ...this.buildTeamRunResult(agentResults, goal, []), success: false }
+    }
+
+    if (options?.planOnly) {
+      const planOnlyTasks: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
+        id: task.id,
+        title: task.title,
+        assignee: task.assignee,
+        status: task.status,
+        dependsOn: task.dependsOn ?? [],
+        metrics: undefined,
+      }))
+      return {
+        ...this.buildTeamRunResult(agentResults, goal, planOnlyTasks),
+        planOnly: true,
+      }
     }
 
     await executeQueue(queue, ctx)

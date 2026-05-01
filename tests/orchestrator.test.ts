@@ -690,6 +690,113 @@ describe('OpenMultiAgent', () => {
     })
   })
 
+  describe('planOnly mode', () => {
+    const complexGoal = 'First research the topic, then write a comprehensive guide based on the findings'
+
+    it('returns the decomposed plan without executing tasks', async () => {
+      mockAdapterResponses = [
+        '```json\n[' +
+          '{"title": "Research", "description": "Research the topic", "assignee": "worker"},' +
+          '{"title": "Write", "description": "Write the guide", "assignee": "worker", "dependsOn": ["Research"]}' +
+          ']\n```',
+        'should-not-be-called-1',
+        'should-not-be-called-2',
+      ]
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal, { planOnly: true })
+
+      expect(result.success).toBe(true)
+      expect(result.planOnly).toBe(true)
+      expect(result.tasks).toBeDefined()
+      expect(result.tasks!.length).toBe(2)
+
+      // Tasks should be in pre-execution states only. Independent tasks remain
+      // 'pending'; tasks with unmet dependencies are 'blocked' (set by the
+      // queue at insert time). Neither has executed.
+      for (const task of result.tasks!) {
+        expect(['pending', 'blocked']).toContain(task.status)
+        expect(task.metrics).toBeUndefined()
+      }
+
+      const taskIds = new Set(result.tasks!.map((t) => t.id))
+      for (const task of result.tasks!) {
+        for (const dep of task.dependsOn) {
+          expect(taskIds.has(dep)).toBe(true)
+        }
+      }
+
+      expect(result.agentResults.size).toBe(1)
+      expect(result.agentResults.has('coordinator')).toBe(true)
+      expect(result.totalTokenUsage.input_tokens).toBe(10)
+      expect(result.totalTokenUsage.output_tokens).toBe(20)
+
+      // Only the coordinator should have been called.
+      expect(capturedChatOptions.length).toBe(1)
+    })
+
+    it('still fires onPlanReady when planOnly is true', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+      ]
+      const onPlanReadySpy = vi.fn().mockResolvedValue(true)
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onPlanReady: onPlanReadySpy,
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal, { planOnly: true })
+
+      expect(onPlanReadySpy).toHaveBeenCalledTimes(1)
+      const tasksArg = onPlanReadySpy.mock.calls[0]?.[0] as { title: string }[] | undefined
+      expect(Array.isArray(tasksArg)).toBe(true)
+      expect(tasksArg).toHaveLength(1)
+      expect(tasksArg?.[0]?.title).toBe('Research')
+      expect(result.success).toBe(true)
+      expect(result.planOnly).toBe(true)
+    })
+
+    it('honors onPlanReady rejection over planOnly', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+      ]
+      const onPlanReadySpy = vi.fn().mockResolvedValue(false)
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onPlanReady: onPlanReadySpy,
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, complexGoal, { planOnly: true })
+
+      expect(result.success).toBe(false)
+      expect(result.planOnly).toBeUndefined()
+      expect(onPlanReadySpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('bypasses simple-goal short-circuit when planOnly is true', async () => {
+      const simpleGoal = 'summarize this document'
+      mockAdapterResponses = [
+        '```json\n[{"title": "Summarize", "description": "Summarize", "assignee": "worker"}]\n```',
+      ]
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      const result = await oma.runTeam(team, simpleGoal, { planOnly: true })
+
+      expect(result.planOnly).toBe(true)
+      expect(result.success).toBe(true)
+      expect(result.tasks).toBeDefined()
+      expect(result.tasks!.length).toBeGreaterThan(0)
+      expect(result.agentResults.has('coordinator')).toBe(true)
+      // Exactly one chat call — the coordinator. The simple-goal short-circuit
+      // would have called the worker directly instead.
+      expect(capturedChatOptions.length).toBe(1)
+    })
+  })
+
   describe('stream trace events', () => {
     it('emits agent_stream trace events when onAgentStream is configured', async () => {
       const complexGoal = 'First research the topic, then write a comprehensive guide based on the findings'

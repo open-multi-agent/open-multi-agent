@@ -148,6 +148,18 @@ console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 
 For MapReduce-style fan-out without task dependencies, use `AgentPool.runParallel()` directly. See [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts).
 
+### Preview the plan without running it
+
+Pass `planOnly: true` to `runTeam()` and the coordinator decomposes the goal but no task agents execute. The result carries `planOnly: true`, populated `tasks` (no metrics), and only the coordinator's token usage. Useful for asserting on the task DAG in integration tests, or previewing cost before a real run.
+
+```ts
+const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+for (const task of plan.tasks ?? []) {
+  console.log(`${task.title} → ${task.assignee} (deps: ${task.dependsOn.length})`)
+}
+```
+
 ### Run from the shell
 
 For shell and CI, the package exposes a JSON-first binary. See [docs/cli.md](./docs/cli.md) for `oma run`, `oma task`, `oma provider`, exit codes, and file formats.

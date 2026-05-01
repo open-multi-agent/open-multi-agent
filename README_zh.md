@@ -148,6 +148,18 @@ console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 
 要 MapReduce 风格的 fan-out 但不需要任务依赖，直接用 `AgentPool.runParallel()`。例子见 [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)。
 
+### 只预览计划，不真跑
+
+给 `runTeam()` 传 `{ planOnly: true }`，coordinator会把目标拆成任务，但不执行任何 agent。结果里会带上 `planOnly: true`、完整的 `tasks`（不带 metrics），以及仅coordinator部分的 token 消耗。适合在integration tests里assert任务 DAG，或在真跑之前先看看成本。
+
+```ts
+const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+for (const task of plan.tasks ?? []) {
+  console.log(`${task.title} → ${task.assignee}（依赖：${task.dependsOn.length}）`)
+}
+```
+
 ### 从命令行运行
 
 包里还自带一个叫 `oma` 的命令行工具，给 shell 和 CI 场景用，输出都是 JSON。`oma run`、`oma task`、`oma provider`、退出码、文件格式都在 [docs/cli.md](./docs/cli.md) 里。

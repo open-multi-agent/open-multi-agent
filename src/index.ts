@@ -166,6 +166,7 @@ export type {
   // Team
   TeamConfig,
   TeamRunResult,
+  RunTeamOptions,
 
   // Dashboard (static HTML)
   TaskExecutionMetrics,
