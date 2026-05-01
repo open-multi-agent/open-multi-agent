@@ -303,6 +303,8 @@ export interface AgentConfig {
   readonly baseURL?: string
   /** API key override; falls back to the provider's standard env var. */
   readonly apiKey?: string
+  /** AWS region override for the `bedrock` provider; falls back to `AWS_REGION` env var, then `'us-east-1'`. Ignored by all other providers. */
+  readonly region?: string
   readonly systemPrompt?: string
   /**
    * Custom tool definitions to register alongside built-in tools.
