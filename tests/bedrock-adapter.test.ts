@@ -285,6 +285,35 @@ describe('BedrockAdapter', () => {
       expect(reasoningEvents).toEqual([{ type: 'reasoning', data: 'thinking...' }])
     })
 
+    it('includes reasoning blocks in the done payload, coalescing deltas per index', async () => {
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'first ' } } } },
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'thought' } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'answer' } } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 4, outputTokens: 2 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const doneEvent = events.find(e => e.type === 'done')
+      const response = doneEvent?.data as LLMResponse
+      const reasoningBlocks = response.content.filter(b => b.type === 'reasoning')
+      expect(reasoningBlocks).toEqual([{ type: 'reasoning', text: 'first thought' }])
+    })
+
+    it('flushes reasoning buffer into done payload even when contentBlockStop is missing', async () => {
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'unterminated' } } } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 1, outputTokens: 1 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const response = events.find(e => e.type === 'done')?.data as LLMResponse
+      expect(response.content).toContainEqual({ type: 'reasoning', text: 'unterminated' })
+    })
+
     it('emits done event with final LLMResponse', async () => {
       mockSend.mockResolvedValue(makeStreamResponse([
         { contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'Done' } } },

@@ -73,7 +73,8 @@ function base64ToUint8Array(b64: string): Uint8Array {
  * Convert a single framework {@link ContentBlock} into a Bedrock
  * {@link BedrockContentBlock} for the messages array.
  *
- * Reasoning blocks are dropped on input — Bedrock doesn't accept them from clients.
+ * Reasoning blocks are dropped on input — see the `case 'reasoning'` arm below
+ * for the round-trip limitation that forces this.
  */
 function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null {
   switch (block.type) {
@@ -109,6 +110,13 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
     }
 
     case 'reasoning':
+      // Limitation comment for future: Bedrock *does* accept reasoning back from clients, and in fact requires
+      // the original reasoning text + its `signature` field unchanged when
+      // continuing a multi-turn tool-use conversation with extended thinking.
+      // The framework's ReasoningBlock currently has no place to carry that
+      // signature, so a round-trip would silently strip it and Bedrock would
+      // reject the next turn. Until the shared type grows a signature field
+      // (tracked as a follow-up framework change), we drop reasoning on input.
       return null
 
     default: {
@@ -123,7 +131,9 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
  *
  * System prompt is passed separately via `options.systemPrompt` and handled
  * in `chat()`/`stream()` — it never appears as a message role in the framework.
- * Reasoning blocks are silently dropped (not accepted by Bedrock).
+ * Reasoning blocks are silently dropped on input — see {@link toBedrockContentBlock}
+ * for why; multi-turn tool-use flows with extended thinking are not yet fully
+ * supported until the framework's ReasoningBlock can carry a Bedrock signature.
  */
 function toBedrockMessages(messages: LLMMessage[]): BedrockMessage[] {
   const bedrockMessages: BedrockMessage[] = []
@@ -281,6 +291,10 @@ export class BedrockAdapter implements LLMAdapter {
 
     // Accumulate tool-use input JSON deltas; keyed by content block index.
     const toolBuffers = new Map<number, { toolUseId: string; name: string; json: string }>()
+    // Accumulate reasoning text deltas; keyed by content block index. Each
+    // index becomes one ReasoningBlock in the final `done` payload, matching
+    // what `chat()` produces for the same response shape.
+    const reasoningBuffers = new Map<number, { text: string }>()
     // Accumulated content blocks for the done event.
     const accumulatedContent: ContentBlock[] = []
     let stopReason = 'end_turn'
@@ -315,11 +329,20 @@ export class BedrockAdapter implements LLMAdapter {
             const text = (delta as { reasoningContent: { text: string } }).reasoningContent.text
             const reasoningEvent: StreamEvent = { type: 'reasoning', data: text }
             yield reasoningEvent
+            const buf = reasoningBuffers.get(index) ?? { text: '' }
+            buf.text += text
+            reasoningBuffers.set(index, buf)
           }
         }
 
         if (event.contentBlockStop !== undefined) {
           const index = event.contentBlockStop.contentBlockIndex ?? 0
+          const reasoningBuf = reasoningBuffers.get(index)
+          if (reasoningBuf) {
+            const reasoningBlock: ReasoningBlock = { type: 'reasoning', text: reasoningBuf.text }
+            accumulatedContent.push(reasoningBlock)
+            reasoningBuffers.delete(index)
+          }
           const buf = toolBuffers.get(index)
           if (buf) {
             let parsedInput: Record<string, unknown> = {}
@@ -353,6 +376,14 @@ export class BedrockAdapter implements LLMAdapter {
           outputTokens = event.metadata.usage.outputTokens ?? 0
         }
       }
+
+      // Safety net: if Bedrock ever omits a contentBlockStop for a reasoning
+      // block, flush whatever we buffered so the done payload still matches
+      // what chat() would have returned for the same response.
+      for (const [, buf] of reasoningBuffers) {
+        accumulatedContent.push({ type: 'reasoning', text: buf.text })
+      }
+      reasoningBuffers.clear()
 
       const finalResponse: LLMResponse = {
         id: requestId,
