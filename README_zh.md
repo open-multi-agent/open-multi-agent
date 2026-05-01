@@ -15,7 +15,7 @@
 <p align="center">
   <strong>给一个目标，自动得到任务 DAG。</strong><br/>
   原生 TypeScript 多智能体编排，3 个运行时依赖。<br/>
-  9 个原生 LLM 适配器 · MCP · token 预算 · 重试 · 上下文压缩 · 实时追踪。
+  10 个原生 LLM 适配器 · MCP · token 预算 · 重试 · 上下文压缩 · 实时追踪。
 </p>
 
 <p align="center">
@@ -60,7 +60,7 @@ Tokens: 12847 output tokens
 | 能力 | 说明 |
 |------|------|
 | **目标驱动协调者** | 一句 `runTeam(team, goal)`，协调者把目标拆成任务 DAG，并行执行独立任务，合成最终结果。 |
-| **同队混用 provider** | 9 家原生：Anthropic、OpenAI、Azure、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整列表](#支持的-provider)) |
+| **同队混用 provider** | 10 家原生：Anthropic、OpenAI、Azure、Bedrock、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整列表](#支持的-provider)) |
 | **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`，用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。 |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。([`trace-observability`](examples/integrations/trace-observability.ts)) |
@@ -251,6 +251,7 @@ console.log(`Tokens: ${result.totalTokenUsage.output_tokens} output tokens`)
 │  - stream()       │    │  - AnthropicAdapter    │
 └────────┬──────────┘    │  - OpenAIAdapter       │
          │               │  - AzureOpenAIAdapter  │
+         │               │  - BedrockAdapter      │
          │               │  - CopilotAdapter      │
          │               │  - GeminiAdapter       │
          │               │  - GrokAdapter         │
@@ -429,6 +430,8 @@ Issue、feature request、PR 都欢迎。特别想要：
 - [@EchoOfZion](https://github.com/EchoOfZion)（简单目标跳过 Coordinator）
 - [@voidborne-d](https://github.com/voidborne-d)（OpenAI 混合内容修复）
 - [@hamzarstar](https://github.com/hamzarstar)（agent 委托机制共建）
+- [@MyPrototypeWhat](https://github.com/MyPrototypeWhat)（trace 输入输出）
+- [@SiMinus](https://github.com/SiMinus)（流式 reasoning 事件）
 
 **Provider 集成**
 
@@ -438,6 +441,7 @@ Issue、feature request、PR 都欢迎。特别想要：
 - [@Klarline](https://github.com/Klarline)（Azure OpenAI）
 - [@Deathwing](https://github.com/Deathwing)（GitHub Copilot）
 - [@JackChiang233](https://github.com/JackChiang233) 与 [@jiangzhuo](https://github.com/jiangzhuo)（七牛云）
+- [@CodingBangboo](https://github.com/CodingBangboo)（AWS Bedrock）
 
 **示例与 Cookbook**
 
@@ -449,6 +453,9 @@ Issue、feature request、PR 都欢迎。特别想要：
 - [@HuXiangyu123](https://github.com/HuXiangyu123)（分级成本示例）
 - [@zouhh22333-beep](https://github.com/zouhh22333-beep)（翻译/回译）
 - [@pei-pei45](https://github.com/pei-pei45)（竞品监测）
+- [@mmjwxbc](https://github.com/mmjwxbc)（面试模拟器）
+- [@binghuaren96](https://github.com/binghuaren96)（事故复盘 DAG）
+- [@CodingBangboo](https://github.com/CodingBangboo)（Express 客服流水线）
 
 **文档与测试**
 
@@ -457,7 +464,7 @@ Issue、feature request、PR 都欢迎。特别想要：
 - [@jadegold55](https://github.com/jadegold55)（LLM adapter 测试覆盖）
 
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260427" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260501" />
 </a>
 
 ## Star 趋势

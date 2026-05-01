@@ -19,7 +19,7 @@ Tests live in `tests/` (vitest); E2E suite under `tests/e2e/`. Examples in `exam
 
 ## Architecture
 
-ES module TypeScript framework for multi-agent orchestration. Three runtime dependencies: `@anthropic-ai/sdk`, `openai`, `zod`. Optional peer deps `@google/genai` (Gemini) and `@modelcontextprotocol/sdk` (MCP) are loaded lazily so users only install what they use; the three-dependency promise covers `dependencies` only.
+ES module TypeScript framework for multi-agent orchestration. Three runtime dependencies: `@anthropic-ai/sdk`, `openai`, `zod`. Optional peer deps `@aws-sdk/client-bedrock-runtime` (Bedrock), `@google/genai` (Gemini), and `@modelcontextprotocol/sdk` (MCP) are loaded lazily so users only install what they use; the three-dependency promise covers `dependencies` only.
 
 ### Core Execution Flow
 
@@ -59,6 +59,16 @@ This is the framework's key feature. When `runTeam()` is called:
 ### Agent Conversation Loop (AgentRunner)
 
 `AgentRunner.run()`: send messages → extract tool-use blocks → execute tools in parallel batch → append results → loop until `end_turn` or `maxTurns` exhausted. Accumulates `TokenUsage` across all turns.
+
+### Context Compaction
+
+Long multi-turn runs risk exceeding the context window. `AgentRunner` offers three strategies (configured via `AgentConfig.contextStrategy`):
+
+- **`sliding-window`** — keeps the last N turns, dropping older ones. Preserves `tool_use`/`tool_result` pairs so the LLM never sees orphaned tool blocks.
+- **`compact`** — rewrites the conversation inline without an LLM call, collapsing large tool outputs that exceed a size threshold.
+- **`summarize`** — asks the LLM to summarise the history so far, replacing it with a concise digest. Image blocks are stripped before the summarise call to avoid ballooning token cost.
+
+Optionally, `compressToolResults` (default false) truncates large tool results to a head+tail excerpt, keeping the total under a configurable `minChars` threshold. Delegation tool_result blocks are exempt from compression so the parent agent retains the full sub-agent output.
 
 ### Concurrency Control
 

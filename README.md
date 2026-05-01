@@ -15,7 +15,7 @@
 <p align="center">
   <strong>From a goal to a task DAG, automatically.</strong><br/>
   TypeScript-native multi-agent orchestration. Three runtime dependencies.<br/>
-  9 native LLM adapters · MCP · token budgets · retries · context compaction · live tracing.
+  10 native LLM adapters · MCP · token budgets · retries · context compaction · live tracing.
 </p>
 
 <p align="center">
@@ -60,7 +60,7 @@ Tokens: 12847 output tokens
 | Capability | What you get |
 |------------|--------------|
 | **Goal-driven coordinator** | One `runTeam(team, goal)` call. The coordinator decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. |
-| **Mix providers in one team** | 9 native: Anthropic, OpenAI, Azure, Gemini, Grok, DeepSeek, MiniMax, Qiniu, Copilot. Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full list](#supported-providers)) |
+| **Mix providers in one team** | 10 native: Anthropic, OpenAI, Azure, Bedrock, Gemini, Grok, DeepSeek, MiniMax, Qiniu, Copilot. Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full list](#supported-providers)) |
 | **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent`, custom tools via `defineTool()` + Zod, any MCP server via `connectMCPTools()`. |
 | **Streaming + structured output** | Token-by-token streaming on every adapter; Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. ([`trace-observability`](examples/integrations/trace-observability.ts)) |
@@ -251,6 +251,7 @@ For products and platforms with a deep `open-multi-agent` integration. See the [
 │  - stream()       │    │  - AnthropicAdapter    │
 └────────┬──────────┘    │  - OpenAIAdapter       │
          │               │  - AzureOpenAIAdapter  │
+         │               │  - BedrockAdapter      │
          │               │  - CopilotAdapter      │
          │               │  - GeminiAdapter       │
          │               │  - GrokAdapter         │
@@ -429,6 +430,8 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@EchoOfZion](https://github.com/EchoOfZion) (coordinator skip for simple goals)
 - [@voidborne-d](https://github.com/voidborne-d) (OpenAI mixed content fix)
 - [@hamzarstar](https://github.com/hamzarstar) (agent delegation co-author)
+- [@MyPrototypeWhat](https://github.com/MyPrototypeWhat) (trace input/output)
+- [@SiMinus](https://github.com/SiMinus) (streaming reasoning events)
 
 **Provider integrations**
 
@@ -438,6 +441,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@Klarline](https://github.com/Klarline) (Azure OpenAI)
 - [@Deathwing](https://github.com/Deathwing) (GitHub Copilot)
 - [@JackChiang233](https://github.com/JackChiang233) and [@jiangzhuo](https://github.com/jiangzhuo) (Qiniu)
+- [@CodingBangboo](https://github.com/CodingBangboo) (AWS Bedrock)
 
 **Examples & cookbook**
 
@@ -449,6 +453,9 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@HuXiangyu123](https://github.com/HuXiangyu123) (cost-tiered example)
 - [@zouhh22333-beep](https://github.com/zouhh22333-beep) (translation/backtranslation)
 - [@pei-pei45](https://github.com/pei-pei45) (competitive monitoring)
+- [@mmjwxbc](https://github.com/mmjwxbc) (interview simulator)
+- [@binghuaren96](https://github.com/binghuaren96) (incident postmortem DAG)
+- [@CodingBangboo](https://github.com/CodingBangboo) (Express customer support pipeline)
 
 **Docs & tests**
 
@@ -457,7 +464,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@jadegold55](https://github.com/jadegold55) (LLM adapter test coverage)
 
 <a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260427" />
+  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260501" />
 </a>
 
 ## Star History
