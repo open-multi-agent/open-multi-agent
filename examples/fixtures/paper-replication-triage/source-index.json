@@ -1,0 +1,70 @@
+{
+  "notice": "MOCKED API RESPONSE SHAPED AFTER REAL SOURCES. Production source: Asta MCP for scholarly evidence and GitHub Search for implementation evidence.",
+  "query": "SparseCheck: Calibrated Retrieval for Low-Resource Scientific QA",
+  "source_mode": "mock",
+  "production_fetchers": [
+    {
+      "source": "Asta MCP search_paper_by_title / get_paper",
+      "purpose": "Resolve paper identity, metadata, abstract, TLDR, URL, and open-access status."
+    },
+    {
+      "source": "GitHub Search API",
+      "purpose": "Search repository names and README text by paper title, arXiv ID, DOI, and method name."
+    },
+    {
+      "source": "Asta MCP get_citations / snippet_search",
+      "purpose": "Find citing-paper feedback, reproduction notes, and passages about datasets, metrics, or code."
+    }
+  ],
+  "discovery_status": [
+    {
+      "artifact_type": "scholarly_metadata",
+      "status": "found",
+      "source": "Asta MCP shaped snapshot",
+      "query_used": "title exact match",
+      "evidence_id": "paper:sparsecheck-2026"
+    },
+    {
+      "artifact_type": "open_access_pdf",
+      "status": "found",
+      "source": "Asta paper URL/open-access shaped snapshot",
+      "query_used": "doi:10.0000/sparsecheck.2026",
+      "evidence_id": "oa:sparsecheck-pdf"
+    },
+    {
+      "artifact_type": "official_code",
+      "status": "missing",
+      "source": "GitHub Search/Papers With Code shaped snapshot",
+      "query_used": "\"SparseCheck\" OR \"Calibrated Retrieval\" in:name,readme",
+      "evidence_id": "code:official-missing",
+      "note": "Paper URL for the official repository resolves to 404 in the mocked discovery snapshot."
+    },
+    {
+      "artifact_type": "unofficial_code",
+      "status": "found",
+      "source": "GitHub Search shaped snapshot",
+      "query_used": "\"SparseCheck\" in:readme",
+      "evidence_id": "code:unofficial-reimplementation"
+    },
+    {
+      "artifact_type": "dataset_card",
+      "status": "found",
+      "source": "dataset catalog shaped snapshot",
+      "query_used": "\"SciQA-LongTail\" dataset",
+      "evidence_id": "dataset:sciqa-longtail"
+    },
+    {
+      "artifact_type": "reproduction_feedback",
+      "status": "found",
+      "source": "Semantic Scholar citations / reproduction note shaped snapshot",
+      "query_used": "citations containing reproduce, replicate, metric, code, or dataset",
+      "evidence_id": "citation:metric-mismatch-note"
+    }
+  ],
+  "seeded_conflicts": [
+    "Paper says official code is available; discovery finds only an unofficial repository and an official 404.",
+    "Paper says all splits are public; dataset card says the benchmark holdout requires application approval.",
+    "Paper reports macro-F1; reproduction feedback says micro-F1 is the only metric close to the reported result.",
+    "Paper implies single-GPU feasibility; discovered training command defaults to four GPUs."
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "notice": "MOCKED API RESPONSE SHAPED AFTER REAL SOURCES. Production source: Semantic Scholar citations, OpenAlex cited-by works, reproduction reports, issue threads linked from repositories, and benchmark discussion pages.",
+  "source_origin": "citation and reproduction feedback shaped snapshot",
+  "query_used": "citing works and notes containing reproduce, replicate, code, dataset, metric, or SparseCheck",
+  "citing_items": [
+    {
+      "id": "citation:metric-mismatch-note",
+      "title": "Revisiting Calibration Metrics for Sparse Scientific QA",
+      "year": 2026,
+      "source": "citing paper abstract and experiment appendix",
+      "summary": "The authors could reproduce a score near 78 only when using micro-F1 on the public validation split. Their macro-F1 on the public validation split was 71.2, and holdout labels were not available.",
+      "stance": "partial_conflict",
+      "signals": [
+        "metric_mismatch",
+        "holdout_unavailable",
+        "result_gap"
+      ]
+    },
+    {
+      "id": "citation:unofficial-repo-issue",
+      "title": "SparseCheck unofficial implementation issue #7",
+      "year": 2026,
+      "source": "repository issue thread shaped snapshot",
+      "summary": "Maintainers state that preprocessing cannot match the paper because exact holdout IDs and private normalization scripts were not released.",
+      "stance": "conflict",
+      "signals": [
+        "missing_preprocessing",
+        "missing_holdout_ids"
+      ]
+    },
+    {
+      "id": "citation:baseline-support",
+      "title": "Low-Resource QA Retrieval Baselines in Practice",
+      "year": 2026,
+      "source": "citing paper abstract",
+      "summary": "The BM25 and Contriever baseline descriptions are consistent with SparseCheck's baseline section, but the paper does not verify the calibration head result.",
+      "stance": "support_baselines_only",
+      "signals": [
+        "baseline_support",
+        "no_full_reproduction"
+      ]
+    }
+  ],
+  "aggregate_signals": {
+    "full_reproduction_found": false,
+    "independent_metric_mismatch_reported": true,
+    "independent_dataset_access_issue_reported": true,
+    "supporting_baseline_evidence_found": true
+  },
+  "direct_conflicts": [
+    {
+      "paper_claim": "SparseCheck reaches 78.4 macro-F1 on the holdout split.",
+      "artifact_evidence": "A citing reproduction note got close to 78 only with micro-F1 on public validation; macro-F1 was 71.2 and holdout labels were unavailable."
+    }
+  ]
+}

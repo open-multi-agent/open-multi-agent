@@ -1,0 +1,65 @@
+{
+  "notice": "MOCKED API RESPONSE SHAPED AFTER REAL SOURCES. Production source: GitHub Search API, Papers With Code linked repositories, arXiv/publisher links, and repository README files.",
+  "source_origin": "GitHub Search/Papers With Code shaped snapshot",
+  "query_used": "\"SparseCheck\" OR \"Calibrated Retrieval\" in:name,readme",
+  "official_repository": {
+    "claimed_url": "https://github.com/sparsecheck/sparsecheck",
+    "status": "missing",
+    "http_status": 404,
+    "last_checked": "2026-04-20",
+    "notes": "No repository owned by the paper authors was found in the mocked search results."
+  },
+  "search_results": [
+    {
+      "repository": "reproduce-lab/sparsecheck-unofficial",
+      "url": "https://github.com/reproduce-lab/sparsecheck-unofficial",
+      "official": false,
+      "stars": 18,
+      "readme_excerpt": "Unofficial reimplementation of SparseCheck. Preprocessing requires scripts/private_preprocess.py, which is not included because the benchmark holdout annotations are gated. Default training uses: torchrun --nproc_per_node=4 train.py --config configs/sparsecheck_a100.yaml.",
+      "files_present": [
+        "train.py",
+        "evaluate.py",
+        "configs/sparsecheck_a100.yaml",
+        "scripts/download_public_split.py"
+      ],
+      "files_missing": [
+        "scripts/private_preprocess.py",
+        "configs/single_gpu.yaml",
+        "exact_holdout_ids.txt"
+      ],
+      "metric_implementation": "evaluate.py reports micro_f1 by default; macro_f1 is present behind --average macro but not used by the README command."
+    },
+    {
+      "repository": "qa-benchmarks/calibrated-retrieval-baselines",
+      "url": "https://github.com/qa-benchmarks/calibrated-retrieval-baselines",
+      "official": false,
+      "stars": 42,
+      "readme_excerpt": "Baseline retrieval recipes for SciQA-LongTail. Does not include SparseCheck calibration head.",
+      "files_present": [
+        "bm25.py",
+        "contriever_eval.py"
+      ],
+      "files_missing": [
+        "sparsecheck_model.py"
+      ],
+      "metric_implementation": "macro_f1 and micro_f1 both available for baselines."
+    }
+  ],
+  "artifact_assessment": {
+    "official_code_found": false,
+    "training_entrypoint_found": true,
+    "preprocessing_complete": false,
+    "single_gpu_recipe_found": false,
+    "default_gpu_count": 4,
+    "direct_conflicts": [
+      {
+        "paper_claim": "Official implementation is available and includes preprocessing.",
+        "artifact_evidence": "Claimed official repository returns 404; unofficial repo misses scripts/private_preprocess.py."
+      },
+      {
+        "paper_claim": "Single 24GB GPU reproduction is feasible.",
+        "artifact_evidence": "Only discovered training command uses torchrun --nproc_per_node=4 with an A100 config."
+      }
+    ]
+  }
+}

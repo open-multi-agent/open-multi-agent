@@ -1,0 +1,47 @@
+{
+  "notice": "MOCKED API RESPONSE SHAPED AFTER REAL SOURCES. Production source: Papers With Code task/dataset records, dataset cards, Hugging Face dataset metadata, publisher supplements, and dataset project pages.",
+  "source_origin": "dataset catalog shaped snapshot",
+  "query_used": "\"SciQA-LongTail\" dataset",
+  "dataset": {
+    "name": "SciQA-LongTail",
+    "catalog_url": "https://example.org/datasets/sciqa-longtail",
+    "license": "CC BY-NC 4.0 for public splits; restricted license for benchmark holdout",
+    "task": "low-resource scientific question answering"
+  },
+  "splits": [
+    {
+      "name": "train",
+      "status": "public",
+      "size": 5200,
+      "access": "direct download"
+    },
+    {
+      "name": "validation",
+      "status": "public",
+      "size": 800,
+      "access": "direct download"
+    },
+    {
+      "name": "benchmark_holdout",
+      "status": "restricted",
+      "size": 1200,
+      "access": "application required; annotations released only to approved academic groups"
+    }
+  ],
+  "evaluation_policy": {
+    "public_leaderboard": true,
+    "submission_limit_per_week": 2,
+    "hidden_labels": true,
+    "metric_documentation": "Leaderboard page lists micro-F1 as the default display metric. Macro-F1 is available only in the private evaluator notes."
+  },
+  "direct_conflicts": [
+    {
+      "paper_claim": "All train, validation, and benchmark holdout splits are public and require no approval.",
+      "artifact_evidence": "benchmark_holdout is restricted and requires application approval."
+    },
+    {
+      "paper_claim": "The primary metric is macro-F1 on the benchmark holdout split.",
+      "artifact_evidence": "Dataset catalog lists micro-F1 as the default leaderboard metric."
+    }
+  ]
+}

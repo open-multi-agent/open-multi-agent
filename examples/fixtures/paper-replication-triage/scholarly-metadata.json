@@ -1,0 +1,34 @@
+{
+  "notice": "MOCKED API RESPONSE SHAPED AFTER REAL SOURCES. Production source: Semantic Scholar Graph API, OpenAlex Works API, arXiv, and publisher metadata.",
+  "source_origin": "Semantic Scholar/OpenAlex shaped snapshot",
+  "query_used": "SparseCheck: Calibrated Retrieval for Low-Resource Scientific QA",
+  "paper": {
+    "paper_id": "paper:sparsecheck-2026",
+    "title": "SparseCheck: Calibrated Retrieval for Low-Resource Scientific QA",
+    "authors": [
+      "Mira Patel",
+      "Jon Bell",
+      "Lena Zhao"
+    ],
+    "year": 2026,
+    "venue": "Synthetic ML Systems Conference",
+    "doi": "10.0000/sparsecheck.2026",
+    "arxiv_id": "2601.01234",
+    "is_open_access": true,
+    "open_access_pdf_url": "https://example.org/papers/sparsecheck-2026.pdf",
+    "tldr": "SparseCheck combines sparse retrieval, calibration, and reranking for low-resource scientific question answering."
+  },
+  "abstract": "SparseCheck improves retrieval-augmented scientific question answering on low-resource domains by using sparse lexical retrieval, a calibration head, and a lightweight reranker. The paper reports a 78.4 macro-F1 score on SciQA-LongTail and states that all experiments can be reproduced from the released code and public datasets.",
+  "paper_claims": {
+    "code_availability": "The official implementation is available at https://github.com/sparsecheck/sparsecheck and includes preprocessing, training, and evaluation scripts.",
+    "dataset_availability": "All SciQA-LongTail train, validation, and benchmark holdout splits are public and require no approval.",
+    "primary_metric": "The primary metric is macro-F1 on the benchmark holdout split.",
+    "reported_result": "SparseCheck reaches 78.4 macro-F1 on SciQA-LongTail holdout.",
+    "compute_claim": "The full reproduction can be completed on a single 24GB GPU in under 12 hours.",
+    "baseline_claim": "The paper compares against BM25, Contriever, and a dense reranker baseline using the same data splits."
+  },
+  "limitations": [
+    "The paper does not provide full ablation logs.",
+    "The paper does not describe dataset application requirements because it states the dataset is fully public."
+  ]
+}
