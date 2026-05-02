@@ -944,6 +944,21 @@ function collectRecordsWithTitle(value: unknown, acc: Array<Record<string, unkno
   return acc
 }
 
+function isUnavailableSourcePayload(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return record['is_error'] === true || record['source_unavailable'] === true
+}
+
+function hasSuccessfulSourcePayload(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.some(hasSuccessfulSourcePayload)
+  if (typeof value !== 'object') return true
+  if (isUnavailableSourcePayload(value)) return false
+  return Object.keys(value).length > 0
+}
+
 function summarizeRelationshipHints(value: unknown): string[] {
   if (value === null || typeof value !== 'object') return []
   const labels: Record<string, string> = {
@@ -1101,9 +1116,9 @@ function buildLiveSourceDigest(
     ...collectRecordsWithTitle(asta.replicationSnippets),
   ]) {
     const title = String(item['title'] ?? '')
-    const url = String(item['url'] ?? item['paperUrl'] ?? item['externalIds'] ?? '')
+    const url = getString(item, 'url') ?? getString(item, 'paperUrl') ?? ''
     const normalizedTitle = normalizeTitleForCompare(title)
-    const isToolError = item['is_error'] === true || item['source_unavailable'] === true
+    const isToolError = isUnavailableSourcePayload(item)
     if (isToolError || targetTitles.has(normalizedTitle) || /^asta .*retrieval$/i.test(title)) continue
     if (!title || reproductionByKey.has(url || title)) continue
     reproductionByKey.set(url || title, {
@@ -1226,12 +1241,25 @@ async function withAstaClient<T>(run: (client: MCPClientLike) => Promise<T>): Pr
     throw new Error('SOURCE_MODE=live requires ASTA_API_KEY.')
   }
 
-  const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
-    import('@modelcontextprotocol/sdk/client/index.js') as Promise<{ Client: MCPClientConstructor }>,
-    import('@modelcontextprotocol/sdk/client/streamableHttp.js') as Promise<{
-      StreamableHTTPClientTransport: StreamableHTTPClientTransportConstructor
-    }>,
-  ])
+  let Client: MCPClientConstructor
+  let StreamableHTTPClientTransport: StreamableHTTPClientTransportConstructor
+  try {
+    const [clientModule, transportModule] = await Promise.all([
+      import('@modelcontextprotocol/sdk/client/index.js') as Promise<{ Client: MCPClientConstructor }>,
+      import('@modelcontextprotocol/sdk/client/streamableHttp.js') as Promise<{
+        StreamableHTTPClientTransport: StreamableHTTPClientTransportConstructor
+      }>,
+    ])
+    Client = clientModule.Client
+    StreamableHTTPClientTransport = transportModule.StreamableHTTPClientTransport
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      'SOURCE_MODE=live requires the optional @modelcontextprotocol/sdk peer dependency. ' +
+      'Install it with `npm install @modelcontextprotocol/sdk` before using live Asta discovery. ' +
+      `Original error: ${message}`,
+    )
+  }
 
   const transport = new StreamableHTTPClientTransport(
     new URL('https://asta-tools.allen.ai/mcp/v1'),
@@ -1356,6 +1384,12 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
     return sum + count
   }, 0)
   const searchIncomplete = githubSearches.some((search) => search?.['incomplete_results'] === true)
+  const scholarlyMetadataFound =
+    hasSuccessfulSourcePayload(asta.paperLookup) && findFirstStringByKey(asta.paperLookup, 'title') !== undefined
+  const datasetEvidenceFound =
+    hasSuccessfulSourcePayload(asta.datasetSnippets) || datasetCluesFromRepos.length > 0
+  const citationFeedbackFound =
+    hasSuccessfulSourcePayload(asta.citations) || hasSuccessfulSourcePayload(asta.replicationSnippets)
 
   return {
     mode: 'live',
@@ -1368,7 +1402,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       discovery_status: [
         {
           artifact_type: 'scholarly_metadata',
-          status: asta.paperLookup ? 'found' : 'source_unavailable',
+          status: scholarlyMetadataFound ? 'found' : 'source_unavailable',
           source: 'Asta MCP get_paper/search_paper_by_title',
         },
         {
@@ -1378,12 +1412,12 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
         },
         {
           artifact_type: 'dataset_evidence',
-          status: asta.datasetSnippets || datasetCluesFromRepos.length > 0 ? 'found' : 'source_unavailable',
+          status: datasetEvidenceFound ? 'found' : 'source_unavailable',
           source: 'Asta MCP snippet_search plus dataset clues from repository READMEs/paths',
         },
         {
           artifact_type: 'citation_feedback',
-          status: asta.citations || asta.replicationSnippets ? 'found' : 'source_unavailable',
+          status: citationFeedbackFound ? 'found' : 'source_unavailable',
           source: 'Asta MCP get_citations/snippet_search',
         },
       ],

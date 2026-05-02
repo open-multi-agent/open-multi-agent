@@ -7,7 +7,7 @@ Each file is shaped after a different production evidence source:
 
 - `scholarly-metadata.json`: Asta / Semantic Scholar style paper metadata.
 - `code-artifacts.json`: GitHub Search style code discovery.
-- `dataset-artifacts.json`: Asta snippet-search style dataset evidence.
+- `dataset-artifacts.json`: dataset catalog style access, split, and metric-policy evidence.
 - `citation-feedback.json`: Asta citation/snippet-search reproduction evidence.
 - `source-index.json`: discovery status for found, missing, and ambiguous artifacts.
 
