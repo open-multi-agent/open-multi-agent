@@ -971,6 +971,163 @@ function hasSuccessfulSourcePayload(value: unknown): boolean {
   return Object.keys(value).length > 0
 }
 
+function collectSourceEvidenceStrings(value: unknown, acc: string[] = []): string[] {
+  if (isUnavailableSourcePayload(value)) return acc
+  if (typeof value === 'string') {
+    acc.push(value)
+    return acc
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectSourceEvidenceStrings(item, acc)
+    return acc
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      collectSourceEvidenceStrings(child, acc)
+    }
+  }
+  return acc
+}
+
+function sourceEvidenceText(...values: unknown[]): string {
+  return uniqueStrings(
+    values.flatMap((value) => collectSourceEvidenceStrings(value).map((item) => compactText(item, 500))),
+    120,
+  ).join('\n')
+}
+
+function firstContextMatch(text: string, patterns: RegExp[], maxLength = 280): string | undefined {
+  for (const pattern of patterns) {
+    const match = pattern.exec(text)
+    pattern.lastIndex = 0
+    if (!match || match.index === undefined) continue
+
+    const start = Math.max(0, match.index - 140)
+    const end = Math.min(text.length, match.index + match[0].length + 140)
+    return compactText(text.slice(start, end), maxLength)
+  }
+  return undefined
+}
+
+function findDatasetRestrictionEvidence(text: string): string | undefined {
+  const datasetContext = /\b(?:dataset|datasets|data set|split|splits|holdout|benchmark|leaderboard|labels?|annotations?|download|data access)\b/i
+  const restrictionSignal = /\b(?:restricted|requires? approval|approval[- ]?gated|apply|application|private|hidden|permission|not public|unavailable|non-commercial|noncommercial|terms of use)\b/i
+  const paperLicenseNotice = /\b(?:snippet is extracted|open access paper|paper or abstract|copyright owner|license by the author|source to verify the license|copyright information)\b/i
+
+  for (const segment of text.split(/\r?\n|(?<=[.!?])\s+/)) {
+    const normalized = compactText(segment, 320)
+    if (!normalized || paperLicenseNotice.test(normalized)) continue
+    if (datasetContext.test(normalized) && restrictionSignal.test(normalized)) {
+      return normalized
+    }
+  }
+
+  return undefined
+}
+
+function extractGithubUrls(text: string): string[] {
+  return uniqueStrings(
+    [...text.matchAll(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g)]
+      .map((match) => match[0].replace(/[).,;]+$/g, '')),
+    5,
+  )
+}
+
+function extractMetricNames(text: string): string[] {
+  return uniqueStrings(
+    [...text.matchAll(/\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC)\b/gi)]
+      .map((match) => match[0]),
+    8,
+  )
+}
+
+function extractedClaim(
+  claim: string,
+  evidence: string | undefined,
+): Record<string, string> {
+  return evidence
+    ? { status: 'found', claim, evidence }
+    : {
+      status: 'not_found_in_asta_sources',
+      claim: 'No explicit claim found in Asta paper metadata or paper-scoped snippets.',
+      evidence: 'Asta did not surface enough target-paper text for this claim type.',
+    }
+}
+
+function buildLivePaperClaims(asta: {
+  paperLookup: unknown
+  claimSnippets: unknown
+  datasetSnippets: unknown
+  replicationSnippets: unknown
+}): Record<string, unknown> {
+  const text = sourceEvidenceText(
+    asta.paperLookup,
+    asta.claimSnippets,
+    asta.datasetSnippets,
+    asta.replicationSnippets,
+  )
+  const githubUrls = extractGithubUrls(text)
+  const metricNames = extractMetricNames(text)
+
+  const codeEvidence = githubUrls.length > 0
+    ? firstContextMatch(text, [/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i])
+    : firstContextMatch(text, [
+      /\b(?:code|source code|implementation|repository)\b.{0,120}\b(?:available|released|public|github)\b/i,
+      /\b(?:available|released|public)\b.{0,120}\b(?:code|source code|implementation|repository)\b/i,
+    ])
+  const datasetEvidence = firstContextMatch(text, [
+    /\b(?:dataset|data|split|holdout|benchmark)\b.{0,160}\b(?:public|available|released|restricted|approval|license|download)\b/i,
+    /\b(?:public|available|released|restricted|approval|license|download)\b.{0,160}\b(?:dataset|data|split|holdout|benchmark)\b/i,
+  ])
+  const metricEvidence = firstContextMatch(text, [
+    /\b(?:primary|main|reported|evaluation|metric)\b.{0,120}\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC)\b/i,
+    /\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC)\b.{0,120}\b(?:primary|main|reported|evaluation|metric)\b/i,
+  ])
+  const resultEvidence = firstContextMatch(text, [
+    /\b\d+(?:\.\d+)?\s*(?:%|points?)?\s*(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC)\b/i,
+    /\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC)\b.{0,40}\b\d+(?:\.\d+)?\b/i,
+  ])
+  const computeEvidence = firstContextMatch(text, [
+    /\b(?:single[- ]?GPU|GPU|TPU|A100|V100|H100|24GB|40GB|80GB|hours?|runtime|compute)\b.{0,140}\b(?:train|reproduce|experiment|run|finetune|fine[- ]?tune)\b/i,
+    /\b(?:train|reproduce|experiment|run|finetune|fine[- ]?tune)\b.{0,140}\b(?:single[- ]?GPU|GPU|TPU|A100|V100|H100|24GB|40GB|80GB|hours?|runtime|compute)\b/i,
+  ])
+  const reproducibilityEvidence = firstContextMatch(text, [
+    /\b(?:reproducible|reproduce|replicate|all experiments|released code|public datasets?|artifact)\b/i,
+  ])
+
+  return {
+    source_note: 'LIVE claim surface constructed deterministically from Asta paper metadata and paper-scoped snippet_search results; missing fields are explicit evidence gaps, not model guesses.',
+    code_availability: extractedClaim(
+      githubUrls.length > 0
+        ? `Code or implementation URL appears in Asta evidence: ${githubUrls.join(', ')}.`
+        : 'Code or implementation availability is mentioned in Asta evidence.',
+      codeEvidence,
+    ),
+    dataset_availability: extractedClaim(
+      'Dataset, split, access, or benchmark availability is mentioned in Asta evidence.',
+      datasetEvidence,
+    ),
+    primary_metric: extractedClaim(
+      metricNames.length > 0
+        ? `Metric evidence mentions: ${metricNames.join(', ')}.`
+        : 'Metric or evaluation protocol is mentioned in Asta evidence.',
+      metricEvidence,
+    ),
+    reported_result: extractedClaim(
+      'Reported result evidence includes a numeric score tied to an evaluation metric.',
+      resultEvidence,
+    ),
+    compute_claim: extractedClaim(
+      'Compute or runtime evidence is mentioned in Asta evidence.',
+      computeEvidence,
+    ),
+    reproducibility_promise: extractedClaim(
+      'Reproducibility, released-artifact, or replication promise is mentioned in Asta evidence.',
+      reproducibilityEvidence,
+    ),
+  }
+}
+
 function summarizeRelationshipHints(value: unknown): string[] {
   if (value === null || typeof value !== 'object') return []
   const labels: Record<string, string> = {
@@ -1041,6 +1198,192 @@ function compactRepositoryEvidenceForCodeAgent(repo: Record<string, unknown>): R
     ...rest
   } = repo
   return rest
+}
+
+function repoText(repo: Record<string, unknown>): string {
+  return sourceEvidenceText(
+    repo['full_name'],
+    repo['description'],
+    repo['readme_excerpt'],
+    repo['relevant_paths'],
+    repo['support_file_excerpts'],
+    repo['issue_search_results'],
+  )
+}
+
+function repoHasUsableSnapshot(repo: Record<string, unknown>): boolean {
+  const readme = String(repo['readme_excerpt'] ?? '')
+  const paths = Array.isArray(repo['relevant_paths']) ? repo['relevant_paths'] : []
+  return readme !== '' && readme !== 'README unavailable' || paths.length > 0
+}
+
+function repoHasTrainingOrEvalPath(repo: Record<string, unknown>): boolean {
+  const paths = Array.isArray(repo['relevant_paths'])
+    ? repo['relevant_paths'].filter((item): item is string => typeof item === 'string')
+    : []
+  return paths.some((pathValue) => /(train|training|eval|evaluation|metric|run|launch).*\.(py|sh|yaml|yml|json)$/i.test(pathValue))
+}
+
+function repoHasHint(repo: Record<string, unknown>, key: string): boolean {
+  const hints = repo['repo_relationship_hints']
+  return hints !== null && typeof hints === 'object' && (hints as Record<string, unknown>)[key] === true
+}
+
+function statusItem(
+  artifactType: string,
+  status: string,
+  source: string,
+  note: string,
+  evidenceIds: string[] = [],
+): Record<string, unknown> {
+  return {
+    artifact_type: artifactType,
+    status,
+    source,
+    note,
+    evidence_ids: evidenceIds,
+  }
+}
+
+function buildLiveDiscoveryStatus(input: {
+  asta: {
+    paperLookup: unknown
+    citations: unknown
+    datasetSnippets: unknown
+    replicationSnippets: unknown
+  }
+  repoEvidence: Array<Record<string, unknown>>
+  datasetClues: Array<Record<string, unknown>>
+  directRepos: string[]
+}): Array<Record<string, unknown>> {
+  const { asta, repoEvidence, datasetClues, directRepos } = input
+  const scholarlyMetadataFound =
+    hasSuccessfulSourcePayload(asta.paperLookup) && findFirstStringByKey(asta.paperLookup, 'title') !== undefined
+  const officialRepos = repoEvidence.filter((repo) =>
+    repo['source_query'] === 'github-url-from-paper-metadata'
+    || repoHasHint(repo, 'linked_from_paper_metadata')
+    || repoHasHint(repo, 'mentions_official'),
+  )
+  const usableOfficialRepos = officialRepos.filter(repoHasUsableSnapshot)
+  const unofficialRepos = repoEvidence.filter((repo) =>
+    !officialRepos.includes(repo) && /unofficial|reimplement|reproduc|replicat/i.test(repoText(repo)),
+  )
+  const relatedBenchmarkRepos = repoEvidence.filter((repo) =>
+    !officialRepos.includes(repo)
+    && !unofficialRepos.includes(repo)
+    && /benchmark|baseline|toolkit|framework|library/i.test(repoText(repo)),
+  )
+  const anyRepoFetched = repoEvidence.length > 0
+  const datasetEvidenceFound =
+    hasSuccessfulSourcePayload(asta.datasetSnippets) || datasetClues.length > 0
+  const datasetText = sourceEvidenceText(asta.datasetSnippets, datasetClues)
+  const restrictedDatasetEvidence = findDatasetRestrictionEvidence(datasetText)
+  const metricProtocolEvidence = firstContextMatch(sourceEvidenceText(asta.datasetSnippets, asta.replicationSnippets, repoEvidence), [
+    /\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC|metric|evaluator|evaluation)\b/i,
+  ])
+  const citationFeedbackFound =
+    hasSuccessfulSourcePayload(asta.citations) || hasSuccessfulSourcePayload(asta.replicationSnippets)
+
+  return [
+    statusItem(
+      'scholarly_metadata',
+      scholarlyMetadataFound ? 'found' : 'source_unavailable',
+      'Asta MCP get_paper/search_paper_by_title',
+      scholarlyMetadataFound
+        ? 'Resolved target paper metadata from Asta.'
+        : 'Asta paper lookup did not return a successful target-paper payload.',
+    ),
+    statusItem(
+      'official_code',
+      usableOfficialRepos.length > 0
+        ? 'found'
+        : officialRepos.length > 0 || directRepos.length > 0
+          ? 'missing'
+          : anyRepoFetched
+            ? 'ambiguous'
+            : 'source_unavailable',
+      'GitHub URLs from paper metadata plus GitHub Search README/tree inspection',
+      usableOfficialRepos.length > 0
+        ? 'At least one candidate official repository has a readable README or relevant file tree.'
+        : officialRepos.length > 0 || directRepos.length > 0
+          ? 'A paper-linked or official-looking repository was found, but README/tree evidence was unavailable or unusable.'
+          : anyRepoFetched
+            ? 'GitHub found code-like candidates, but none could be tied to official ownership.'
+            : 'No repository evidence could be fetched from GitHub.',
+      officialRepos.map((repo) => String(repo['full_name'] ?? repo['html_url'] ?? '')).filter((item) => item !== ''),
+    ),
+    statusItem(
+      'unofficial_code',
+      unofficialRepos.length > 0 ? 'found' : anyRepoFetched ? 'missing' : 'source_unavailable',
+      'GitHub Search README/tree/issues',
+      unofficialRepos.length > 0
+        ? 'At least one candidate repository presents as an unofficial reproduction or reimplementation.'
+        : anyRepoFetched
+          ? 'Fetched repositories did not clearly identify as unofficial reproductions.'
+          : 'No repository evidence could be fetched from GitHub.',
+      unofficialRepos.map((repo) => String(repo['full_name'] ?? repo['html_url'] ?? '')).filter((item) => item !== ''),
+    ),
+    statusItem(
+      'related_benchmark_code',
+      relatedBenchmarkRepos.length > 0 ? 'found' : anyRepoFetched ? 'not_required_for_replication' : 'source_unavailable',
+      'GitHub Search README/tree/issues',
+      relatedBenchmarkRepos.length > 0
+        ? 'At least one candidate appears to be related benchmark, baseline, toolkit, or framework code rather than the paper method itself.'
+        : anyRepoFetched
+          ? 'Fetched repositories did not clearly look like related benchmark/baseline code; this is not a missing replication artifact unless the paper requires a separate baseline repository.'
+          : 'No repository evidence could be fetched from GitHub.',
+      relatedBenchmarkRepos.map((repo) => String(repo['full_name'] ?? repo['html_url'] ?? '')).filter((item) => item !== ''),
+    ),
+    statusItem(
+      'training_or_eval_entrypoint',
+      repoEvidence.some(repoHasTrainingOrEvalPath) ? 'found' : anyRepoFetched ? 'missing' : 'source_unavailable',
+      'GitHub recursive tree and support-file excerpts',
+      repoEvidence.some(repoHasTrainingOrEvalPath)
+        ? 'At least one candidate repository exposes train/eval/run/metric paths.'
+        : anyRepoFetched
+          ? 'No train/eval/run/metric path was visible in fetched repository snapshots.'
+          : 'No repository evidence could be fetched from GitHub.',
+    ),
+    statusItem(
+      'dataset_candidate_evidence',
+      datasetClues.length > 0 ? 'found' : datasetEvidenceFound ? 'ambiguous' : 'source_unavailable',
+      'Asta MCP snippet_search plus dataset clues from repository READMEs/paths',
+      datasetClues.length > 0
+        ? 'Repository README/path/support-file clues surfaced concrete dataset candidates.'
+        : datasetEvidenceFound
+          ? 'Asta surfaced dataset-related snippets, but repository candidate evidence is absent or not concrete.'
+          : 'No dataset evidence was available from Asta snippets or repository clues.',
+      datasetClues.map((clue) => String(clue['repository'] ?? clue['repository_url'] ?? '')).filter((item) => item !== ''),
+    ),
+    statusItem(
+      'restricted_or_private_dataset',
+      restrictedDatasetEvidence ? 'restricted' : datasetEvidenceFound ? 'no_restriction_signal' : 'source_unavailable',
+      'Asta MCP dataset snippet_search and repository dataset clues',
+      restrictedDatasetEvidence
+        ? `Access restriction signal surfaced: ${restrictedDatasetEvidence}`
+        : datasetEvidenceFound
+          ? 'No restricted/private/approval-gated dataset signal was visible in the live evidence snapshot.'
+          : 'No dataset evidence was available to inspect access restrictions.',
+    ),
+    statusItem(
+      'metric_protocol',
+      metricProtocolEvidence ? 'found' : datasetEvidenceFound || citationFeedbackFound ? 'ambiguous' : 'source_unavailable',
+      'Asta MCP snippet_search plus repository metric/eval paths',
+      metricProtocolEvidence
+        ? `Metric/evaluator signal surfaced: ${metricProtocolEvidence}`
+        : datasetEvidenceFound || citationFeedbackFound
+          ? 'Evidence exists, but no concrete metric/evaluator signal was surfaced.'
+          : 'No dataset or reproduction evidence was available to inspect metrics.',
+    ),
+    statusItem(
+      'citation_feedback',
+      citationFeedbackFound ? 'found' : 'source_unavailable',
+      'Asta MCP get_citations and paper-scoped snippet_search',
+      citationFeedbackFound
+        ? 'Citation traversal or paper-scoped reproduction snippets returned evidence.'
+        : 'Asta citation traversal and reproduction snippets were unavailable.',
+    ),
+  ]
 }
 
 function buildLiveSourceDigest(
@@ -1325,7 +1668,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
     const resolvedPaperId = knownPaperId ?? findPaperId(paperLookup)
     const paperIdsArg = resolvedPaperId ? { paper_ids: resolvedPaperId } : {}
 
-    const [citations, datasetSnippets, replicationSnippets] = await Promise.all([
+    const [citations, claimSnippets, datasetSnippets, replicationSnippets] = await Promise.all([
       resolvedPaperId
         ? callAstaTool(client, 'get_citations', {
           paper_id: resolvedPaperId,
@@ -1337,6 +1680,11 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
           reason: 'Could not resolve a paper_id for citation traversal.',
         }),
       callAstaTool(client, 'snippet_search', {
+        query: `${query} code implementation repository dataset split public metric result GPU reproducible released artifact`,
+        limit: 5,
+        ...paperIdsArg,
+      }),
+      callAstaTool(client, 'snippet_search', {
         query: `${query} dataset split license benchmark holdout public restricted`,
         limit: 5,
         ...paperIdsArg,
@@ -1344,6 +1692,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       callAstaTool(client, 'snippet_search', {
         query: `${query} reproduce replication reproduced results code metric mismatch benchmark`,
         limit: 5,
+        ...paperIdsArg,
       }),
     ])
 
@@ -1351,6 +1700,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       paperLookup,
       resolvedPaperId: resolvedPaperId ?? null,
       citations,
+      claimSnippets,
       datasetSnippets,
       replicationSnippets,
     }
@@ -1392,17 +1742,18 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
   ).slice(0, REPO_EVIDENCE_LIMIT)
   const datasetCluesFromRepos = buildDatasetCluesFromRepos(resolvedRepoEvidence)
   const sourceDigest = buildLiveSourceDigest(query, asta, resolvedRepoEvidence, datasetCluesFromRepos)
+  const paperClaims = buildLivePaperClaims(asta)
+  const discoveryStatus = buildLiveDiscoveryStatus({
+    asta,
+    repoEvidence: resolvedRepoEvidence,
+    datasetClues: datasetCluesFromRepos,
+    directRepos,
+  })
   const searchTotal = githubSearches.reduce((sum, search) => {
     const count = typeof search?.['total_count'] === 'number' ? search['total_count'] : 0
     return sum + count
   }, 0)
   const searchIncomplete = githubSearches.some((search) => search?.['incomplete_results'] === true)
-  const scholarlyMetadataFound =
-    hasSuccessfulSourcePayload(asta.paperLookup) && findFirstStringByKey(asta.paperLookup, 'title') !== undefined
-  const datasetEvidenceFound =
-    hasSuccessfulSourcePayload(asta.datasetSnippets) || datasetCluesFromRepos.length > 0
-  const citationFeedbackFound =
-    hasSuccessfulSourcePayload(asta.citations) || hasSuccessfulSourcePayload(asta.replicationSnippets)
 
   return {
     mode: 'live',
@@ -1412,34 +1763,15 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       query,
       source_mode: 'live',
       source_digest: sourceDigest,
-      discovery_status: [
-        {
-          artifact_type: 'scholarly_metadata',
-          status: scholarlyMetadataFound ? 'found' : 'source_unavailable',
-          source: 'Asta MCP get_paper/search_paper_by_title',
-        },
-        {
-          artifact_type: 'code_artifacts',
-          status: repoEvidence.some((item) => item !== undefined) ? 'found' : 'source_unavailable',
-          source: 'GitHub Search plus README/tree/issue inspection',
-        },
-        {
-          artifact_type: 'dataset_evidence',
-          status: datasetEvidenceFound ? 'found' : 'source_unavailable',
-          source: 'Asta MCP snippet_search plus dataset clues from repository READMEs/paths',
-        },
-        {
-          artifact_type: 'citation_feedback',
-          status: citationFeedbackFound ? 'found' : 'source_unavailable',
-          source: 'Asta MCP get_citations/snippet_search',
-        },
-      ],
+      discovery_status: discoveryStatus,
     },
     scholarlyMetadata: {
       notice: 'LIVE Asta MCP scholarly metadata. Asta exposes the Semantic Scholar academic graph over MCP.',
       query,
       resolved_paper_id: asta.resolvedPaperId,
       asta_paper_lookup: asta.paperLookup,
+      asta_claim_snippets: asta.claimSnippets,
+      paper_claims: paperClaims,
     },
     codeArtifacts: {
       notice: 'LIVE GitHub Search plus shallow repository evidence. GITHUB_TOKEN is optional but recommended to avoid low anonymous rate limits.',
@@ -1672,6 +2004,8 @@ const paperClaimAgent: AgentConfig = {
   systemPrompt: `${sourceAgentPrompt('paper claim agent')}
 
 Extract the paper's own claims about code, data, metrics, reported results, and reproducibility promises.
+Prefer the paper_claims block when present; it is a deterministic extraction from Asta paper metadata and paper-scoped snippets.
+If a paper_claims field says not_found_in_asta_sources, report it as an uncertainty instead of inventing a claim from general knowledge.
 Do not compare against external artifacts; that is the planner's job.
 The source field must be exactly "scholarly_metadata".
 Use topic "code" for code availability or compute/resource claims.`,
@@ -1739,6 +2073,8 @@ const artifactGapAgent: AgentConfig = {
   systemPrompt: `${sourceAgentPrompt('artifact gap agent')}
 
 Summarize discovery status. Missing official code, missing data cards, unavailable citations, or ambiguous artifact ownership are not neutral; classify them as evidence gaps.
+Do not list non-blocking absence states as missing artifacts: no_restriction_signal means no private/restricted data signal was found, and not_required_for_replication means the optional artifact is not required unless another source explicitly says it is.
+Statuses found, no_restriction_signal, and not_required_for_replication belong in found_artifacts or notes, not missing_artifacts.
 The source field must be exactly "discovery_status".`,
   maxTurns: 1,
   maxTokens: 700,
