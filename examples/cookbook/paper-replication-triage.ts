@@ -18,6 +18,7 @@
  * Prerequisites:
  *   LLM_PROVIDER=anthropic (default) requires ANTHROPIC_API_KEY.
  *   Other supported values: openai, gemini, groq, openrouter.
+ *   Gemini accepts GEMINI_API_KEY or GOOGLE_API_KEY.
  *   SOURCE_MODE=live requires ASTA_API_KEY. GITHUB_TOKEN is optional but recommended.
  *   The live Asta path uses the optional @modelcontextprotocol/sdk peer dependency.
  */
@@ -156,7 +157,9 @@ function resolveProvider(): ProviderSettings {
         label: 'gemini',
         provider: 'gemini',
         model: modelOverride ?? 'gemini-2.5-flash',
-        missingEnv: process.env.GEMINI_API_KEY ? undefined : 'GEMINI_API_KEY',
+        missingEnv: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+          ? undefined
+          : 'GEMINI_API_KEY or GOOGLE_API_KEY',
       }
     case 'groq':
       return {
@@ -427,7 +430,7 @@ function textMentionsTarget(text: string, target: string): boolean {
 }
 
 function officialClaimNearTarget(text: string, target: string | undefined): boolean {
-  const officialPattern = /\bofficial\b|official implementation|implementation for|code for/gi
+  const officialPattern = /(?<!un)\bofficial\b|(?<!un)\bofficial implementation\b|\bimplementation for\b|\bcode for\b/gi
   const matches = [...text.matchAll(officialPattern)]
   if (matches.length === 0) return false
   if (!target) return true
@@ -470,6 +473,10 @@ function scoreSupportFilePath(filePath: string): number {
 
 function selectSupportFilePaths(paths: string[]): string[] {
   return paths
+    .filter((filePath) =>
+      /README|scripts?|configs?|experiments?|data|datasets?|download|prepare|preprocess|train|training|eval|evaluation|metrics?|run|launch/i.test(filePath)
+      || /\.(sh|py|yaml|yml|json|md)$/i.test(filePath),
+    )
     .map((filePath) => ({ filePath, score: scoreSupportFilePath(filePath) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.filePath.localeCompare(b.filePath))
@@ -782,6 +789,7 @@ async function fetchGitHubRepoEvidence(
   const treeItems = Array.isArray(tree?.['tree'])
     ? tree['tree'] as Array<Record<string, unknown>>
     : []
+  const treeTruncated = tree?.['truncated'] === true
   const paths = treeItems
     .map((entry) => getString(entry, 'path'))
     .filter((pathValue): pathValue is string => pathValue !== undefined)
@@ -859,6 +867,10 @@ async function fetchGitHubRepoEvidence(
     source_query: sourceQuery,
     repo_relationship_hints: repoRelationshipHints,
     readme_excerpt: readme ? readme.slice(0, README_EXCERPT_LIMIT) : 'README unavailable',
+    tree_truncated: treeTruncated,
+    tree_truncation_note: treeTruncated
+      ? 'GitHub recursive tree response was truncated; relevant_paths and dataset/code clues may be incomplete.'
+      : undefined,
     relevant_paths: relevantPaths,
     support_file_excerpts: supportFileExcerpts,
     dataset_mentions: datasetMentions,
@@ -1084,9 +1096,10 @@ function buildLiveSourceDigest(
       const evidenceItem = candidateEvidence.find((item) => String(item['name'] ?? '').toLowerCase() === name.toLowerCase())
       const evidenceKind = evidenceItem ? String(evidenceItem['evidence_kind'] ?? '') : ''
       const evidenceLine = evidenceItem ? String(evidenceItem['evidence'] ?? '') : ''
+      const hasEvidence = evidenceKind !== '' || evidenceLine !== ''
       datasetByName.set(name, {
         name,
-        evidence: evidenceKind || evidenceLine
+        evidence: hasEvidence
           ? `Detected from scored candidate evidence (${evidenceKind}): ${compactText(evidenceLine, 140)}`
           : 'Detected from repository README, script/config path, or support-file excerpt.',
         source,
