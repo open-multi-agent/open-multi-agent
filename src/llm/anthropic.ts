@@ -239,24 +239,49 @@ function fromAnthropicContentBlock(
  * `thinking` request param. Returns `undefined` when the caller hasn't
  * opted in, leaving the field absent from the request payload.
  *
- * Defaults `budget_tokens` to 1024 when enabled without an explicit value —
- * the SDK enforces a 1024 minimum (`Must be ≥1024 and less than max_tokens`),
- * and asking the user to specify a budget every time they want extended
- * thinking is unergonomic.
+ * Validates against the API's two `budget_tokens` constraints:
+ *   1. `budget_tokens >= 1024` (SDK-documented minimum, smaller budgets
+ *      yield no useful reasoning)
+ *   2. `budget_tokens < max_tokens` (docs: "budget_tokens must be set to a
+ *      value less than max_tokens"). Throws early with a clear message
+ *      rather than letting Anthropic return a 400.
+ *
+ * Defaults `budgetTokens` to 1024 when enabled without an explicit value;
+ * combined with the second constraint, this means a caller passing
+ * `thinking.enabled = true` MUST also set `maxTokens > 1024`.
  *
  * Model compatibility: emits `{type: 'enabled', budget_tokens}` which is
  * supported by Claude Sonnet 3.7 and all Claude 4.x models up to and
  * including 4.6 (deprecated on 4.6 in favor of `adaptive`). Claude Opus 4.7+
  * accepts only `{type: 'adaptive'}` and rejects this shape with HTTP 400.
  * Adaptive thinking support is tracked as a follow-up to RFC #200's phase 1.
+ *
+ * The `interleaved-thinking-2025-05-14` beta header (which would relax the
+ * `budget_tokens < max_tokens` rule for Claude 4.x manual mode) is not yet
+ * wired up — see RFC #200 phase 2.
  */
 function toAnthropicThinkingParam(
   thinking: ThinkingConfig | undefined,
+  maxTokens: number,
 ): ThinkingConfigParam | undefined {
   if (thinking === undefined || !thinking.enabled) return undefined
+  const budget = thinking.budgetTokens ?? 1024
+  if (budget < 1024) {
+    throw new Error(
+      `[anthropic] thinking.budgetTokens must be >= 1024 (got ${budget}); ` +
+      `the Anthropic API enforces this minimum.`,
+    )
+  }
+  if (budget >= maxTokens) {
+    throw new Error(
+      `[anthropic] thinking.budgetTokens (${budget}) must be < maxTokens (${maxTokens}); ` +
+      `the Anthropic API rejects requests where budget_tokens >= max_tokens. ` +
+      `Either lower thinking.budgetTokens or raise maxTokens.`,
+    )
+  }
   return {
     type: 'enabled',
-    budget_tokens: thinking.budgetTokens ?? 1024,
+    budget_tokens: budget,
   }
 }
 
@@ -295,13 +320,14 @@ export class AnthropicAdapter implements LLMAdapter {
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const anthropicMessages = toAnthropicMessages(messages)
+    const effectiveMaxTokens = options.maxTokens ?? 4096
 
     const response = await this.#client.messages.create(
       {
         // Sampling params first so extraBody can override them. Structural
         // fields (model/messages/system/tools/thinking) come after extraBody
         // so users cannot accidentally clobber them via extraBody.
-        max_tokens: options.maxTokens ?? 4096,
+        max_tokens: effectiveMaxTokens,
         temperature: options.temperature,
         top_p: options.topP,
         top_k: options.topK,
@@ -310,7 +336,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
-        thinking: toAnthropicThinkingParam(options.thinking),
+        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens),
         // Cast covers arbitrary `extraBody` keys not declared by the SDK.
       } as MessageCreateParamsNonStreaming,
       {
@@ -353,12 +379,13 @@ export class AnthropicAdapter implements LLMAdapter {
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
     const anthropicMessages = toAnthropicMessages(messages)
+    const effectiveMaxTokens = options.maxTokens ?? 4096
 
     // MessageStream gives us typed events and handles SSE reconnect internally.
     const stream = this.#client.messages.stream(
       {
         // See chat() above for the rationale behind this field ordering.
-        max_tokens: options.maxTokens ?? 4096,
+        max_tokens: effectiveMaxTokens,
         temperature: options.temperature,
         top_p: options.topP,
         top_k: options.topK,
@@ -367,7 +394,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
-        thinking: toAnthropicThinkingParam(options.thinking),
+        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens),
       } as MessageStreamParams,
       {
         signal: options.abortSignal,

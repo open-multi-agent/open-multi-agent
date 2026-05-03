@@ -606,7 +606,7 @@ describe('AnthropicAdapter', () => {
 
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ thinking: { enabled: true, budgetTokens: 2048 } }),
+        chatOpts({ maxTokens: 4096, thinking: { enabled: true, budgetTokens: 2048 } }),
       )
 
       expect(mockCreate.mock.calls[0][0].thinking).toEqual({
@@ -622,7 +622,7 @@ describe('AnthropicAdapter', () => {
       await collectEvents(
         adapter.stream(
           [textMsg('user', 'Hi')],
-          chatOpts({ thinking: { enabled: true, budgetTokens: 4096 } }),
+          chatOpts({ maxTokens: 8192, thinking: { enabled: true, budgetTokens: 4096 } }),
         ),
       )
 
@@ -635,9 +635,11 @@ describe('AnthropicAdapter', () => {
     it('defaults budget_tokens to 1024 when enabled without explicit value', async () => {
       mockCreate.mockResolvedValue(makeAnthropicResponse())
 
+      // maxTokens must exceed the 1024 default budget — the API enforces
+      // budget_tokens < max_tokens.
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ thinking: { enabled: true } }),
+        chatOpts({ maxTokens: 4096, thinking: { enabled: true } }),
       )
 
       expect(mockCreate.mock.calls[0][0].thinking).toEqual({
@@ -658,6 +660,37 @@ describe('AnthropicAdapter', () => {
         chatOpts({ thinking: { enabled: false, budgetTokens: 2048 } }),
       )
       expect(mockCreate.mock.calls[1][0].thinking).toBeUndefined()
+    })
+
+    it('throws when thinking.budgetTokens is below the 1024 minimum', async () => {
+      await expect(
+        adapter.chat(
+          [textMsg('user', 'Hi')],
+          chatOpts({ maxTokens: 4096, thinking: { enabled: true, budgetTokens: 500 } }),
+        ),
+      ).rejects.toThrow(/budgetTokens must be >= 1024/)
+    })
+
+    it('throws when thinking.budgetTokens >= maxTokens', async () => {
+      await expect(
+        adapter.chat(
+          [textMsg('user', 'Hi')],
+          chatOpts({ maxTokens: 4096, thinking: { enabled: true, budgetTokens: 4096 } }),
+        ),
+      ).rejects.toThrow(/budgetTokens \(4096\) must be < maxTokens \(4096\)/)
+    })
+
+    it('throws when default 1024 budget collides with maxTokens=1024', async () => {
+      // Regression for owner's #205 review: a caller passing
+      // `thinking.enabled = true` with the default maxTokens 1024 (or the
+      // SDK default 4096 plus an explicit small maxTokens) would otherwise
+      // hit a runtime 400 from Anthropic. We catch it before the request.
+      await expect(
+        adapter.chat(
+          [textMsg('user', 'Hi')],
+          chatOpts({ maxTokens: 1024, thinking: { enabled: true } }),
+        ),
+      ).rejects.toThrow(/budgetTokens \(1024\) must be < maxTokens \(1024\)/)
     })
   })
 })
