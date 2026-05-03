@@ -166,6 +166,7 @@ export class Agent {
       frequencyPenalty: this.config.frequencyPenalty,
       presencePenalty: this.config.presencePenalty,
       extraBody: this.config.extraBody,
+      thinking: this.config.thinking,
       toolPreset: this.config.toolPreset,
       allowedTools: this.config.tools,
       disallowedTools: this.config.disallowedTools,

@@ -28,7 +28,10 @@ import type {
   MessageCreateParamsNonStreaming,
   MessageParam,
   MessageStreamParams,
+  RedactedThinkingBlockParam,
   TextBlockParam,
+  ThinkingBlockParam,
+  ThinkingConfigParam,
   ToolResultBlockParam,
   ToolUseBlockParam,
   Tool as AnthropicTool,
@@ -46,6 +49,7 @@ import type {
   LLMToolDef,
   StreamEvent,
   TextBlock,
+  ThinkingConfig,
   ToolResultBlock,
   ToolUseBlock,
 } from '../types.js'
@@ -54,21 +58,43 @@ import type {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-type SerializableContentBlock = Exclude<ContentBlock, ReasoningBlock>
-
-function isSerializableContentBlock(block: ContentBlock): block is SerializableContentBlock {
-  return block.type !== 'reasoning'
-}
-
 /**
  * Convert a single framework {@link ContentBlock} into an Anthropic
- * {@link ContentBlockParam} suitable for the `messages` array.
+ * {@link ContentBlockParam} suitable for the `messages` array, or `null`
+ * when the block has no faithful representation on the wire (e.g. a
+ * reasoning block from another provider that lacks an Anthropic signature).
  *
  * `tool_result` blocks are only valid inside `user`-role messages, which is
  * handled by {@link toAnthropicMessages} based on role context.
  */
-function toAnthropicContentBlockParam(block: SerializableContentBlock): ContentBlockParam {
+function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam | null {
   switch (block.type) {
+    case 'reasoning': {
+      // Anthropic strictly validates the signature on echoed thinking
+      // blocks, so we only round-trip blocks that originated here:
+      //   - `redactedData` -> `redacted_thinking` (opaque, signature lives inside)
+      //   - `signature`    -> `thinking` block with text + signature
+      // Cross-provider reasoning (e.g. Gemini thought summaries) and
+      // unsigned reasoning text from a single-turn final response carry no
+      // valid signature, so dropping them is safer than risking an API
+      // rejection on the next turn.
+      if (block.redactedData !== undefined) {
+        const param: RedactedThinkingBlockParam = {
+          type: 'redacted_thinking',
+          data: block.redactedData,
+        }
+        return param
+      }
+      if (block.signature !== undefined) {
+        const param: ThinkingBlockParam = {
+          type: 'thinking',
+          thinking: block.text,
+          signature: block.signature,
+        }
+        return param
+      }
+      return null
+    }
     case 'text': {
       const param: TextBlockParam = { type: 'text', text: block.text }
       return param
@@ -128,8 +154,8 @@ function toAnthropicMessages(messages: LLMMessage[]): MessageParam[] {
   return messages.map((msg): MessageParam => ({
     role: msg.role,
     content: msg.content
-      .filter(isSerializableContentBlock)
-      .map(toAnthropicContentBlockParam),
+      .map(toAnthropicContentBlockParam)
+      .filter((p): p is ContentBlockParam => p !== null),
   }))
 }
 
@@ -162,9 +188,25 @@ function fromAnthropicContentBlock(
 ): ContentBlock {
   switch (block.type) {
     case 'thinking': {
+      // `signature` is required by the API to continue a multi-turn extended
+      // thinking conversation. Carry it on the framework block so the next
+      // turn can echo the original reasoning back unchanged.
       const reasoning: ReasoningBlock = {
         type: 'reasoning',
         text: block.thinking,
+        signature: block.signature,
+      }
+      return reasoning
+    }
+    case 'redacted_thinking': {
+      // Anthropic returns redacted thinking when its safety system replaces
+      // the raw reasoning text with an opaque encrypted payload. The block
+      // must still be echoed back on subsequent turns, so we carry the
+      // payload via `redactedData` and leave `text` empty.
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: '',
+        redactedData: block.data,
       }
       return reasoning
     }
@@ -189,6 +231,32 @@ function fromAnthropicContentBlock(
       }
       return fallback
     }
+  }
+}
+
+/**
+ * Convert the framework's {@link ThinkingConfig} into Anthropic's
+ * `thinking` request param. Returns `undefined` when the caller hasn't
+ * opted in, leaving the field absent from the request payload.
+ *
+ * Defaults `budget_tokens` to 1024 when enabled without an explicit value —
+ * the SDK enforces a 1024 minimum (`Must be ≥1024 and less than max_tokens`),
+ * and asking the user to specify a budget every time they want extended
+ * thinking is unergonomic.
+ *
+ * Model compatibility: emits `{type: 'enabled', budget_tokens}` which is
+ * supported by Claude Sonnet 3.7 and all Claude 4.x models up to and
+ * including 4.6 (deprecated on 4.6 in favor of `adaptive`). Claude Opus 4.7+
+ * accepts only `{type: 'adaptive'}` and rejects this shape with HTTP 400.
+ * Adaptive thinking support is tracked as a follow-up to RFC #200's phase 1.
+ */
+function toAnthropicThinkingParam(
+  thinking: ThinkingConfig | undefined,
+): ThinkingConfigParam | undefined {
+  if (thinking === undefined || !thinking.enabled) return undefined
+  return {
+    type: 'enabled',
+    budget_tokens: thinking.budgetTokens ?? 1024,
   }
 }
 
@@ -231,8 +299,8 @@ export class AnthropicAdapter implements LLMAdapter {
     const response = await this.#client.messages.create(
       {
         // Sampling params first so extraBody can override them. Structural
-        // fields (model/messages/system/tools) come after extraBody so users
-        // cannot accidentally clobber them via extraBody.
+        // fields (model/messages/system/tools/thinking) come after extraBody
+        // so users cannot accidentally clobber them via extraBody.
         max_tokens: options.maxTokens ?? 4096,
         temperature: options.temperature,
         top_p: options.topP,
@@ -242,6 +310,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
+        thinking: toAnthropicThinkingParam(options.thinking),
         // Cast covers arbitrary `extraBody` keys not declared by the SDK.
       } as MessageCreateParamsNonStreaming,
       {
@@ -298,6 +367,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
+        thinking: toAnthropicThinkingParam(options.thinking),
       } as MessageStreamParams,
       {
         signal: options.abortSignal,

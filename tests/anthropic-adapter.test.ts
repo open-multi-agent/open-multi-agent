@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { textMsg, toolUseMsg, toolResultMsg, imageMsg, chatOpts, toolDef, collectEvents } from './helpers/llm-fixtures.js'
-import type { LLMResponse, StreamEvent, ToolUseBlock } from '../src/types.js'
+import type { LLMMessage, LLMResponse, ReasoningBlock, StreamEvent, ToolUseBlock } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Mock the Anthropic SDK
@@ -462,6 +462,202 @@ describe('AnthropicAdapter', () => {
       expect(toolEvents).toHaveLength(2)
       expect((toolEvents[0].data as ToolUseBlock).name).toBe('search')
       expect((toolEvents[1].data as ToolUseBlock).name).toBe('read')
+    })
+  })
+
+  // =========================================================================
+  // Extended thinking (RFC #200 — reasoning preservation)
+  // =========================================================================
+
+  describe('extended thinking', () => {
+    // -----------------------------------------------------------------------
+    // Incoming: response → ReasoningBlock
+    // -----------------------------------------------------------------------
+
+    it('extracts signature from thinking response blocks', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse({
+        content: [
+          { type: 'thinking', thinking: 'reasoning text', signature: 'sig-abc-123' },
+          { type: 'text', text: 'final answer' },
+        ],
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'reasoning text',
+        signature: 'sig-abc-123',
+      })
+      expect(result.content[1]).toEqual({ type: 'text', text: 'final answer' })
+    })
+
+    it('extracts redacted_thinking response blocks as ReasoningBlock with redactedData', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse({
+        content: [
+          { type: 'redacted_thinking', data: 'opaque-encrypted-payload' },
+          { type: 'text', text: 'answer' },
+        ],
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: '',
+        redactedData: 'opaque-encrypted-payload',
+      })
+    })
+
+    it('extracts signature from streamed final message', async () => {
+      const streamObj = makeStreamMock(
+        [
+          { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'step 1' } },
+        ],
+        makeAnthropicResponse({
+          content: [
+            { type: 'thinking', thinking: 'step 1', signature: 'streamed-sig' },
+            { type: 'text', text: 'done' },
+          ],
+        }),
+      )
+      mockStream.mockReturnValue(streamObj)
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).content[0]).toEqual({
+        type: 'reasoning',
+        text: 'step 1',
+        signature: 'streamed-sig',
+      })
+    })
+
+    // -----------------------------------------------------------------------
+    // Outgoing: ReasoningBlock → request param
+    // -----------------------------------------------------------------------
+
+    it('echoes thinking block (with signature) back as a thinking block param', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'previous reasoning',
+        signature: 'echo-sig-789',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [reasoning, { type: 'tool_use', id: 't1', name: 's', input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'res' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([
+        { type: 'thinking', thinking: 'previous reasoning', signature: 'echo-sig-789' },
+        { type: 'tool_use', id: 't1', name: 's', input: {} },
+      ])
+    })
+
+    it('echoes redacted_thinking back as a redacted_thinking block param', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: '',
+        redactedData: 'opaque-payload',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [reasoning, { type: 'text', text: 'ok' }] },
+        { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content[0]).toEqual({ type: 'redacted_thinking', data: 'opaque-payload' })
+    })
+
+    it('drops reasoning blocks lacking signature and redactedData', async () => {
+      // Cross-provider reasoning (e.g. carried over from a Gemini turn) has
+      // no Anthropic signature and would be rejected by the API; dropping is
+      // safer than letting the request fail.
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [
+          { type: 'reasoning', text: 'unsigned reasoning' },
+          { type: 'text', text: 'reply' },
+        ] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([{ type: 'text', text: 'reply' }])
+    })
+
+    // -----------------------------------------------------------------------
+    // Request param: thinking config forwarding
+    // -----------------------------------------------------------------------
+
+    it('forwards thinking config to chat() request', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, budgetTokens: 2048 } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 2048,
+      })
+    })
+
+    it('forwards thinking config to stream() request', async () => {
+      const streamObj = makeStreamMock([], makeAnthropicResponse())
+      mockStream.mockReturnValue(streamObj)
+
+      await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Hi')],
+          chatOpts({ thinking: { enabled: true, budgetTokens: 4096 } }),
+        ),
+      )
+
+      expect(mockStream.mock.calls[0][0].thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 4096,
+      })
+    })
+
+    it('defaults budget_tokens to 1024 when enabled without explicit value', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].thinking).toEqual({
+        type: 'enabled',
+        budget_tokens: 1024,
+      })
+    })
+
+    it('omits thinking field when config is absent or disabled', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+      expect(mockCreate.mock.calls[0][0].thinking).toBeUndefined()
+
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: false, budgetTokens: 2048 } }),
+      )
+      expect(mockCreate.mock.calls[1][0].thinking).toBeUndefined()
     })
   })
 })

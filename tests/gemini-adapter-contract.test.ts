@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { textMsg, toolUseMsg, toolResultMsg, imageMsg, chatOpts, toolDef, collectEvents } from './helpers/llm-fixtures.js'
-import type { LLMResponse, StreamEvent, ToolUseBlock } from '../src/types.js'
+import type { LLMMessage, LLMResponse, ReasoningBlock, StreamEvent, ToolUseBlock } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Mock GoogleGenAI
@@ -388,6 +388,265 @@ describe('GeminiAdapter (contract)', () => {
       const textEvents = events.filter(e => e.type === 'text')
       expect(textEvents).toHaveLength(1)
       expect(textEvents[0].data).toBe('ok')
+    })
+  })
+
+  // =========================================================================
+  // Extended thinking (RFC #200 — reasoning preservation)
+  // =========================================================================
+
+  describe('extended thinking', () => {
+    // -----------------------------------------------------------------------
+    // Incoming: response Part → ContentBlock
+    // -----------------------------------------------------------------------
+
+    it('extracts thoughtSignature from a functionCall Part as ToolUseBlock.signature', async () => {
+      // thoughtSignature is a top-level field on Part — verified against
+      // @google/genai Part schema (NOT nested under functionCall).
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([
+        {
+          functionCall: { id: 'fc1', name: 'search', args: { q: 'x' } },
+          thoughtSignature: 'gemini-sig-001',
+        },
+      ]))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'tool_use',
+        id: 'fc1',
+        name: 'search',
+        input: { q: 'x' },
+        signature: 'gemini-sig-001',
+      })
+    })
+
+    it('omits signature field when functionCall Part has no thoughtSignature', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([
+        { functionCall: { id: 'fc2', name: 'search', args: {} } },
+      ]))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'tool_use',
+        id: 'fc2',
+        name: 'search',
+        input: {},
+      })
+      expect((result.content[0] as ToolUseBlock).signature).toBeUndefined()
+    })
+
+    it('extracts text Part with thought:true as ReasoningBlock', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([
+        { text: 'I should look up the weather first.', thought: true },
+        { text: 'It is sunny.' },
+      ]))
+
+      const result = await adapter.chat([textMsg('user', 'Weather?')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'I should look up the weather first.',
+      })
+      expect(result.content[1]).toEqual({ type: 'text', text: 'It is sunny.' })
+    })
+
+    it('streaming yields reasoning event for thought:true text Parts', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([
+          makeGeminiResponse([{ text: 'planning...', thought: true }]),
+          makeGeminiResponse([{ text: 'done' }]),
+        ]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const reasoningEvents = events.filter(e => e.type === 'reasoning')
+      expect(reasoningEvents).toHaveLength(1)
+      expect(reasoningEvents[0].data).toBe('planning...')
+    })
+
+    it('streaming preserves thoughtSignature on tool_use events', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([
+          makeGeminiResponse([
+            {
+              functionCall: { id: 'fc-stream', name: 'search', args: { q: 'a' } },
+              thoughtSignature: 'streamed-sig',
+            },
+          ]),
+        ]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect(toolEvents).toHaveLength(1)
+      expect((toolEvents[0].data as ToolUseBlock).signature).toBe('streamed-sig')
+    })
+
+    // -----------------------------------------------------------------------
+    // Outgoing: ContentBlock → Part
+    // -----------------------------------------------------------------------
+
+    it('echoes ToolUseBlock.signature back as a top-level Part.thoughtSignature', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: 'fc1',
+            name: 'search',
+            input: { q: 'x' },
+            signature: 'gemini-sig-001',
+          }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'fc1', content: 'res' }],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      const fcPart = sent[0].parts[0]
+      // thoughtSignature must be at the Part level — not nested.
+      expect(fcPart.thoughtSignature).toBe('gemini-sig-001')
+      expect(fcPart.functionCall).toMatchObject({ id: 'fc1', name: 'search', args: { q: 'x' } })
+      expect(fcPart.functionCall.thoughtSignature).toBeUndefined()
+    })
+
+    it('emits a clean functionCall Part when ToolUseBlock has no signature', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'fc2', name: 'search', input: {} }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'fc2', content: 'res' }],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const fcPart = mockGenerateContent.mock.calls[0][0].contents[0].parts[0]
+      expect(fcPart.thoughtSignature).toBeUndefined()
+    })
+
+    it('drops unsigned ReasoningBlock on outgoing (avoid context inflation)', async () => {
+      // Gemini 2.5 thought summaries never carry signatures, and unsigned
+      // cross-provider reasoning has no protocol benefit to round-trip —
+      // only signed reasoning is echoed back (see "echoes signed
+      // ReasoningBlock" test below).
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'a previous thought summary',
+      }
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [reasoning, { type: 'text', text: 'reply' }],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      expect(sent[0].parts).toEqual([{ text: 'reply' }])
+    })
+
+    it('extracts thoughtSignature on thought-summary text Parts (Gemini 3)', async () => {
+      // Gemini 3 may attach thoughtSignature to thought-summary parts. We
+      // preserve it on ReasoningBlock.signature so the next turn can echo
+      // it back per Gemini docs ("recommend you always pass all signatures
+      // back as received").
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([
+        { text: 'thought summary text', thought: true, thoughtSignature: 'thought-sig-001' },
+      ]))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'thought summary text',
+        signature: 'thought-sig-001',
+      })
+    })
+
+    it('echoes signed ReasoningBlock back as a thought-summary Part with thoughtSignature', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'previous thinking',
+        signature: 'thought-sig-001',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [reasoning, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      expect(sent[0].parts).toEqual([
+        { text: 'previous thinking', thought: true, thoughtSignature: 'thought-sig-001' },
+        { text: 'reply' },
+      ])
+    })
+
+    // -----------------------------------------------------------------------
+    // Request param: thinkingConfig forwarding
+    // -----------------------------------------------------------------------
+
+    it('forwards thinking config to thinkingConfig with includeThoughts and thinkingBudget', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, budgetTokens: 2048 } }),
+      )
+
+      const cfg = mockGenerateContent.mock.calls[0][0].config
+      expect(cfg.thinkingConfig).toEqual({
+        includeThoughts: true,
+        thinkingBudget: 2048,
+      })
+    })
+
+    it('defaults includeThoughts=true when enabled without explicit budget', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true } }),
+      )
+
+      const cfg = mockGenerateContent.mock.calls[0][0].config
+      expect(cfg.thinkingConfig).toEqual({ includeThoughts: true })
+      expect(cfg.thinkingConfig.thinkingBudget).toBeUndefined()
+    })
+
+    it('omits thinkingConfig when thinking is absent or disabled', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+      expect(mockGenerateContent.mock.calls[0][0].config.thinkingConfig).toBeUndefined()
+
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: false, budgetTokens: 4096 } }),
+      )
+      expect(mockGenerateContent.mock.calls[1][0].config.thinkingConfig).toBeUndefined()
     })
   })
 })

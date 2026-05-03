@@ -110,13 +110,13 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
     }
 
     case 'reasoning':
-      // Limitation comment for future: Bedrock *does* accept reasoning back from clients, and in fact requires
-      // the original reasoning text + its `signature` field unchanged when
-      // continuing a multi-turn tool-use conversation with extended thinking.
-      // The framework's ReasoningBlock currently has no place to carry that
-      // signature, so a round-trip would silently strip it and Bedrock would
-      // reject the next turn. Until the shared type grows a signature field
-      // (tracked as a follow-up framework change), we drop reasoning on input.
+      // Bedrock requires the original reasoning text plus its `signature`
+      // (and `redactedData` for redacted blocks) to be echoed back unchanged
+      // when continuing a multi-turn tool-use conversation with extended
+      // thinking. The IR now carries these fields on {@link ReasoningBlock}
+      // (added in #200), but wiring them through Bedrock's
+      // `reasoningContent.reasoningText.signature` shape has been deferred
+      // to a follow-up PR — until then, we drop reasoning on input.
       return null
 
     default: {
@@ -132,8 +132,8 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
  * System prompt is passed separately via `options.systemPrompt` and handled
  * in `chat()`/`stream()` — it never appears as a message role in the framework.
  * Reasoning blocks are silently dropped on input — see {@link toBedrockContentBlock}
- * for why; multi-turn tool-use flows with extended thinking are not yet fully
- * supported until the framework's ReasoningBlock can carry a Bedrock signature.
+ * for why; multi-turn tool-use flows with extended thinking are tracked as
+ * a follow-up to #200's phase-1 IR additions.
  */
 function toBedrockMessages(messages: LLMMessage[]): BedrockMessage[] {
   const bedrockMessages: BedrockMessage[] = []

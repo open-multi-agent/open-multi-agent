@@ -31,6 +31,7 @@ import type {
   LoopDetectionInfo,
   LLMToolDef,
   ContextStrategy,
+  ThinkingConfig,
 } from '../types.js'
 import { TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
@@ -110,6 +111,8 @@ export interface RunnerOptions {
    * See {@link AgentConfig.extraBody} for the override precedence contract.
    */
   readonly extraBody?: Record<string, unknown>
+  /** See {@link AgentConfig.thinking}. */
+  readonly thinking?: ThinkingConfig
   /** AbortSignal that cancels any in-flight adapter call and stops the loop. */
   readonly abortSignal?: AbortSignal
   /**
@@ -701,6 +704,7 @@ export class AgentRunner {
       frequencyPenalty: this.options.frequencyPenalty,
       presencePenalty: this.options.presencePenalty,
       extraBody: this.options.extraBody,
+      thinking: this.options.thinking,
       systemPrompt: this.options.systemPrompt,
       abortSignal: effectiveAbortSignal,
     }

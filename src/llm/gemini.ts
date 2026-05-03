@@ -33,6 +33,7 @@ import {
   type GenerateContentConfig,
   type GenerateContentResponse,
   type Part,
+  type ThinkingConfig as GeminiThinkingConfig,
   type Tool as GeminiTool,
 } from '@google/genai'
 
@@ -44,19 +45,15 @@ import type {
   LLMResponse,
   LLMStreamOptions,
   LLMToolDef,
+  ReasoningBlock,
   StreamEvent,
+  ThinkingConfig,
   ToolUseBlock,
 } from '../types.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-type SerializableContentBlock = Exclude<ContentBlock, { type: 'reasoning' }>
-
-function isSerializableContentBlock(block: ContentBlock): block is SerializableContentBlock {
-  return block.type !== 'reasoning'
-}
 
 /**
  * Map framework role names to Gemini role names.
@@ -76,6 +73,16 @@ function toGeminiRole(role: 'user' | 'assistant'): string {
  * - `functionCall` parts appear in `"model"` turns.
  * - We build a name lookup map from tool_use blocks so tool_result blocks
  *   can resolve the function name required by Gemini's `functionResponse`.
+ *
+ * Reasoning handling: Gemini's `thoughtSignature` is a top-level field on
+ * Part that accompanies a functionCall Part, identifying the signed thought
+ * sequence that produced the call. We attach it to the outgoing Part
+ * whenever the source {@link ToolUseBlock} carries a signature. Thought
+ * summaries (incoming text Parts with `thought: true` surfaced as
+ * {@link ReasoningBlock}) are echoed back only when they carry a signature
+ * — Gemini 3 recommends round-tripping these signatures, but unsigned
+ * reasoning (e.g. cross-provider blocks or Gemini 2.5 thought summaries
+ * which never carry signatures) is dropped to keep context lean.
  */
 function toGeminiContents(messages: LLMMessage[]): Content[] {
   // First pass: build id → name map for resolving tool results.
@@ -89,25 +96,50 @@ function toGeminiContents(messages: LLMMessage[]): Content[] {
   }
 
   return messages.map((msg): Content => {
-    const parts: Part[] = msg.content
-      .filter(isSerializableContentBlock)
-      .map((block): Part => {
+    const parts: Part[] = []
+    for (const block of msg.content) {
       switch (block.type) {
-        case 'text':
-          return { text: block.text }
+        case 'reasoning': {
+          // Echo only when we have a signature to round-trip — see JSDoc
+          // above. Drop unsigned reasoning silently rather than emitting an
+          // empty/unsigned text part that would inflate context for no
+          // protocol benefit.
+          if (block.signature === undefined) break
+          const part: Part = {
+            text: block.text,
+            thought: true,
+            thoughtSignature: block.signature,
+          }
+          parts.push(part)
+          break
+        }
 
-        case 'tool_use':
-          return {
+        case 'text':
+          parts.push({ text: block.text })
+          break
+
+        case 'tool_use': {
+          const part: Part = {
             functionCall: {
               id: block.id,
               name: block.name,
               args: block.input,
             },
           }
+          if (block.signature !== undefined) {
+            // thoughtSignature is a top-level field on Part (NOT nested under
+            // functionCall) — see Part schema in @google/genai. Required by
+            // Gemini 3+ to maintain extended-thinking context across tool-use
+            // turns.
+            part.thoughtSignature = block.signature
+          }
+          parts.push(part)
+          break
+        }
 
         case 'tool_result': {
           const name = toolNameById.get(block.tool_use_id) ?? block.tool_use_id
-          return {
+          parts.push({
             functionResponse: {
               id: block.tool_use_id,
               name,
@@ -119,23 +151,25 @@ function toGeminiContents(messages: LLMMessage[]): Content[] {
                 isError: block.is_error ?? false,
               },
             },
-          }
+          })
+          break
         }
 
         case 'image':
-          return {
+          parts.push({
             inlineData: {
               mimeType: block.source.media_type,
               data: block.source.data,
             },
-          }
+          })
+          break
 
         default: {
           const _exhaustive: never = block
           throw new Error(`Unhandled content block type: ${JSON.stringify(_exhaustive)}`)
         }
       }
-    })
+    }
 
     return { role: toGeminiRole(msg.role), parts }
   })
@@ -158,6 +192,28 @@ function toGeminiTools(tools: readonly LLMToolDef[]): GeminiTool[] {
 }
 
 /**
+ * Convert the framework's {@link ThinkingConfig} into Gemini's
+ * `thinkingConfig`. Returns `undefined` when the caller hasn't opted in,
+ * leaving the field absent so server defaults apply.
+ *
+ * `includeThoughts` defaults on when extended thinking is enabled — the
+ * thought-summary stream is the only way for callers to surface model
+ * reasoning, and the cost of the metadata is negligible. `thinkingBudget`
+ * is forwarded only when the caller specifies one (Gemini accepts -1 to
+ * mean "dynamic").
+ */
+function toGeminiThinkingConfig(
+  thinking: ThinkingConfig | undefined,
+): GeminiThinkingConfig | undefined {
+  if (thinking === undefined || !thinking.enabled) return undefined
+  const config: GeminiThinkingConfig = { includeThoughts: true }
+  if (thinking.budgetTokens !== undefined) {
+    config.thinkingBudget = thinking.budgetTokens
+  }
+  return config
+}
+
+/**
  * Build the {@link GenerateContentConfig} shared by chat() and stream().
  */
 function buildConfig(
@@ -171,6 +227,7 @@ function buildConfig(
     toolConfig: options.tools
       ? { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } }
       : undefined,
+    thinkingConfig: toGeminiThinkingConfig(options.thinking),
     abortSignal: options.abortSignal,
   }
 }
@@ -197,6 +254,62 @@ function getFunctionCallId(part: Part): string {
 }
 
 /**
+ * Extract `thoughtSignature` from a Gemini Part.
+ *
+ * Gemini puts thoughtSignature as a top-level field on Part (NOT nested
+ * under functionCall, despite some early docs implying otherwise — see
+ * the Part schema in @google/genai). Gemini 3+ rejects subsequent turns
+ * when the signature isn't echoed back unchanged on the corresponding
+ * functionCall part.
+ */
+function getThoughtSignature(part: Part): string | undefined {
+  return part.thoughtSignature
+}
+
+/**
+ * Convert a single Gemini {@link Part} into zero or one framework
+ * {@link ContentBlock}s. Returns `null` for parts we don't model so the
+ * caller can skip them without inflating the content array.
+ *
+ * Recognised inputs:
+ * - text part with `thought: true` → {@link ReasoningBlock} (thought summary,
+ *   carries `thoughtSignature` on Gemini 3 if present)
+ * - regular text part            → {@link TextBlock}
+ * - functionCall part            → {@link ToolUseBlock} (with optional signature)
+ */
+function fromGeminiPart(part: Part): ContentBlock | null {
+  if (part.functionCall !== undefined) {
+    const block: ToolUseBlock = {
+      type: 'tool_use',
+      id: getFunctionCallId(part),
+      name: part.functionCall.name ?? '',
+      input: (part.functionCall.args ?? {}) as Record<string, unknown>,
+    }
+    const signature = getThoughtSignature(part)
+    if (signature !== undefined) {
+      return { ...block, signature }
+    }
+    return block
+  }
+  if (part.text !== undefined && part.text !== '') {
+    if ((part as { thought?: boolean }).thought === true) {
+      const reasoning: ReasoningBlock = { type: 'reasoning', text: part.text }
+      // Gemini 3 may attach thoughtSignature to thought-summary parts too.
+      // Preserve it on the framework block so the next turn can echo it
+      // back — see toGeminiContents reasoning case for the round-trip.
+      const signature = getThoughtSignature(part)
+      if (signature !== undefined) {
+        return { ...reasoning, signature }
+      }
+      return reasoning
+    }
+    return { type: 'text', text: part.text }
+  }
+  // inlineData echoes and other part types are silently ignored.
+  return null
+}
+
+/**
  * Convert a Gemini {@link GenerateContentResponse} into a framework
  * {@link LLMResponse}.
  */
@@ -209,17 +322,8 @@ function fromGeminiResponse(
   const content: ContentBlock[] = []
 
   for (const part of candidate?.content?.parts ?? []) {
-    if (part.text !== undefined && part.text !== '') {
-      content.push({ type: 'text', text: part.text })
-    } else if (part.functionCall !== undefined) {
-      content.push({
-        type: 'tool_use',
-        id: getFunctionCallId(part),
-        name: part.functionCall.name ?? '',
-        input: (part.functionCall.args ?? {}) as Record<string, unknown>,
-      })
-    }
-    // inlineData echoes and other part types are silently ignored.
+    const block = fromGeminiPart(part)
+    if (block !== null) content.push(block)
   }
 
   // Map Gemini finish reasons to framework stop_reason vocabulary.
@@ -344,19 +448,23 @@ export class GeminiAdapter implements LLMAdapter {
         }
 
         for (const part of candidate?.content?.parts ?? []) {
-          if (part.text) {
-            accumulatedContent.push({ type: 'text', text: part.text })
-            yield { type: 'text', data: part.text } satisfies StreamEvent
-          } else if (part.functionCall) {
-            const toolId = getFunctionCallId(part)
-            const toolUseBlock: ToolUseBlock = {
-              type: 'tool_use',
-              id: toolId,
-              name: part.functionCall.name ?? '',
-              input: (part.functionCall.args ?? {}) as Record<string, unknown>,
-            }
-            accumulatedContent.push(toolUseBlock)
-            yield { type: 'tool_use', data: toolUseBlock } satisfies StreamEvent
+          const block = fromGeminiPart(part)
+          if (block === null) continue
+          accumulatedContent.push(block)
+          switch (block.type) {
+            case 'text':
+              yield { type: 'text', data: block.text } satisfies StreamEvent
+              break
+            case 'reasoning':
+              // Thought summary delta — surface as a reasoning event so
+              // observers can stream model thinking the same way they do
+              // for Anthropic's `thinking_delta`.
+              yield { type: 'reasoning', data: block.text } satisfies StreamEvent
+              break
+            case 'tool_use':
+              yield { type: 'tool_use', data: block } satisfies StreamEvent
+              break
+            // No other block types come back from Gemini parts.
           }
         }
       }
