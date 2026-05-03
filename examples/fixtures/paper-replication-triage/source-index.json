@@ -60,11 +60,5 @@
       "query_used": "citations containing reproduce, replicate, metric, code, or dataset",
       "evidence_id": "citation:metric-mismatch-note"
     }
-  ],
-  "seeded_conflicts": [
-    "Paper says official code is available; discovery finds only an unofficial repository and an official 404.",
-    "Paper says all splits are public; dataset card says the benchmark holdout requires application approval.",
-    "Paper reports macro-F1; reproduction feedback says micro-F1 is the only metric close to the reported result.",
-    "Paper implies single-GPU feasibility; discovered training command defaults to four GPUs."
   ]
 }

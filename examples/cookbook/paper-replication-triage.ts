@@ -49,6 +49,8 @@ const DATASET_RELATED_PATH_LIMIT = 12
 
 type SourceMode = 'mock' | 'live'
 type ProviderChoice = 'anthropic' | 'openai' | 'gemini' | 'groq' | 'openrouter'
+type SnippetSearchScope = 'paper_scoped' | 'global_unscoped'
+type PaperMetadataScope = 'target_scoped' | 'unresolved_unscoped'
 
 interface SourceBundle {
   mode: SourceMode
@@ -123,6 +125,13 @@ interface MCPClientLike {
     options?: { timeout?: number },
   ): Promise<unknown>
   close?: () => Promise<void>
+}
+
+interface LivePaperIdentity {
+  resolvedPaperId?: string
+  targetPaperMetadata?: unknown
+  metadataScope: PaperMetadataScope
+  note: string
 }
 
 type MCPClientConstructor = new (
@@ -394,9 +403,9 @@ function extractGithubRepoFullNames(value: unknown): string[] {
   return Array.from(repos).slice(0, 5)
 }
 
-function buildGitHubSearchQueries(query: string, paperLookup: unknown): string[] {
-  const title = findFirstStringByKey(paperLookup, 'title')
-  const text = collectStrings(paperLookup).join('\n')
+function buildGitHubSearchQueries(query: string, targetPaperMetadata: unknown): string[] {
+  const title = findFirstStringByKey(targetPaperMetadata, 'title')
+  const text = collectStrings(targetPaperMetadata).join('\n')
   const queries = new Set<string>()
 
   for (const candidate of [title, query]) {
@@ -429,16 +438,43 @@ function textMentionsTarget(text: string, target: string): boolean {
   })
 }
 
-function officialClaimNearTarget(text: string, target: string | undefined): boolean {
-  const officialPattern = /(?<!un)\bofficial\b|(?<!un)\bofficial implementation\b|\bimplementation for\b|\bcode for\b/gi
-  const matches = [...text.matchAll(officialPattern)]
+function textWindow(text: string, index: number, before = 240, after = 240): string {
+  return text.slice(Math.max(0, index - before), Math.min(text.length, index + after))
+}
+
+function hasNegatedOfficialPrefix(text: string, index: number, matchLength: number): boolean {
+  const local = text.slice(Math.max(0, index - 48), index + matchLength).toLowerCase()
+  return /\b(?:un|non)[-\s]?official\b/.test(local)
+    || /\bnot\s+(?:an?\s+|the\s+)?official\b/.test(local)
+    || /\bno\s+official\b/.test(local)
+    || /\bwithout\s+(?:an?\s+|the\s+)?official\b/.test(local)
+}
+
+function nonOfficialClaimNearTarget(text: string, target: string | undefined): boolean {
+  const nonOfficialPattern =
+    /\b(?:(?:un|non)[-\s]?official|third[-\s]?party|community|independent)\s+(?:implementation|code|repo(?:sitory)?|release|reproduction)\b|\bnot\s+(?:an?\s+|the\s+)?official\s+(?:implementation|code|repo(?:sitory)?|release)\b/gi
+  const matches = [...text.matchAll(nonOfficialPattern)]
   if (matches.length === 0) return false
   if (!target) return true
 
   return matches.some((match) => {
     const index = match.index ?? 0
-    const context = text.slice(Math.max(0, index - 240), index + 240)
-    return textMentionsTarget(context, target)
+    return textMentionsTarget(textWindow(text, index), target)
+  })
+}
+
+function officialClaimNearTarget(text: string, target: string | undefined): boolean {
+  const officialPattern =
+    /\bofficial(?:\s+(?:implementation|code|repo(?:sitory)?|github|release))?\b|\bauthors?['’]?\s+(?:implementation|code|repo(?:sitory)?|release)\b/gi
+  const matches = [...text.matchAll(officialPattern)]
+  if (matches.length === 0) return false
+
+  return matches.some((match) => {
+    const index = match.index ?? 0
+    const matchText = match[0] ?? ''
+    if (hasNegatedOfficialPrefix(text, index, matchText.length)) return false
+    if (!target) return true
+    return textMentionsTarget(textWindow(text, index), target)
   })
 }
 
@@ -841,11 +877,15 @@ async function fetchGitHubRepoEvidence(
   const targetQuery = linkedFromPaperMetadata ? undefined : sourceQuery
   const hasOfficialClaim = officialClaimNearTarget(readmeText, undefined)
   const officialForTarget = targetQuery ? officialClaimNearTarget(readmeText, targetQuery) : hasOfficialClaim
+  const nonOfficialForTarget = targetQuery
+    ? nonOfficialClaimNearTarget(readmeText, targetQuery)
+    : nonOfficialClaimNearTarget(readmeText, undefined)
   const repoRelationshipHints = {
     linked_from_paper_metadata: linkedFromPaperMetadata,
     mentions_query_or_title: targetQuery ? textMentionsTarget(repoIdentityText, targetQuery) : false,
     mentions_official: officialForTarget,
     official_claim_context_unclear: hasOfficialClaim && !officialForTarget,
+    explicit_non_official_claim: nonOfficialForTarget,
     mentions_reproduction: /reproduc|replicat|results?|benchmark/i.test(readmeText),
     mentions_datasets: /dataset|data preparation|download data|benchmark data/i.test(readmeText),
   }
@@ -927,6 +967,8 @@ function buildDatasetCluesFromRepos(repoEvidence: Array<Record<string, unknown> 
       clues.push({
         repository: repo['full_name'],
         repository_url: repo['html_url'],
+        repository_relationship_hints: summarizeRelationshipHints(repo['repo_relationship_hints']),
+        target_tied_repository: repoIsTargetTied(repo),
         dataset_mentions: datasetMentions,
         dataset_candidate_evidence: datasetCandidateEvidence,
         dataset_related_paths: datasetPaths,
@@ -940,6 +982,7 @@ function buildDatasetCluesFromRepos(repoEvidence: Array<Record<string, unknown> 
 }
 
 function collectRecordsWithTitle(value: unknown, acc: Array<Record<string, unknown>> = []): Array<Record<string, unknown>> {
+  if (isUnavailableSourcePayload(value)) return acc
   if (value === null || typeof value !== 'object') return acc
   if (Array.isArray(value)) {
     for (const item of value) collectRecordsWithTitle(item, acc)
@@ -950,7 +993,8 @@ function collectRecordsWithTitle(value: unknown, acc: Array<Record<string, unkno
   if (typeof record['title'] === 'string' && record['title'].trim() !== '') {
     acc.push(record)
   }
-  for (const child of Object.values(record)) {
+  for (const [key, child] of Object.entries(record)) {
+    if (NON_EVIDENCE_PAYLOAD_KEYS.has(key.toLowerCase())) continue
     collectRecordsWithTitle(child, acc)
   }
   return acc
@@ -962,13 +1006,42 @@ function isUnavailableSourcePayload(value: unknown): boolean {
   return record['is_error'] === true || record['source_unavailable'] === true
 }
 
+const NON_EVIDENCE_PAYLOAD_KEYS = new Set([
+  'args',
+  'arguments',
+  'count',
+  'incomplete_results',
+  'is_error',
+  'limit',
+  'message',
+  'next_cursor',
+  'note',
+  'offset',
+  'page',
+  'query',
+  'reason',
+  'request',
+  'source',
+  'source_unavailable',
+  'status',
+  'success',
+  'total',
+  'total_count',
+  'type',
+])
+
 function hasSuccessfulSourcePayload(value: unknown): boolean {
   if (value === null || value === undefined) return false
   if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value)
   if (Array.isArray(value)) return value.some(hasSuccessfulSourcePayload)
-  if (typeof value !== 'object') return true
+  if (typeof value !== 'object') return false
   if (isUnavailableSourcePayload(value)) return false
-  return Object.keys(value).length > 0
+
+  const evidenceEntries = Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !NON_EVIDENCE_PAYLOAD_KEYS.has(key.toLowerCase()))
+  return evidenceEntries.some(([, child]) => hasSuccessfulSourcePayload(child))
 }
 
 function collectSourceEvidenceStrings(value: unknown, acc: string[] = []): string[] {
@@ -982,7 +1055,8 @@ function collectSourceEvidenceStrings(value: unknown, acc: string[] = []): strin
     return acc
   }
   if (value !== null && typeof value === 'object') {
-    for (const child of Object.values(value as Record<string, unknown>)) {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (NON_EVIDENCE_PAYLOAD_KEYS.has(key.toLowerCase())) continue
       collectSourceEvidenceStrings(child, acc)
     }
   }
@@ -994,6 +1068,15 @@ function sourceEvidenceText(...values: unknown[]): string {
     values.flatMap((value) => collectSourceEvidenceStrings(value).map((item) => compactText(item, 500))),
     120,
   ).join('\n')
+}
+
+function hasReproductionFeedbackSignal(record: Record<string, unknown>): boolean {
+  return /\b(?:reproduc|replicat|reimplement|re-implement|rerun|result mismatch|cannot reproduce|fail(?:ed)? to reproduce|metric mismatch|benchmark|evaluation protocol|code availability|data availability|artifact)\b/i
+    .test(sourceEvidenceText(record))
+}
+
+function sourceHasReproductionFeedbackSignal(value: unknown): boolean {
+  return collectRecordsWithTitle(value).some(hasReproductionFeedbackSignal)
 }
 
 function firstContextMatch(text: string, patterns: RegExp[], maxLength = 280): string | undefined {
@@ -1044,28 +1127,37 @@ function extractMetricNames(text: string): string[] {
 function extractedClaim(
   claim: string,
   evidence: string | undefined,
+  sourceDescription = 'Asta paper metadata or paper-scoped snippets',
 ): Record<string, string> {
   return evidence
     ? { status: 'found', claim, evidence }
     : {
       status: 'not_found_in_asta_sources',
-      claim: 'No explicit claim found in Asta paper metadata or paper-scoped snippets.',
-      evidence: 'Asta did not surface enough target-paper text for this claim type.',
+      claim: `No explicit claim found in ${sourceDescription}.`,
+      evidence: `Asta did not surface enough target-paper text from ${sourceDescription} for this claim type.`,
     }
 }
 
-function buildLivePaperClaims(asta: {
-  paperLookup: unknown
-  claimSnippets: unknown
-  datasetSnippets: unknown
-  replicationSnippets: unknown
-}): Record<string, unknown> {
-  const text = sourceEvidenceText(
-    asta.paperLookup,
-    asta.claimSnippets,
-    asta.datasetSnippets,
-    asta.replicationSnippets,
-  )
+function extractedUnscopedEvidence(
+  evidenceType: string,
+  evidence: string | undefined,
+): Record<string, string> {
+  return evidence
+    ? {
+      status: 'unscoped_evidence',
+      evidence_scope: 'global_snippet_search',
+      note: `${evidenceType} surfaced in global Asta snippets, but no paper_id was resolved; do not treat this as a target-paper claim without corroboration.`,
+      evidence,
+    }
+    : {
+      status: 'not_found_in_global_snippets',
+      evidence_scope: 'global_snippet_search',
+      note: `No ${evidenceType.toLowerCase()} surfaced in the unscoped Asta snippets.`,
+      evidence: 'Asta global snippet_search did not return a matching evidence segment.',
+    }
+}
+
+function extractLiveClaimEvidence(text: string) {
   const githubUrls = extractGithubUrls(text)
   const metricNames = extractMetricNames(text)
 
@@ -1096,35 +1188,129 @@ function buildLivePaperClaims(asta: {
   ])
 
   return {
-    source_note: 'LIVE claim surface constructed deterministically from Asta paper metadata and paper-scoped snippet_search results; missing fields are explicit evidence gaps, not model guesses.',
+    githubUrls,
+    metricNames,
+    codeEvidence,
+    datasetEvidence,
+    metricEvidence,
+    resultEvidence,
+    computeEvidence,
+    reproducibilityEvidence,
+  }
+}
+
+function liveClaimFields(
+  evidence: ReturnType<typeof extractLiveClaimEvidence>,
+  sourceDescription: string,
+): Record<string, Record<string, string>> {
+  return {
     code_availability: extractedClaim(
-      githubUrls.length > 0
-        ? `Code or implementation URL appears in Asta evidence: ${githubUrls.join(', ')}.`
+      evidence.githubUrls.length > 0
+        ? `Code or implementation URL appears in Asta evidence: ${evidence.githubUrls.join(', ')}.`
         : 'Code or implementation availability is mentioned in Asta evidence.',
-      codeEvidence,
+      evidence.codeEvidence,
+      sourceDescription,
     ),
     dataset_availability: extractedClaim(
       'Dataset, split, access, or benchmark availability is mentioned in Asta evidence.',
-      datasetEvidence,
+      evidence.datasetEvidence,
+      sourceDescription,
     ),
     primary_metric: extractedClaim(
-      metricNames.length > 0
-        ? `Metric evidence mentions: ${metricNames.join(', ')}.`
+      evidence.metricNames.length > 0
+        ? `Metric evidence mentions: ${evidence.metricNames.join(', ')}.`
         : 'Metric or evaluation protocol is mentioned in Asta evidence.',
-      metricEvidence,
+      evidence.metricEvidence,
+      sourceDescription,
     ),
     reported_result: extractedClaim(
       'Reported result evidence includes a numeric score tied to an evaluation metric.',
-      resultEvidence,
+      evidence.resultEvidence,
+      sourceDescription,
     ),
     compute_claim: extractedClaim(
       'Compute or runtime evidence is mentioned in Asta evidence.',
-      computeEvidence,
+      evidence.computeEvidence,
+      sourceDescription,
     ),
     reproducibility_promise: extractedClaim(
       'Reproducibility, released-artifact, or replication promise is mentioned in Asta evidence.',
-      reproducibilityEvidence,
+      evidence.reproducibilityEvidence,
+      sourceDescription,
     ),
+  }
+}
+
+function liveUnscopedEvidenceFields(
+  evidence: ReturnType<typeof extractLiveClaimEvidence>,
+): Record<string, Record<string, string>> {
+  return {
+    code_availability_lead: extractedUnscopedEvidence('Code availability evidence', evidence.codeEvidence),
+    dataset_availability_lead: extractedUnscopedEvidence('Dataset availability evidence', evidence.datasetEvidence),
+    primary_metric_lead: extractedUnscopedEvidence('Metric evidence', evidence.metricEvidence),
+    reported_result_lead: extractedUnscopedEvidence('Reported result evidence', evidence.resultEvidence),
+    compute_claim_lead: extractedUnscopedEvidence('Compute/runtime evidence', evidence.computeEvidence),
+    reproducibility_promise_lead: extractedUnscopedEvidence('Reproducibility promise evidence', evidence.reproducibilityEvidence),
+  }
+}
+
+function buildLivePaperClaims(
+  asta: {
+    targetPaperMetadata: unknown
+    claimSnippets: unknown
+    datasetSnippets: unknown
+    replicationSnippets: unknown
+  },
+  resolvedPaperId: string | null | undefined,
+): Record<string, unknown> {
+  const hasResolvedPaperId = typeof resolvedPaperId === 'string' && resolvedPaperId.trim() !== ''
+  const hasTargetMetadata = hasSuccessfulSourcePayload(asta.targetPaperMetadata)
+  const scopedText = hasResolvedPaperId
+    ? sourceEvidenceText(
+      asta.targetPaperMetadata,
+      asta.claimSnippets,
+      asta.datasetSnippets,
+      asta.replicationSnippets,
+    )
+    : hasTargetMetadata
+      ? sourceEvidenceText(asta.targetPaperMetadata)
+      : ''
+  const scopedSourceDescription = hasResolvedPaperId
+    ? hasTargetMetadata
+      ? 'validated Asta target-paper metadata and paper-scoped snippets'
+      : 'paper-scoped Asta snippets'
+    : hasTargetMetadata
+      ? 'validated Asta target-paper metadata only'
+      : 'no validated Asta target-paper metadata'
+  const paperClaimFields = liveClaimFields(extractLiveClaimEvidence(scopedText), scopedSourceDescription)
+
+  const unscopedSnippetText = hasResolvedPaperId
+    ? ''
+    : sourceEvidenceText(asta.claimSnippets, asta.datasetSnippets, asta.replicationSnippets)
+
+  return {
+    source_note: hasResolvedPaperId
+      ? 'LIVE claim surface constructed deterministically from validated Asta target-paper metadata when available plus paper-scoped snippet_search results; missing fields are explicit evidence gaps, not model guesses.'
+      : hasTargetMetadata
+        ? 'LIVE claim surface constructed deterministically from validated Asta target-paper metadata only. Asta snippets were global because no paper_id resolved, so snippet-derived evidence is surfaced separately as unscoped leads.'
+        : 'LIVE claim surface has no validated target-paper metadata. Asta snippets were global because no paper_id resolved, so snippet-derived evidence is surfaced separately as unscoped leads.',
+    snippet_scope: {
+      resolved_paper_id: hasResolvedPaperId ? resolvedPaperId : null,
+      snippet_search_scope: hasResolvedPaperId ? 'paper_scoped' : 'global_unscoped',
+      metadata_scope: hasTargetMetadata ? 'target_scoped' : 'unresolved_unscoped',
+      claim_policy: hasResolvedPaperId
+        ? 'Snippet-derived evidence may be treated as target-paper evidence.'
+        : 'Snippet-derived evidence must not be treated as target-paper claims without corroboration.',
+    },
+    ...paperClaimFields,
+    ...(!hasResolvedPaperId
+      ? {
+        unscoped_snippet_evidence: {
+          source_note: 'Global Asta snippet_search was used because paper_id resolution failed. Treat these entries as discovery leads or uncertainties, not paper claims.',
+          ...liveUnscopedEvidenceFields(extractLiveClaimEvidence(unscopedSnippetText)),
+        },
+      }
+      : {}),
   }
 }
 
@@ -1135,6 +1321,7 @@ function summarizeRelationshipHints(value: unknown): string[] {
     mentions_query_or_title: 'mentions query or title',
     mentions_official: 'official claim tied to target',
     official_claim_context_unclear: 'official claim not tied to target',
+    explicit_non_official_claim: 'explicit non-official claim',
     mentions_reproduction: 'mentions reproduction',
     mentions_datasets: 'mentions datasets',
   }
@@ -1160,6 +1347,7 @@ function scoreRepositoryForReplication(repo: Record<string, unknown>): number {
   if (hints['mentions_query_or_title'] === true) score += 80
   if (hints['mentions_official'] === true) score += 55
   if (hints['official_claim_context_unclear'] === true) score -= 12
+  if (hints['explicit_non_official_claim'] === true) score -= 35
   if (hints['mentions_reproduction'] === true) score += 20
   if (hints['mentions_datasets'] === true) score += 15
 
@@ -1229,6 +1417,22 @@ function repoHasHint(repo: Record<string, unknown>, key: string): boolean {
   return hints !== null && typeof hints === 'object' && (hints as Record<string, unknown>)[key] === true
 }
 
+function repoIsTargetTied(repo: Record<string, unknown>): boolean {
+  return repo['source_query'] === 'github-url-from-paper-metadata'
+    || repoHasHint(repo, 'linked_from_paper_metadata')
+    || repoHasHint(repo, 'mentions_official')
+    || repoHasHint(repo, 'mentions_query_or_title')
+}
+
+function repoHasUnofficialImplementationSignal(repo: Record<string, unknown>): boolean {
+  if (repoHasHint(repo, 'explicit_non_official_claim')) return true
+
+  const text = repoText(repo)
+  return /\b(?:(?:un|non)[-\s]?official|third[-\s]?party|community|independent)\s+(?:implementation|code|repo(?:sitory)?|release|reproduction)\b/i.test(text)
+    || /\b(?:reimplementation|re-implementation)\b/i.test(text)
+    || /\b(?:replication|reproduction)\s+(?:implementation|code|repo(?:sitory)?)\b/i.test(text)
+}
+
 function statusItem(
   artifactType: string,
   status: string,
@@ -1247,26 +1451,30 @@ function statusItem(
 
 function buildLiveDiscoveryStatus(input: {
   asta: {
-    paperLookup: unknown
+    targetPaperMetadata: unknown
     citations: unknown
     datasetSnippets: unknown
     replicationSnippets: unknown
   }
+  snippetScope: SnippetSearchScope
   repoEvidence: Array<Record<string, unknown>>
   datasetClues: Array<Record<string, unknown>>
   directRepos: string[]
 }): Array<Record<string, unknown>> {
-  const { asta, repoEvidence, datasetClues, directRepos } = input
+  const { asta, snippetScope, repoEvidence, datasetClues, directRepos } = input
+  const snippetsArePaperScoped = snippetScope === 'paper_scoped'
   const scholarlyMetadataFound =
-    hasSuccessfulSourcePayload(asta.paperLookup) && findFirstStringByKey(asta.paperLookup, 'title') !== undefined
+    hasSuccessfulSourcePayload(asta.targetPaperMetadata) && findFirstStringByKey(asta.targetPaperMetadata, 'title') !== undefined
   const officialRepos = repoEvidence.filter((repo) =>
     repo['source_query'] === 'github-url-from-paper-metadata'
     || repoHasHint(repo, 'linked_from_paper_metadata')
     || repoHasHint(repo, 'mentions_official'),
   )
+  const targetTiedRepos = repoEvidence.filter(repoIsTargetTied)
   const usableOfficialRepos = officialRepos.filter(repoHasUsableSnapshot)
   const unofficialRepos = repoEvidence.filter((repo) =>
-    !officialRepos.includes(repo) && /unofficial|reimplement|reproduc|replicat/i.test(repoText(repo)),
+    !officialRepos.includes(repo)
+    && repoHasUnofficialImplementationSignal(repo),
   )
   const relatedBenchmarkRepos = repoEvidence.filter((repo) =>
     !officialRepos.includes(repo)
@@ -1274,15 +1482,32 @@ function buildLiveDiscoveryStatus(input: {
     && /benchmark|baseline|toolkit|framework|library/i.test(repoText(repo)),
   )
   const anyRepoFetched = repoEvidence.length > 0
+  const scopedDatasetSnippets = snippetsArePaperScoped ? asta.datasetSnippets : undefined
+  const scopedReplicationSnippets = snippetsArePaperScoped ? asta.replicationSnippets : undefined
+  const unscopedDatasetSnippetsFound =
+    !snippetsArePaperScoped && hasSuccessfulSourcePayload(asta.datasetSnippets)
+  const unscopedReplicationSnippetsFound =
+    !snippetsArePaperScoped && hasSuccessfulSourcePayload(asta.replicationSnippets)
+  const targetTiedDatasetClues = datasetClues.filter((clue) => clue['target_tied_repository'] === true)
+  const untiedDatasetCluesFound = datasetClues.length > 0 && targetTiedDatasetClues.length === 0
+  const targetTiedEntrypointRepos = targetTiedRepos.filter(repoHasTrainingOrEvalPath)
+  const untiedEntrypointReposFound =
+    targetTiedEntrypointRepos.length === 0 && repoEvidence.some(repoHasTrainingOrEvalPath)
   const datasetEvidenceFound =
-    hasSuccessfulSourcePayload(asta.datasetSnippets) || datasetClues.length > 0
-  const datasetText = sourceEvidenceText(asta.datasetSnippets, datasetClues)
+    hasSuccessfulSourcePayload(scopedDatasetSnippets) || targetTiedDatasetClues.length > 0
+  const datasetText = sourceEvidenceText(scopedDatasetSnippets, targetTiedDatasetClues)
   const restrictedDatasetEvidence = findDatasetRestrictionEvidence(datasetText)
-  const metricProtocolEvidence = firstContextMatch(sourceEvidenceText(asta.datasetSnippets, asta.replicationSnippets, repoEvidence), [
-    /\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC|metric|evaluator|evaluation)\b/i,
+  const metricPattern = /\b(?:macro[- ]?F1|micro[- ]?F1|F1|accuracy|exact match|EM|BLEU|ROUGE|MSE|MAE|RMSE|AUROC|AUC|metric|evaluator|evaluation)\b/i
+  const metricProtocolEvidence = firstContextMatch(sourceEvidenceText(scopedDatasetSnippets, scopedReplicationSnippets, targetTiedRepos), [
+    metricPattern,
   ])
+  const untiedMetricEvidence = !metricProtocolEvidence && firstContextMatch(sourceEvidenceText(repoEvidence), [
+    metricPattern,
+  ])
+  const citationTraversalFound = hasSuccessfulSourcePayload(asta.citations)
+  const citationFeedbackSignalFound = sourceHasReproductionFeedbackSignal(asta.citations)
   const citationFeedbackFound =
-    hasSuccessfulSourcePayload(asta.citations) || hasSuccessfulSourcePayload(asta.replicationSnippets)
+    citationFeedbackSignalFound || hasSuccessfulSourcePayload(scopedReplicationSnippets)
 
   return [
     statusItem(
@@ -1290,8 +1515,8 @@ function buildLiveDiscoveryStatus(input: {
       scholarlyMetadataFound ? 'found' : 'source_unavailable',
       'Asta MCP get_paper/search_paper_by_title',
       scholarlyMetadataFound
-        ? 'Resolved target paper metadata from Asta.'
-        : 'Asta paper lookup did not return a successful target-paper payload.',
+        ? 'Resolved validated target-paper metadata from Asta.'
+        : 'Asta paper lookup did not return a validated target-paper metadata payload.',
     ),
     statusItem(
       'official_code',
@@ -1314,12 +1539,12 @@ function buildLiveDiscoveryStatus(input: {
     ),
     statusItem(
       'unofficial_code',
-      unofficialRepos.length > 0 ? 'found' : anyRepoFetched ? 'missing' : 'source_unavailable',
+      unofficialRepos.length > 0 ? 'found' : anyRepoFetched ? 'not_required_for_replication' : 'source_unavailable',
       'GitHub Search README/tree/issues',
       unofficialRepos.length > 0
         ? 'At least one candidate repository presents as an unofficial reproduction or reimplementation.'
         : anyRepoFetched
-          ? 'Fetched repositories did not clearly identify as unofficial reproductions.'
+          ? 'Fetched repositories did not clearly identify as unofficial reproductions; this is not a missing replication artifact unless another source requires a third-party reproduction.'
           : 'No repository evidence could be fetched from GitHub.',
       unofficialRepos.map((repo) => String(repo['full_name'] ?? repo['html_url'] ?? '')).filter((item) => item !== ''),
     ),
@@ -1336,51 +1561,98 @@ function buildLiveDiscoveryStatus(input: {
     ),
     statusItem(
       'training_or_eval_entrypoint',
-      repoEvidence.some(repoHasTrainingOrEvalPath) ? 'found' : anyRepoFetched ? 'missing' : 'source_unavailable',
+      targetTiedEntrypointRepos.length > 0
+        ? 'found'
+        : untiedEntrypointReposFound
+          ? 'ambiguous'
+          : anyRepoFetched
+            ? 'missing'
+            : 'source_unavailable',
       'GitHub recursive tree and support-file excerpts',
-      repoEvidence.some(repoHasTrainingOrEvalPath)
-        ? 'At least one candidate repository exposes train/eval/run/metric paths.'
-        : anyRepoFetched
-          ? 'No train/eval/run/metric path was visible in fetched repository snapshots.'
-          : 'No repository evidence could be fetched from GitHub.',
+      targetTiedEntrypointRepos.length > 0
+        ? 'At least one target-tied candidate repository exposes train/eval/run/metric paths.'
+        : untiedEntrypointReposFound
+          ? 'Only non-target-tied fetched repositories expose train/eval/run/metric paths; treat as ambiguous, not as target-paper entrypoint evidence.'
+          : anyRepoFetched
+            ? 'No train/eval/run/metric path was visible in fetched repository snapshots.'
+            : 'No repository evidence could be fetched from GitHub.',
+      (targetTiedEntrypointRepos.length > 0 ? targetTiedEntrypointRepos : repoEvidence.filter(repoHasTrainingOrEvalPath))
+        .map((repo) => String(repo['full_name'] ?? repo['html_url'] ?? ''))
+        .filter((item) => item !== ''),
     ),
     statusItem(
       'dataset_candidate_evidence',
-      datasetClues.length > 0 ? 'found' : datasetEvidenceFound ? 'ambiguous' : 'source_unavailable',
+      targetTiedDatasetClues.length > 0
+        ? 'found'
+        : datasetEvidenceFound || untiedDatasetCluesFound || unscopedDatasetSnippetsFound
+          ? 'ambiguous'
+          : 'source_unavailable',
       'Asta MCP snippet_search plus dataset clues from repository READMEs/paths',
-      datasetClues.length > 0
-        ? 'Repository README/path/support-file clues surfaced concrete dataset candidates.'
+      targetTiedDatasetClues.length > 0
+        ? 'Target-tied repository README/path/support-file clues surfaced concrete dataset candidates.'
         : datasetEvidenceFound
           ? 'Asta surfaced dataset-related snippets, but repository candidate evidence is absent or not concrete.'
+          : untiedDatasetCluesFound
+            ? 'Only non-target-tied repositories surfaced dataset candidates; treat them as leads, not target-paper dataset facts.'
+          : unscopedDatasetSnippetsFound
+            ? 'Only global/unscoped Asta dataset snippets were available; treat them as leads, not target-paper dataset facts.'
           : 'No dataset evidence was available from Asta snippets or repository clues.',
-      datasetClues.map((clue) => String(clue['repository'] ?? clue['repository_url'] ?? '')).filter((item) => item !== ''),
+      (targetTiedDatasetClues.length > 0 ? targetTiedDatasetClues : datasetClues)
+        .map((clue) => String(clue['repository'] ?? clue['repository_url'] ?? ''))
+        .filter((item) => item !== ''),
     ),
     statusItem(
       'restricted_or_private_dataset',
-      restrictedDatasetEvidence ? 'restricted' : datasetEvidenceFound ? 'no_restriction_signal' : 'source_unavailable',
+      restrictedDatasetEvidence
+        ? 'restricted'
+        : datasetEvidenceFound
+          ? 'no_restriction_signal'
+          : untiedDatasetCluesFound || unscopedDatasetSnippetsFound
+            ? 'ambiguous'
+            : 'source_unavailable',
       'Asta MCP dataset snippet_search and repository dataset clues',
       restrictedDatasetEvidence
         ? `Access restriction signal surfaced: ${restrictedDatasetEvidence}`
         : datasetEvidenceFound
           ? 'No restricted/private/approval-gated dataset signal was visible in the live evidence snapshot.'
+          : untiedDatasetCluesFound
+            ? 'Only non-target-tied repository dataset clues were available, so no target-paper restriction status is asserted.'
+          : unscopedDatasetSnippetsFound
+            ? 'Only global/unscoped dataset snippets were available, so no target-paper restriction status is asserted.'
           : 'No dataset evidence was available to inspect access restrictions.',
     ),
     statusItem(
       'metric_protocol',
-      metricProtocolEvidence ? 'found' : datasetEvidenceFound || citationFeedbackFound ? 'ambiguous' : 'source_unavailable',
+      metricProtocolEvidence
+        ? 'found'
+        : datasetEvidenceFound || citationFeedbackFound || untiedMetricEvidence
+          ? 'ambiguous'
+          : 'source_unavailable',
       'Asta MCP snippet_search plus repository metric/eval paths',
       metricProtocolEvidence
-        ? `Metric/evaluator signal surfaced: ${metricProtocolEvidence}`
-        : datasetEvidenceFound || citationFeedbackFound
-          ? 'Evidence exists, but no concrete metric/evaluator signal was surfaced.'
-          : 'No dataset or reproduction evidence was available to inspect metrics.',
+        ? `Target-scoped metric/evaluator signal surfaced: ${metricProtocolEvidence}`
+        : untiedMetricEvidence
+          ? `Only non-target-tied repository metric/evaluator signal surfaced: ${untiedMetricEvidence}`
+          : datasetEvidenceFound || citationFeedbackFound
+            ? 'Evidence exists, but no concrete target-scoped metric/evaluator signal was surfaced.'
+            : 'No dataset or reproduction evidence was available to inspect metrics.',
     ),
     statusItem(
       'citation_feedback',
-      citationFeedbackFound ? 'found' : 'source_unavailable',
-      'Asta MCP get_citations and paper-scoped snippet_search',
       citationFeedbackFound
-        ? 'Citation traversal or paper-scoped reproduction snippets returned evidence.'
+        ? 'found'
+        : citationTraversalFound || unscopedReplicationSnippetsFound
+          ? 'ambiguous'
+          : 'source_unavailable',
+      snippetsArePaperScoped
+        ? 'Asta MCP get_citations and paper-scoped snippet_search'
+        : 'Asta MCP get_citations; global snippet_search is not treated as citation feedback',
+      citationFeedbackFound
+        ? 'Citation traversal with explicit reproduction-feedback signals or paper-scoped reproduction snippets returned evidence.'
+        : citationTraversalFound
+          ? 'Citation traversal returned papers, but no explicit reproduction/metric/result/code/data feedback signal was visible in the live snapshot.'
+        : unscopedReplicationSnippetsFound
+          ? 'Global reproduction snippets were available but no paper_id resolved; they are unscoped leads, not target-paper citation feedback.'
         : 'Asta citation traversal and reproduction snippets were unavailable.',
     ),
   ]
@@ -1389,18 +1661,20 @@ function buildLiveDiscoveryStatus(input: {
 function buildLiveSourceDigest(
   query: string,
   asta: {
-    paperLookup: unknown
+    targetPaperMetadata: unknown
     citations: unknown
     datasetSnippets: unknown
     replicationSnippets: unknown
   },
+  snippetScope: SnippetSearchScope,
   repoEvidence: Array<Record<string, unknown>>,
   datasetClues: Array<Record<string, unknown>>,
 ): SourceDigest {
-  const paperTitle = findFirstStringByKey(asta.paperLookup, 'title') ?? query
-  const paperUrl = findFirstStringByKey(asta.paperLookup, 'url') ?? ''
-  const paperVenue = findFirstStringByKey(asta.paperLookup, 'venue') ?? ''
-  const paperYear = findFirstNumberByKey(asta.paperLookup, 'year')
+  const snippetsArePaperScoped = snippetScope === 'paper_scoped'
+  const paperTitle = findFirstStringByKey(asta.targetPaperMetadata, 'title') ?? query
+  const paperUrl = findFirstStringByKey(asta.targetPaperMetadata, 'url') ?? ''
+  const paperVenue = findFirstStringByKey(asta.targetPaperMetadata, 'venue') ?? ''
+  const paperYear = findFirstNumberByKey(asta.targetPaperMetadata, 'year')
 
   const repositories = repoEvidence.slice(0, REPO_EVIDENCE_LIMIT).map((repo) => {
     const issues = Array.isArray(repo['issue_search_results'])
@@ -1449,7 +1723,9 @@ function buildLiveSourceDigest(
       })
     }
   }
-  const datasetSnippetMentions = extractDatasetMentionsFromAstaSnippets(asta.datasetSnippets)
+  const datasetSnippetMentions = snippetsArePaperScoped
+    ? extractDatasetMentionsFromAstaSnippets(asta.datasetSnippets)
+    : []
 
   const reproductionByKey = new Map<string, SourceDigest['reproduction_signals'][number]>()
   const targetTitles = new Set([
@@ -1469,13 +1745,14 @@ function buildLiveSourceDigest(
   }
   for (const item of [
     ...collectRecordsWithTitle(asta.citations),
-    ...collectRecordsWithTitle(asta.replicationSnippets),
+    ...(snippetsArePaperScoped ? collectRecordsWithTitle(asta.replicationSnippets) : []),
   ]) {
     const title = String(item['title'] ?? '')
     const url = getString(item, 'url') ?? getString(item, 'paperUrl') ?? ''
     const normalizedTitle = normalizeTitleForCompare(title)
     const isToolError = isUnavailableSourcePayload(item)
     if (isToolError || targetTitles.has(normalizedTitle) || /^asta .*retrieval$/i.test(title)) continue
+    if (!hasReproductionFeedbackSignal(item)) continue
     if (!title || reproductionByKey.has(url || title)) continue
     reproductionByKey.set(url || title, {
       title,
@@ -1522,18 +1799,7 @@ function normalizePaperId(query: string): string | undefined {
   return undefined
 }
 
-function findPaperId(value: unknown): string | undefined {
-  if (value === null || typeof value !== 'object') return undefined
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findPaperId(item)
-      if (found) return found
-    }
-    return undefined
-  }
-
-  const record = value as Record<string, unknown>
+function paperIdFromRecord(record: Record<string, unknown>): string | undefined {
   for (const key of ['paper_id', 'paperId', 'paperID', 'corpusId', 'CorpusId']) {
     const candidate = record[key]
     if (typeof candidate === 'string' && candidate.trim() !== '') {
@@ -1546,12 +1812,88 @@ function findPaperId(value: unknown): string | undefined {
       return `CorpusId:${candidate}`
     }
   }
-
-  for (const child of Object.values(record)) {
-    const found = findPaperId(child)
-    if (found) return found
-  }
   return undefined
+}
+
+function significantTitleTokens(text: string): string[] {
+  const stopwords = new Set([
+    'a',
+    'an',
+    'and',
+    'are',
+    'as',
+    'at',
+    'by',
+    'for',
+    'from',
+    'in',
+    'is',
+    'of',
+    'on',
+    'or',
+    'the',
+    'to',
+    'with',
+  ])
+  return normalizeTitleForCompare(text)
+    .split(' ')
+    .filter((token) => token.length > 2 && !stopwords.has(token))
+}
+
+function titleMatchesQuery(candidateTitle: string, query: string): boolean {
+  const candidate = normalizeTitleForCompare(candidateTitle)
+  const target = normalizeTitleForCompare(query)
+  if (!candidate || !target) return false
+  if (candidate === target) return true
+
+  const targetTokens = significantTitleTokens(query)
+  if (targetTokens.length < 3) return false
+
+  const candidateTokens = significantTitleTokens(candidateTitle)
+  if (candidateTokens.length < 3) return false
+
+  const candidateTokenSet = new Set(candidateTokens)
+  const overlap = targetTokens.filter((token) => candidateTokenSet.has(token)).length
+  const targetCoverage = overlap / targetTokens.length
+  const candidateCoverage = overlap / candidateTokens.length
+  return targetCoverage >= 0.82 && candidateCoverage >= 0.7
+}
+
+function resolveLivePaperIdentity(
+  query: string,
+  knownPaperId: string | undefined,
+  paperLookup: unknown,
+): LivePaperIdentity {
+  if (knownPaperId) {
+    return {
+      resolvedPaperId: knownPaperId,
+      targetPaperMetadata: hasSuccessfulSourcePayload(paperLookup) ? paperLookup : undefined,
+      metadataScope: hasSuccessfulSourcePayload(paperLookup) ? 'target_scoped' : 'unresolved_unscoped',
+      note: hasSuccessfulSourcePayload(paperLookup)
+        ? 'Input was an explicit paper identifier, so Asta get_paper metadata is treated as target-scoped.'
+        : 'Input was an explicit paper identifier, but Asta get_paper did not return usable metadata. Snippet and citation requests can still be scoped by the input identifier.',
+    }
+  }
+
+  for (const record of collectRecordsWithTitle(paperLookup)) {
+    const title = getString(record, 'title')
+    if (!title || !titleMatchesQuery(title, query)) continue
+
+    const paperId = paperIdFromRecord(record)
+    return {
+      ...(paperId ? { resolvedPaperId: paperId } : {}),
+      targetPaperMetadata: record,
+      metadataScope: 'target_scoped',
+      note: paperId
+        ? 'Asta title lookup returned a strict title match with a paper_id; snippets are paper-scoped.'
+        : 'Asta title lookup returned a strict title match but no paper_id; metadata is target-scoped, but snippets remain global/unscoped.',
+    }
+  }
+
+  return {
+    metadataScope: 'unresolved_unscoped',
+    note: 'Asta title lookup did not return a strict target-paper match. Raw lookup payload is omitted from source-agent snapshots to avoid treating fuzzy search results as target-paper facts.',
+  }
 }
 
 function toolResultToPlainObject(result: unknown): unknown {
@@ -1665,8 +2007,10 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       ? await callAstaTool(client, 'get_paper', { paper_id: knownPaperId, fields: astaFields })
       : await callAstaTool(client, 'search_paper_by_title', { title: query, fields: astaFields })
 
-    const resolvedPaperId = knownPaperId ?? findPaperId(paperLookup)
+    const paperIdentity = resolveLivePaperIdentity(query, knownPaperId, paperLookup)
+    const resolvedPaperId = paperIdentity.resolvedPaperId
     const paperIdsArg = resolvedPaperId ? { paper_ids: resolvedPaperId } : {}
+    const snippetScope: SnippetSearchScope = resolvedPaperId ? 'paper_scoped' : 'global_unscoped'
 
     const [citations, claimSnippets, datasetSnippets, replicationSnippets] = await Promise.all([
       resolvedPaperId
@@ -1697,8 +2041,14 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
     ])
 
     return {
-      paperLookup,
+      paperLookupResolution: {
+        resolved_paper_id: resolvedPaperId ?? null,
+        metadata_scope: paperIdentity.metadataScope,
+        note: paperIdentity.note,
+      },
+      targetPaperMetadata: paperIdentity.targetPaperMetadata ?? null,
       resolvedPaperId: resolvedPaperId ?? null,
+      snippetScope,
       citations,
       claimSnippets,
       datasetSnippets,
@@ -1706,7 +2056,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
     }
   })
 
-  const githubSearchQueries = buildGitHubSearchQueries(query, asta.paperLookup)
+  const githubSearchQueries = buildGitHubSearchQueries(query, asta.targetPaperMetadata)
   const githubSearches = await Promise.all(
     githubSearchQueries.map((rawQuery) => fetchGitHubSearch(rawQuery, githubHeaders)),
   )
@@ -1721,7 +2071,7 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
     }
   }
 
-  const directRepos = extractGithubRepoFullNames(asta.paperLookup)
+  const directRepos = extractGithubRepoFullNames(asta.targetPaperMetadata)
   const githubItems = Array.from(githubItemByName.values())
   const directRepoInputs = directRepos.slice(0, REPO_DISCOVERY_FETCH_LIMIT)
   const directRepoNames = new Set(directRepoInputs.map((repo) => repo.toLowerCase()))
@@ -1737,15 +2087,18 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       ...searchRepoInputs.map((item) => fetchGitHubRepoEvidence(item, githubHeaders, query)),
     ],
   )
-  const resolvedRepoEvidence = sortRepositoryEvidence(
+  const fullRepoEvidence = sortRepositoryEvidence(
     repoEvidence.filter((item): item is Record<string, unknown> => item !== undefined),
-  ).slice(0, REPO_EVIDENCE_LIMIT)
-  const datasetCluesFromRepos = buildDatasetCluesFromRepos(resolvedRepoEvidence)
-  const sourceDigest = buildLiveSourceDigest(query, asta, resolvedRepoEvidence, datasetCluesFromRepos)
-  const paperClaims = buildLivePaperClaims(asta)
+  )
+  const snippetScope = asta.snippetScope as SnippetSearchScope
+  const topRepoEvidence = fullRepoEvidence.slice(0, REPO_EVIDENCE_LIMIT)
+  const datasetCluesFromRepos = buildDatasetCluesFromRepos(fullRepoEvidence)
+  const sourceDigest = buildLiveSourceDigest(query, asta, snippetScope, fullRepoEvidence, datasetCluesFromRepos)
+  const paperClaims = buildLivePaperClaims(asta, asta.resolvedPaperId)
   const discoveryStatus = buildLiveDiscoveryStatus({
     asta,
-    repoEvidence: resolvedRepoEvidence,
+    snippetScope,
+    repoEvidence: fullRepoEvidence,
     datasetClues: datasetCluesFromRepos,
     directRepos,
   })
@@ -1762,15 +2115,28 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
       notice: 'LIVE BEST-EFFORT SOURCE DISCOVERY. Scholarly evidence comes from Asta MCP; implementation evidence comes from GitHub Search. Missing sources are evidence, not a request for manual input.',
       query,
       source_mode: 'live',
-      source_digest: sourceDigest,
       discovery_status: discoveryStatus,
     },
     scholarlyMetadata: {
       notice: 'LIVE Asta MCP scholarly metadata. Asta exposes the Semantic Scholar academic graph over MCP.',
       query,
+      paper_lookup_resolution: asta.paperLookupResolution,
       resolved_paper_id: asta.resolvedPaperId,
-      asta_paper_lookup: asta.paperLookup,
-      asta_claim_snippets: asta.claimSnippets,
+      asta_paper_lookup: hasSuccessfulSourcePayload(asta.targetPaperMetadata)
+        ? asta.targetPaperMetadata
+        : {
+          status: 'unresolved_unscoped_omitted',
+          note: 'Raw Asta paper lookup was not exposed to the claim agent because it was not validated as the target paper.',
+        },
+      claim_snippet_scope: snippetScope,
+      ...(snippetScope === 'paper_scoped'
+        ? { asta_claim_snippets: asta.claimSnippets }
+        : {
+          unscoped_claim_snippets: {
+            status: 'global_unscoped_omitted_from_claim_extraction',
+            note: 'Asta claim snippet_search ran globally because no validated paper_id resolved. Raw snippets are omitted from the claim-agent snapshot so they cannot be mistaken for target-paper claims; see paper_claims.unscoped_snippet_evidence for discovery leads.',
+          },
+        }),
       paper_claims: paperClaims,
     },
     codeArtifacts: {
@@ -1782,18 +2148,35 @@ async function loadLiveSourceBundle(query: string): Promise<SourceBundle> {
         incomplete_results_seen: searchIncomplete,
         top_results: githubItems.slice(0, REPO_EVIDENCE_LIMIT).map(compactSearchItem),
       },
-      top_repository_evidence: resolvedRepoEvidence.map(compactRepositoryEvidenceForCodeAgent),
+      top_repository_evidence: topRepoEvidence.map(compactRepositoryEvidenceForCodeAgent),
     },
     datasetArtifacts: {
       notice: 'LIVE dataset evidence from Asta snippet_search plus dataset-related README/path clues from candidate repositories. This avoids requiring a separate dataset-catalog API key.',
       query: `${query} dataset split license benchmark holdout public restricted`,
-      asta_dataset_snippets: asta.datasetSnippets,
+      dataset_snippet_scope: snippetScope,
+      ...(snippetScope === 'paper_scoped'
+        ? { asta_dataset_snippets: asta.datasetSnippets }
+        : {
+          unscoped_dataset_snippets: {
+            status: 'global_unscoped_omitted_from_dataset_facts',
+            note: 'Asta dataset snippet_search ran globally because no validated paper_id resolved. Raw snippets are omitted from dataset facts; rely on repository-derived dataset clues or treat missing dataset evidence as an evidence gap.',
+          },
+        }),
+      candidate_repositories_considered: fullRepoEvidence.length,
       dataset_clues_from_candidate_repositories: datasetCluesFromRepos,
     },
     citationFeedback: {
       notice: 'LIVE Asta citation and snippet evidence.',
       asta_citations: asta.citations,
-      asta_replication_snippets: asta.replicationSnippets,
+      replication_snippet_scope: snippetScope,
+      ...(snippetScope === 'paper_scoped'
+        ? { asta_replication_snippets: asta.replicationSnippets }
+        : {
+          unscoped_replication_snippets: {
+            status: 'global_unscoped_omitted_from_citation_feedback',
+            note: 'Asta reproduction snippet_search ran globally because no validated paper_id resolved. Raw snippets are omitted from citation feedback so they cannot be mistaken for target-paper follow-up evidence.',
+          },
+        }),
     },
     sourceDigest,
   }
@@ -2005,6 +2388,8 @@ const paperClaimAgent: AgentConfig = {
 
 Extract the paper's own claims about code, data, metrics, reported results, and reproducibility promises.
 Prefer the paper_claims block when present; it is a deterministic extraction from Asta paper metadata and paper-scoped snippets.
+If paper_claims.snippet_scope says global_unscoped, treat unscoped_snippet_evidence only as uncertainty/discovery leads, not as target-paper claims.
+Do not add any field with status "unscoped_evidence" to claims; put it in uncertainties if relevant.
 If a paper_claims field says not_found_in_asta_sources, report it as an uncertainty instead of inventing a claim from general knowledge.
 Do not compare against external artifacts; that is the planner's job.
 The source field must be exactly "scholarly_metadata".
@@ -2040,7 +2425,9 @@ const datasetArtifactAgent: AgentConfig = {
 
 Audit only dataset evidence. Focus on split access, license restrictions, evaluator policy, and metric documentation.
 Live dataset evidence comes from Asta snippet_search plus dataset-related README/path clues from candidate repositories; this is not a general web crawl.
+If dataset_snippet_scope says global_unscoped, do not treat omitted/global Asta snippets as target-paper dataset facts.
 Prefer dataset_candidate_evidence when present: it contains generic, evidence-derived candidates with source_path, evidence_kind, evidence line, and confidence.
+Use target_tied_repository and repository_relationship_hints to separate target-paper dataset evidence from weak repository leads.
 Populate datasets only with concrete names supported by source evidence such as README lines, script names, data_path flags, paths, or snippets.
 Do not list CLI flags, column names, generic words, file names, or config keys as dataset names.
 If candidates are partial, report the confirmed subset and put the missing full roster/split protocol in conflicts or notes instead of guessing.
@@ -2059,6 +2446,8 @@ const citationFeedbackAgent: AgentConfig = {
 
 Audit only follow-up citation/reproduction evidence. Separate full reproduction from partial support, metric mismatch, issue reports, and result gaps.
 Include URLs for citing papers, snippets, or reproduction discussions whenever the source provides them.
+If replication_snippet_scope says global_unscoped, do not create feedback_items from those snippets; treat the absence of paper-scoped feedback as an evidence gap.
+Do not treat ordinary citing papers as reproduction feedback unless their title, TLDR, abstract, or snippet explicitly mentions reproduction, replication, implementation, benchmark/result mismatch, metric protocol, code, data, or artifacts.
 Do not create feedback_items for the target paper itself, source_unavailable/tool-error records, or retrieval-status messages. Treat those as absence of evidence, not reproduction evidence.
 The source field must be exactly "citation_feedback".`,
   maxTurns: 1,
@@ -2162,10 +2551,10 @@ function validateMockBundle(bundle: SourceBundle): void {
 
   const sourceText = JSON.stringify(bundle)
   const requiredSignals = [
-    'official repository returns 404',
-    'benchmark_holdout is restricted',
+    'Claimed official repository returns 404',
+    'benchmark_holdout is restricted and requires application approval',
     'micro-F1',
-    'nproc_per_node=4',
+    'torchrun --nproc_per_node=4',
   ]
 
   for (const signal of requiredSignals) {
@@ -2190,44 +2579,6 @@ function assertPlannerDetectedConflicts(plan: ReplicationPlan, mode: SourceMode)
     throw new Error(
       'Expected planner to detect at least one code or dataset conflict in mock mode.',
     )
-  }
-}
-
-function enrichPlanWithSourceDigest(plan: ReplicationPlan, digest: SourceDigest | undefined): ReplicationPlan {
-  if (!digest) return plan
-
-  const repoUrlByName = new Map(
-    digest.repositories.map((repo) => [repo.repository.toLowerCase(), repo.url]),
-  )
-  const datasetSourceByName = new Map(
-    digest.datasets.map((dataset) => [dataset.name.toLowerCase(), dataset.source]),
-  )
-  const signalUrlByTitle = new Map(
-    digest.reproduction_signals.map((signal) => [normalizeTitleForCompare(signal.title), signal.url]),
-  )
-
-  return {
-    ...plan,
-    artifact_inventory: {
-      ...plan.artifact_inventory,
-      paper: {
-        title: plan.artifact_inventory.paper.title || digest.paper.title,
-        url: plan.artifact_inventory.paper.url || digest.paper.url,
-        venue_or_year: plan.artifact_inventory.paper.venue_or_year || digest.paper.venue_or_year,
-      },
-      code_repositories: plan.artifact_inventory.code_repositories.map((repo) => ({
-        ...repo,
-        url: repo.url || repoUrlByName.get(repo.repository.toLowerCase()) || '',
-      })),
-      datasets: plan.artifact_inventory.datasets.map((dataset) => ({
-        ...dataset,
-        source_or_url: dataset.source_or_url || datasetSourceByName.get(dataset.name.toLowerCase()) || '',
-      })),
-      reproduction_evidence: plan.artifact_inventory.reproduction_evidence.map((item) => ({
-        ...item,
-        url: item.url || signalUrlByTitle.get(normalizeTitleForCompare(item.title)) || '',
-      })),
-    },
   }
 }
 
@@ -2411,7 +2762,7 @@ if (!plannerResult?.success || !plannerResult.structured) {
   process.exit(1)
 }
 
-const plan = enrichPlanWithSourceDigest(plannerResult.structured as ReplicationPlan, bundle.sourceDigest)
+const plan = plannerResult.structured as ReplicationPlan
 assertPlannerDetectedConflicts(plan, bundle.mode)
 
 console.log('\n' + '='.repeat(78))
