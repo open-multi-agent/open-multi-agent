@@ -355,16 +355,17 @@ The framework ships a wired-in provider name for each of these. You set `provide
 
 No bundled shortcut, but it works the same. Use `provider: 'openai'` and point `baseURL` at any server that speaks OpenAI Chat Completions.
 
-| Service | Config | Env var | Example model |
-|---------|--------|---------|---------------|
-| Ollama (local) | `provider: 'openai'` + `baseURL: 'http://localhost:11434/v1'` | none | `llama3.1` |
-| vLLM (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) |
-| LM Studio (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) |
-| llama.cpp server (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) |
-| OpenRouter | `provider: 'openai'` + `baseURL: 'https://openrouter.ai/api/v1'` + `apiKey` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` |
-| Groq | `provider: 'openai'` + `baseURL: 'https://api.groq.com/openai/v1'` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| Service | Config | Env var | Example model | Notes |
+|---------|--------|---------|---------------|-------|
+| Ollama (local) | `provider: 'openai'` + `baseURL: 'http://localhost:11434/v1'` | none | `llama3.1` | |
+| vLLM (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) | |
+| LM Studio (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) | |
+| llama.cpp server (local) | `provider: 'openai'` + `baseURL` | none | (server-loaded) | |
+| OpenRouter | `provider: 'openai'` + `baseURL: 'https://openrouter.ai/api/v1'` + `apiKey` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | |
+| Groq | `provider: 'openai'` + `baseURL: 'https://api.groq.com/openai/v1'` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | |
+| Mistral | `provider: 'openai'` + `baseURL: 'https://api.mistral.ai/v1'` | `MISTRAL_API_KEY` | `mistral-large-latest` | OpenAI-compatible. See [`providers/mistral`](examples/providers/mistral.ts) example. |
 
-Mistral, Qwen, Moonshot, Doubao, Together AI, Fireworks, etc. all plug in the same way. For services where the key is not `OPENAI_API_KEY` (OpenRouter is one), pass it explicitly via the `apiKey` config field; otherwise the `openai` adapter falls back to `OPENAI_API_KEY` from the environment.
+Qwen, Moonshot, Doubao, Together AI, Fireworks, etc. all plug in the same way. For services where the key is not `OPENAI_API_KEY` (OpenRouter is one), pass it explicitly via the `apiKey` config field; otherwise the `openai` adapter falls back to `OPENAI_API_KEY` from the environment.
 
 ### Local Model Tool-Calling
 
@@ -445,7 +446,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 
 **Examples & cookbook**
 
-- [@mvanhorn](https://github.com/mvanhorn) (research aggregation, code review, meeting summarizer, Groq example)
+- [@mvanhorn](https://github.com/mvanhorn) (research aggregation, code review, meeting summarizer, Groq example, Mistral example)
 - [@Kinoo0](https://github.com/Kinoo0) (code review upgrade)
 - [@Optimisttt](https://github.com/Optimisttt) (research aggregation upgrade)
 - [@Agentscreator](https://github.com/Agentscreator) (Engram memory integration)
