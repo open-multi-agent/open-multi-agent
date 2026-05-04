@@ -795,6 +795,28 @@ describe('OpenMultiAgent', () => {
       // would have called the worker directly instead.
       expect(capturedChatOptions.length).toBe(1)
     })
+
+    it('emits balanced agent_start / agent_complete for the coordinator when planOnly is true', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research", "assignee": "worker"}]\n```',
+      ]
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onProgress: (e) => events.push(e),
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+      await oma.runTeam(team, complexGoal, { planOnly: true })
+
+      const coordinatorEvents = events.filter((e) => e.agent === 'coordinator')
+      const types = coordinatorEvents.map((e) => e.type)
+      expect(types).toContain('agent_start')
+      expect(types).toContain('agent_complete')
+      expect(types.filter((t) => t === 'agent_start').length).toBe(
+        types.filter((t) => t === 'agent_complete').length,
+      )
+    })
   })
 
   describe('stream trace events', () => {

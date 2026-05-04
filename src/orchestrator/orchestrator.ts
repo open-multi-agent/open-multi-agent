@@ -1236,6 +1236,11 @@ export class OpenMultiAgent {
         dependsOn: task.dependsOn ?? [],
         metrics: undefined,
       }))
+      this.config.onProgress?.({
+        type: 'agent_complete',
+        agent: 'coordinator',
+        data: decompositionResult,
+      })
       return {
         ...this.buildTeamRunResult(agentResults, goal, planOnlyTasks),
         planOnly: true,
