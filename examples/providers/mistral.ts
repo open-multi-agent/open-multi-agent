@@ -22,6 +22,13 @@
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
+const MISTRAL_BASE_URL = 'https://api.mistral.ai/v1'
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY
+
+if (!MISTRAL_API_KEY) {
+  throw new Error('MISTRAL_API_KEY environment variable must be set.')
+}
+
 // ---------------------------------------------------------------------------
 // Agent definitions (all using Mistral via the OpenAI-compatible adapter)
 // ---------------------------------------------------------------------------
@@ -29,8 +36,8 @@ const architect: AgentConfig = {
   name: 'architect',
   model: 'mistral-large-latest',
   provider: 'openai',
-  baseURL: 'https://api.mistral.ai/v1',
-  apiKey: process.env.MISTRAL_API_KEY,
+  baseURL: MISTRAL_BASE_URL,
+  apiKey: MISTRAL_API_KEY,
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -43,8 +50,8 @@ const developer: AgentConfig = {
   name: 'developer',
   model: 'mistral-large-latest',
   provider: 'openai',
-  baseURL: 'https://api.mistral.ai/v1',
-  apiKey: process.env.MISTRAL_API_KEY,
+  baseURL: MISTRAL_BASE_URL,
+  apiKey: MISTRAL_API_KEY,
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -56,8 +63,8 @@ const reviewer: AgentConfig = {
   name: 'reviewer',
   model: 'mistral-large-latest',
   provider: 'openai',
-  baseURL: 'https://api.mistral.ai/v1',
-  apiKey: process.env.MISTRAL_API_KEY,
+  baseURL: MISTRAL_BASE_URL,
+  apiKey: MISTRAL_API_KEY,
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -105,6 +112,8 @@ function handleProgress(event: OrchestratorEvent): void {
 const orchestrator = new OpenMultiAgent({
   defaultModel: 'mistral-large-latest',
   defaultProvider: 'openai',
+  defaultBaseURL: MISTRAL_BASE_URL,
+  defaultApiKey: MISTRAL_API_KEY,
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,
 })
