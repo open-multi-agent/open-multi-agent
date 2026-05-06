@@ -125,13 +125,9 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       {
         // Sampling params first so extraBody can override them. Structural
         // fields (model/messages/tools/stream) come after extraBody so users
-        // cannot accidentally clobber them via extraBody. Mirrors the field
-        // ordering contract in openai.ts, but without `top_k`/`min_p` —
-        // those are vLLM/local-server extensions and Azure OpenAI runs
-        // Microsoft-hosted OpenAI models, so the endpoint will not accept
-        // them. (Confirmed against the Azure OpenAI Chat Completions API
-        // reference, which lists `frequency_penalty`/`presence_penalty`/
-        // `top_p`/`parallel_tool_calls` but not `top_k` or `min_p`.)
+        // cannot accidentally clobber them via extraBody.
+        // `top_k` / `min_p` deliberately omitted — vLLM-only, not accepted
+        // by Azure OpenAI's hosted endpoint.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
@@ -179,15 +175,14 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     // We request usage in the final chunk so we can include it in the `done` event.
     const streamResponse = await this.#client.chat.completions.create(
       {
-        // See chat() above for the rationale behind this field ordering and
-        // the `top_k`/`min_p` exclusion.
+        // See chat() above for the field-ordering rationale and the
+        // `top_k` / `min_p` exclusion.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
         top_p: options.topP,
         parallel_tool_calls: options.parallelToolCalls,
-        // See chat() above for the rationale behind the field-level cast.
         reasoning_effort: options.thinking?.effort as 'low' | 'medium' | 'high' | null | undefined,
         ...options.extraBody,
         model: deploymentName,
