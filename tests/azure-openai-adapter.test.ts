@@ -442,4 +442,76 @@ describe('AzureOpenAIAdapter', () => {
       expect(createCompletionMock.mock.calls[1][0].reasoning_effort).toBeUndefined()
     })
   })
+
+  // =========================================================================
+  // Sampling-param parity with OpenAIAdapter
+  // =========================================================================
+
+  describe('sampling-param parity', () => {
+    it('forwards the full set of OpenAI-compatible sampling params and extraBody', async () => {
+      // Pre-PR-#209 the Azure adapter quietly dropped these fields, so a
+      // caller setting `topP` / `frequencyPenalty` / etc. would see no effect
+      // on the wire even though the AgentConfig accepted them. Mirror the
+      // openai.ts forwarding contract here so behaviour is consistent across
+      // every OpenAI-track adapter.
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          model: 'my-deployment',
+          frequencyPenalty: 0.5,
+          presencePenalty: 0.4,
+          topP: 0.9,
+          topK: 40,
+          minP: 0.05,
+          parallelToolCalls: false,
+          extraBody: { logit_bias: { '50256': -100 } },
+        }),
+      )
+
+      const sent = createCompletionMock.mock.calls[0][0]
+      expect(sent.frequency_penalty).toBe(0.5)
+      expect(sent.presence_penalty).toBe(0.4)
+      expect(sent.top_p).toBe(0.9)
+      expect(sent.top_k).toBe(40)
+      expect(sent.min_p).toBe(0.05)
+      expect(sent.parallel_tool_calls).toBe(false)
+      expect(sent.logit_bias).toEqual({ '50256': -100 })
+    })
+
+    it('extraBody overrides sampling params (field-ordering contract)', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          model: 'my-deployment',
+          temperature: 0.2,
+          extraBody: { temperature: 0.9 },
+        }),
+      )
+
+      expect(createCompletionMock.mock.calls[0][0].temperature).toBe(0.9)
+    })
+
+    it('extraBody cannot override structural fields (model/messages/tools/stream)', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          model: 'my-deployment',
+          extraBody: { model: 'spoofed-deployment', stream: true } as Record<string, unknown>,
+        }),
+      )
+
+      const sent = createCompletionMock.mock.calls[0][0]
+      expect(sent.model).toBe('my-deployment')
+      expect(sent.stream).toBe(false)
+    })
+  })
 })

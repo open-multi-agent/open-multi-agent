@@ -303,15 +303,28 @@ export class CopilotAdapter implements LLMAdapter {
 
     const completion = await client.chat.completions.create(
       {
-        model: options.model,
-        messages: openAIMessages,
+        // Sampling params first so extraBody can override them. Structural
+        // fields (model/messages/tools/stream) come after extraBody so users
+        // cannot accidentally clobber them via extraBody. Mirrors the field
+        // ordering contract in openai.ts.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
+        frequency_penalty: options.frequencyPenalty,
+        presence_penalty: options.presencePenalty,
+        top_p: options.topP,
+        top_k: options.topK,
+        min_p: options.minP,
+        parallel_tool_calls: options.parallelToolCalls,
         reasoning_effort: options.thinking?.effort,
+        ...options.extraBody,
+        model: options.model,
+        messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-        // Cast covers the `'minimal'` reasoning effort value (gpt-5) which
-        // isn't yet in the SDK's `ReasoningEffort` union.
+        // Cast covers `top_k` / `min_p`, the `'minimal'` reasoning effort
+        // value (added by gpt-5 but not yet in our SDK's type union), and
+        // arbitrary `extraBody` keys, none of which the upstream SDK type
+        // declares.
       } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,
@@ -335,15 +348,22 @@ export class CopilotAdapter implements LLMAdapter {
 
     const streamResponse = await client.chat.completions.create(
       {
-        model: options.model,
-        messages: openAIMessages,
+        // See chat() above for the rationale behind this field ordering.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
+        frequency_penalty: options.frequencyPenalty,
+        presence_penalty: options.presencePenalty,
+        top_p: options.topP,
+        top_k: options.topK,
+        min_p: options.minP,
+        parallel_tool_calls: options.parallelToolCalls,
         reasoning_effort: options.thinking?.effort,
+        ...options.extraBody,
+        model: options.model,
+        messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: true,
         stream_options: { include_usage: true },
-        // See chat() above for the rationale behind the cast.
       } as ChatCompletionCreateParamsStreaming,
       {
         signal: options.abortSignal,

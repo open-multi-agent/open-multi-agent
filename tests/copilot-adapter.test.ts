@@ -483,6 +483,80 @@ describe('CopilotAdapter', () => {
   })
 
   // =========================================================================
+  // Sampling-param parity with OpenAIAdapter
+  // =========================================================================
+
+  describe('sampling-param parity', () => {
+    let adapter: CopilotAdapter
+
+    beforeEach(() => {
+      globalThis.fetch = mockFetchForToken()
+      adapter = new CopilotAdapter('gh_token')
+    })
+
+    it('forwards the full set of OpenAI-compatible sampling params and extraBody', async () => {
+      // Pre-PR-#209 the Copilot adapter quietly dropped these fields, so a
+      // caller setting `topP` / `frequencyPenalty` / etc. would see no effect
+      // on the wire even though the AgentConfig accepted them. Mirror the
+      // openai.ts forwarding contract here so behaviour is consistent across
+      // every OpenAI-track adapter.
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          frequencyPenalty: 0.5,
+          presencePenalty: 0.4,
+          topP: 0.9,
+          topK: 40,
+          minP: 0.05,
+          parallelToolCalls: false,
+          extraBody: { logit_bias: { '50256': -100 } },
+        }),
+      )
+
+      const sent = mockCreate.mock.calls[0][0]
+      expect(sent.frequency_penalty).toBe(0.5)
+      expect(sent.presence_penalty).toBe(0.4)
+      expect(sent.top_p).toBe(0.9)
+      expect(sent.top_k).toBe(40)
+      expect(sent.min_p).toBe(0.05)
+      expect(sent.parallel_tool_calls).toBe(false)
+      expect(sent.logit_bias).toEqual({ '50256': -100 })
+    })
+
+    it('extraBody overrides sampling params (field-ordering contract)', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          temperature: 0.2,
+          extraBody: { temperature: 0.9 },
+        }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].temperature).toBe(0.9)
+    })
+
+    it('extraBody cannot override structural fields (model/messages/tools/stream)', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          model: 'real-model',
+          extraBody: { model: 'spoofed-model', stream: true } as Record<string, unknown>,
+        }),
+      )
+
+      const sent = mockCreate.mock.calls[0][0]
+      expect(sent.model).toBe('real-model')
+      expect(sent.stream).toBe(false)
+    })
+  })
+
+  // =========================================================================
   // getCopilotMultiplier()
   // =========================================================================
 
