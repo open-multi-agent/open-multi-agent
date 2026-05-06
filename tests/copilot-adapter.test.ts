@@ -495,12 +495,6 @@ describe('CopilotAdapter', () => {
     })
 
     it('does NOT forward sampling params or extraBody that lack public Copilot spec coverage', async () => {
-      // GitHub doesn't publish a public Copilot Chat Completions API
-      // reference — community-reverse-engineered docs only show
-      // model/messages/max_tokens/temperature/tools/stream/tool_choice.
-      // Until we have evidence the proxy honours these fields they stay
-      // dropped (better silent-no-op than introducing fields that might
-      // 400 against an undocumented contract).
       mockCreate.mockResolvedValue(makeCompletion())
 
       await adapter.chat(

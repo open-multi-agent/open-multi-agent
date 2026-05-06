@@ -449,11 +449,6 @@ describe('AzureOpenAIAdapter', () => {
 
   describe('sampling-param parity', () => {
     it('forwards the OpenAI-cloud-compatible sampling params and extraBody', async () => {
-      // Pre-PR-#209 the Azure adapter quietly dropped these fields, so a
-      // caller setting `topP` / `frequencyPenalty` / etc. would see no effect
-      // on the wire even though the AgentConfig accepted them. Mirror the
-      // openai.ts forwarding contract here so behaviour is consistent across
-      // every OpenAI-track adapter.
       createCompletionMock.mockResolvedValue(makeCompletion())
       const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
 
@@ -478,10 +473,6 @@ describe('AzureOpenAIAdapter', () => {
     })
 
     it('does NOT forward vLLM-only top_k / min_p (Azure runs MS-hosted OpenAI models)', async () => {
-      // Per the Azure OpenAI Chat Completions API reference, `top_k` and
-      // `min_p` are not accepted parameters — they're vLLM/local extensions.
-      // Forwarding them as top-level fields would be dead weight at best, a
-      // 400 at worst. Users who need them can still pass via `extraBody`.
       createCompletionMock.mockResolvedValue(makeCompletion())
       const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
 

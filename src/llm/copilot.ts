@@ -301,15 +301,9 @@ export class CopilotAdapter implements LLMAdapter {
 
     const completion = await client.chat.completions.create(
       {
-        // Field set kept narrow on purpose: GitHub doesn't publish a public
-        // Copilot chat/completions API reference, so only the params that
-        // appear in reverse-engineered request examples (model, messages,
-        // max_tokens, temperature, tools, stream) plus `reasoning_effort`
-        // (covered by the SDK's typed union) are forwarded as top-level
-        // fields. Other OpenAI-style sampling controls (frequency_penalty,
-        // presence_penalty, top_p, parallel_tool_calls, extraBody) are
-        // intentionally NOT forwarded because we have no evidence the
-        // Copilot proxy honours them.
+        // Narrow surface: Copilot's chat/completions API isn't publicly
+        // documented, so forward only fields seen in reverse-engineered
+        // request examples plus the SDK-typed `reasoning_effort`.
         model: options.model,
         messages: openAIMessages,
         max_tokens: options.maxTokens,
