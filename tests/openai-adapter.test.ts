@@ -440,4 +440,91 @@ describe('OpenAIAdapter', () => {
       expect((done!.data as LLMResponse).stop_reason).toBe('tool_use')
     })
   })
+
+  // =========================================================================
+  // reasoning_effort forwarding (RFC #200 follow-up)
+  // =========================================================================
+
+  describe('reasoning_effort forwarding', () => {
+    it('forwards thinking.effort as reasoning_effort on chat()', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, effort: 'low' } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('low')
+    })
+
+    it('forwards thinking.effort as reasoning_effort on stream()', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        textChunk('ok', 'stop', { prompt_tokens: 1, completion_tokens: 1 }),
+      ]))
+
+      await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Hi')],
+          chatOpts({ thinking: { enabled: true, effort: 'high' } }),
+        ),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('high')
+    })
+
+    it('forwards the gpt-5 "minimal" effort value (raw pass-through)', async () => {
+      // The SDK type union doesn't yet declare 'minimal', but OpenAI accepts
+      // it on gpt-5. Consistent with how OMA forwards top_k / min_p without
+      // type-narrowing — let the API surface any rejection.
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, effort: 'minimal' } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('minimal')
+    })
+
+    it('omits reasoning_effort when thinking is absent', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBeUndefined()
+    })
+
+    it('omits reasoning_effort when thinking.effort is unset', async () => {
+      // OpenAI's reasoning surface is qualitative (effort) only; the
+      // enabled/budgetTokens fields don't map to OpenAI Chat Completions
+      // and are ignored. A caller setting `enabled: true` without `effort`
+      // gets no reasoning_effort forwarded — they'd hit OpenAI's server
+      // default for reasoning models.
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, budgetTokens: 2048 } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBeUndefined()
+    })
+
+    it('lets extraBody.reasoning_effort override thinking.effort', async () => {
+      // Field-ordering contract: sampling params come before extraBody so
+      // extraBody can override them. Verify reasoning_effort obeys that
+      // contract along with the other sampling fields.
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({
+          thinking: { enabled: true, effort: 'low' },
+          extraBody: { reasoning_effort: 'high' },
+        }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('high')
+    })
+  })
 })
