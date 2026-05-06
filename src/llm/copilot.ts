@@ -310,6 +310,14 @@ export class CopilotAdapter implements LLMAdapter {
         // those are vLLM/local-server extensions and the Copilot endpoint
         // (`api.githubcopilot.com`) is a fixed cloud proxy, so users have no
         // way to route them to a server that accepts them.
+        //
+        // Caveat: Copilot's API is not publicly documented by GitHub —
+        // available references are community-reverse-engineered. The proxy
+        // is designed to be OpenAI Chat Completions compatible, so we
+        // forward the standard OpenAI sampling fields on that assumption.
+        // Per-model behaviour (some reasoning models may ignore these) is
+        // out of scope for the adapter, same as how openai.ts forwards
+        // `topP` to the cloud OpenAI o-series even though o-series ignores it.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
