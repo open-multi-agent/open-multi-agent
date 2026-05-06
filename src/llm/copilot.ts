@@ -27,6 +27,8 @@
 import OpenAI from 'openai'
 import type {
   ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions/index.js'
 
 import type {
@@ -305,9 +307,12 @@ export class CopilotAdapter implements LLMAdapter {
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-      },
+        // Cast covers the `'minimal'` reasoning effort value (gpt-5) which
+        // isn't yet in the SDK's `ReasoningEffort` union.
+      } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,
       },
@@ -334,10 +339,12 @@ export class CopilotAdapter implements LLMAdapter {
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: true,
         stream_options: { include_usage: true },
-      },
+        // See chat() above for the rationale behind the cast.
+      } as ChatCompletionCreateParamsStreaming,
       {
         signal: options.abortSignal,
       },

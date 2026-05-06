@@ -420,6 +420,69 @@ describe('CopilotAdapter', () => {
   })
 
   // =========================================================================
+  // reasoning_effort forwarding (RFC #200 follow-up)
+  // =========================================================================
+
+  describe('reasoning_effort forwarding', () => {
+    let adapter: CopilotAdapter
+
+    beforeEach(() => {
+      globalThis.fetch = mockFetchForToken()
+      adapter = new CopilotAdapter('gh_token')
+    })
+
+    it('forwards thinking.effort as reasoning_effort on chat()', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, effort: 'low' } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('low')
+    })
+
+    it('forwards thinking.effort as reasoning_effort on stream()', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        { id: 'c', model: 'm', choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+      ]))
+
+      await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Hi')],
+          chatOpts({ thinking: { enabled: true, effort: 'high' } }),
+        ),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('high')
+    })
+
+    it('forwards the gpt-5 "minimal" effort value (covered by the SDK-type cast)', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, effort: 'minimal' } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('minimal')
+    })
+
+    it('omits reasoning_effort when thinking is absent or effort is unset', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBeUndefined()
+
+      mockCreate.mockResolvedValue(makeCompletion())
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ thinking: { enabled: true, budgetTokens: 2048 } }),
+      )
+      expect(mockCreate.mock.calls[1][0].reasoning_effort).toBeUndefined()
+    })
+  })
+
+  // =========================================================================
   // getCopilotMultiplier()
   // =========================================================================
 

@@ -380,4 +380,66 @@ describe('AzureOpenAIAdapter', () => {
     expect(errorEvents).toHaveLength(1)
     expect((errorEvents[0]?.data as Error).message).toBe('Stream exploded')
   })
+
+  // =========================================================================
+  // reasoning_effort forwarding (RFC #200 follow-up)
+  // =========================================================================
+
+  describe('reasoning_effort forwarding', () => {
+    it('forwards thinking.effort as reasoning_effort on chat()', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'my-deployment', thinking: { enabled: true, effort: 'low' } }),
+      )
+
+      expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('low')
+    })
+
+    it('forwards thinking.effort as reasoning_effort on stream()', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        textChunk('ok', 'stop'),
+        { id: 'c', model: 'm', choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+      ]))
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Hi')],
+          chatOpts({ model: 'my-deployment', thinking: { enabled: true, effort: 'high' } }),
+        ),
+      )
+
+      expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('high')
+    })
+
+    it('forwards the gpt-5 "minimal" effort value (covered by the SDK-type cast)', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'my-deployment', thinking: { enabled: true, effort: 'minimal' } }),
+      )
+
+      expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('minimal')
+    })
+
+    it('omits reasoning_effort when thinking is absent or effort is unset', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model: 'my-deployment' }))
+      expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBeUndefined()
+
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'my-deployment', thinking: { enabled: true, budgetTokens: 2048 } }),
+      )
+      expect(createCompletionMock.mock.calls[1][0].reasoning_effort).toBeUndefined()
+    })
+  })
 })
