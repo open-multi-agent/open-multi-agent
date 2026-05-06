@@ -415,13 +415,16 @@ describe('AzureOpenAIAdapter', () => {
       expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('high')
     })
 
-    it('forwards the gpt-5 "minimal" effort value (covered by the SDK-type cast)', async () => {
+    it('passes through newer effort values via extraBody (e.g. gpt-5 "minimal")', async () => {
+      // See openai-adapter.test.ts for the rationale — the IR `effort`
+      // union is narrowed to SDK-declared values; newer ones go via
+      // extraBody.
       createCompletionMock.mockResolvedValue(makeCompletion())
       const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
 
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ model: 'my-deployment', thinking: { enabled: true, effort: 'minimal' } }),
+        chatOpts({ model: 'my-deployment', extraBody: { reasoning_effort: 'minimal' } }),
       )
 
       expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('minimal')

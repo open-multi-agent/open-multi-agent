@@ -457,17 +457,6 @@ describe('CopilotAdapter', () => {
       expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('high')
     })
 
-    it('forwards the gpt-5 "minimal" effort value (covered by the SDK-type cast)', async () => {
-      mockCreate.mockResolvedValue(makeCompletion())
-
-      await adapter.chat(
-        [textMsg('user', 'Hi')],
-        chatOpts({ thinking: { enabled: true, effort: 'minimal' } }),
-      )
-
-      expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('minimal')
-    })
-
     it('omits reasoning_effort when thinking is absent or effort is unset', async () => {
       mockCreate.mockResolvedValue(makeCompletion())
       await adapter.chat([textMsg('user', 'Hi')], chatOpts())

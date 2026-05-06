@@ -308,9 +308,7 @@ export class CopilotAdapter implements LLMAdapter {
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
-        // Field-level cast covers the `'minimal'` reasoning effort value
-        // (gpt-5) which isn't yet in the SDK's `ReasoningEffort` union.
-        reasoning_effort: options.thinking?.effort as 'low' | 'medium' | 'high' | null | undefined,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
       },
@@ -341,8 +339,7 @@ export class CopilotAdapter implements LLMAdapter {
         messages: openAIMessages,
         max_tokens: options.maxTokens,
         temperature: options.temperature,
-        // See chat() above for the rationale behind the field-level cast.
-        reasoning_effort: options.thinking?.effort as 'low' | 'medium' | 'high' | null | undefined,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: true,
         stream_options: { include_usage: true },

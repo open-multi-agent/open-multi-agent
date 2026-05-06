@@ -472,15 +472,15 @@ describe('OpenAIAdapter', () => {
       expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('high')
     })
 
-    it('forwards the gpt-5 "minimal" effort value (raw pass-through)', async () => {
-      // The SDK type union doesn't yet declare 'minimal', but OpenAI accepts
-      // it on gpt-5. Consistent with how OMA forwards top_k / min_p without
-      // type-narrowing — let the API surface any rejection.
+    it('passes through newer effort values via extraBody (e.g. gpt-5 "minimal")', async () => {
+      // The IR's `effort` union is intentionally narrowed to what the
+      // pinned SDK declares. Newer values (gpt-5 'minimal', GPT-5.5 'none')
+      // travel via extraBody — same escape hatch as vLLM-only top_k/min_p.
       mockCreate.mockResolvedValue(makeCompletion())
 
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ thinking: { enabled: true, effort: 'minimal' } }),
+        chatOpts({ extraBody: { reasoning_effort: 'minimal' } }),
       )
 
       expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('minimal')

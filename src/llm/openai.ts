@@ -113,10 +113,9 @@ export class OpenAIAdapter implements LLMAdapter {
         messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-        // Cast covers `top_k` / `min_p`, the `'minimal'` reasoning effort
-        // value (added by gpt-5 but not yet in our SDK's type union), and
-        // arbitrary `extraBody` keys, none of which the upstream SDK type
-        // declares.
+        // Cast covers `top_k` / `min_p` and arbitrary `extraBody` keys,
+        // which local OpenAI-compatible servers (vLLM, llama-server) accept
+        // but the upstream SDK type does not declare.
       } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,

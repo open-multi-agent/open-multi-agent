@@ -324,12 +324,19 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
  *   an explicit value rather than derived from `budgetTokens` so the call
  *   site stays unambiguous across providers.
  *
+ * The `effort` union is intentionally narrowed to the values declared by
+ * the pinned `openai` SDK (`'low' | 'medium' | 'high'`). Newer values
+ * shipped by the API but not yet in the SDK type union (e.g. gpt-5's
+ * `'minimal'`, GPT-5.5's `'none'`) should be passed via `extraBody:
+ * { reasoning_effort: '<value>' }`, matching how `top_k` / `min_p` are
+ * handled for vLLM.
+ *
  * Adapters that don't recognise a given field ignore it.
  */
 export interface ThinkingConfig {
   readonly enabled: boolean
   readonly budgetTokens?: number
-  readonly effort?: 'minimal' | 'low' | 'medium' | 'high'
+  readonly effort?: 'low' | 'medium' | 'high'
 }
 
 /** Context passed to the {@link AgentConfig.beforeRun} hook. */

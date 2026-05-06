@@ -134,9 +134,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         presence_penalty: options.presencePenalty,
         top_p: options.topP,
         parallel_tool_calls: options.parallelToolCalls,
-        // Field-level cast covers the `'minimal'` reasoning effort value
-        // (gpt-5) which isn't yet in the SDK's `ReasoningEffort` union.
-        reasoning_effort: options.thinking?.effort as 'low' | 'medium' | 'high' | null | undefined,
+        reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
         model: deploymentName,
         messages: openAIMessages,
@@ -183,7 +181,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         presence_penalty: options.presencePenalty,
         top_p: options.topP,
         parallel_tool_calls: options.parallelToolCalls,
-        reasoning_effort: options.thinking?.effort as 'low' | 'medium' | 'high' | null | undefined,
+        reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
         model: deploymentName,
         messages: openAIMessages,
