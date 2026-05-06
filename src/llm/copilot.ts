@@ -303,35 +303,24 @@ export class CopilotAdapter implements LLMAdapter {
 
     const completion = await client.chat.completions.create(
       {
-        // Sampling params first so extraBody can override them. Structural
-        // fields (model/messages/tools/stream) come after extraBody so users
-        // cannot accidentally clobber them via extraBody. Mirrors the field
-        // ordering contract in openai.ts, but without `top_k`/`min_p` —
-        // those are vLLM/local-server extensions and the Copilot endpoint
-        // (`api.githubcopilot.com`) is a fixed cloud proxy, so users have no
-        // way to route them to a server that accepts them.
-        //
-        // Caveat: Copilot's API is not publicly documented by GitHub —
-        // available references are community-reverse-engineered. The proxy
-        // is designed to be OpenAI Chat Completions compatible, so we
-        // forward the standard OpenAI sampling fields on that assumption.
-        // Per-model behaviour (some reasoning models may ignore these) is
-        // out of scope for the adapter, same as how openai.ts forwards
-        // `topP` to the cloud OpenAI o-series even though o-series ignores it.
-        max_tokens: options.maxTokens,
-        temperature: options.temperature,
-        frequency_penalty: options.frequencyPenalty,
-        presence_penalty: options.presencePenalty,
-        top_p: options.topP,
-        parallel_tool_calls: options.parallelToolCalls,
-        reasoning_effort: options.thinking?.effort,
-        ...options.extraBody,
+        // Field set kept narrow on purpose: GitHub doesn't publish a public
+        // Copilot chat/completions API reference, so only the params that
+        // appear in reverse-engineered request examples (model, messages,
+        // max_tokens, temperature, tools, stream) plus `reasoning_effort`
+        // (covered by the SDK's typed union) are forwarded as top-level
+        // fields. Other OpenAI-style sampling controls (frequency_penalty,
+        // presence_penalty, top_p, parallel_tool_calls, extraBody) are
+        // intentionally NOT forwarded because we have no evidence the
+        // Copilot proxy honours them.
         model: options.model,
         messages: openAIMessages,
+        max_tokens: options.maxTokens,
+        temperature: options.temperature,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-        // Cast covers the `'minimal'` reasoning effort value (gpt-5, not yet
-        // in the SDK's type union) and arbitrary `extraBody` keys.
+        // Cast covers the `'minimal'` reasoning effort value (gpt-5) which
+        // isn't yet in the SDK's `ReasoningEffort` union.
       } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,
@@ -355,18 +344,12 @@ export class CopilotAdapter implements LLMAdapter {
 
     const streamResponse = await client.chat.completions.create(
       {
-        // See chat() above for the rationale behind this field ordering and
-        // the `top_k`/`min_p` exclusion.
-        max_tokens: options.maxTokens,
-        temperature: options.temperature,
-        frequency_penalty: options.frequencyPenalty,
-        presence_penalty: options.presencePenalty,
-        top_p: options.topP,
-        parallel_tool_calls: options.parallelToolCalls,
-        reasoning_effort: options.thinking?.effort,
-        ...options.extraBody,
+        // See chat() above for the rationale behind the narrow field set.
         model: options.model,
         messages: openAIMessages,
+        max_tokens: options.maxTokens,
+        temperature: options.temperature,
+        reasoning_effort: options.thinking?.effort,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: true,
         stream_options: { include_usage: true },

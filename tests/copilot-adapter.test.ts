@@ -483,10 +483,10 @@ describe('CopilotAdapter', () => {
   })
 
   // =========================================================================
-  // Sampling-param parity with OpenAIAdapter
+  // Conservative param surface (intentional non-forwarding)
   // =========================================================================
 
-  describe('sampling-param parity', () => {
+  describe('conservative param surface', () => {
     let adapter: CopilotAdapter
 
     beforeEach(() => {
@@ -494,12 +494,13 @@ describe('CopilotAdapter', () => {
       adapter = new CopilotAdapter('gh_token')
     })
 
-    it('forwards the OpenAI-cloud-compatible sampling params and extraBody', async () => {
-      // Pre-PR-#209 the Copilot adapter quietly dropped these fields, so a
-      // caller setting `topP` / `frequencyPenalty` / etc. would see no effect
-      // on the wire even though the AgentConfig accepted them. Mirror the
-      // openai.ts forwarding contract here so behaviour is consistent across
-      // every OpenAI-track adapter.
+    it('does NOT forward sampling params or extraBody that lack public Copilot spec coverage', async () => {
+      // GitHub doesn't publish a public Copilot Chat Completions API
+      // reference — community-reverse-engineered docs only show
+      // model/messages/max_tokens/temperature/tools/stream/tool_choice.
+      // Until we have evidence the proxy honours these fields they stay
+      // dropped (better silent-no-op than introducing fields that might
+      // 400 against an undocumented contract).
       mockCreate.mockResolvedValue(makeCompletion())
 
       await adapter.chat(
@@ -508,65 +509,36 @@ describe('CopilotAdapter', () => {
           frequencyPenalty: 0.5,
           presencePenalty: 0.4,
           topP: 0.9,
+          topK: 40,
+          minP: 0.05,
           parallelToolCalls: false,
           extraBody: { logit_bias: { '50256': -100 } },
         }),
       )
 
       const sent = mockCreate.mock.calls[0][0]
-      expect(sent.frequency_penalty).toBe(0.5)
-      expect(sent.presence_penalty).toBe(0.4)
-      expect(sent.top_p).toBe(0.9)
-      expect(sent.parallel_tool_calls).toBe(false)
-      expect(sent.logit_bias).toEqual({ '50256': -100 })
-    })
-
-    it('does NOT forward vLLM-only top_k / min_p (Copilot endpoint is a fixed cloud proxy)', async () => {
-      // Unlike openai.ts (which supports `baseURL: localhost` to reach vLLM),
-      // the Copilot adapter is hard-coded to `api.githubcopilot.com` and that
-      // endpoint doesn't accept these vLLM extensions. Forwarding them as
-      // top-level fields would be dead weight at best, a 400 at worst.
-      // Users who need vLLM extensions can still pass them via `extraBody`.
-      mockCreate.mockResolvedValue(makeCompletion())
-
-      await adapter.chat(
-        [textMsg('user', 'Hi')],
-        chatOpts({ topK: 40, minP: 0.05 }),
-      )
-
-      const sent = mockCreate.mock.calls[0][0]
+      expect(sent.frequency_penalty).toBeUndefined()
+      expect(sent.presence_penalty).toBeUndefined()
+      expect(sent.top_p).toBeUndefined()
       expect(sent.top_k).toBeUndefined()
       expect(sent.min_p).toBeUndefined()
+      expect(sent.parallel_tool_calls).toBeUndefined()
+      expect(sent.logit_bias).toBeUndefined()
     })
 
-    it('extraBody overrides sampling params (field-ordering contract)', async () => {
+    it('still forwards the documented param subset (temperature, max_tokens, tools)', async () => {
       mockCreate.mockResolvedValue(makeCompletion())
+      const tool = toolDef('search')
 
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({
-          temperature: 0.2,
-          extraBody: { temperature: 0.9 },
-        }),
-      )
-
-      expect(mockCreate.mock.calls[0][0].temperature).toBe(0.9)
-    })
-
-    it('extraBody cannot override structural fields (model/messages/tools/stream)', async () => {
-      mockCreate.mockResolvedValue(makeCompletion())
-
-      await adapter.chat(
-        [textMsg('user', 'Hi')],
-        chatOpts({
-          model: 'real-model',
-          extraBody: { model: 'spoofed-model', stream: true } as Record<string, unknown>,
-        }),
+        chatOpts({ tools: [tool], temperature: 0.5, maxTokens: 2000 }),
       )
 
       const sent = mockCreate.mock.calls[0][0]
-      expect(sent.model).toBe('real-model')
-      expect(sent.stream).toBe(false)
+      expect(sent.temperature).toBe(0.5)
+      expect(sent.max_tokens).toBe(2000)
+      expect(sent.tools[0].function.name).toBe('search')
     })
   })
 
