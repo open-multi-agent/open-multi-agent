@@ -448,7 +448,7 @@ describe('AzureOpenAIAdapter', () => {
   // =========================================================================
 
   describe('sampling-param parity', () => {
-    it('forwards the full set of OpenAI-compatible sampling params and extraBody', async () => {
+    it('forwards the OpenAI-cloud-compatible sampling params and extraBody', async () => {
       // Pre-PR-#209 the Azure adapter quietly dropped these fields, so a
       // caller setting `topP` / `frequencyPenalty` / etc. would see no effect
       // on the wire even though the AgentConfig accepted them. Mirror the
@@ -464,8 +464,6 @@ describe('AzureOpenAIAdapter', () => {
           frequencyPenalty: 0.5,
           presencePenalty: 0.4,
           topP: 0.9,
-          topK: 40,
-          minP: 0.05,
           parallelToolCalls: false,
           extraBody: { logit_bias: { '50256': -100 } },
         }),
@@ -475,10 +473,26 @@ describe('AzureOpenAIAdapter', () => {
       expect(sent.frequency_penalty).toBe(0.5)
       expect(sent.presence_penalty).toBe(0.4)
       expect(sent.top_p).toBe(0.9)
-      expect(sent.top_k).toBe(40)
-      expect(sent.min_p).toBe(0.05)
       expect(sent.parallel_tool_calls).toBe(false)
       expect(sent.logit_bias).toEqual({ '50256': -100 })
+    })
+
+    it('does NOT forward vLLM-only top_k / min_p (Azure runs MS-hosted OpenAI models)', async () => {
+      // Per the Azure OpenAI Chat Completions API reference, `top_k` and
+      // `min_p` are not accepted parameters — they're vLLM/local extensions.
+      // Forwarding them as top-level fields would be dead weight at best, a
+      // 400 at worst. Users who need them can still pass via `extraBody`.
+      createCompletionMock.mockResolvedValue(makeCompletion())
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'my-deployment', topK: 40, minP: 0.05 }),
+      )
+
+      const sent = createCompletionMock.mock.calls[0][0]
+      expect(sent.top_k).toBeUndefined()
+      expect(sent.min_p).toBeUndefined()
     })
 
     it('extraBody overrides sampling params (field-ordering contract)', async () => {

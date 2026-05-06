@@ -306,14 +306,15 @@ export class CopilotAdapter implements LLMAdapter {
         // Sampling params first so extraBody can override them. Structural
         // fields (model/messages/tools/stream) come after extraBody so users
         // cannot accidentally clobber them via extraBody. Mirrors the field
-        // ordering contract in openai.ts.
+        // ordering contract in openai.ts, but without `top_k`/`min_p` —
+        // those are vLLM/local-server extensions and the Copilot endpoint
+        // (`api.githubcopilot.com`) is a fixed cloud proxy, so users have no
+        // way to route them to a server that accepts them.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
         top_p: options.topP,
-        top_k: options.topK,
-        min_p: options.minP,
         parallel_tool_calls: options.parallelToolCalls,
         reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
@@ -321,10 +322,8 @@ export class CopilotAdapter implements LLMAdapter {
         messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-        // Cast covers `top_k` / `min_p`, the `'minimal'` reasoning effort
-        // value (added by gpt-5 but not yet in our SDK's type union), and
-        // arbitrary `extraBody` keys, none of which the upstream SDK type
-        // declares.
+        // Cast covers the `'minimal'` reasoning effort value (gpt-5, not yet
+        // in the SDK's type union) and arbitrary `extraBody` keys.
       } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,
@@ -348,14 +347,13 @@ export class CopilotAdapter implements LLMAdapter {
 
     const streamResponse = await client.chat.completions.create(
       {
-        // See chat() above for the rationale behind this field ordering.
+        // See chat() above for the rationale behind this field ordering and
+        // the `top_k`/`min_p` exclusion.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
         top_p: options.topP,
-        top_k: options.topK,
-        min_p: options.minP,
         parallel_tool_calls: options.parallelToolCalls,
         reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
