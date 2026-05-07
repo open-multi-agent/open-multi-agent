@@ -1,0 +1,40 @@
+{
+  "_mock_source": true,
+  "source_type": "patient-reported symptom summary",
+  "safety_note": "MOCK fixture for an open-source multi-agent example. This is not real patient data and must not be used for diagnosis or treatment.",
+  "case_id": "mock-rd-001",
+  "patient_context": {
+    "age_band": "young_adult",
+    "sex": "not_specified",
+    "not_real_patient": true
+  },
+  "reported_concerns": [
+    "progressive exercise intolerance",
+    "intermittent proximal muscle weakness",
+    "elevated CK mentioned in a prior lab summary",
+    "symptoms feel worse after exertion"
+  ],
+  "timeline": [
+    {
+      "period": "month_0",
+      "event": "Noticed unusual fatigue after ordinary exercise."
+    },
+    {
+      "period": "month_3",
+      "event": "Reports more frequent difficulty climbing stairs."
+    },
+    {
+      "period": "month_6",
+      "event": "Found online posts linking similar symptoms to a named rare muscle disease."
+    }
+  ],
+  "family_history": "unknown",
+  "patient_current_belief": "A web article made the patient wonder whether this is MYO-X related rare muscle disease.",
+  "known_missing_information": [
+    "no complete neuromuscular exam summary",
+    "no specialist evaluation",
+    "no clinically interpreted genetic report",
+    "no muscle imaging or biopsy summary",
+    "no medication or endocrine differential review"
+  ]
+}

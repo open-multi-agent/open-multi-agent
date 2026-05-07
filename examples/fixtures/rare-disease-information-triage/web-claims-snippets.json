@@ -1,0 +1,22 @@
+{
+  "_mock_source": true,
+  "source_type": "web/forum/commercial claim snippets",
+  "safety_note": "MOCK fixture. These snippets intentionally include overclaiming and commercial promotion to seed runtime conflict.",
+  "snippets": [
+    {
+      "source_label": "forum_post",
+      "claim": "Several people in our community had stair-climbing difficulty and later learned they had MYO-X disease, so similar symptoms probably mean the same thing.",
+      "context": "anecdotal patient forum discussion"
+    },
+    {
+      "source_label": "general_blog",
+      "claim": "If you have exercise intolerance, proximal weakness, and elevated CK, MYO-X related disease should be your first suspicion.",
+      "context": "general web article without formal evidence grading"
+    },
+    {
+      "source_label": "commercial_testing_page",
+      "claim": "Our rare muscle disease panel can quickly confirm MYO-X disease for patients with these symptoms. Order now to avoid diagnostic delays.",
+      "context": "commercial genetic testing promotion"
+    }
+  ]
+}

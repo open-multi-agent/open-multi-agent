@@ -60,6 +60,7 @@ End-to-end examples framed around a concrete problem (meeting summarization, tra
 | [`cookbook/incident-postmortem-dag`](cookbook/incident-postmortem-dag.ts) | 5-task DAG with three parallel root tasks (log patterns + deploy correlation + blast radius) feeding root-cause hypothesis and final postmortem synthesis. |
 | [`cookbook/competitive-monitoring`](cookbook/competitive-monitoring.ts) | Parallel source monitoring (Twitter/Reddit/News), contradiction detection, and aggregated intelligence reporting. |
 | [`cookbook/paper-replication-triage`](cookbook/paper-replication-triage.ts) | Multi-source paper replication triage with artifact discovery, seeded conflicts, and a structured go/no-go plan. |
+| [`cookbook/rare-disease-information-triage`](cookbook/rare-disease-information-triage.ts) | Source-isolated rare disease information triage with mock fixtures, seeded misinformation/conflict detection, and safety-boundary arbitration. |
 | [`cookbook/personalized-interview-simulator`](cookbook/personalized-interview-simulator.ts) | Interactive interviewer loop with observer flags, shared memory, and structured debrief. |
 
 ## integrations — external systems

@@ -1,0 +1,31 @@
+{
+  "_mock_source": true,
+  "source_type": "medical safety policy",
+  "safety_note": "MOCK policy for this example.",
+  "prohibited_outputs": [
+    "do not diagnose the patient",
+    "do not confirm or rule out a rare disease",
+    "do not recommend treatment, dosing, supplements, or procedures",
+    "do not recommend a commercial test, product, clinic, or vendor",
+    "do not interpret a variant of uncertain significance as diagnostic"
+  ],
+  "allowed_outputs": [
+    "summarize evidence conflicts",
+    "identify missing information",
+    "label information as a discussion lead rather than a diagnosis",
+    "recommend consulting a licensed clinician, neuromuscular specialist, or genetic counselor",
+    "encourage organizing a symptom timeline and prior test results"
+  ],
+  "required_disclaimers": [
+    "This is not medical advice.",
+    "The sources are MOCK fixtures for a software example.",
+    "A licensed clinician must evaluate patient-specific concerns."
+  ],
+  "patient_facing_answer_allowed_without_clinician": false,
+  "decision_labels": [
+    "credible_lead",
+    "conflicting_evidence",
+    "misleading_or_commercial",
+    "needs_specialist_review"
+  ]
+}

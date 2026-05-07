@@ -1,0 +1,33 @@
+{
+  "_mock_source": true,
+  "source_type": "gene-phenotype evidence",
+  "safety_note": "MOCK fixture. No real genetic interpretation is provided.",
+  "claimed_gene": "MYO-X",
+  "claimed_condition": "MYO-X related rare muscle disease",
+  "evidence_records": [
+    {
+      "gene": "MYO-X",
+      "condition": "MYO-X related rare muscle disease",
+      "evidence_strength": "uncertain",
+      "notes": "The claimed association is represented as weak/uncertain in this mock fixture."
+    },
+    {
+      "gene": "NEURO-MUSCLE-2",
+      "condition": "broader rare neuromuscular disease family",
+      "evidence_strength": "moderate",
+      "notes": "May share some phenotype terms but is not sufficient for diagnosis."
+    }
+  ],
+  "variant_interpretation": {
+    "reported_marker": "MYO-X c.123A>G",
+    "classification": "VUS",
+    "classification_label": "variant of uncertain significance",
+    "clinical_warning": "A VUS must not be used alone to diagnose a disease or recommend treatment."
+  },
+  "phenotype_match": {
+    "exercise_intolerance": "non_specific",
+    "proximal_weakness": "non_specific",
+    "elevated_ck": "non_specific",
+    "overall_match_to_claimed_condition": "weak_or_uncertain"
+  }
+}
