@@ -127,7 +127,7 @@ const agent: AgentConfig = {
 
 ## MCP Tools (Model Context Protocol)
 
-`open-multi-agent` can connect to any MCP server and expose its tools directly to agents.
+`open-multi-agent` can connect to stdio MCP servers and expose their tools directly to agents.
 
 ```typescript
 import { connectMCPTools } from '@jackchen_me/open-multi-agent/mcp'
