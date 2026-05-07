@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="./.github/brand/demo-dashboard-hero.png" alt="Animated task DAG dashboard: coordinator decomposes a goal into tasks, executes them in parallel, and synthesizes the result — with token breakdown and agent output log" width="960">
+  <img src="./.github/brand/demo-dashboard-hero.gif" alt="Animated task DAG dashboard: coordinator decomposes a goal into tasks, executes them in parallel, and synthesizes the result — with token breakdown and agent output log" width="960" height="456" loading="eager">
 </p>
 
 <br />
