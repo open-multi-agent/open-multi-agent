@@ -61,6 +61,30 @@ export class InMemoryStore implements MemoryStore {
     this.data.set(key, entry)
   }
 
+  /**
+   * Like {@link set}, but also records a turn-count expiry. The entry is
+   * stored as-is — expiry filtering is the caller's responsibility (typically
+   * {@link SharedMemory}, which owns the turn counter).
+   *
+   * `createdAt` is preserved on update, matching {@link set}.
+   */
+  async setWithExpiry(
+    key: string,
+    value: string,
+    expiresAtTurn: number,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    const existing = this.data.get(key)
+    const entry: MemoryEntry = {
+      key,
+      value,
+      metadata: metadata !== undefined ? { ...metadata } : undefined,
+      createdAt: existing?.createdAt ?? new Date(),
+      expiresAtTurn,
+    }
+    this.data.set(key, entry)
+  }
+
   /** Returns a snapshot of all entries in insertion order. */
   async list(): Promise<MemoryEntry[]> {
     return Array.from(this.data.values())

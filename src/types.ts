@@ -937,6 +937,13 @@ export interface MemoryEntry {
   readonly value: string
   readonly metadata?: Readonly<Record<string, unknown>>
   readonly createdAt: Date
+  /**
+   * Optional turn-count expiry. When set, the entry is considered expired
+   * once the {@link SharedMemory} turn counter reaches or exceeds this value.
+   * Computed at write time as `currentTurn + ttlTurns`. Stores that don't
+   * implement {@link MemoryStore.setWithExpiry} will not have this field set.
+   */
+  readonly expiresAtTurn?: number
 }
 
 /**
@@ -946,6 +953,18 @@ export interface MemoryEntry {
 export interface MemoryStore {
   get(key: string): Promise<MemoryEntry | null>
   set(key: string, value: string, metadata?: Record<string, unknown>): Promise<void>
+  /**
+   * Optional: write an entry with a turn-count expiry. Stores that don't
+   * implement this method silently lose TTL semantics — callers (e.g.
+   * {@link SharedMemory}) should fall back to {@link set} and not enforce
+   * expiry on entries from those backends.
+   */
+  setWithExpiry?(
+    key: string,
+    value: string,
+    expiresAtTurn: number,
+    metadata?: Record<string, unknown>,
+  ): Promise<void>
   list(): Promise<MemoryEntry[]>
   delete(key: string): Promise<void>
   clear(): Promise<void>

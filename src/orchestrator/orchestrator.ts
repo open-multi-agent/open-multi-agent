@@ -709,6 +709,9 @@ async function executeQueue(
         const sharedMem = team.getSharedMemoryInstance()
         if (sharedMem) {
           await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
+          // Advance the turn counter so any TTL-tagged entries written during
+          // this task can be expired by subsequent reads.
+          sharedMem.advanceTurn()
         }
 
         const completedTask = queue.complete(task.id, result.output)

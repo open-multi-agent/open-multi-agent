@@ -310,4 +310,70 @@ describe('SharedMemory', () => {
       expect(team.getSharedMemoryInstance()).toBeDefined()
     })
   })
+
+  describe('turn-TTL (writeExpiring + advanceTurn)', () => {
+    it('writeExpiring entries are readable until the turn counter reaches expiry', async () => {
+      const mem = new SharedMemory()
+      await mem.writeExpiring('alice', 'short-lived', 'still here', 2)
+
+      // turn 0: readable
+      expect(await mem.read('alice/short-lived')).not.toBeNull()
+      mem.advanceTurn()
+      // turn 1: readable
+      expect(await mem.read('alice/short-lived')).not.toBeNull()
+      mem.advanceTurn()
+      // turn 2: expired (currentTurn 2 >= expiresAtTurn 2)
+      expect(await mem.read('alice/short-lived')).toBeNull()
+    })
+
+    it('write (no TTL) entries persist regardless of turn count', async () => {
+      const mem = new SharedMemory()
+      await mem.write('alice', 'permanent', 'forever')
+      for (let i = 0; i < 100; i++) mem.advanceTurn()
+      expect(await mem.read('alice/permanent')).not.toBeNull()
+    })
+
+    it('listAll / listByAgent / getSummary all filter expired entries', async () => {
+      const mem = new SharedMemory()
+      await mem.write('alice', 'kept', 'alive')
+      await mem.writeExpiring('alice', 'dropped', 'gone', 1)
+      mem.advanceTurn() // expires the second entry
+
+      expect(await mem.listAll()).toHaveLength(1)
+      expect(await mem.listByAgent('alice')).toHaveLength(1)
+      const summary = await mem.getSummary()
+      expect(summary).toContain('kept')
+      expect(summary).not.toContain('dropped')
+    })
+
+    it('writeExpiring degrades to plain set when the store lacks setWithExpiry', async () => {
+      // Custom stores satisfying only the required MemoryStore methods (no
+      // setWithExpiry) still work — the entry persists indefinitely instead
+      // of expiring. Documented behaviour, exercised here.
+      const data = new Map<string, MemoryEntry>()
+      const customStore: MemoryStore = {
+        async get(key) { return data.get(key) ?? null },
+        async set(key, value, metadata) {
+          data.set(key, { key, value, metadata, createdAt: new Date() })
+        },
+        async list() { return Array.from(data.values()) },
+        async delete(key) { data.delete(key) },
+        async clear() { data.clear() },
+      }
+      const mem = new SharedMemory(customStore)
+      await mem.writeExpiring('alice', 'ttl-ignored', 'still here', 1)
+      mem.advanceTurn()
+      // Custom store didn't record expiry, so the entry is still readable.
+      expect(await mem.read('alice/ttl-ignored')).not.toBeNull()
+    })
+
+    it('getTurnCount reflects advanceTurn calls', async () => {
+      const mem = new SharedMemory()
+      expect(mem.getTurnCount()).toBe(0)
+      mem.advanceTurn()
+      mem.advanceTurn()
+      mem.advanceTurn()
+      expect(mem.getTurnCount()).toBe(3)
+    })
+  })
 })
