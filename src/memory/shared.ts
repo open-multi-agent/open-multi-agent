@@ -147,6 +147,15 @@ export class SharedMemory {
    * @param ttlTurns - Number of turns the entry should remain readable for.
    *                   Must be a positive integer; `0` means the entry is
    *                   already expired and won't be returned by reads.
+   *
+   * @remarks
+   * In parallel batch execution (`runTasks` / `runTeam` running multiple
+   * tasks in one batch) the turn counter advances per *completed* task, not
+   * per *invoked* task. So if task A writes a TTL entry while task B is
+   * still running, B completing first will advance the counter and may
+   * expire A's entry sooner than wall-clock intuition suggests. For
+   * cross-task hand-off semantics that need stricter ordering, write the
+   * entry without TTL and delete explicitly.
    */
   async writeExpiring(
     agentName: string,
