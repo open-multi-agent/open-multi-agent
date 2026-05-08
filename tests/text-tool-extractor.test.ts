@@ -167,4 +167,48 @@ And a tool call: {"name": "bash", "arguments": {"command": "ls"}}`
     expect(result).toHaveLength(1)
     expect(result[0]!.name).toBe('bash')
   })
+
+  // -------------------------------------------------------------------------
+  // Stray-brace robustness
+  //
+  // Real model outputs sometimes contain stray `}` in prose — e.g. truncated
+  // shell snippets like "use ${var}" where the leading `${` was cut, or
+  // models quoting unbalanced text. The brace walker must not let depth go
+  // negative; if it does, the anchor for the *next* valid JSON object is
+  // lost and the tool call is silently dropped.
+  // -------------------------------------------------------------------------
+
+  it('extracts tool call after a stray closing brace in prose', () => {
+    const text = 'Some prose} more text {"name": "bash", "arguments": {"command": "ls"}}'
+    const result = extractToolCallsFromText(text, TOOLS)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.name).toBe('bash')
+    expect(result[0]!.input).toEqual({ command: 'ls' })
+  })
+
+  it('extracts tool call after multiple stray closing braces', () => {
+    const text = 'noise } } } {"name": "file_read", "arguments": {"path": "/tmp/x"}}'
+    const result = extractToolCallsFromText(text, TOOLS)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.name).toBe('file_read')
+    expect(result[0]!.input).toEqual({ path: '/tmp/x' })
+  })
+
+  it('extracts both tool calls when prose between them contains a stray brace', () => {
+    const text = `{"name": "bash", "arguments": {"command": "a"}}
+ok }
+{"name": "bash", "arguments": {"command": "b"}}`
+    const result = extractToolCallsFromText(text, TOOLS)
+    expect(result).toHaveLength(2)
+    expect(result[0]!.input).toEqual({ command: 'a' })
+    expect(result[1]!.input).toEqual({ command: 'b' })
+  })
+
+  it('treats stray `}` inside a string as literal, not as depth change', () => {
+    // The `}` inside the string value must not affect brace tracking.
+    const text = '{"name": "bash", "arguments": {"command": "echo }"}}'
+    const result = extractToolCallsFromText(text, TOOLS)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.input).toEqual({ command: 'echo }' })
+  })
 })

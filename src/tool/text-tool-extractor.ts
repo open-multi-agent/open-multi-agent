@@ -136,6 +136,13 @@ function extractJSONObjects(text: string): unknown[] {
       if (depth === 0) start = i
       depth++
     } else if (ch === '}') {
+      // Stray `}` outside any open object (e.g. prose like "use ${var}" where
+      // the `${` was prefix-truncated, or a model quoting unbalanced text).
+      // Ignoring it keeps depth non-negative — otherwise the `depth === 0`
+      // anchor for the next `{` would never re-fire, and any later valid JSON
+      // tool calls would be skipped (or the inner sub-object extracted in
+      // their place, which has no `name` field and is silently rejected).
+      if (depth === 0) continue
       depth--
       if (depth === 0 && start !== -1) {
         const candidate = text.slice(start, i + 1)
