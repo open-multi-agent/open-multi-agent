@@ -145,8 +145,10 @@ export class SharedMemory {
    * the optional method.
    *
    * @param ttlTurns - Number of turns the entry should remain readable for.
-   *                   Must be a positive integer; `0` means the entry is
-   *                   already expired and won't be returned by reads.
+   *                   Must be an integer ≥ 1; throws {@link RangeError}
+   *                   otherwise.
+   *
+   * @throws {RangeError} when `ttlTurns` is not an integer or is less than 1.
    *
    * @remarks
    * In parallel batch execution (`runTasks` / `runTeam` running multiple
@@ -164,6 +166,12 @@ export class SharedMemory {
     ttlTurns: number,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    if (!Number.isInteger(ttlTurns) || ttlTurns < 1) {
+      throw new RangeError(
+        `SharedMemory.writeExpiring: ttlTurns must be an integer ≥ 1 (got ${ttlTurns}). ` +
+          'Use write() for entries that should never expire.',
+      )
+    }
     const namespacedKey = SharedMemory.namespaceKey(agentName, key)
     const fullMetadata = { ...metadata, agent: agentName }
     if (typeof this.store.setWithExpiry === 'function') {
@@ -184,15 +192,15 @@ export class SharedMemory {
    *
    * Returns `null` when the key is absent **or** when the entry has expired
    * (per its `expiresAtTurn` against the current turn counter). Expired
-   * entries are deleted from the underlying store as a side effect.
+   * entries are filtered out but **not** deleted from the underlying store —
+   * deletion is left to the store impl (Redis has native TTL, Postgres a
+   * cron, etc.). Reading is therefore safe to call from concurrent processes
+   * without the risk of stomping on a fresh write to the same key.
    */
   async read(key: string): Promise<MemoryEntry | null> {
     const entry = await this.store.get(key)
     if (entry === null) return null
-    if (this.isExpired(entry)) {
-      await this.store.delete(key)
-      return null
-    }
+    if (this.isExpired(entry)) return null
     return entry
   }
 
@@ -212,7 +220,7 @@ export class SharedMemory {
   async listByAgent(agentName: string): Promise<MemoryEntry[]> {
     const prefix = SharedMemory.namespaceKey(agentName, '')
     const all = await this.store.list()
-    const live = await this.filterExpired(all)
+    const live = this.filterExpired(all)
     return live.filter((entry) => entry.key.startsWith(prefix))
   }
 
@@ -242,7 +250,7 @@ export class SharedMemory {
    */
   async getSummary(filter?: { taskIds?: string[] }): Promise<string> {
     let all = await this.store.list()
-    all = await this.filterExpired(all)
+    all = this.filterExpired(all)
     if (filter?.taskIds && filter.taskIds.length > 0) {
       const taskIds = new Set(filter.taskIds)
       all = all.filter((entry) => {
@@ -312,18 +320,15 @@ export class SharedMemory {
   }
 
   /**
-   * Drops expired entries from `entries` and deletes them from the store as
-   * a side effect. Entries without `expiresAtTurn` are always kept.
+   * Drops expired entries from `entries`. **Does not delete from the
+   * underlying store** — that would race with concurrent writers in
+   * distributed backends (the entry being deleted may have been
+   * overwritten with a fresh value between our read and our delete).
+   * Stores that want active cleanup should implement their own TTL sweep
+   * (Redis: native EXPIRE; Postgres: a cron). Entries without
+   * `expiresAtTurn` are always kept.
    */
-  private async filterExpired(entries: MemoryEntry[]): Promise<MemoryEntry[]> {
-    const live: MemoryEntry[] = []
-    for (const entry of entries) {
-      if (this.isExpired(entry)) {
-        await this.store.delete(entry.key)
-      } else {
-        live.push(entry)
-      }
-    }
-    return live
+  private filterExpired(entries: MemoryEntry[]): MemoryEntry[] {
+    return entries.filter((entry) => !this.isExpired(entry))
   }
 }

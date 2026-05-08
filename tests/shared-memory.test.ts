@@ -375,5 +375,33 @@ describe('SharedMemory', () => {
       mem.advanceTurn()
       expect(mem.getTurnCount()).toBe(3)
     })
+
+    it('writeExpiring throws RangeError on non-positive-integer ttlTurns', async () => {
+      const mem = new SharedMemory()
+      for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+        await expect(
+          mem.writeExpiring('alice', 'k', 'v', bad),
+        ).rejects.toThrow(RangeError)
+      }
+    })
+
+    it('expired entries remain in the underlying store (no destructive cleanup on read)', async () => {
+      // Race-safe: in distributed stores (Redis/Postgres), deleting on read
+      // would stomp on a concurrent write. SharedMemory only filters; store
+      // impls do their own GC. Regression guard for the original review.
+      const mem = new SharedMemory()
+      const store = mem.getStore()
+      await mem.writeExpiring('alice', 'gone', 'soon', 1)
+      mem.advanceTurn() // expires it
+
+      // SharedMemory hides the expired entry from callers...
+      expect(await mem.read('alice/gone')).toBeNull()
+      expect(await mem.listAll()).toHaveLength(0)
+      expect(await mem.getSummary()).toBe('')
+
+      // ...but the underlying store still has it (didn't get deleted).
+      expect(await store.get('alice/gone')).not.toBeNull()
+      expect(await store.list()).toHaveLength(1)
+    })
   })
 })
