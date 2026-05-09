@@ -9,7 +9,7 @@ It does **not** provide an interactive REPL, working-directory injection into to
 After installing the package, the binary is on `PATH` when using `npx` or a local `node_modules/.bin`:
 
 ```bash
-npm install @jackchen_me/open-multi-agent
+npm install @open-multi-agent/core
 npx oma help
 ```
 

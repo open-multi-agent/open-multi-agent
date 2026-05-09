@@ -13,7 +13,7 @@ const team = orchestrator.createTeam('research-team', {
 For durable or cross-process backends (Redis, Postgres, Engram, etc.), implement the `MemoryStore` interface and pass it via `sharedMemoryStore`. Keys are still namespaced as `<agentName>/<key>` before reaching the store:
 
 ```typescript
-import type { MemoryStore } from '@jackchen_me/open-multi-agent'
+import type { MemoryStore } from '@open-multi-agent/core'
 
 class RedisStore implements MemoryStore { /* get/set/list/delete/clear */ }
 

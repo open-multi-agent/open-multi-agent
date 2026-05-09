@@ -36,7 +36,7 @@ Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own 
 
 ```typescript
 import { writeFileSync } from 'node:fs'
-import { renderTeamRunDashboard } from '@jackchen_me/open-multi-agent'
+import { renderTeamRunDashboard } from '@open-multi-agent/core'
 
 const result = await orchestrator.runTeam(team, goal)
 writeFileSync('run.html', renderTeamRunDashboard(result))

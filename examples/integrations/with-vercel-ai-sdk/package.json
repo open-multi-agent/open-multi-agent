@@ -10,7 +10,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",
     "@ai-sdk/react": "^3.0.0",
-    "@jackchen_me/open-multi-agent": "file:../../",
+    "@open-multi-agent/core": "file:../../",
     "ai": "^6.0.0",
     "next": "^16.0.0",
     "react": "^19.0.0",

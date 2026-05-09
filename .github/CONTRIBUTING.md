@@ -5,7 +5,7 @@ Thanks for your interest in contributing to Open Multi-Agent! This guide covers 
 ## Setup
 
 ```bash
-git clone https://github.com/JackChen-me/open-multi-agent.git
+git clone https://github.com/open-multi-agent/open-multi-agent.git
 cd open-multi-agent
 npm install
 ```
@@ -65,7 +65,7 @@ See the [README](../README.md#architecture) for an architecture diagram. Key ent
 
 ## Where to Contribute
 
-Check the [issues](https://github.com/JackChen-me/open-multi-agent/issues) page. Issues labeled `good first issue` are scoped and approachable. Issues labeled `help wanted` are larger but well-defined.
+Check the [issues](https://github.com/open-multi-agent/open-multi-agent/issues) page. Issues labeled `good first issue` are scoped and approachable. Issues labeled `help wanted` are larger but well-defined.
 
 ## License
 

@@ -19,7 +19,7 @@ $3,000 USD per partner per 12-month placement. Single partner per slot at a time
 
 ## How to apply
 
-[Open an inquiry issue](https://github.com/JackChen-me/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry) with:
+[Open an inquiry issue](https://github.com/open-multi-agent/open-multi-agent/issues/new?title=Featured+Partner+Inquiry&labels=featured-partner-inquiry) with:
 
 - A short description of your product and how it integrates with `open-multi-agent`.
 - A link to the integration code or live deployment.

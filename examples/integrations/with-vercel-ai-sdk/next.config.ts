@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@jackchen_me/open-multi-agent'],
+  serverExternalPackages: ['@open-multi-agent/core'],
 }
 
 export default nextConfig

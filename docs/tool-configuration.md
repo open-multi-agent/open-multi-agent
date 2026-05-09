@@ -49,7 +49,7 @@ Two ways to give an agent a tool that is not in the built-in set.
 **Inject at config time** via `customTools` on `AgentConfig`. Good when the orchestrator wires up tools centrally. Tools defined here bypass preset/allowlist filtering but still respect `disallowedTools`.
 
 ```typescript
-import { defineTool } from '@jackchen_me/open-multi-agent'
+import { defineTool } from '@open-multi-agent/core'
 import { z } from 'zod'
 
 const weatherTool = defineTool({
@@ -130,7 +130,7 @@ const agent: AgentConfig = {
 `open-multi-agent` can connect to stdio MCP servers and expose their tools directly to agents.
 
 ```typescript
-import { connectMCPTools } from '@jackchen_me/open-multi-agent/mcp'
+import { connectMCPTools } from '@open-multi-agent/core/mcp'
 
 const { tools, disconnect } = await connectMCPTools({
   command: 'npx',

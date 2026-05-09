@@ -11,7 +11,7 @@
  *
  * @example
  * ```ts
- * import { Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from 'open-multi-agent'
+ * import { Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '@open-multi-agent/core'
  *
  * const registry = new ToolRegistry()
  * registerBuiltInTools(registry)

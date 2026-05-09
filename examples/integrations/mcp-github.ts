@@ -50,7 +50,7 @@ const agent = new Agent(
 
 try {
   const result = await agent.run(
-    'List the last 3 open issues in JackChen-me/open-multi-agent with title and number.',
+    'List the last 3 open issues in open-multi-agent/open-multi-agent with title and number.',
   )
 
   console.log(result.output)

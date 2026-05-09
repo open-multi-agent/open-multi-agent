@@ -19,7 +19,7 @@
  * Requires: ANTHROPIC_API_KEY environment variable
  *
  * Reproducer: https://github.com/CodingBangboo/open-multi-agent/blob/planOnly_with_examples/examples/basics/plan-only-dag_stress_test.ts
- * Issue: https://github.com/JackChen-me/open-multi-agent/issues/208
+ * Issue: https://github.com/open-multi-agent/open-multi-agent/issues/208
  */
 import { describe, it, expect } from 'vitest'
 import { OpenMultiAgent } from '../../src/orchestrator/orchestrator.js'

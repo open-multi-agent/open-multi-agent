@@ -54,7 +54,7 @@ This is the framework's key feature. When `runTeam()` is called:
 | Utils | `utils/semaphore.ts`, `utils/tokens.ts`, `utils/keywords.ts`, `utils/trace.ts` | Concurrency primitive, token accounting, keyword helpers, trace plumbing |
 | Errors | `errors.ts` | Shared error types |
 | Types | `types.ts` | All interfaces in one file to avoid circular deps |
-| Exports | `index.ts` (root, `'open-multi-agent'`), `mcp.ts` (subpath, `'open-multi-agent/mcp'`) | Public API surface; MCP integration is a separate entry point so non-MCP users don't pay the import cost |
+| Exports | `index.ts` (root, `'@open-multi-agent/core'`), `mcp.ts` (subpath, `'@open-multi-agent/core/mcp'`) | Public API surface; MCP integration is a separate entry point so non-MCP users don't pay the import cost |
 
 ### Agent Conversation Loop (AgentRunner)
 
@@ -98,7 +98,7 @@ Optional `maxRetries`, `retryDelayMs`, `retryBackoff` on task config (used via `
 
 ### MCP Integration
 
-`connectMCPTools()` (in `tool/mcp.ts`) bridges Model Context Protocol servers into the `ToolRegistry`. Imported lazily and exposed via the dedicated `open-multi-agent/mcp` package subpath (`src/mcp.ts`) so users who don't need MCP don't load `@modelcontextprotocol/sdk`.
+`connectMCPTools()` (in `tool/mcp.ts`) bridges Model Context Protocol servers into the `ToolRegistry`. Imported lazily and exposed via the dedicated `@open-multi-agent/core/mcp` package subpath (`src/mcp.ts`) so users who don't need MCP don't load `@modelcontextprotocol/sdk`.
 
 ### Loop Detection
 

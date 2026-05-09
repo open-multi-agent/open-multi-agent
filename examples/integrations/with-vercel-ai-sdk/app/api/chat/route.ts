@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages, type UIMessage } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { OpenMultiAgent } from '@jackchen_me/open-multi-agent'
-import type { AgentConfig } from '@jackchen_me/open-multi-agent'
+import { OpenMultiAgent } from '@open-multi-agent/core'
+import type { AgentConfig } from '@open-multi-agent/core'
 
 export const maxDuration = 120
 

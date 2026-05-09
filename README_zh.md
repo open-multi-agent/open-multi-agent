@@ -2,9 +2,9 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg">
-    <img alt="Open Multi-Agent" src="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="96">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg">
+    <img alt="Open Multi-Agent" src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="96">
   </picture>
 </p>
 
@@ -18,18 +18,18 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@jackchen_me/open-multi-agent"><img src="https://img.shields.io/npm/v/@jackchen_me/open-multi-agent" alt="npm version"></a>
-  <a href="https://github.com/JackChen-me/open-multi-agent/actions/workflows/ci.yml"><img src="https://github.com/JackChen-me/open-multi-agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/JackChen-me/open-multi-agent" alt="license"></a>
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core"><img src="https://img.shields.io/npm/v/@open-multi-agent/core" alt="npm version"></a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/actions/workflows/ci.yml"><img src="https://github.com/open-multi-agent/open-multi-agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
-  <a href="https://codecov.io/gh/JackChen-me/open-multi-agent"><img src="https://codecov.io/gh/JackChen-me/open-multi-agent/graph/badge.svg" alt="codecov"></a>
-  <a href="https://github.com/JackChen-me/open-multi-agent/blob/main/package.json"><img src="https://img.shields.io/badge/runtime_deps-3-brightgreen" alt="runtime deps"></a>
-  <a href="https://github.com/JackChen-me/open-multi-agent/stargazers"><img src="https://img.shields.io/github/stars/JackChen-me/open-multi-agent" alt="GitHub stars"></a>
-  <a href="https://github.com/JackChen-me/open-multi-agent/network/members"><img src="https://img.shields.io/github/forks/JackChen-me/open-multi-agent" alt="GitHub forks"></a>
+  <a href="https://codecov.io/gh/open-multi-agent/open-multi-agent"><img src="https://codecov.io/gh/open-multi-agent/open-multi-agent/graph/badge.svg" alt="codecov"></a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/blob/main/package.json"><img src="https://img.shields.io/badge/runtime_deps-3-brightgreen" alt="runtime deps"></a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/stargazers"><img src="https://img.shields.io/github/stars/open-multi-agent/open-multi-agent" alt="GitHub stars"></a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/network/members"><img src="https://img.shields.io/github/forks/open-multi-agent/open-multi-agent" alt="GitHub forks"></a>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JackChen-me/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Animated task DAG dashboard: coordinator decomposes a goal into tasks, executes them in parallel, and synthesizes the result — with token breakdown and agent output log" width="960" height="456" loading="eager">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Animated task DAG dashboard: coordinator decomposes a goal into tasks, executes them in parallel, and synthesizes the result — with token breakdown and agent output log" width="960" height="456" loading="eager">
 </p>
 
 <br />
@@ -42,6 +42,9 @@
 
 `open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端。
 
+> **包名更新：** 官方 npm 包已迁移到 `@open-multi-agent/core`。
+> 旧包 `@jackchen_me/open-multi-agent` 在迁移窗口内继续支持。
+
 > **工程师只描述目标，不画任务图。**
 
 ## 快速开始
@@ -51,11 +54,11 @@
 ### 在你的项目里使用
 
 ```bash
-npm install @jackchen_me/open-multi-agent
+npm install @open-multi-agent/core
 ```
 
 ```typescript
-import { OpenMultiAgent, type AgentConfig } from '@jackchen_me/open-multi-agent'
+import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
 const agents: AgentConfig[] = [
   { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
@@ -77,7 +80,7 @@ console.log(result.success, result.totalTokenUsage.output_tokens)
 ### 本地试跑
 
 ```bash
-git clone https://github.com/JackChen-me/open-multi-agent && cd open-multi-agent
+git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
 export ANTHROPIC_API_KEY=sk-...
 npx tsx examples/basics/team-collaboration.ts
@@ -188,14 +191,14 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 - **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
 - **家用服务器 Cybersecurity SOC。** 本地完全离线跑 Qwen 2.5 + DeepSeek Coder（通过 Ollama），在 Wazuh + Proxmox 上搭自主 SOC 流水线。早期用户，未公开。
 
-如果在生产或 side project 中使用了 `open-multi-agent`，[请开个 Discussion](https://github.com/JackChen-me/open-multi-agent/discussions)，我们会将其列在这里。
+如果在生产或 side project 中使用了 `open-multi-agent`，[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
 
 ### 集成
 
 - **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
 
-做了 `open-multi-agent` 集成？[开个 Discussion](https://github.com/JackChen-me/open-multi-agent/discussions)，我们会将其列在这里。
+做了 `open-multi-agent` 集成？[开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
 
 ### Featured partner
 
@@ -297,12 +300,12 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 
 - **生产级示例。** 端到端跑通的真实场景工作流。收录条件和提交格式见 [`examples/production/README.md`](./examples/production/README.md)。
 - **文档。** 指南、教程、API 文档。
-- **翻译。** 把这份 README 翻译成其他语言。[提个 PR](https://github.com/JackChen-me/open-multi-agent/pulls)。
+- **翻译。** 把这份 README 翻译成其他语言。[提个 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
 
 ## 贡献者
 
-<a href="https://github.com/JackChen-me/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=JackChen-me/open-multi-agent&max=100&v=20260507" />
+<a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260507" />
 </a>
 
 <details>
@@ -358,11 +361,11 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 
 ## Star 趋势
 
-<a href="https://star-history.com/#JackChen-me/open-multi-agent&Date">
+<a href="https://star-history.com/#open-multi-agent/open-multi-agent&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&theme=dark&v=20260425" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260425" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JackChen-me/open-multi-agent&type=Date&v=20260425" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&theme=dark&v=20260425" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
  </picture>
 </a>
 
