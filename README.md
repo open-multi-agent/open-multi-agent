@@ -200,6 +200,12 @@ Using `open-multi-agent` in production or a side project? [Open a discussion](ht
 
 Built an integration? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) to get listed.
 
+### Provider community offers
+
+Limited-time provider offers for `open-multi-agent` users. Listings are not paid endorsements.
+
+- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M2.7 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](./docs/providers/minimax.md).
+
 ### Featured partner
 
 For products and platforms with a deep `open-multi-agent` integration. See the [Featured partner program](./docs/featured-partner.md) for terms and how to apply.

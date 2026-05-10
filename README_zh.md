@@ -200,6 +200,12 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 
 做了 `open-multi-agent` 集成？[开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
 
+### Provider 社区优惠
+
+面向 `open-multi-agent` 用户的限时 provider 优惠。该列表不代表付费背书或唯一官方推荐。
+
+- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M2.7。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](./docs/providers/minimax.md)。
+
 ### Featured partner
 
 面向已经深度集成 `open-multi-agent` 的产品和平台。条款和申请方式见 [Featured partner 计划](./docs/featured-partner.md)。
