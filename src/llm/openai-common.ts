@@ -217,7 +217,7 @@ export function fromOpenAICompletion(
   completion: ChatCompletion,
   knownToolNames?: string[],
 ): LLMResponse {
-  const choice = completion.choices[0]
+  const choice = completion.choices?.[0]
   if (choice === undefined) {
     throw new Error('OpenAI returned a completion with no choices')
   }
