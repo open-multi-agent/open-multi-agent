@@ -370,7 +370,7 @@ export class CopilotAdapter implements LLMAdapter {
           outputTokens = chunk.usage.completion_tokens
         }
 
-        const choice: ChatCompletionChunk.Choice | undefined = chunk.choices[0]
+        const choice: ChatCompletionChunk.Choice | undefined = chunk.choices?.[0]
         if (choice === undefined) continue
 
         const delta = choice.delta
