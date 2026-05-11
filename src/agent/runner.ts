@@ -796,6 +796,10 @@ export class AgentRunner {
         }
 
         const totalTokens = totalUsage.input_tokens + totalUsage.output_tokens
+        // Defer the break to after tool_result is appended so we never leave
+        // an unmatched tool_use block in conversationMessages (which would
+        // cause a 400 on any subsequent API call that replays the history).
+        let pendingBudgetExceeded = false
         if (this.options.maxTokenBudget !== undefined && totalTokens > this.options.maxTokenBudget) {
           budgetExceeded = true
           finalOutput = turnText
@@ -807,7 +811,7 @@ export class AgentRunner {
               this.options.maxTokenBudget,
             ),
           } satisfies StreamEvent
-          break
+          pendingBudgetExceeded = true
         }
 
         // Extract tool-use blocks for detection and execution.
@@ -1008,6 +1012,9 @@ export class AgentRunner {
         // and the tool_result user message has been appended, so stream
         // consumers see matched tool_use/tool_result pairs and the returned
         // `messages` remain resumable against the Anthropic/OpenAI APIs.
+        if (pendingBudgetExceeded) {
+          break
+        }
         if (delegationTurnUsage !== undefined && this.options.maxTokenBudget !== undefined) {
           const totalAfterDelegation = totalUsage.input_tokens + totalUsage.output_tokens
           if (totalAfterDelegation > this.options.maxTokenBudget) {
