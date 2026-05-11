@@ -195,7 +195,7 @@ describe('regular budget_exceeded on a tool-call turn', () => {
     expect(toolResultIdx).toBeGreaterThanOrEqual(0)
     expect(toolResultIdx).toBeLessThan(doneIdx)
 
-    // 5. LLM was only called once — we broke before a second turn.
+    // 5. LLM should only be called once — we broke before a second turn.
     expect(idx).toBe(1)
   })
 })
