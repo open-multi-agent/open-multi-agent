@@ -165,8 +165,8 @@ function writeOverlayHtml() {
           <rect class="state-strip" x="100" y="116" width="3" height="117"></rect>
           <rect class="icon-cover" x="270" y="129" width="20" height="20" fill="#020504"></rect>
           <g class="state-icon" transform="translate(280 139)"></g>
-          <rect class="status-cover" x="114" y="187" width="147" height="15" fill="#020504"></rect>
-          <text class="status-text" x="114" y="198" font-size="10"></text>
+          <rect class="status-cover" x="114" y="178" width="147" height="24" fill="#020504"></rect>
+          <text class="status-text" x="114" y="190" font-size="10"></text>
           <rect class="chip-cover" x="114" y="206" width="132" height="17" fill="#020504"></rect>
           <g class="chip-row" transform="translate(114 207)"></g>
         </g>
@@ -270,6 +270,12 @@ function writeOverlayHtml() {
         <text id="panel-log-3" x="1187" y="724" fill="#c8d1e2" font-size="9.5">[PROVIDER-AGENT] Mix providers + local Ollama -> COMPLETED</text>
         <text id="panel-log-4" x="1187" y="743" fill="#c8d1e2" font-size="9.5">[OBSERVABILITY] Emit traces + dashboard -> COMPLETED</text>
         <rect id="terminal-cursor" x="1515" y="735" width="6" height="11" fill="#a6ffbd" opacity="0.0"></rect>
+      </g>
+
+      <g id="post-run-replay-badge">
+        <rect x="24" y="22" width="168" height="28" rx="14" ry="14" fill="#0f1930" fill-opacity="0.92" stroke="#81ecff" stroke-opacity="0.55" stroke-width="1"></rect>
+        <circle id="replay-dot" cx="40" cy="36" r="3.4" fill="#81ecff" fill-opacity="0.9"></circle>
+        <text x="54" y="40" fill="#dee5ff" font-size="10.5" font-weight="600" letter-spacing="1.4">POST-RUN REPLAY</text>
       </g>
     </svg>
   </div>

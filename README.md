@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Animated task DAG dashboard: coordinator decomposes a goal into tasks, executes them in parallel, and synthesizes the result — with token breakdown and agent output log" width="960" height="456" loading="eager">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Post-run dashboard replaying a completed team run: task DAG with per-node assignee, status, token breakdown, and agent output log" width="960" height="456" loading="eager">
 </p>
 
 <br />
