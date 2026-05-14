@@ -142,7 +142,9 @@ export class Agent {
     }
 
     const provider = this.config.provider ?? 'anthropic'
-    const adapter = await createAdapter(provider, this.config.apiKey, this.config.baseURL, this.config.region)
+    const adapter =
+      this.config.adapter ??
+      (await createAdapter(provider, this.config.apiKey, this.config.baseURL, this.config.region))
 
     // Append structured-output instructions when an outputSchema is configured.
     let effectiveSystemPrompt = this.config.systemPrompt

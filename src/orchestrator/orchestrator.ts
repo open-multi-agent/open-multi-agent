@@ -1097,6 +1097,7 @@ export class OpenMultiAgent {
     const coordinatorConfig: AgentConfig = {
       name: 'coordinator',
       model: coordinatorOverrides?.model ?? this.config.defaultModel,
+      ...(coordinatorOverrides?.adapter !== undefined ? { adapter: coordinatorOverrides.adapter } : {}),
       provider: coordinatorOverrides?.provider ?? this.config.defaultProvider,
       baseURL: coordinatorOverrides?.baseURL ?? this.config.defaultBaseURL,
       apiKey: coordinatorOverrides?.apiKey ?? this.config.defaultApiKey,

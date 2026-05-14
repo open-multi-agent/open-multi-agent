@@ -113,6 +113,7 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
+export { AISdkAdapter, llmMessagesToAiSdkModelMessages } from './llm/ai-sdk.js'
 export { TokenBudgetExceededError } from './errors.js'
 
 // ---------------------------------------------------------------------------

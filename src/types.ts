@@ -351,6 +351,12 @@ export interface BeforeRunHookContext {
 export interface AgentConfig {
   readonly name: string
   readonly model: string
+  /**
+   * Optional custom {@link LLMAdapter}. When set, the agent uses this adapter
+   * directly and skips {@link createAdapter} — `provider`, `apiKey`, `baseURL`,
+   * and `region` are ignored for LLM calls.
+   */
+  readonly adapter?: LLMAdapter
   readonly provider?: SupportedProvider
   /**
    * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).
@@ -786,6 +792,11 @@ export interface OrchestratorConfig {
 export interface CoordinatorConfig {
   /** Coordinator model. Defaults to `OrchestratorConfig.defaultModel`. */
   readonly model?: string
+  /**
+   * Optional {@link LLMAdapter} for the coordinator agent. When set, coordinator
+   * LLM calls use this adapter and ignore `provider` / `apiKey` / `baseURL`.
+   */
+  readonly adapter?: LLMAdapter
   readonly provider?: SupportedProvider
   readonly baseURL?: string
   readonly apiKey?: string

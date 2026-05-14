@@ -283,8 +283,31 @@ const agent: AgentConfig = {
 |------|------------------|----------|
 | Built-in shortcuts | Set `provider` to `anthropic`, `gemini`, `openai`, `azure-openai`, `copilot`, `grok`, `deepseek`, `minimax`, `qiniu`, or `bedrock`; the framework supplies the endpoint. | Anthropic, Gemini, OpenAI, Azure OpenAI, GitHub Copilot, xAI Grok, DeepSeek, MiniMax, Qiniu, AWS Bedrock |
 | OpenAI-compatible endpoints | Set `provider: 'openai'` plus `baseURL` and, when needed, `apiKey`. | Ollama, vLLM, LM Studio, llama.cpp server, OpenRouter, Groq, Mistral |
+| Vercel AI SDK | Set `adapter: new AISdkAdapter(yourModel)`; install optional peer `ai` plus an `@ai-sdk/*` provider. | [Any AI SDK provider](https://ai-sdk.dev/providers) (60+ models and hosts) |
 
 See [docs/providers.md](./docs/providers.md) for env vars, model examples, local tool-calling, timeouts, and troubleshooting.
+
+### Vercel AI SDK (optional)
+
+Install the optional peer [`ai`](https://www.npmjs.com/package/ai) plus any [`@ai-sdk` provider](https://ai-sdk.dev/providers) you need (for example [`@ai-sdk/openai`](https://www.npmjs.com/package/@ai-sdk/openai)). Pass `adapter: new AISdkAdapter(model)` on `AgentConfig` to route that agent through the AI SDK instead of the built-in `provider` factory. `provider`, `apiKey`, `baseURL`, and `region` are ignored when `adapter` is set. Mixed teams work as usual: only agents with `adapter` use the AI SDK.
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { AISdkAdapter, OpenMultiAgent } from '@open-multi-agent/core'
+
+const oma = new OpenMultiAgent()
+await oma.runAgent(
+  {
+    name: 'researcher',
+    model: 'gpt-4o',
+    adapter: new AISdkAdapter(openai('gpt-4o')),
+    systemPrompt: 'You are a researcher.',
+  },
+  'What are the latest AI trends?',
+)
+```
+
+The coordinator accepts the same hook via `runTeam(team, goal, { coordinator: { adapter: new AISdkAdapter(...) } })`.
 
 ## Production Checklist
 
