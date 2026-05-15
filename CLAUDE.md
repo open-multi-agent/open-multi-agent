@@ -54,7 +54,7 @@ This is the framework's key feature. When `runTeam()` is called:
 | Utils | `utils/semaphore.ts`, `utils/tokens.ts`, `utils/keywords.ts`, `utils/trace.ts` | Concurrency primitive, token accounting, keyword helpers, trace plumbing |
 | Errors | `errors.ts` | Shared error types |
 | Types | `types.ts` | All interfaces in one file to avoid circular deps |
-| Exports | `index.ts` (root, `'@open-multi-agent/core'`), `mcp.ts` (subpath, `'@open-multi-agent/core/mcp'`) | Public API surface; MCP integration is a separate entry point so non-MCP users don't pay the import cost |
+| Exports | `index.ts` (root, `'@open-multi-agent/core'`), `mcp.ts` (subpath, `'@open-multi-agent/core/mcp'`), `ai-sdk.ts` (subpath, `'@open-multi-agent/core/ai-sdk'`) | Public API surface; MCP and AI SDK bridges are separate entry points so users without those optional peers don't break TS on the main import |
 
 ### Agent Conversation Loop (AgentRunner)
 
@@ -99,6 +99,10 @@ Optional `maxRetries`, `retryDelayMs`, `retryBackoff` on task config (used via `
 ### MCP Integration
 
 `connectMCPTools()` (in `tool/mcp.ts`) bridges Model Context Protocol servers into the `ToolRegistry`. Imported lazily and exposed via the dedicated `@open-multi-agent/core/mcp` package subpath (`src/mcp.ts`) so users who don't need MCP don't load `@modelcontextprotocol/sdk`.
+
+### Vercel AI SDK bridge
+
+`AISdkAdapter` (in `llm/ai-sdk.ts`) implements `LLMAdapter` via AI SDK `generateText` / `streamText`. Exposed via `@open-multi-agent/core/ai-sdk` (`src/ai-sdk.ts`) so users without the optional peer `ai` are not forced to resolve those types on the main barrel import.
 
 ### Loop Detection
 

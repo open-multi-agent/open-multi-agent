@@ -37,7 +37,7 @@ import type { LLMAdapter } from '../types.js'
  * The set of LLM providers supported out of the box.
  * Additional providers can be integrated by implementing {@link LLMAdapter}
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
- * `./ai-sdk.js` (optional peer `ai`).
+ * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
 export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
 

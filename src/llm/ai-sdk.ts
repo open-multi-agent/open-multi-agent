@@ -215,20 +215,23 @@ export class AISdkAdapter implements LLMAdapter {
         : undefined
 
     const result = await generateText({
-      model: this.#model,
-      messages: aiMessages,
-      system: options.systemPrompt,
-      tools,
+      // Sampling params first so extraBody can override them. Structural
+      // fields (model/messages/system/tools) come after extraBody so users
+      // cannot accidentally clobber them via extraBody.
       maxOutputTokens: options.maxTokens,
       temperature: options.temperature,
       topP: options.topP,
       topK: options.topK,
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
+      ...(options.extraBody as Record<string, unknown> | undefined),
+      model: this.#model,
+      messages: aiMessages,
+      system: options.systemPrompt,
+      tools,
       abortSignal: options.abortSignal,
       maxRetries: 0,
       providerOptions: buildProviderOptions(options),
-      ...(options.extraBody as Record<string, unknown> | undefined),
     })
 
     return buildLlmResponseFromGenerateText(result)
@@ -261,20 +264,21 @@ export class AISdkAdapter implements LLMAdapter {
 
     try {
       const result = streamText({
-        model: this.#model,
-        messages: aiMessages,
-        system: options.systemPrompt,
-        tools,
+        // See chat() above for the rationale behind this field ordering.
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         topP: options.topP,
         topK: options.topK,
         frequencyPenalty: options.frequencyPenalty,
         presencePenalty: options.presencePenalty,
+        ...(options.extraBody as Record<string, unknown> | undefined),
+        model: this.#model,
+        messages: aiMessages,
+        system: options.systemPrompt,
+        tools,
         abortSignal: options.abortSignal,
         maxRetries: 0,
         providerOptions: buildProviderOptions(options),
-        ...(options.extraBody as Record<string, unknown> | undefined),
       })
 
       for await (const part of result.fullStream) {

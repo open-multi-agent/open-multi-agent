@@ -25,6 +25,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.ts",
       "import": "./dist/mcp.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "import": "./dist/ai-sdk.js"
     }
   },
   "scripts": {

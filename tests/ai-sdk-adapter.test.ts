@@ -127,6 +127,67 @@ describe('AISdkAdapter', () => {
     ])
   })
 
+  it('lets extraBody override sampling defaults like temperature', async () => {
+    generateTextMock.mockResolvedValue({
+      text: 'ok',
+      reasoningText: undefined,
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      response: { id: 'r', modelId: 'm' },
+    })
+
+    const adapter = new AISdkAdapter(dummyModel)
+    await adapter.chat([{ role: 'user', content: [{ type: 'text', text: 'x' }] }], {
+      model: 'm',
+      temperature: 0.5,
+      extraBody: { temperature: 0.99 },
+    })
+
+    const body = generateTextMock.mock.calls[0]![0] as Record<string, unknown>
+    expect(body['temperature']).toBe(0.99)
+  })
+
+  it('refuses to let extraBody override structural fields (model, messages, tools)', async () => {
+    generateTextMock.mockResolvedValue({
+      text: 'ok',
+      reasoningText: undefined,
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      response: { id: 'r', modelId: 'm' },
+    })
+
+    const adapter = new AISdkAdapter(dummyModel)
+    const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'real' }] }]
+    const tools = [
+      {
+        name: 'lookup',
+        description: 'Look up',
+        inputSchema: { type: 'object' as const, properties: {} },
+      },
+    ]
+
+    await adapter.chat(messages, {
+      model: 'm',
+      systemPrompt: 'real system',
+      tools,
+      extraBody: {
+        model: { spoofed: true },
+        messages: [],
+        system: 'evil',
+        tools: {},
+      } as Record<string, unknown>,
+    })
+
+    const body = generateTextMock.mock.calls[0]![0] as Record<string, unknown>
+    expect(body['model']).toBe(dummyModel)
+    expect(body['messages']).toEqual([{ role: 'user', content: 'real' }])
+    expect(body['system']).toBe('real system')
+    expect(body['tools']).toBeDefined()
+    expect(Object.keys(body['tools'] as object)).toEqual(['lookup'])
+  })
+
   it('streams text deltas and a terminal done event', async () => {
     streamTextMock.mockReturnValue({
       fullStream: (async function* () {

@@ -283,7 +283,7 @@ const agent: AgentConfig = {
 |------|------------------|----------|
 | Built-in shortcuts | Set `provider` to `anthropic`, `gemini`, `openai`, `azure-openai`, `copilot`, `grok`, `deepseek`, `minimax`, `qiniu`, or `bedrock`; the framework supplies the endpoint. | Anthropic, Gemini, OpenAI, Azure OpenAI, GitHub Copilot, xAI Grok, DeepSeek, MiniMax, Qiniu, AWS Bedrock |
 | OpenAI-compatible endpoints | Set `provider: 'openai'` plus `baseURL` and, when needed, `apiKey`. | Ollama, vLLM, LM Studio, llama.cpp server, OpenRouter, Groq, Mistral |
-| Vercel AI SDK | Set `adapter: new AISdkAdapter(yourModel)`; install optional peer `ai` plus an `@ai-sdk/*` provider. | [Any AI SDK provider](https://ai-sdk.dev/providers) (60+ models and hosts) |
+| Vercel AI SDK | Import `AISdkAdapter` from `@open-multi-agent/core/ai-sdk`; install optional peer `ai` plus an `@ai-sdk/*` provider. | [Any AI SDK provider](https://ai-sdk.dev/providers) (60+ models and hosts) |
 
 See [docs/providers.md](./docs/providers.md) for env vars, model examples, local tool-calling, timeouts, and troubleshooting.
 
@@ -293,7 +293,8 @@ Install the optional peer [`ai`](https://www.npmjs.com/package/ai) plus any [`@a
 
 ```typescript
 import { openai } from '@ai-sdk/openai'
-import { AISdkAdapter, OpenMultiAgent } from '@open-multi-agent/core'
+import { AISdkAdapter } from '@open-multi-agent/core/ai-sdk'
+import { OpenMultiAgent } from '@open-multi-agent/core'
 
 const oma = new OpenMultiAgent()
 await oma.runAgent(
