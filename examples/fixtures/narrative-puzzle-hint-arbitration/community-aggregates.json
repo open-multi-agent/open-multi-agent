@@ -1,0 +1,41 @@
+{
+  "source_is_mock": true,
+  "scenario_description": "MOCK platform analytics shaped like anonymized player behavior aggregates. No real player data is used.",
+  "puzzle_id": "piano-mirror-combo",
+  "room": "theatre",
+  "stuck_rate": 0.78,
+  "stuck_threshold_trigger": 0.66,
+  "average_stuck_duration_minutes": 22,
+  "sample_size": 12400,
+  "common_misconceptions": [
+    "Players assume the piano puzzle is self-contained and do not look at the mirror",
+    "Players try random note combinations instead of seeking environmental clues in the room",
+    "Players who lit the candle believe they have completed the room and leave"
+  ],
+  "effective_hint_patterns": [
+    {
+      "framing": "Look at the mirror while playing.",
+      "avg_stuck_reduction_minutes": 18,
+      "player_rating": 4.2,
+      "spoiler_complaints": "high"
+    },
+    {
+      "framing": "The mirror and piano are connected. Try adjusting the mirror first.",
+      "avg_stuck_reduction_minutes": 15,
+      "player_rating": 3.8,
+      "spoiler_complaints": "very_high"
+    },
+    {
+      "framing": "Not everything in this room is decorative. Some objects listen.",
+      "avg_stuck_reduction_minutes": 8,
+      "player_rating": 4.6,
+      "spoiler_complaints": "low"
+    }
+  ],
+  "representative_player_quotes": [
+    "I spent 20 minutes on the piano because I didn't realize the mirror was part of the same puzzle.",
+    "The candle inscription says 'where the notes land, the glass remembers' but I thought that was just flavor text.",
+    "Once I moved the mirror to face the piano the last two notes clicked immediately."
+  ],
+  "full_solution_sequences_redacted": true
+}
