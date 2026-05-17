@@ -72,6 +72,13 @@ export function getOpenAIReasoningText(source: unknown): string {
   return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
 }
 
+function reasoningBlockToThinkingText(block: ReasoningBlock): string {
+  if (typeof block.redactedData === 'string' && block.redactedData.length > 0) {
+    return '<thinking>[redacted]</thinking>'
+  }
+  return `<thinking>${block.text}</thinking>`
+}
+
 /**
  * Determine whether a framework message contains any `tool_result` content
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
@@ -168,6 +175,7 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
 function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
+  const pendingThinkingParts: string[] = []
 
   for (const block of msg.content) {
     if (block.type === 'tool_use') {
@@ -179,9 +187,20 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
           arguments: JSON.stringify(block.input),
         },
       })
+    } else if (block.type === 'reasoning') {
+      pendingThinkingParts.push(reasoningBlockToThinkingText(block))
     } else if (block.type === 'text') {
-      textParts.push(block.text)
+      if (pendingThinkingParts.length > 0) {
+        textParts.push(`${pendingThinkingParts.join('')}${block.text}`)
+        pendingThinkingParts.length = 0
+      } else {
+        textParts.push(block.text)
+      }
     }
+  }
+
+  if (pendingThinkingParts.length > 0) {
+    textParts.push(pendingThinkingParts.join(''))
   }
 
   const assistantMsg: ChatCompletionAssistantMessageParam = {
