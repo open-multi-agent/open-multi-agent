@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -7,8 +7,10 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov', 'json'],
     },
     exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
+      ...configDefaults.exclude,
+      // Local agent worktrees can contain stale test copies and should never
+      // affect the repository's test result.
+      '**/.claude/**',
       // E2E tests require API keys — run with: npm run test:e2e
       ...(process.env['RUN_E2E'] ? [] : ['tests/e2e/**']),
     ],
