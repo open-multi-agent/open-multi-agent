@@ -56,6 +56,7 @@ const PROVIDER_REFERENCE: ReadonlyArray<{
   { id: 'minimax', apiKeyEnv: ['MINIMAX_API_KEY'], baseUrlSupported: true, notes: 'Global endpoint: https://api.minimax.io/v1 (default). China endpoint: https://api.minimaxi.com/v1. Set MINIMAX_BASE_URL to choose, or pass baseURL in agent config.' },
   { id: 'deepseek', apiKeyEnv: ['DEEPSEEK_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.deepseek.com/v1. Models: deepseek-chat (V3), deepseek-reasoner (thinking).' },
   { id: 'qiniu', apiKeyEnv: ['QINIU_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.qnaigc.com/v1. Set provider to qiniu and choose a model available to your key.' },
+  { id: 'doubao', apiKeyEnv: ['DOUBAO_API_KEY'], baseUrlSupported: true, notes : 'OpenAI-compatible endpoint at https://ark.cn-beijing.volces.com/api/v3. Set provider to doubao and choose a model available to your key.' },
   {
     id: 'copilot',
     apiKeyEnv: ['GITHUB_COPILOT_TOKEN', 'GITHUB_TOKEN'],
@@ -290,6 +291,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   deepseek: 'deepseek-chat',
   qiniu: 'deepseek-v3',
   bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
+  doubao: 'doubao-seed-2-0-lite-260428'
 }
 
 async function cmdProvider(sub: string | undefined, arg: string | undefined, pretty: boolean): Promise<number> {

@@ -39,7 +39,7 @@ import type { LLMAdapter } from '../types.js'
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
  * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -48,6 +48,7 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copi
  * explicitly:
  * - `anthropic`    → `ANTHROPIC_API_KEY`
  * - `azure-openai` → `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`
+ * - `doubao`       → `DOUBAO_API_KEY`
  * - `openai`       → `OPENAI_API_KEY`
  * - `gemini`       → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
  * - `grok`         → `XAI_API_KEY`
@@ -86,6 +87,10 @@ export async function createAdapter(
       }
       const { CopilotAdapter } = await import('./copilot.js')
       return new CopilotAdapter(apiKey)
+    }
+    case 'doubao': {
+      const { DoubaoAdapter } = await import('./doubao.js')
+      return new DoubaoAdapter(apiKey, baseURL)
     }
     case 'gemini': {
       const { GeminiAdapter } = await import('./gemini.js')

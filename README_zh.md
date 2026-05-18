@@ -128,7 +128,7 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 | 能力 | 说明 |
 |------|------|
 | **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，协调者把目标拆成任务 DAG，并行执行独立任务，合成最终结果。 |
-| **同队混用 provider** | 10 家原生：Anthropic、OpenAI、Azure、Bedrock、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整说明](./docs/providers.md)) |
+| **同队混用 provider** | 10 家原生：Anthropic、OpenAI、Azure、Bedrock、Gemini、Grok、DeepSeek、MiniMax、Qiniu、Copilot、Doubao；Ollama / vLLM / LM Studio / OpenRouter / Groq 走 OpenAI 兼容协议。([完整说明](./docs/providers.md)) |
 | **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`，用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](./docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。([可观测性指南](./docs/observability.md)) |
@@ -249,6 +249,7 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
          │               │  - MiniMaxAdapter      │
          │               │  - DeepSeekAdapter     │
          │               │  - QiniuAdapter        │
+         │               │  - DoubaoAdapter       │
          │               └────────────────────────┘
 ┌────────▼──────────┐
 │  AgentRunner      │    ┌──────────────────────┐
@@ -281,7 +282,7 @@ const agent: AgentConfig = {
 
 | 类型 | 配置方式 | 服务 |
 |------|--------|------|
-| 内置快捷方式 | 设 `provider` 为 `anthropic`、`gemini`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`minimax`、`qiniu`、`bedrock`；框架自带 endpoint。 | Anthropic、Gemini、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、MiniMax、Qiniu、AWS Bedrock |
+| 内置快捷方式 | 设 `provider` 为 `anthropic`、`gemini`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`minimax`、`qiniu`、`bedrock`、`Doubao`；框架自带 endpoint。 | Anthropic、Gemini、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、MiniMax、Qiniu、AWS Bedrock 、Doubao|
 | OpenAI 兼容端点 | 设 `provider: 'openai'` + `baseURL`，必要时加 `apiKey`。 | Ollama、vLLM、LM Studio、llama.cpp server、OpenRouter、Groq、Mistral |
 
 
@@ -340,6 +341,7 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@Deathwing](https://github.com/Deathwing)（GitHub Copilot）
 - [@JackChiang233](https://github.com/JackChiang233)（Qiniu）
 - [@CodingBangboo](https://github.com/CodingBangboo)（AWS Bedrock）
+- [@janelawrence](https://github.com/janelawrence) (Doubao)
 
 **示例与 Cookbook**
 
