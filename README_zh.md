@@ -42,9 +42,6 @@
 
 `open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端。
 
-> **包名更新：** 官方 npm 包已迁移到 `@open-multi-agent/core`。
-> 旧包 `@jackchen_me/open-multi-agent` 在迁移窗口内继续支持。
-
 > **工程师只描述目标，不画任务图。**
 
 ## 快速开始
@@ -56,6 +53,8 @@
 ```bash
 npm install @open-multi-agent/core
 ```
+
+*正在从 `@jackchen_me/open-multi-agent` 迁移？该包已弃用，请改用 `@open-multi-agent/core`。*
 
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
