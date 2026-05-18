@@ -42,9 +42,6 @@
 
 `open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend.
 
-> **Package update:** the official npm package is now `@open-multi-agent/core`.
-> The previous package, `@jackchen_me/open-multi-agent`, remains supported during the migration window.
-
 > **Your engineers describe the goal, not the graph.**
 
 ## Quick Start
@@ -56,6 +53,8 @@ Requires Node.js >= 18.
 ```bash
 npm install @open-multi-agent/core
 ```
+
+*Migrating from `@jackchen_me/open-multi-agent`? That package is deprecated; install `@open-multi-agent/core` instead.*
 
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
