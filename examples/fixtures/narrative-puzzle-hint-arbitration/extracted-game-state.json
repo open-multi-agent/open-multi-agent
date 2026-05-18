@@ -1,0 +1,38 @@
+{
+  "source_is_mock": true,
+  "scenario_description": "MOCK save state modeled after a point-and-click adventure game. No real game artifact is claimed.",
+  "room": "theatre",
+  "player_inventory": ["handkerchief", "pawn"],
+  "scene_flags": {
+    "piano_interacted": true,
+    "mirror_interacted": false,
+    "candle_lit": true,
+    "curtain_open": false,
+    "stage_light_on": false
+  },
+  "puzzle_states": {
+    "piano_sequence": {
+      "status": "partial",
+      "inputs_played": ["do", "re"],
+      "total_steps": 4,
+      "description": "A four-note sequence on an old piano. Two notes have been played correctly."
+    },
+    "mirror_alignment": {
+      "status": "unsolved",
+      "clue_viewed": false,
+      "description": "A mirror on the opposite wall. It appears adjustable but has not been examined."
+    },
+    "candle_puzzle": {
+      "status": "solved",
+      "description": "Lighting the candle revealed a faint inscription on the wall."
+    }
+  },
+  "interaction_log": [
+    "player_examined_piano",
+    "player_played_note_do",
+    "player_played_note_re",
+    "player_lit_candle",
+    "player_examined_handkerchief"
+  ],
+  "unexamined_objects": ["mirror", "curtain", "pawn", "stage_floor"]
+}
