@@ -1,0 +1,41 @@
+{
+  "source_is_mock": true,
+  "scenario_description": "MOCK designer-authored hint policy. Shaped like a CMS rule table; no real game design document is claimed.",
+  "constraints": [
+    {
+      "puzzle_id": "piano-mirror-combo",
+      "spoiler_sensitivity": "high",
+      "max_allowed_hint_directionality": "zero",
+      "rationale": "The piano-mirror linkage is a mid-act narrative twist. The game's design intentionally withholds the connection. Revealing that these objects are related before the player discovers it organically collapses the designed 'aha moment'.",
+      "protected_linkages": ["piano ↔ mirror"],
+      "allowed_hint_types": [
+        "atmospheric_room_description",
+        "general_exploration_nudge"
+      ],
+      "prohibited_hint_types": [
+        "object_relationship_reveal",
+        "directional_cue_toward_mirror",
+        "sequence_step_disclosure"
+      ]
+    },
+    {
+      "puzzle_id": "candle_puzzle",
+      "spoiler_sensitivity": "low",
+      "max_allowed_hint_directionality": "high",
+      "rationale": "Candle puzzle is an early gate with no narrative twist. Direct hints are acceptable.",
+      "protected_linkages": [],
+      "allowed_hint_types": [
+        "direct_instruction",
+        "object_highlight"
+      ],
+      "prohibited_hint_types": [
+        "full_solution_script"
+      ]
+    }
+  ],
+  "global_rules": {
+    "never_reveal_full_solution": true,
+    "never_name_protected_objects_in_connection": true,
+    "fallback_on_veto": "vague_atmospheric_description_with_exploration_nudge"
+  }
+}

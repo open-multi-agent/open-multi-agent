@@ -28,6 +28,24 @@ import type {
 } from '../types.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
+const DEFAULT_REASONING_REPLAY_MAX_CHARS = 1200
+
+export interface OpenAIReasoningReplayOptions {
+  /**
+   * Opt-in switch for replaying framework `reasoning` blocks as inline
+   * `<thinking>...</thinking>` text in OpenAI-family request payloads.
+   *
+   * Defaults to `false` so existing users keep historical behavior:
+   * `reasoning` blocks are ignored on outbound assistant message conversion.
+   */
+  readonly enableReasoningTextReplay?: boolean
+  /**
+   * Maximum character budget for each replayed reasoning block after
+   * truncation. Explicit invalid values are clamped to a minimum of 1 char.
+   */
+  readonly maxReasoningReplayChars?: number
+}
+
 // ---------------------------------------------------------------------------
 // Framework → OpenAI
 // ---------------------------------------------------------------------------
@@ -72,6 +90,35 @@ export function getOpenAIReasoningText(source: unknown): string {
   return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
 }
 
+function resolveReasoningReplayMaxChars(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_REASONING_REPLAY_MAX_CHARS
+  if (!Number.isFinite(value)) return 1
+  const floored = Math.floor(value)
+  if (floored < 1) return 1
+  return floored
+}
+
+function truncateReasoningForReplay(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+
+  const marker = '...[truncated]...'
+  if (marker.length >= maxChars) return text.slice(0, maxChars)
+
+  const budget = maxChars - marker.length
+  const head = Math.ceil(budget * 0.7)
+  const tail = budget - head
+  return `${text.slice(0, head)}${marker}${text.slice(text.length - tail)}`
+}
+
+function reasoningBlockToThinkingText(block: ReasoningBlock, maxChars: number): string {
+  if (typeof block.redactedData === 'string' && block.redactedData.length > 0) {
+    return '<thinking>[redacted]</thinking>'
+  }
+  if (block.text.length === 0) return ''
+  const bounded = truncateReasoningForReplay(block.text, maxChars)
+  return `<thinking>${bounded}</thinking>`
+}
+
 /**
  * Determine whether a framework message contains any `tool_result` content
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
@@ -98,12 +145,18 @@ function hasToolResults(msg: LLMMessage): boolean {
  * runner's loop-detection warning injection (see {@link AgentRunner}, which
  * appends a text warning to a tool_result message when a loop is detected).
  */
-export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
+export function toOpenAIMessages(
+  messages: LLMMessage[],
+  replayOptions?: OpenAIReasoningReplayOptions,
+): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      result.push(toOpenAIAssistantMessage(msg))
+      const assistantMsg = toOpenAIAssistantMessage(msg, replayOptions)
+      if (assistantMsg !== null) {
+        result.push(assistantMsg)
+      }
     } else {
       // user role
       if (!hasToolResults(msg)) {
@@ -165,9 +218,15 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
  * Convert an `assistant`-role framework message into an OpenAI assistant message.
  * `tool_use` blocks become `tool_calls`; `text` blocks become message content.
  */
-function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
+function toOpenAIAssistantMessage(
+  msg: LLMMessage,
+  replayOptions?: OpenAIReasoningReplayOptions,
+): ChatCompletionAssistantMessageParam | null {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
+  const pendingThinkingParts: string[] = []
+  const enableReasoningReplay = replayOptions?.enableReasoningTextReplay === true
+  const maxReasoningChars = resolveReasoningReplayMaxChars(replayOptions?.maxReasoningReplayChars)
 
   for (const block of msg.content) {
     if (block.type === 'tool_use') {
@@ -179,9 +238,27 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
           arguments: JSON.stringify(block.input),
         },
       })
+    } else if (block.type === 'reasoning' && enableReasoningReplay) {
+      const serialized = reasoningBlockToThinkingText(block, maxReasoningChars)
+      if (serialized.length > 0) {
+        pendingThinkingParts.push(serialized)
+      }
     } else if (block.type === 'text') {
-      textParts.push(block.text)
+      if (pendingThinkingParts.length > 0) {
+        textParts.push(`${pendingThinkingParts.join('')}${block.text}`)
+        pendingThinkingParts.length = 0
+      } else {
+        textParts.push(block.text)
+      }
     }
+  }
+
+  if (pendingThinkingParts.length > 0) {
+    textParts.push(pendingThinkingParts.join(''))
+  }
+
+  if (toolCalls.length === 0 && textParts.length === 0) {
+    return null
   }
 
   const assistantMsg: ChatCompletionAssistantMessageParam = {
@@ -326,6 +403,7 @@ export function normalizeFinishReason(reason: string): string {
 export function buildOpenAIMessageList(
   messages: LLMMessage[],
   systemPrompt: string | undefined,
+  replayOptions?: OpenAIReasoningReplayOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
@@ -333,6 +411,6 @@ export function buildOpenAIMessageList(
     result.push({ role: 'system', content: systemPrompt })
   }
 
-  result.push(...toOpenAIMessages(messages))
+  result.push(...toOpenAIMessages(messages, replayOptions))
   return result
 }
