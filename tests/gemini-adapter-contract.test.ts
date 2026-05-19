@@ -448,6 +448,7 @@ describe('GeminiAdapter (contract)', () => {
       expect(result.content[0]).toEqual({
         type: 'reasoning',
         text: 'I should look up the weather first.',
+        provenance: 'gemini',
       })
       expect(result.content[1]).toEqual({ type: 'text', text: 'It is sunny.' })
     })
@@ -465,6 +466,16 @@ describe('GeminiAdapter (contract)', () => {
       const reasoningEvents = events.filter(e => e.type === 'reasoning')
       expect(reasoningEvents).toHaveLength(1)
       expect(reasoningEvents[0].data).toBe('planning...')
+
+      // Phase 1 of #223: stream done payload also stamps provenance.
+      const done = events.find(e => e.type === 'done')
+      const doneContent = (done!.data as LLMResponse).content
+      const reasoningBlock = doneContent.find(b => b.type === 'reasoning')
+      expect(reasoningBlock).toEqual({
+        type: 'reasoning',
+        text: 'planning...',
+        provenance: 'gemini',
+      })
     })
 
     it('streaming preserves thoughtSignature on tool_use events', async () => {
@@ -579,6 +590,7 @@ describe('GeminiAdapter (contract)', () => {
         type: 'reasoning',
         text: 'thought summary text',
         signature: 'thought-sig-001',
+        provenance: 'gemini',
       })
     })
 

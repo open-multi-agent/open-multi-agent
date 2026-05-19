@@ -230,6 +230,7 @@ describe('AnthropicAdapter', () => {
       expect(result.content[0]).toEqual({
         type: 'reasoning',
         text: 'hmm...',
+        provenance: 'anthropic',
       })
     })
 
@@ -300,7 +301,7 @@ describe('AnthropicAdapter', () => {
 
       const done = events.find(e => e.type === 'done')
       expect((done!.data as LLMResponse).content).toEqual([
-        { type: 'reasoning', text: 'step 1 -> step 2' },
+        { type: 'reasoning', text: 'step 1 -> step 2', provenance: 'anthropic' },
         { type: 'text', text: 'Answer' },
       ])
     })
@@ -488,6 +489,7 @@ describe('AnthropicAdapter', () => {
         type: 'reasoning',
         text: 'reasoning text',
         signature: 'sig-abc-123',
+        provenance: 'anthropic',
       })
       expect(result.content[1]).toEqual({ type: 'text', text: 'final answer' })
     })
@@ -506,6 +508,7 @@ describe('AnthropicAdapter', () => {
         type: 'reasoning',
         text: '',
         redactedData: 'opaque-encrypted-payload',
+        provenance: 'anthropic',
       })
     })
 
@@ -530,6 +533,7 @@ describe('AnthropicAdapter', () => {
         type: 'reasoning',
         text: 'step 1',
         signature: 'streamed-sig',
+        provenance: 'anthropic',
       })
     })
 

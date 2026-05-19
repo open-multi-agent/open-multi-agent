@@ -45,6 +45,23 @@ export interface ReasoningBlock {
    * `thinking`).
    */
   readonly redactedData?: string
+  /**
+   * Name of the {@link LLMAdapter} that produced this block, stamped at
+   * extraction time on the native-to-IR path (both `chat` responses and
+   * streaming final payloads). Consumed by outbound IR-to-native conversion
+   * to decide between native echo and the `<thinking>` text fallback for
+   * adapters whose {@link LLMAdapter.capabilities.echoesReasoning} is
+   * `'own-issued'`.
+   *
+   * Typed as `string` rather than `SupportedProvider` so third-party adapter
+   * implementations can stamp their own adapter name without modifying the
+   * core enum.
+   *
+   * Optional for backwards compatibility with externally constructed IR.
+   * Outbound paths treat `undefined` as "unknown provenance → cannot
+   * native-echo".
+   */
+  readonly provenance?: string
 }
 
 /**
@@ -1049,4 +1066,28 @@ export interface LLMAdapter {
    * or `type === 'error'` on failure.
    */
   stream(messages: LLMMessage[], options: LLMStreamOptions): AsyncIterable<StreamEvent>
+
+  /**
+   * Optional declaration of how this adapter handles {@link ReasoningBlock}
+   * round-tripping. Consumed by the cross-provider reasoning fallback layer
+   * (see #223) to decide whether to native-echo an incoming `ReasoningBlock`
+   * or downgrade it to `<thinking>` text on outbound conversion.
+   *
+   * - `'never'`: This adapter's wire protocol does not accept reasoning input
+   *   under any circumstance (e.g. OpenAI Chat Completions). Outbound paths
+   *   must fall back regardless of {@link ReasoningBlock.provenance}.
+   * - `'own-issued'`: Native echo is only ever attempted when
+   *   `block.provenance === this.name`. Provenance match is **necessary
+   *   but not sufficient** — adapters MAY impose additional preconditions
+   *   (e.g. Anthropic requires the original `signature`; Gemini drops
+   *   unsigned thought summaries to keep context lean). Phase 2
+   *   implementers MUST consult the adapter-specific outbound serializer
+   *   for the full eligibility rule, not just the provenance match.
+   *
+   * Omitted on third-party adapters that pre-date this field; callers treat
+   * `undefined` as `'never'` to preserve today's silent-drop behaviour.
+   */
+  readonly capabilities?: {
+    readonly echoesReasoning: 'never' | 'own-issued'
+  }
 }

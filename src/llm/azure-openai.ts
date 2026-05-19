@@ -91,6 +91,12 @@ function resolveAzureDeploymentName(model: string): string {
 export class AzureOpenAIAdapter implements LLMAdapter {
   readonly name: string = 'azure-openai'
 
+  readonly capabilities = {
+    // Azure OpenAI Chat Completions follows the OpenAI wire contract: no
+    // reasoning input accepted. Falls back via shared helper in Phase 2.
+    echoesReasoning: 'never' as const,
+  }
+
   readonly #client: AzureOpenAI
 
   /**
@@ -147,7 +153,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     )
 
     const toolNames = options.tools?.map(t => t.name)
-    return fromOpenAICompletion(completion, toolNames)
+    return fromOpenAICompletion(completion, toolNames, this.name)
   }
 
   // -------------------------------------------------------------------------

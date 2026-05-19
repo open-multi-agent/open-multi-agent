@@ -152,7 +152,7 @@ function buildLlmResponseFromGenerateText(result: {
 }): LLMResponse {
   const content: ContentBlock[] = []
   if (result.reasoningText !== undefined && result.reasoningText.length > 0) {
-    content.push({ type: 'reasoning', text: result.reasoningText })
+    content.push({ type: 'reasoning', text: result.reasoningText, provenance: 'ai-sdk' })
   }
   if (result.text.length > 0) {
     content.push({ type: 'text', text: result.text } satisfies TextBlock)
@@ -190,6 +190,16 @@ function buildLlmResponseFromGenerateText(result: {
  */
 export class AISdkAdapter implements LLMAdapter {
   readonly name = 'ai-sdk'
+
+  readonly capabilities = {
+    // Conservative default: the AI SDK proxies many providers and the
+    // adapter cannot introspect at IR-conversion time which underlying
+    // provider would natively accept reasoning input. `'never'` keeps the
+    // outbound path safe (always falls back via Phase 2 helper) without
+    // risking signature-mismatch errors. Phase 2 may refine this if a
+    // per-call provider hint becomes available on the AI SDK surface.
+    echoesReasoning: 'never' as const,
+  }
 
   readonly #model: LanguageModel
 
@@ -321,7 +331,7 @@ export class AISdkAdapter implements LLMAdapter {
       }
 
       const doneContent: ContentBlock[] = []
-      if (fullReasoning.length > 0) doneContent.push({ type: 'reasoning', text: fullReasoning })
+      if (fullReasoning.length > 0) doneContent.push({ type: 'reasoning', text: fullReasoning, provenance: 'ai-sdk' })
       if (fullText.length > 0) doneContent.push({ type: 'text', text: fullText })
       doneContent.push(...toolBlocks)
 

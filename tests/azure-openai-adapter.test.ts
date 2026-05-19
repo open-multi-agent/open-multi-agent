@@ -522,4 +522,34 @@ describe('AzureOpenAIAdapter', () => {
       expect(sent.stream).toBe(false)
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // Phase 1 of #223 — provenance stamping on extracted ReasoningBlocks
+  // ---------------------------------------------------------------------------
+
+  describe('reasoning provenance (#223 Phase 1)', () => {
+    it('stamps provenance: "azure-openai" on extracted ReasoningBlocks in chat()', async () => {
+      createCompletionMock.mockResolvedValue(makeCompletion({
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'Answer.',
+            reasoning_content: 'plan first',
+            tool_calls: undefined,
+          },
+          finish_reason: 'stop',
+        }],
+      }))
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model: 'my-deployment' }))
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'plan first',
+        provenance: 'azure-openai',
+      })
+    })
+  })
 })

@@ -71,6 +71,13 @@ import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 export class OpenAIAdapter implements LLMAdapter {
   readonly name: string = 'openai'
 
+  readonly capabilities = {
+    // OpenAI Chat Completions does not accept `reasoning_content` on input;
+    // any reasoning replay must go through the `<thinking>` text fallback
+    // already shipped in #234 (see openai-common.ts replay options).
+    echoesReasoning: 'never' as const,
+  }
+
   readonly #client: OpenAI
 
   constructor(apiKey?: string, baseURL?: string) {
@@ -123,7 +130,7 @@ export class OpenAIAdapter implements LLMAdapter {
     )
 
     const toolNames = options.tools?.map(t => t.name)
-    return fromOpenAICompletion(completion, toolNames)
+    return fromOpenAICompletion(completion, toolNames, this.name)
   }
 
   // -------------------------------------------------------------------------
@@ -274,7 +281,7 @@ export class OpenAIAdapter implements LLMAdapter {
       // Build the complete content array for the done response.
       const doneContent: ContentBlock[] = []
       if (fullReasoning.length > 0) {
-        doneContent.push({ type: 'reasoning', text: fullReasoning })
+        doneContent.push({ type: 'reasoning', text: fullReasoning, provenance: this.name })
       }
       if (fullText.length > 0) {
         const textBlock: TextBlock = { type: 'text', text: fullText }

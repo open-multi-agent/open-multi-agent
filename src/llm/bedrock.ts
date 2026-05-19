@@ -189,6 +189,7 @@ function fromBedrockContentBlock(block: BedrockContentBlock): ContentBlock | nul
     const reasoning: ReasoningBlock = {
       type: 'reasoning',
       text: r.reasoningText?.text ?? '',
+      provenance: 'bedrock',
     }
     return reasoning
   }
@@ -214,6 +215,20 @@ function buildInferenceConfig(options: LLMChatOptions): InferenceConfiguration |
  */
 export class BedrockAdapter implements LLMAdapter {
   readonly name = 'bedrock'
+
+  readonly capabilities = {
+    // Held at 'never' until BOTH legs of the round-trip carry Bedrock's
+    // `reasoningContent.reasoningText.signature`:
+    //   1. inbound (toBedrockContentBlock 'reasoning' case): does not
+    //      extract the signature into the IR today, so even after the
+    //      outbound TODO lands there'd be no signature to send back.
+    //   2. outbound (toBedrockContentBlock 'reasoning' case TODO): does
+    //      not write the signature onto the wire format.
+    // Upgrading this field to 'own-issued' requires both follow-ups; doing
+    // only one would still silently break Bedrock's multi-turn extended
+    // thinking protocol.
+    echoesReasoning: 'never' as const,
+  }
 
   readonly #client: BedrockRuntimeClient
 
@@ -339,7 +354,11 @@ export class BedrockAdapter implements LLMAdapter {
           const index = event.contentBlockStop.contentBlockIndex ?? 0
           const reasoningBuf = reasoningBuffers.get(index)
           if (reasoningBuf) {
-            const reasoningBlock: ReasoningBlock = { type: 'reasoning', text: reasoningBuf.text }
+            const reasoningBlock: ReasoningBlock = {
+              type: 'reasoning',
+              text: reasoningBuf.text,
+              provenance: 'bedrock',
+            }
             accumulatedContent.push(reasoningBlock)
             reasoningBuffers.delete(index)
           }
@@ -381,7 +400,7 @@ export class BedrockAdapter implements LLMAdapter {
       // block, flush whatever we buffered so the done payload still matches
       // what chat() would have returned for the same response.
       for (const [, buf] of reasoningBuffers) {
-        accumulatedContent.push({ type: 'reasoning', text: buf.text })
+        accumulatedContent.push({ type: 'reasoning', text: buf.text, provenance: 'bedrock' })
       }
       reasoningBuffers.clear()
 

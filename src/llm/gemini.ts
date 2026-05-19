@@ -293,7 +293,11 @@ function fromGeminiPart(part: Part): ContentBlock | null {
   }
   if (part.text !== undefined && part.text !== '') {
     if ((part as { thought?: boolean }).thought === true) {
-      const reasoning: ReasoningBlock = { type: 'reasoning', text: part.text }
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: part.text,
+        provenance: 'gemini',
+      }
       // Gemini 3 may attach thoughtSignature to thought-summary parts too.
       // Preserve it on the framework block so the next turn can echo it
       // back — see toGeminiContents reasoning case for the round-trip.
@@ -361,6 +365,10 @@ function fromGeminiResponse(
  */
 export class GeminiAdapter implements LLMAdapter {
   readonly name = 'gemini'
+
+  readonly capabilities = {
+    echoesReasoning: 'own-issued' as const,
+  }
 
   readonly #client: GoogleGenAI
 

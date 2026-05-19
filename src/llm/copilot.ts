@@ -228,6 +228,12 @@ export interface CopilotAdapterOptions {
 export class CopilotAdapter implements LLMAdapter {
   readonly name = 'copilot'
 
+  readonly capabilities = {
+    // GitHub Copilot proxies OpenAI Chat Completions; no reasoning input
+    // is accepted. Falls back via shared helper in Phase 2.
+    echoesReasoning: 'never' as const,
+  }
+
   #githubToken: string | null
   #cachedToken: string | null = null
   #tokenExpiresAt = 0
@@ -318,7 +324,7 @@ export class CopilotAdapter implements LLMAdapter {
     )
 
     const toolNames = options.tools?.map(t => t.name)
-    return fromOpenAICompletion(completion, toolNames)
+    return fromOpenAICompletion(completion, toolNames, this.name)
   }
 
   // -------------------------------------------------------------------------

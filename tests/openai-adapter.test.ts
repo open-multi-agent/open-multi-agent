@@ -216,7 +216,7 @@ describe('OpenAIAdapter', () => {
       const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
 
       expect(result.content).toEqual([
-        { type: 'reasoning', text: 'step 1 -> step 2' },
+        { type: 'reasoning', text: 'step 1 -> step 2', provenance: 'openai' },
         { type: 'text', text: 'Final answer' },
       ])
     })
@@ -307,7 +307,7 @@ describe('OpenAIAdapter', () => {
 
       const done = events.find(e => e.type === 'done')
       expect((done!.data as LLMResponse).content).toEqual([
-        { type: 'reasoning', text: 'first thought then second thought' },
+        { type: 'reasoning', text: 'first thought then second thought', provenance: 'openai' },
         { type: 'text', text: 'Answer' },
       ])
     })

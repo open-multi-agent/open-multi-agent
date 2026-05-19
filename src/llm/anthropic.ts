@@ -195,6 +195,7 @@ function fromAnthropicContentBlock(
         type: 'reasoning',
         text: block.thinking,
         signature: block.signature,
+        provenance: 'anthropic',
       }
       return reasoning
     }
@@ -207,6 +208,7 @@ function fromAnthropicContentBlock(
         type: 'reasoning',
         text: '',
         redactedData: block.data,
+        provenance: 'anthropic',
       }
       return reasoning
     }
@@ -297,6 +299,10 @@ function toAnthropicThinkingParam(
  */
 export class AnthropicAdapter implements LLMAdapter {
   readonly name = 'anthropic'
+
+  readonly capabilities = {
+    echoesReasoning: 'own-issued' as const,
+  }
 
   readonly #client: Anthropic
 

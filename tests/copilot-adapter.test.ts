@@ -581,4 +581,35 @@ describe('CopilotAdapter', () => {
       expect(formatCopilotMultiplier(0.33)).toBe('0.33\u00d7 premium request')
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // Phase 1 of #223 \u2014 provenance stamping on extracted ReasoningBlocks
+  // ---------------------------------------------------------------------------
+
+  describe('reasoning provenance (#223 Phase 1)', () => {
+    it('stamps provenance: "copilot" on extracted ReasoningBlocks in chat()', async () => {
+      globalThis.fetch = mockFetchForToken()
+      const adapter = new CopilotAdapter('gh_token')
+      mockCreate.mockResolvedValue(makeCompletion({
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'Answer.',
+            reasoning_content: 'plan first',
+            tool_calls: undefined,
+          },
+          finish_reason: 'stop',
+        }],
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'plan first',
+        provenance: 'copilot',
+      })
+    })
+  })
 })

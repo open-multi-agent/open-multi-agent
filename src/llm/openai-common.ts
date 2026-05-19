@@ -289,10 +289,17 @@ function toOpenAIAssistantMessage(
  *                          that looks like a tool call, the fallback extractor
  *                          uses this list to validate matches. Pass the names
  *                          of tools sent in the request for best results.
+ * @param provenance      - Optional adapter-name string stamped onto any
+ *                          extracted {@link ReasoningBlock}, so downstream
+ *                          outbound paths can distinguish native-echo eligible
+ *                          blocks from foreign ones (see #223). Each
+ *                          OpenAI-family adapter should pass its own
+ *                          {@link LLMAdapter.name}.
  */
 export function fromOpenAICompletion(
   completion: ChatCompletion,
   knownToolNames?: string[],
+  provenance?: string,
 ): LLMResponse {
   const choice = completion.choices?.[0]
   if (choice === undefined) {
@@ -304,7 +311,9 @@ export function fromOpenAICompletion(
 
   const reasoningText = getOpenAIReasoningText(message)
   if (reasoningText.length > 0) {
-    const reasoningBlock: ReasoningBlock = { type: 'reasoning', text: reasoningText }
+    const reasoningBlock: ReasoningBlock = provenance !== undefined
+      ? { type: 'reasoning', text: reasoningText, provenance }
+      : { type: 'reasoning', text: reasoningText }
     content.push(reasoningBlock)
   }
 

@@ -299,7 +299,7 @@ describe('BedrockAdapter', () => {
       const doneEvent = events.find(e => e.type === 'done')
       const response = doneEvent?.data as LLMResponse
       const reasoningBlocks = response.content.filter(b => b.type === 'reasoning')
-      expect(reasoningBlocks).toEqual([{ type: 'reasoning', text: 'first thought' }])
+      expect(reasoningBlocks).toEqual([{ type: 'reasoning', text: 'first thought', provenance: 'bedrock' }])
     })
 
     it('flushes reasoning buffer into done payload even when contentBlockStop is missing', async () => {
@@ -311,7 +311,7 @@ describe('BedrockAdapter', () => {
 
       const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
       const response = events.find(e => e.type === 'done')?.data as LLMResponse
-      expect(response.content).toContainEqual({ type: 'reasoning', text: 'unterminated' })
+      expect(response.content).toContainEqual({ type: 'reasoning', text: 'unterminated', provenance: 'bedrock' })
     })
 
     it('emits done event with final LLMResponse', async () => {
@@ -365,6 +365,34 @@ describe('BedrockAdapter', () => {
 
       const toolEvents = events.filter(e => e.type === 'tool_use')
       expect((toolEvents[0].data as ToolUseBlock).input).toEqual({})
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Phase 1 of #223 — provenance stamping on extracted ReasoningBlocks
+  // ---------------------------------------------------------------------------
+
+  describe('reasoning provenance (#223 Phase 1)', () => {
+    it('stamps provenance: "bedrock" on extracted ReasoningBlocks in chat()', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse({
+        output: {
+          message: {
+            role: 'assistant',
+            content: [
+              { reasoningContent: { reasoningText: { text: 'plan first' } } },
+              { text: 'Answer.' },
+            ],
+          },
+        },
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'plan first',
+        provenance: 'bedrock',
+      })
     })
   })
 })
