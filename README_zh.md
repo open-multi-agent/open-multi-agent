@@ -188,7 +188,6 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 ### 生产环境在用
 
 - **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
-- **家用服务器 Cybersecurity SOC。** 本地完全离线跑 Qwen 2.5 + DeepSeek Coder（通过 Ollama），在 Wazuh + Proxmox 上搭自主 SOC 流水线。早期用户，未公开。
 
 如果在生产或 side project 中使用了 `open-multi-agent`，[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
 
