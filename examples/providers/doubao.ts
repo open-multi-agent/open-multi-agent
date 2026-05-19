@@ -11,8 +11,8 @@
  *   ARK_API_KEY environment variable must be set.
  *
  * Available models:
- *   doubao-pro-32k  — Doubao production model (recommended for coding tasks)
- *   doubao-lite-32k — Doubao lightweight model (faster, lower cost)
+ *   doubao-1-5-pro-32k-250115  — Doubao 1.5 production model (recommended for coding tasks)
+ *   doubao-1-5-lite-32k-250115 — Doubao 1.5 lightweight model (faster, lower cost)
  */
 
 import { OpenMultiAgent } from '../../src/index.js'
@@ -30,7 +30,7 @@ if (!DOUBAO_API_KEY) {
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'doubao-pro-32k',
+  model: 'doubao-1-5-pro-32k-250115',
   provider: 'openai',
   baseURL: DOUBAO_BASE_URL,
   apiKey: DOUBAO_API_KEY,
@@ -44,7 +44,7 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'doubao-pro-32k',
+  model: 'doubao-1-5-pro-32k-250115',
   provider: 'openai',
   baseURL: DOUBAO_BASE_URL,
   apiKey: DOUBAO_API_KEY,
@@ -57,7 +57,7 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'doubao-lite-32k',
+  model: 'doubao-1-5-lite-32k-250115',
   provider: 'openai',
   baseURL: DOUBAO_BASE_URL,
   apiKey: DOUBAO_API_KEY,
@@ -106,7 +106,7 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'doubao-pro-32k',
+  defaultModel: 'doubao-1-5-pro-32k-250115',
   defaultProvider: 'openai',
   defaultBaseURL: DOUBAO_BASE_URL,
   defaultApiKey: DOUBAO_API_KEY,
