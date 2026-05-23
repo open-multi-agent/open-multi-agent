@@ -409,6 +409,30 @@ interface RevealCoordinatorContext {
   readonly rosterNames: readonly string[]
 }
 
+function buildRevealCoordinatorLines(
+  revealContext: RevealCoordinatorContext,
+  assignee: string,
+): string[] {
+  return [
+    '## Team context',
+    `Goal: ${revealContext.goal}`,
+    `Team: ${revealContext.rosterNames.join(', ')}`,
+    `Your role in this team: ${assignee}`,
+    'Assignment: You are responsible for the prompt below in this team run.',
+    '',
+  ]
+}
+
+function prependRevealCoordinatorContext(
+  prompt: string,
+  revealContext: RevealCoordinatorContext | undefined,
+  assignee: string,
+): string {
+  return revealContext
+    ? [...buildRevealCoordinatorLines(revealContext, assignee), prompt].join('\n')
+    : prompt
+}
+
 /**
  * Internal execution context assembled once per `runTeam` / `runTasks` call.
  */
@@ -504,7 +528,11 @@ function buildTaskAgentTeamInfo(
       taskId,
       team: nestedTeam,
     }
-    return pool.runEphemeral(tempAgent, prompt, childOpts)
+    return pool.runEphemeral(
+      tempAgent,
+      prependRevealCoordinatorContext(prompt, ctx.revealCoordinatorContext, targetAgent),
+      childOpts,
+    )
   }
 
   return {
@@ -813,14 +841,7 @@ async function buildTaskPrompt(
   // check in the dispatch loop). The guard here documents the precondition and
   // protects against future refactors that move the call site.
   if (revealContext && task.assignee) {
-    lines.push(
-      '## Team context',
-      `Goal: ${revealContext.goal}`,
-      `Team: ${revealContext.rosterNames.join(', ')}`,
-      `Your role in this team: ${task.assignee}`,
-      'Coordinator: selected you for this task based on the description below.',
-      '',
-    )
+    lines.push(...buildRevealCoordinatorLines(revealContext, task.assignee))
   }
 
   lines.push(
