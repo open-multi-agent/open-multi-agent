@@ -527,6 +527,56 @@ describe('OpenMultiAgent', () => {
       expect(coordinatorToolNames).toContain('file_read')
       expect(coordinatorToolNames).not.toContain('bash')
     })
+
+    it('omits team-context block by default (revealCoordinator unset)', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research the topic", "assignee": "worker-a"}]\n```',
+        'worker output',
+        'final synthesis',
+      ]
+
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg())
+
+      await oma.runTeam(team, 'First research the topic, then synthesize findings')
+
+      // None of the captured prompts (coordinator decompose, worker run, coordinator synthesis)
+      // should contain the team-context header when the option is unset.
+      for (const prompt of capturedPrompts) {
+        expect(prompt).not.toContain('## Team context')
+      }
+    })
+
+    it('injects team-context block when revealCoordinator is true', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title": "Research", "description": "Research the topic", "assignee": "worker-a"}]\n```',
+        'worker output',
+        'final synthesis',
+      ]
+
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg())
+
+      const goal = 'First research the topic, then synthesize findings'
+      await oma.runTeam(team, goal, { revealCoordinator: true })
+
+      // The worker prompt (second captured prompt) should contain the full context block.
+      // capturedPrompts[0] = coordinator decomposition, [1] = worker run, [2] = coordinator synthesis.
+      const workerPrompt = capturedPrompts[1] ?? ''
+      expect(workerPrompt).toContain('## Team context')
+      expect(workerPrompt).toContain(`Goal: ${goal}`)
+      expect(workerPrompt).toContain('Team: worker-a, worker-b')
+      expect(workerPrompt).toContain('Your role in this team: worker-a')
+      expect(workerPrompt).toContain('Coordinator: selected you')
+      // Defensive: the original task block must still be present after the context block.
+      expect(workerPrompt).toContain('# Task: Research')
+
+      // Defensive: coordinator's own prompts (decompose + synthesis) must NOT carry the
+      // team-context block — they don't go through buildTaskPrompt today, and we want
+      // a future refactor that changes that to break this test.
+      expect(capturedPrompts[0]).not.toContain('## Team context')
+      expect(capturedPrompts[2]).not.toContain('## Team context')
+    })
   })
 
   describe('config defaults', () => {

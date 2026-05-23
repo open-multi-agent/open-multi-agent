@@ -118,6 +118,12 @@ Preview the coordinator's task DAG without executing agents:
 const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 ```
 
+Inject team context (goal, roster, this worker's role) into every worker prompt. Helps workers stay aligned with the overall goal and makes multi-step runs easier to debug. Off by default; worker prompts stay byte-identical when omitted.
+
+```ts
+const result = await orchestrator.runTeam(team, goal, { revealCoordinator: true })
+```
+
 For MapReduce-style fan-out without task dependencies, use `AgentPool.runParallel()` directly. See [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts).
 
 For shell and CI, use the JSON-first `oma` binary. See [docs/cli.md](./docs/cli.md).

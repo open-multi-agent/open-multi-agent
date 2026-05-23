@@ -642,6 +642,18 @@ export interface RunTeamOptions {
    * the rejection wins: result is `success: false` and `planOnly` is undefined.
    */
   readonly planOnly?: boolean
+  /**
+   * When true, prepends a team-context block (original goal, full roster, and
+   * this worker's assignee identity) to every worker prompt under `runTeam`.
+   * Helps workers stay aligned with the overall goal and makes multi-step runs
+   * easier to debug.
+   *
+   * Default: `false` — worker prompts are byte-identical to today.
+   *
+   * Scope: `runTeam` only. `runTasks` (no goal concept) and the short-circuit
+   * single-agent path (no coordinator) ignore this option.
+   */
+  readonly revealCoordinator?: boolean
 }
 
 /** Aggregated result for a full team run. */

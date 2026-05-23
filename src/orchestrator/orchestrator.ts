@@ -401,6 +401,15 @@ function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * Team-level context optionally injected into every worker prompt when
+ * `RunTeamOptions.revealCoordinator` is true.
+ */
+interface RevealCoordinatorContext {
+  readonly goal: string
+  readonly rosterNames: readonly string[]
+}
+
+/**
  * Internal execution context assembled once per `runTeam` / `runTasks` call.
  */
 interface RunContext {
@@ -418,6 +427,11 @@ interface RunContext {
   budgetExceededTriggered: boolean
   budgetExceededReason?: string
   readonly taskMetrics: Map<string, TaskExecutionMetrics>
+  /**
+   * Present only when `runTeam` is called with `{ revealCoordinator: true }`.
+   * `runTasks` omits this entirely (no goal concept).
+   */
+  readonly revealCoordinatorContext?: RevealCoordinatorContext
 }
 
 /**
@@ -601,7 +615,7 @@ async function executeQueue(
       } satisfies OrchestratorEvent)
 
       // Build the prompt: task description + dependency-only context by default.
-      const prompt = await buildTaskPrompt(task, team, queue)
+      const prompt = await buildTaskPrompt(task, team, queue, ctx.revealCoordinatorContext)
 
       // Trace + abort + team tool context (delegate_to_agent)
       const traceBase: Partial<RunOptions> = {
@@ -779,17 +793,41 @@ async function executeQueue(
  * Build the agent prompt for a specific task.
  *
  * Injects:
+ *  - Optional team-context block at the top when `revealContext` is provided
+ *    (set via `RunTeamOptions.revealCoordinator`)
  *  - Task title and description
  *  - Direct dependency task results by default (clean slate when none)
  *  - Optional full shared-memory context when `task.memoryScope === 'all'`
  *  - Any messages addressed to this agent from the team bus
  */
-async function buildTaskPrompt(task: Task, team: Team, queue: TaskQueue): Promise<string> {
-  const lines: string[] = [
+async function buildTaskPrompt(
+  task: Task,
+  team: Team,
+  queue: TaskQueue,
+  revealContext?: RevealCoordinatorContext,
+): Promise<string> {
+  const lines: string[] = []
+
+  // `task.assignee` is belt-and-suspenders: `executeQueue` already fails any
+  // task without an assignee before reaching this function (see the assignee
+  // check in the dispatch loop). The guard here documents the precondition and
+  // protects against future refactors that move the call site.
+  if (revealContext && task.assignee) {
+    lines.push(
+      '## Team context',
+      `Goal: ${revealContext.goal}`,
+      `Team: ${revealContext.rosterNames.join(', ')}`,
+      `Your role in this team: ${task.assignee}`,
+      'Coordinator: selected you for this task based on the description below.',
+      '',
+    )
+  }
+
+  lines.push(
     `# Task: ${task.title}`,
     '',
     task.description,
-  ]
+  )
 
   if (task.memoryScope === 'all') {
     // Explicit opt-in for full visibility (legacy/shared-memory behavior).
@@ -1202,6 +1240,14 @@ export class OpenMultiAgent {
       budgetExceededTriggered: false,
       budgetExceededReason: undefined,
       taskMetrics,
+      ...(options?.revealCoordinator
+        ? {
+            revealCoordinatorContext: {
+              goal,
+              rosterNames: agentConfigs.map((a) => a.name),
+            },
+          }
+        : {}),
     }
 
     const planTasks = queue.list()
