@@ -27,24 +27,7 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
-
-const DEFAULT_REASONING_REPLAY_MAX_CHARS = 1200
-
-export interface OpenAIReasoningReplayOptions {
-  /**
-   * Opt-in switch for replaying framework `reasoning` blocks as inline
-   * `<thinking>...</thinking>` text in OpenAI-family request payloads.
-   *
-   * Defaults to `false` so existing users keep historical behavior:
-   * `reasoning` blocks are ignored on outbound assistant message conversion.
-   */
-  readonly enableReasoningTextReplay?: boolean
-  /**
-   * Maximum character budget for each replayed reasoning block after
-   * truncation. Explicit invalid values are clamped to a minimum of 1 char.
-   */
-  readonly maxReasoningReplayChars?: number
-}
+import { reasoningBlockToInlineText, resolveReasoningOutboundMaxChars, type ReasoningOutboundOptions } from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Framework → OpenAI
@@ -90,35 +73,6 @@ export function getOpenAIReasoningText(source: unknown): string {
   return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
 }
 
-function resolveReasoningReplayMaxChars(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_REASONING_REPLAY_MAX_CHARS
-  if (!Number.isFinite(value)) return 1
-  const floored = Math.floor(value)
-  if (floored < 1) return 1
-  return floored
-}
-
-function truncateReasoningForReplay(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text
-
-  const marker = '...[truncated]...'
-  if (marker.length >= maxChars) return text.slice(0, maxChars)
-
-  const budget = maxChars - marker.length
-  const head = Math.ceil(budget * 0.7)
-  const tail = budget - head
-  return `${text.slice(0, head)}${marker}${text.slice(text.length - tail)}`
-}
-
-function reasoningBlockToThinkingText(block: ReasoningBlock, maxChars: number): string {
-  if (typeof block.redactedData === 'string' && block.redactedData.length > 0) {
-    return '<thinking>[redacted]</thinking>'
-  }
-  if (block.text.length === 0) return ''
-  const bounded = truncateReasoningForReplay(block.text, maxChars)
-  return `<thinking>${bounded}</thinking>`
-}
-
 /**
  * Determine whether a framework message contains any `tool_result` content
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
@@ -147,13 +101,13 @@ function hasToolResults(msg: LLMMessage): boolean {
  */
 export function toOpenAIMessages(
   messages: LLMMessage[],
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      const assistantMsg = toOpenAIAssistantMessage(msg, replayOptions)
+      const assistantMsg = toOpenAIAssistantMessage(msg, outboundOptions)
       if (assistantMsg !== null) {
         result.push(assistantMsg)
       }
@@ -220,13 +174,13 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
  */
 function toOpenAIAssistantMessage(
   msg: LLMMessage,
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionAssistantMessageParam | null {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
   const pendingThinkingParts: string[] = []
-  const enableReasoningReplay = replayOptions?.enableReasoningTextReplay === true
-  const maxReasoningChars = resolveReasoningReplayMaxChars(replayOptions?.maxReasoningReplayChars)
+  const enableReasoningReplay = outboundOptions?.preserveReasoningAsText === true
+  const resolvedMaxChars = resolveReasoningOutboundMaxChars(outboundOptions)
 
   for (const block of msg.content) {
     if (block.type === 'tool_use') {
@@ -239,7 +193,11 @@ function toOpenAIAssistantMessage(
         },
       })
     } else if (block.type === 'reasoning' && enableReasoningReplay) {
-      const serialized = reasoningBlockToThinkingText(block, maxReasoningChars)
+      // OpenAI-family adapters are uniformly capability `'never'` — every
+      // reasoning block falls back to text regardless of provenance.
+      const serialized = resolvedMaxChars === undefined
+        ? reasoningBlockToInlineText(block)
+        : reasoningBlockToInlineText(block, { maxChars: resolvedMaxChars })
       if (serialized.length > 0) {
         pendingThinkingParts.push(serialized)
       }
@@ -412,7 +370,7 @@ export function normalizeFinishReason(reason: string): string {
 export function buildOpenAIMessageList(
   messages: LLMMessage[],
   systemPrompt: string | undefined,
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
@@ -420,6 +378,6 @@ export function buildOpenAIMessageList(
     result.push({ role: 'system', content: systemPrompt })
   }
 
-  result.push(...toOpenAIMessages(messages, replayOptions))
+  result.push(...toOpenAIMessages(messages, outboundOptions))
   return result
 }

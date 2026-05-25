@@ -507,6 +507,59 @@ export interface AgentConfig {
    */
   readonly compressToolResults?: boolean | { readonly minChars?: number }
   /**
+   * Opt-in: when an outbound IR-to-native conversion encounters a
+   * {@link ReasoningBlock} that the target adapter cannot natively echo
+   * (see {@link LLMAdapter.capabilities.echoesReasoning}), downgrade the
+   * block to `<thinking>...</thinking>` text and prepend to the next text
+   * part instead of dropping it silently (today's default).
+   *
+   * Triggers in two scenarios:
+   *  1. **Same-provider replay** through a `'never'` adapter (e.g. an
+   *     OpenAI o-series response carries `reasoning_content` that gets
+   *     extracted to a `ReasoningBlock`; on the next turn it would
+   *     normally be dropped because Chat Completions doesn't accept
+   *     reasoning input).
+   *  2. **Cross-provider handoff** — `Agent.prompt()` switching `model`
+   *     mid-conversation, or any other path that puts a block from one
+   *     provider in front of another adapter.
+   *
+   * Default `false` because enabling silently inflates prompt tokens
+   * (reasoning blocks can be very long) and emits the model's internal
+   * thinking text to potentially different providers, both of which the
+   * user should consent to. See #223 for the design discussion.
+   *
+   * Caveat: some OpenAI-compatible local models echo `<thinking>` text
+   * back as if it were instruction, which can trip the loop detector —
+   * see `examples/patterns/cross-provider-reasoning.ts`.
+   */
+  readonly preserveReasoningAsText?: boolean
+  /**
+   * Truncate the inner text of each `<thinking>` block emitted by the
+   * {@link preserveReasoningAsText} fallback. Shares the
+   * `boolean | { minChars?: number }` shape with
+   * {@link compressToolResults}, but **the compression method differs**:
+   *
+   *   - `compressToolResults`: blocks over the threshold are *replaced*
+   *     wholesale with a short marker string.
+   *   - `compressReasoningText`: blocks over the threshold are kept but
+   *     reduced to a head+tail excerpt that fits within `minChars`. The
+   *     same number serves as both the activation threshold AND the cap on
+   *     the post-truncation length.
+   *
+   * Values:
+   * - `true` — enable with default 1200-char head+tail excerpt.
+   * - `{ minChars: N }` — pass blocks of length ≤ N untouched; truncate
+   *   longer blocks to fit within N chars.
+   * - `false` — never truncate (footgun for long CoT, not recommended).
+   * - `undefined` — defaults to `true` when {@link preserveReasoningAsText}
+   *   is `true`, else `false`. Matches the maintainer's guidance in #223
+   *   to "tie compress default-on to the preserve flag".
+   *
+   * Has no effect when {@link preserveReasoningAsText} is `false` (no
+   * fallback runs, so nothing to truncate).
+   */
+  readonly compressReasoningText?: boolean | { readonly minChars?: number }
+  /**
    * Optional Zod schema for structured output.  When set, the agent's final
    * output is parsed as JSON and validated against this schema.  A single
    * retry with error feedback is attempted on validation failure.
@@ -1042,6 +1095,10 @@ export interface LLMChatOptions {
   readonly extraBody?: Record<string, unknown>
   /** See {@link AgentConfig.thinking}. */
   readonly thinking?: ThinkingConfig
+  /** See {@link AgentConfig.preserveReasoningAsText}. */
+  readonly preserveReasoningAsText?: boolean
+  /** See {@link AgentConfig.compressReasoningText}. */
+  readonly compressReasoningText?: boolean | { readonly minChars?: number }
   readonly systemPrompt?: string
   readonly abortSignal?: AbortSignal
 }

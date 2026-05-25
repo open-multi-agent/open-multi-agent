@@ -72,9 +72,12 @@ export class OpenAIAdapter implements LLMAdapter {
   readonly name: string = 'openai'
 
   readonly capabilities = {
-    // OpenAI Chat Completions does not accept `reasoning_content` on input;
-    // any reasoning replay must go through the `<thinking>` text fallback
-    // already shipped in #234 (see openai-common.ts replay options).
+    // OpenAI Chat Completions does not accept `reasoning_content` on input.
+    // When the user sets {@link AgentConfig.preserveReasoningAsText}, the
+    // outbound conversion in `toOpenAIMessages` (openai-common.ts) downgrades
+    // each reasoning block to inline `<thinking>` text via the shared
+    // helper in `reasoning-fallback.ts`. Without the opt-in, reasoning
+    // blocks are dropped silently.
     echoesReasoning: 'never' as const,
   }
 
@@ -99,7 +102,7 @@ export class OpenAIAdapter implements LLMAdapter {
    * handle these (e.g. rate limits, context length exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     const completion = await this.#client.chat.completions.create(
       {
@@ -151,7 +154,7 @@ export class OpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     // We request usage in the final chunk so we can include it in the `done` event.
     const streamResponse = await this.#client.chat.completions.create(

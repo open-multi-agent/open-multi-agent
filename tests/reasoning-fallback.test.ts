@@ -79,10 +79,19 @@ describe('reasoningBlockToInlineText', () => {
       expect(out).toBe('<thinking>abc</thinking>')
     })
 
-    it('clamps non-finite maxChars to 1', () => {
+    it('clamps non-finite maxChars to 1 (except positive Infinity)', () => {
       const block: ReasoningBlock = { type: 'reasoning', text: 'abc' }
       expect(reasoningBlockToInlineText(block, { maxChars: NaN })).toBe('<thinking>a</thinking>')
-      expect(reasoningBlockToInlineText(block, { maxChars: Infinity })).toBe('<thinking>a</thinking>')
+      expect(reasoningBlockToInlineText(block, { maxChars: -Infinity })).toBe('<thinking>a</thinking>')
+    })
+
+    it('treats positive Infinity maxChars as no truncation', () => {
+      // The resolver maps Infinity → MAX_SAFE_INTEGER so text.length <= maxChars
+      // is always true and the text passes through unchanged. This is the
+      // sentinel callers use when AgentConfig.compressReasoningText is `false`.
+      const text = 'x'.repeat(5000)
+      const block: ReasoningBlock = { type: 'reasoning', text }
+      expect(reasoningBlockToInlineText(block, { maxChars: Infinity })).toBe(`<thinking>${text}</thinking>`)
     })
 
     it('clamps maxChars below 1 to 1', () => {

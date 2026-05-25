@@ -62,3 +62,40 @@ const agent: AgentConfig = {
 ```
 
 Per-tool `maxOutputChars` (set on `ToolDefinition`) takes priority over the agent-level `maxToolOutputChars`.
+
+## Preserving Reasoning Across Providers
+
+Reasoning models (OpenAI o-series, DeepSeek reasoner, Anthropic extended thinking, Gemini thought summaries) emit intermediate reasoning that the framework extracts as `ReasoningBlock`s with a `provenance` field identifying the producing adapter. By default, only same-provider blocks with a valid signature are echoed back; everything else is silently dropped on outbound conversion to avoid the receiving model rejecting an unsigned thinking block or to keep prompt size predictable.
+
+`preserveReasoningAsText` opts into a `<thinking>...</thinking>` text fallback: whenever an outbound conversion encounters a reasoning block the target adapter cannot natively echo, the block is downgraded to inline text and prepended to the next assistant message:
+
+```typescript
+const agent: AgentConfig = {
+  name: 'cross-provider',
+  model: 'gpt-5',
+  provider: 'openai',
+  // Enable text fallback for reasoning blocks the target adapter can't echo.
+  preserveReasoningAsText: true,
+  // Defaults to ON when preserveReasoningAsText is true; head+tail truncate
+  // each block to 1200 chars. Override to tune, or set false to disable.
+  // compressReasoningText: { minChars: 4000 },
+}
+```
+
+When the fallback fires:
+
+| Source provenance | Target adapter capability | Behaviour with `preserveReasoningAsText: true` |
+|---|---|---|
+| Matches target (`'anthropic'` → Anthropic) and has signature | `'own-issued'` | Native echo (unchanged) |
+| Matches target but no signature | `'own-issued'` | Text fallback |
+| Foreign (e.g. `'openai'` → Anthropic) | `'own-issued'` | Text fallback |
+| Any | `'never'` (OpenAI, Azure, Copilot, Bedrock, AI SDK, etc.) | Text fallback |
+
+Redacted reasoning (Anthropic safety-filtered) emits the placeholder `<thinking>[redacted]</thinking>` to signal that reasoning occurred without leaking the opaque payload.
+
+**Notes:**
+- Disabled by default to avoid silently inflating prompt tokens.
+- Default-on truncation (`compressReasoningText`) is mandatory for safety on long chain-of-thought; disable only when debugging.
+- Some local OpenAI-compatible models may echo `<thinking>` text back into their assistant response, which can trip the loop detector. See `examples/patterns/cross-provider-reasoning.ts` for the failure mode and mitigations.
+- Bedrock currently has `capabilities.echoesReasoning === 'never'` until a follow-up restores its signature round-trip on both inbound extraction and outbound serialization; until then, opt-in always falls back to text for Bedrock targets.
+
