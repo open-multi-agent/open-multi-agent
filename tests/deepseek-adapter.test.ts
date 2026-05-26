@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { chatOpts, textMsg, toolDef } from './helpers/llm-fixtures.js'
+import { chatOpts, textMsg, toolDef, collectEvents } from './helpers/llm-fixtures.js'
 
 // ---------------------------------------------------------------------------
 // Mock OpenAI constructor (must be hoisted for Vitest)
@@ -18,7 +18,7 @@ vi.mock('openai', () => ({
 function makeCompletion(overrides: Record<string, unknown> = {}) {
   return {
     id: 'chatcmpl-123',
-    model: 'gpt-4o',
+    model: 'deepseek',
     choices: [{
       index: 0,
       message: {
@@ -33,9 +33,62 @@ function makeCompletion(overrides: Record<string, unknown> = {}) {
   }
 }
 
+async function* makeChunks(chunks: Array<Record<string, unknown>>) {
+  for (const chunk of chunks) yield chunk
+}
+
+function textChunk(text: string, finish_reason: string | null = null, usage: Record<string, number> | null = null) {
+  return {
+    id: 'chatcmpl-123',
+    model: 'deepseek',
+    choices: [{
+      index: 0,
+      delta: {content: text},
+      finish_reason,
+    }],
+    usage,
+  }
+}
+
+function reasoningChunk(reasoning: string, finish_reason: string | null = null, usage: Record<string, number> | null = null) {
+  return {
+    id: 'chatcmpl-123',
+    model: 'deepseek',
+    choices: [{
+      index: 0,
+      delta: {reasoning_content: reasoning},
+      finish_reason,
+    }],
+    usage,
+  }
+}
+
+function toolCallChunk(index: number, id: string | undefined, name: string | undefined, args: string, finish_reason: string | null = null) {
+  return {
+    id: 'chatcmpl-123',
+    model: 'deepseek',
+    choices: [{
+      index: 0,
+      delta: {
+        tool_calls: [{
+          index,
+          id,
+          function: {
+            name,
+            arguments: args
+          }
+        }]
+      },
+      finish_reason,
+    }],
+    usage: null,
+  }
+}
+
 
 import { DeepSeekAdapter } from '../src/llm/deepseek.js'
-import { createAdapter } from '../src/llm/adapter.js'
+import { createAdapter, LLMResponse } from '../src/llm/adapter.js'
+import { ToolUseBlock } from '@anthropic-ai/sdk/resources'
 
 // ---------------------------------------------------------------------------
 // DeepSeekAdapter tests
@@ -158,7 +211,7 @@ describe('DeepSeekAdapter', () => {
       expect(result).toEqual({
         id: 'chatcmpl-123',
         content: [{ type: 'text', text: 'Hello' }],
-        model: 'gpt-4o',
+        model: 'deepseek',
         stop_reason: 'end_turn',
         usage: { input_tokens: 10, output_tokens: 5 },
       })
@@ -291,4 +344,176 @@ describe('DeepSeekAdapter', () => {
       ).rejects.toThrow('Rate limited')
     })
   })
+
+  // =========================================================================
+  // stream()
+  // =========================================================================
+
+  describe('stream', () => {
+
+    it('calls SDK with stream: true and include_usage', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        textChunk('Hi', 'stop', { prompt_tokens: 5, completion_tokens: 2 }),
+      ]))
+      const adapter = new DeepSeekAdapter()
+      await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const callArgs = createCompletionMock.mock.calls[0][0]
+      expect(callArgs.stream).toBe(true)
+      expect(callArgs.stream_options).toEqual({include_usage: true })
+    })
+
+    it('yields reasoning events from reasoning_content deltas and retains them in done content', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        reasoningChunk('first '),
+        reasoningChunk('second'),
+        textChunk('final', 'stop'),
+        {id: 'chatcmpl-123', model: 'deepseek', choices:[], usage: {prompt_tokens: 8, completion_tokens: 10}}
+      ]))
+
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const reasoningEvents = events.filter(e => e.type === 'reasoning')
+      expect(reasoningEvents).toEqual([
+        {type: 'reasoning', data: 'first '},
+        {type: 'reasoning', data: 'second'}
+      ])
+
+      const done = events.find(e => e.type === 'done')
+      expect((done?.data as LLMResponse).content).toEqual([
+        {type: 'reasoning', text: 'first second', provenance: 'deepseek'},
+        {type: 'text', text: 'final' },
+      ])
+    }) 
+
+    it('accumulates tool_calls across chunks and emits tool_use after stream', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        toolCallChunk(0, 'call_1', 'search', '{"q":'),
+        toolCallChunk(0, undefined, undefined, '"test"}','tool_calls'),
+        {id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: {prompt_tokens: 10, completion_tokens: 13}}
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      const block = toolEvents[0].data as ToolUseBlock
+      expect(block).toEqual({
+        type: 'tool_use',
+        id: 'call_1',
+        name: 'search',
+        input: {q: 'test'},
+      })
+    })
+
+    it('yields done event with usage from final chunk', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        textChunk('Hi', 'stop'),
+        { id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } },
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      const response = done!.data as LLMResponse
+      expect(response.usage).toEqual({ input_tokens: 10, output_tokens: 2 })
+      expect(response.id).toBe('chatcmpl-123')
+      expect(response.model).toBe('deepseek')
+    })
+
+    it('resolves stop_reason to tool_use when tool blocks present but finish_reason is stop', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        toolCallChunk(0, 'call_1', 'search', '{"q":"k"}','stop'),
+        { id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } },
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      const response = done!.data as LLMResponse
+      expect(response.stop_reason).toEqual('tool_use')
+      expect(response.id).toBe('chatcmpl-123')
+      expect(response.model).toBe('deepseek')
+    })
+
+    it('handles malformed tool arguments JSON', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        toolCallChunk(0, 'call_1', 'search', '{q','stop'),
+        { id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } },
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect((toolEvents[0].data as ToolUseBlock).input).toEqual({})
+    })
+
+    it('yields error event on stream failure', async () => {
+      createCompletionMock.mockResolvedValue(
+        (async function* () { throw new Error('Stream exploded') })(),
+      )
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const errorEvents = events.filter(e => e.type === 'error')
+      expect(errorEvents).toHaveLength(1)
+      expect((errorEvents[0].data as Error).message).toBe('Stream exploded')
+    })
+
+
+    it('passes abortSignal to stream request options', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        textChunk('Hi', 'stop', { prompt_tokens: 5, completion_tokens: 1 }),
+      ]))
+      const controller = new AbortController()
+      const adapter = new DeepSeekAdapter()
+      await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Hi')],
+          chatOpts({ abortSignal: controller.signal }),
+        ),
+      )
+
+      expect(createCompletionMock.mock.calls[0][1]).toEqual({ signal: controller.signal })
+    })
+
+    it('handles multiple tool calls', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        toolCallChunk(0, 'call_1', 'search', '{"q":"a"}'),
+        toolCallChunk(1, 'call_2', 'read', '{"path":"b"}', 'tool_calls'),
+        { id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: { prompt_tokens: 5, completion_tokens: 3 } },
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect(toolEvents).toHaveLength(2)
+      expect((toolEvents[0].data as ToolUseBlock).name).toBe('search')
+      expect((toolEvents[1].data as ToolUseBlock).name).toBe('read')
+    })
+    it('falls back to extracting tool calls from streamed text when no native tool deltas exist', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        textChunk('```json\n{"name":"search","input":{"query":"fallback"}}\n```', 'stop'),
+        { id: 'chatcmpl-123', model: 'deepseek', choices: [], usage: { prompt_tokens: 6, completion_tokens: 4 } },
+      ]))
+      const adapter = new DeepSeekAdapter()
+      const events = await collectEvents(
+        adapter.stream(
+          [textMsg('user', 'Search for fallback handling')],
+          chatOpts({ tools: [toolDef('search')] }),
+        ),
+      )
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect(toolEvents).toHaveLength(1)
+      expect(toolEvents[0].data).toEqual({
+        type: 'tool_use',
+        id: expect.any(String),
+        name: 'search',
+        input: { query: 'fallback' },
+      })
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('tool_use')
+    })
+  })
+
 })
