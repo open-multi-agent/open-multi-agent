@@ -171,9 +171,9 @@ describe('DeepSeekAdapter', () => {
       expect(assistant['reasoning_content']).toBe('I will use the search tool.')
     })
 
-    it('does NOT echo reasoning_content on assistant messages without tool_calls', async () => {
-      // Per spec, `reasoning_content` is ignored on non-tool turns and would
-      // just pollute context. We drop it.
+    it('does NOT echo reasoning_content in conversations with no tool_use anywhere (pure text dialog)', async () => {
+      // Per spec, `reasoning_content` on non-tool conversations is ignored
+      // by the API. Echoing it would just bloat context.
       createCompletionMock.mockResolvedValueOnce({
         id: 'chatcmpl-ds-3',
         model: 'deepseek-v4-pro',
@@ -204,6 +204,67 @@ describe('DeepSeekAdapter', () => {
       expect(assistant['tool_calls']).toBeUndefined()
       expect(assistant['reasoning_content']).toBeUndefined()
       expect(assistant['content']).toBe('Hello!')
+    })
+
+    it('echoes reasoning_content on text-only assistant messages within a tool-calling conversation', async () => {
+      // This is the spec-critical case the original fix missed.
+      // Sequence:
+      //   user → assistant#1[reasoning + tool_use] → tool_result →
+      //   assistant#2[reasoning + text final] → user followup
+      // assistant#2 has NO tool_calls of its own, but it is still inside a
+      // tool-calling conversation and so its reasoning_content must be
+      // echoed too. Dropping it 400s on the next user turn.
+      createCompletionMock.mockResolvedValueOnce({
+        id: 'chatcmpl-ds-7',
+        model: 'deepseek-v4-pro',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'Bar follow-up.', tool_calls: undefined },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 5, completion_tokens: 3 },
+      })
+
+      const messages: LLMMessage[] = [
+        textMsg('user', 'Search for foo'),
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'Need to search.', provenance: 'deepseek' },
+            { type: 'tool_use', id: 'call_1', name: 'search', input: { q: 'foo' } },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '[results]' }],
+        },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'Synthesise the answer.', provenance: 'deepseek' },
+            { type: 'text', text: 'Found foo at example.com' },
+          ],
+        },
+        textMsg('user', 'Now what about bar?'),
+      ]
+
+      const adapter = new DeepSeekAdapter('deepseek-key')
+      await adapter.chat(messages, chatOpts({ tools: [toolDef('search')] }))
+
+      const sentMessages = createCompletionMock.mock.calls[0][0].messages as Array<Record<string, unknown>>
+      const assistants = sentMessages.filter((m) => m['role'] === 'assistant')
+      expect(assistants).toHaveLength(2)
+
+      // assistant#1: tool_use + reasoning, echoed.
+      expect(assistants[0]['tool_calls']).toBeDefined()
+      expect(assistants[0]['reasoning_content']).toBe('Need to search.')
+
+      // assistant#2: text-only (no tool_calls) but in a tool-calling
+      // conversation — reasoning MUST still be echoed. This is the
+      // regression the original PR shipped with.
+      expect(assistants[1]['tool_calls']).toBeUndefined()
+      expect(assistants[1]['content']).toBe('Found foo at example.com')
+      expect(assistants[1]['reasoning_content']).toBe('Synthesise the answer.')
     })
 
     it('does NOT echo reasoning blocks from a foreign provenance', async () => {

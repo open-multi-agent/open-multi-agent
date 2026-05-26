@@ -24,15 +24,17 @@ export class DeepSeekAdapter extends OpenAIAdapter {
   readonly name = 'deepseek'
 
   // DeepSeek V4 in thinking mode requires `reasoning_content` to be echoed
-  // back on every follow-up request that includes a prior tool-use assistant
-  // turn; omitting it returns 400. See:
+  // back on EVERY intermediate assistant message of a tool-calling
+  // conversation, including the final synthesis message that has no
+  // `tool_calls` of its own. Omitting any of them 400s on the next user
+  // turn. See:
   //   https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
   // The `'tool-use-only'` capability tells the OpenAIAdapter base class to
   // pass `nativeReasoningEchoProvider: 'deepseek'` to the message builder,
-  // which attaches `reasoning_content` on outbound assistant messages that
-  // contain `tool_calls` and carry a deepseek-provenance reasoning block.
-  // Non-tool turns drop the reasoning (it would pollute context without
-  // benefit; the spec says it is ignored there anyway).
+  // which attaches `reasoning_content` on every assistant message in a
+  // tool-calling conversation that carries a deepseek-provenance reasoning
+  // block. Non-tool conversations drop reasoning entirely (the spec says
+  // it is ignored there but would still bloat context).
   override readonly capabilities = {
     echoesReasoning: 'tool-use-only' as const,
   }
