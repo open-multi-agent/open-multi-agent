@@ -1095,11 +1095,18 @@ export interface LLMAdapter {
    *   unsigned thought summaries to keep context lean). Phase 2
    *   implementers MUST consult the adapter-specific outbound serializer
    *   for the full eligibility rule, not just the provenance match.
+   * - `'tool-use-only'`: Native echo is attempted **only** on assistant
+   *   messages that also contained `tool_use` blocks, and only when
+   *   `block.provenance === this.name`. On non-tool-use turns the block is
+   *   silently dropped (echoing it would pollute context without provider
+   *   benefit). Used by DeepSeek V4 in thinking mode, whose API returns 400
+   *   when a follow-up request omits `reasoning_content` from a prior
+   *   tool-use turn but ignores `reasoning_content` on plain-text turns.
    *
    * Omitted on third-party adapters that pre-date this field; callers treat
    * `undefined` as `'never'` to preserve today's silent-drop behaviour.
    */
   readonly capabilities?: {
-    readonly echoesReasoning: 'never' | 'own-issued'
+    readonly echoesReasoning: 'never' | 'own-issued' | 'tool-use-only'
   }
 }

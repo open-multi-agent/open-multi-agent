@@ -56,6 +56,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
   getOpenAIReasoningText,
+  type OpenAIReasoningReplayOptions,
 } from './openai-common.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
@@ -71,11 +72,16 @@ import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 export class OpenAIAdapter implements LLMAdapter {
   readonly name: string = 'openai'
 
-  readonly capabilities = {
-    // OpenAI Chat Completions does not accept `reasoning_content` on input;
-    // any reasoning replay must go through the `<thinking>` text fallback
-    // already shipped in #234 (see openai-common.ts replay options).
-    echoesReasoning: 'never' as const,
+  // The field type is intentionally widened to the full union (rather than
+  // narrowed to `'never'` via `as const`) so subclasses can override with a
+  // different value — DeepSeek currently uses `'tool-use-only'` for native
+  // `reasoning_content` echo on tool-use turns. The parent's own runtime
+  // value remains `'never'` for OpenAI Chat Completions, which does not
+  // accept `reasoning_content` on input under any circumstance (the
+  // `<thinking>` text fallback shipped in #234 handles cross-provider
+  // reasoning replay for OpenAI proper).
+  readonly capabilities: { readonly echoesReasoning: 'never' | 'own-issued' | 'tool-use-only' } = {
+    echoesReasoning: 'never',
   }
 
   readonly #client: OpenAI
@@ -85,6 +91,21 @@ export class OpenAIAdapter implements LLMAdapter {
       apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
       baseURL,
     })
+  }
+
+  /**
+   * Build the per-call options forwarded to {@link buildOpenAIMessageList}.
+   *
+   * Subclasses overriding `capabilities.echoesReasoning` to `'tool-use-only'`
+   * (e.g. {@link DeepSeekAdapter}) automatically opt into native
+   * `reasoning_content` echo on tool-use turns; no subclass override of
+   * `chat()` / `stream()` is required.
+   */
+  protected buildMessageOptions(): OpenAIReasoningReplayOptions | undefined {
+    if (this.capabilities.echoesReasoning === 'tool-use-only') {
+      return { nativeReasoningEchoProvider: this.name }
+    }
+    return undefined
   }
 
   // -------------------------------------------------------------------------
@@ -99,7 +120,7 @@ export class OpenAIAdapter implements LLMAdapter {
    * handle these (e.g. rate limits, context length exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions())
 
     const completion = await this.#client.chat.completions.create(
       {
@@ -151,7 +172,7 @@ export class OpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions())
 
     // We request usage in the final chunk so we can include it in the `done` event.
     const streamResponse = await this.#client.chat.completions.create(
