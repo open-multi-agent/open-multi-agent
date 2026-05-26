@@ -8,13 +8,17 @@
 import { OpenAIAdapter } from './openai.js'
 
 /**
- * LLM adapter for DeepSeek models (deepseek-chat, deepseek-reasoner, and future models).
+ * LLM adapter for DeepSeek V4 models. Both models support a 1M context window.
  *
  * Thread-safe. Can be shared across agents.
  *
  * Usage:
  *   provider: 'deepseek'
- *   model: 'deepseek-chat' (or 'deepseek-reasoner' for the thinking model)
+ *   model: 'deepseek-v4-flash' (economical) or 'deepseek-v4-pro' (flagship)
+ *
+ * Legacy `deepseek-chat` and `deepseek-reasoner` map to the non-thinking and
+ * thinking modes of `deepseek-v4-flash` respectively, and will be fully retired
+ * by DeepSeek on 2026-07-24.
  */
 export class DeepSeekAdapter extends OpenAIAdapter {
   readonly name = 'deepseek'

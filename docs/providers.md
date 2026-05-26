@@ -25,7 +25,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`. |
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN` (falls back to `GITHUB_TOKEN`) | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
-| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-chat` | OpenAI-compatible. `deepseek-chat` (V3, coding) or `deepseek-reasoner` (thinking mode). |
+| DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` | OpenAI-compatible. `deepseek-v4-flash` (default) or `deepseek-v4-pro` (flagship for coding); both support 1M context and 384K max output. Legacy `deepseek-chat` / `deepseek-reasoner` retire 2026-07-24. |
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI-compatible. |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`. |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |

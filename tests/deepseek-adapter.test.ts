@@ -91,7 +91,7 @@ describe('DeepSeekAdapter', () => {
   it('stamps provenance: "deepseek" (not parent "openai") on extracted ReasoningBlocks', async () => {
     createCompletionMock.mockResolvedValue({
       id: 'chatcmpl-ds',
-      model: 'deepseek-reasoner',
+      model: 'deepseek-v4-pro',
       choices: [{
         index: 0,
         message: {
