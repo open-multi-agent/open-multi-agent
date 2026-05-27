@@ -89,6 +89,9 @@ When the fallback fires:
 | Matches target (`'anthropic'` → Anthropic) and has signature | `'own-issued'` | Native echo (unchanged) |
 | Matches target but no signature | `'own-issued'` | Text fallback |
 | Foreign (e.g. `'openai'` → Anthropic) | `'own-issued'` | Text fallback |
+| Matches target (`'deepseek'` → DeepSeek) in a tool-calling conversation | `'tool-use-only'` | Native `reasoning_content` echo (per DeepSeek V4 spec, see #251) |
+| Matches target but no `tool_use` anywhere in history | `'tool-use-only'` | Dropped (DeepSeek spec ignores non-tool reasoning) |
+| Foreign (e.g. `'openai'` → DeepSeek) | `'tool-use-only'` | Text fallback |
 | Any | `'never'` (OpenAI, Azure, Copilot, Bedrock, AI SDK, etc.) | Text fallback |
 
 Redacted reasoning (Anthropic safety-filtered) emits the placeholder `<thinking>[redacted]</thinking>` to signal that reasoning occurred without leaking the opaque payload.
@@ -98,4 +101,5 @@ Redacted reasoning (Anthropic safety-filtered) emits the placeholder `<thinking>
 - Default-on truncation (`compressReasoningText`) is mandatory for safety on long chain-of-thought; disable only when debugging.
 - Some local OpenAI-compatible models may echo `<thinking>` text back into their assistant response, which can trip the loop detector. See `examples/patterns/cross-provider-reasoning.ts` for the failure mode and mitigations.
 - Bedrock currently has `capabilities.echoesReasoning === 'never'` until a follow-up restores its signature round-trip on both inbound extraction and outbound serialization; until then, opt-in always falls back to text for Bedrock targets.
+- `'tool-use-only'` (DeepSeek V4) is the only capability where same-provider echo works **without** the user opting into `preserveReasoningAsText` — it's forced on internally because the DeepSeek API requires it.
 
