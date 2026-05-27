@@ -1332,6 +1332,9 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
+    if (options?.abortSignal?.aborted) {
+      return this.buildTeamRunResult(agentResults, goal, taskRecords)
+    }
     if (
       maxTokenBudget !== undefined
       && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > maxTokenBudget
@@ -1659,6 +1662,12 @@ export class OpenMultiAgent {
     queue: TaskQueue,
   ): void {
     const agentNames = new Set(agentConfigs.map((a) => a.name))
+    const normalizeTitle = (title: string): string => title.toLowerCase().trim()
+    const titleCounts = new Map<string, number>()
+    for (const spec of specs) {
+      const key = normalizeTitle(spec.title)
+      titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1)
+    }
 
     // First pass: create tasks (without dependencies) to get stable IDs.
     const titleToId = new Map<string, string>()
@@ -1676,7 +1685,10 @@ export class OpenMultiAgent {
         retryDelayMs: spec.retryDelayMs,
         retryBackoff: spec.retryBackoff,
       })
-      titleToId.set(spec.title.toLowerCase().trim(), task.id)
+      const titleKey = normalizeTitle(spec.title)
+      if ((titleCounts.get(titleKey) ?? 0) === 1) {
+        titleToId.set(titleKey, task.id)
+      }
       createdTasks.push(task)
     }
 
@@ -1691,13 +1703,18 @@ export class OpenMultiAgent {
       }
 
       const resolvedDeps: string[] = []
+      const unresolvedDeps: string[] = []
       for (const depRef of spec.dependsOn) {
         // Accept both raw IDs and title strings
         const byId = createdTasks.find((t) => t.id === depRef)
-        const byTitle = titleToId.get(depRef.toLowerCase().trim())
+        const depTitleKey = normalizeTitle(depRef)
+        const byTitle = titleToId.get(depTitleKey)
         const resolvedId = byId?.id ?? byTitle
         if (resolvedId) {
           resolvedDeps.push(resolvedId)
+        } else {
+          const count = titleCounts.get(depTitleKey) ?? 0
+          unresolvedDeps.push(count > 1 ? `${depRef} (ambiguous duplicate title)` : depRef)
         }
       }
 
@@ -1706,6 +1723,12 @@ export class OpenMultiAgent {
         dependsOn: resolvedDeps.length > 0 ? resolvedDeps : undefined,
       }
       queue.add(taskWithDeps)
+      if (unresolvedDeps.length > 0) {
+        queue.fail(
+          task.id,
+          `Unresolved dependency reference(s): ${unresolvedDeps.join(', ')}`,
+        )
+      }
     }
   }
 
