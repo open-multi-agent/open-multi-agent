@@ -39,6 +39,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/zhipu`](providers/zhipu.ts) | Zhipu GLM (OpenAI-compatible) | `ZHIPU_API_KEY` |
 | [`providers/doubao`](providers/doubao.ts) | Doubao / ByteDance (OpenAI-compatible) | `ARK_API_KEY` |
 | [`providers/qiniu`](providers/qiniu.ts) | Qiniu (OpenAI-compatible) | `QINIU_API_KEY` |
+| [`providers/qwen`](providers/qwen.ts) | Qwen / DashScope (OpenAI-compatible) | `DASHSCOPE_API_KEY` |
 
 ## patterns — orchestration patterns
 
