@@ -538,6 +538,28 @@ describe('glob', () => {
     expect(result.data).not.toContain('linked-outside')
   })
 
+  it('does not follow symlinks to files outside the sandbox root', async () => {
+    const root = join(tmpDir, 'root')
+    const outside = join(tmpDir, 'outside')
+    await mkdir(root, { recursive: true })
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(root, 'safe.ts'), 'safe')
+    await writeFile(join(outside, 'secret.ts'), 'secret')
+    await symlink(join(outside, 'secret.ts'), join(root, 'linked-secret.ts'))
+
+    const result = await globTool.execute(
+      { path: root, pattern: '*.ts' },
+      {
+        ...defaultContext,
+        cwd: root,
+      },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('safe.ts')
+    expect(result.data).not.toContain('linked-secret.ts')
+  })
+
   it('errors on inaccessible path', async () => {
     const result = await globTool.execute(
       { path: join(tmpDir, 'missing') },
@@ -636,6 +658,55 @@ describe('grep', () => {
     expect(result.isError).toBe(false)
     expect(result.data).toContain('code.ts')
     expect(result.data).not.toContain('readme.md')
+  })
+
+  // Both branches must reject the symlink — ripgrep defaults to --no-follow,
+  // and the Node.js fallback skips symlinks via lstat() in fs-walk.
+  it('does not follow symlinked directories outside the sandbox root', async () => {
+    const root = join(tmpDir, 'root')
+    const outside = join(tmpDir, 'outside')
+    await mkdir(root, { recursive: true })
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(root, 'safe.ts'), 'needle inside\n')
+    await writeFile(join(outside, 'secret.ts'), 'needle outside\n')
+    await symlink(outside, join(root, 'linked-outside'))
+
+    const result = await grepTool.execute(
+      { pattern: 'needle', path: root },
+      {
+        ...defaultContext,
+        cwd: root,
+      },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('needle inside')
+    expect(result.data).not.toContain('needle outside')
+    expect(result.data).not.toContain('secret.ts')
+    expect(result.data).not.toContain('linked-outside')
+  })
+
+  it('does not follow symlinks to files outside the sandbox root', async () => {
+    const root = join(tmpDir, 'root')
+    const outside = join(tmpDir, 'outside')
+    await mkdir(root, { recursive: true })
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(root, 'safe.ts'), 'needle inside\n')
+    await writeFile(join(outside, 'secret.ts'), 'needle outside\n')
+    await symlink(join(outside, 'secret.ts'), join(root, 'linked-secret.ts'))
+
+    const result = await grepTool.execute(
+      { pattern: 'needle', path: root },
+      {
+        ...defaultContext,
+        cwd: root,
+      },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('needle inside')
+    expect(result.data).not.toContain('needle outside')
+    expect(result.data).not.toContain('linked-secret.ts')
   })
 
   it('errors on inaccessible path', async () => {
