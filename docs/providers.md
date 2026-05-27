@@ -26,6 +26,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN` (falls back to `GITHUB_TOKEN`) | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` | OpenAI-compatible. `deepseek-v4-flash` (default) or `deepseek-v4-pro` (flagship for coding); both support 1M context and 384K max output. Legacy `deepseek-chat` / `deepseek-reasoner` retire 2026-07-24. |
+| Doubao (Volcengine) | `provider: 'doubao'` | `ARK_API_KEY` | `doubao-seed-1-8-251228` | OpenAI-compatible. ByteDance Volcengine Ark endpoint `https://ark.cn-beijing.volces.com/api/v3`. See [`providers/doubao`](../examples/providers/doubao.ts). |
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI-compatible. |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`. |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |
@@ -45,7 +46,6 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 | Groq | `provider: 'openai'` + `baseURL: 'https://api.groq.com/openai/v1'` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | |
 | Mistral | `provider: 'openai'` + `baseURL: 'https://api.mistral.ai/v1'` | `MISTRAL_API_KEY` | `mistral-large-latest` | See [`providers/mistral`](../examples/providers/mistral.ts). |
 | Zhipu GLM | `provider: 'openai'` + `baseURL: 'https://open.bigmodel.cn/api/paas/v4'` | `ZHIPU_API_KEY` | `glm-4-plus` | See [`providers/zhipu`](../examples/providers/zhipu.ts). |
-| Doubao (ByteDance) | `provider: 'openai'` + `baseURL: 'https://ark.cn-beijing.volces.com/api/v3'` | `ARK_API_KEY` | `doubao-1-5-pro-32k-250115` | See [`providers/doubao`](../examples/providers/doubao.ts). |
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
 

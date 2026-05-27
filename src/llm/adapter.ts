@@ -39,7 +39,7 @@ import type { LLMAdapter } from '../types.js'
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
  * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -53,6 +53,7 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copi
  * - `grok`         → `XAI_API_KEY`
  * - `minimax`      → `MINIMAX_API_KEY`
  * - `deepseek`     → `DEEPSEEK_API_KEY`
+ * - `doubao`       → `ARK_API_KEY`
  * - `qiniu`        → `QINIU_API_KEY`
  * - `bedrock`      → no API key; credentials via AWS SDK default provider chain
  *                     (env vars, shared config, IAM role). Pass `region` (4th arg)
@@ -106,6 +107,10 @@ export async function createAdapter(
     case 'deepseek': {
       const { DeepSeekAdapter } = await import('./deepseek.js')
       return new DeepSeekAdapter(apiKey, baseURL)
+    }
+    case 'doubao': {
+      const { DoubaoAdapter } = await import('./doubao.js')
+      return new DoubaoAdapter(apiKey, baseURL)
     }
     case 'qiniu': {
       const { QiniuAdapter } = await import('./qiniu.js')
