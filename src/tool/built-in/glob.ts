@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type { ToolResult } from '../../types.js'
 import { collectFiles, matchesGlob } from './fs-walk.js'
 import { defineTool } from '../framework.js'
+import { resolvePathWithinCwd } from './path-safety.js'
 
 const DEFAULT_MAX_FILES = 500
 
@@ -28,7 +29,7 @@ export const globTool = defineTool({
       .string()
       .optional()
       .describe(
-        'Directory to list files under. Defaults to the current working directory.',
+        'Absolute directory or file path to list. Defaults to the tool working directory.',
       ),
     pattern: z
       .string()
@@ -48,7 +49,13 @@ export const globTool = defineTool({
   }),
 
   execute: async (input, context): Promise<ToolResult> => {
-    const root = input.path ?? process.cwd()
+    const requestedRoot = input.path ?? context.cwd ?? process.cwd()
+    const safeRoot = await resolvePathWithinCwd(requestedRoot, context)
+    if (!safeRoot.ok) {
+      return { data: safeRoot.error, isError: true }
+    }
+
+    const root = safeRoot.path
     const maxFiles = input.maxFiles ?? DEFAULT_MAX_FILES
     const signal = context.abortSignal
 
@@ -65,14 +72,14 @@ export const globTool = defineTool({
         ) {
           return { data: 'No files matched.', isError: false }
         }
-        linesOut = [relative(process.cwd(), root) || root]
+        linesOut = [relative(safeRoot.root, root) || root]
       } else {
         const collected = await collectFiles(root, input.pattern, signal, {
           maxFiles: maxFiles + 1,
         })
         truncated = collected.length > maxFiles
         const capped = collected.slice(0, maxFiles)
-        linesOut = capped.map((f) => relative(process.cwd(), f) || f)
+        linesOut = capped.map((f) => relative(safeRoot.root, f) || f)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'

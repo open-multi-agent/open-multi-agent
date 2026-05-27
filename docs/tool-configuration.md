@@ -42,6 +42,38 @@ const customAgent: AgentConfig = {
 
 **Resolution order:** preset → allowlist → denylist → framework safety rails.
 
+## Filesystem Working Directory
+
+Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root.
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  defaultCwd: '/tmp/my-workspace',
+})
+
+const agent: AgentConfig = {
+  name: 'editor',
+  model: 'claude-sonnet-4-6',
+  toolPreset: 'readwrite',
+  cwd: '/tmp/my-workspace/packages/app', // optional per-agent override
+}
+```
+
+**Defaults.** If neither `AgentConfig.cwd` nor `OrchestratorConfig.defaultCwd` is set, both fall back to `process.cwd()` — the sandbox is **on by default**.
+
+**Disable the sandbox.** Pass `null` to opt out and restore unrestricted paths (relative or absolute, any location):
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  defaultCwd: null, // disable sandbox for every agent that does not override
+})
+
+// or, per agent:
+const agent: AgentConfig = { name: 'unrestricted', model: '...', cwd: null }
+```
+
+The `bash` tool runs in its own process group on POSIX, so timeouts and abort signals kill any backgrounded children rather than letting them outlive the parent.
+
 ## Custom Tools
 
 Two ways to give an agent a tool that is not in the built-in set.

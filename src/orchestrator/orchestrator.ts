@@ -512,6 +512,7 @@ function buildTaskAgentTeamInfo(
       provider: targetConfig.provider ?? ctx.config.defaultProvider,
       baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
       apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
+      cwd: targetConfig.cwd === undefined ? ctx.config.defaultCwd : targetConfig.cwd,
     }
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
@@ -922,6 +923,10 @@ export class OpenMultiAgent {
       defaultProvider: config.defaultProvider ?? 'anthropic',
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
+      // `defaultCwd === undefined` means "use the default sandbox rooted at
+      // process.cwd()". An explicit `null` propagates through to disable the
+      // filesystem sandbox; a string sets a custom sandbox root.
+      defaultCwd: config.defaultCwd === undefined ? process.cwd() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
       onApproval: config.onApproval,
       onPlanReady: config.onPlanReady,
@@ -982,6 +987,7 @@ export class OpenMultiAgent {
       provider: config.provider ?? this.config.defaultProvider,
       baseURL: config.baseURL ?? this.config.defaultBaseURL,
       apiKey: config.apiKey ?? this.config.defaultApiKey,
+      cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       maxTokenBudget: effectiveBudget,
     }
     const agent = buildAgent(effective)
@@ -1088,6 +1094,7 @@ export class OpenMultiAgent {
         provider: bestAgent.provider ?? this.config.defaultProvider,
         baseURL: bestAgent.baseURL ?? this.config.defaultBaseURL,
         apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
+        cwd: bestAgent.cwd === undefined ? this.config.defaultCwd : bestAgent.cwd,
         maxTokenBudget: effectiveBudget,
       }
       const agent = buildAgent(effective)
@@ -1174,6 +1181,9 @@ export class OpenMultiAgent {
       toolPreset: coordinatorOverrides?.toolPreset,
       tools: coordinatorOverrides?.tools,
       disallowedTools: coordinatorOverrides?.disallowedTools,
+      cwd: coordinatorOverrides?.cwd === undefined
+        ? this.config.defaultCwd
+        : coordinatorOverrides.cwd,
       loopDetection: coordinatorOverrides?.loopDetection,
       timeoutMs: coordinatorOverrides?.timeoutMs,
     }
@@ -1742,6 +1752,7 @@ export class OpenMultiAgent {
         provider: config.provider ?? this.config.defaultProvider,
         baseURL: config.baseURL ?? this.config.defaultBaseURL,
         apiKey: config.apiKey ?? this.config.defaultApiKey,
+        cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       }
       pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }

@@ -281,7 +281,7 @@ export async function connectMCPTools(
         description: tool.description ?? `MCP tool: ${tool.name}`,
         inputSchema: z.any(),
         llmInputSchema: mcpLlmInputSchema(tool.inputSchema),
-        execute: async (input: Record<string, unknown>) => {
+        execute: async (input: Record<string, unknown>, context) => {
           try {
             const result = await client.callTool(
               {
@@ -289,7 +289,10 @@ export async function connectMCPTools(
                 arguments: input,
               },
               undefined,
-              requestOpts,
+              {
+                ...requestOpts,
+                signal: context.abortSignal,
+              },
             )
             return {
               data: toToolResultData(result),

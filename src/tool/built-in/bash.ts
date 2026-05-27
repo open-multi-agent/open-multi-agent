@@ -5,7 +5,7 @@
  * optional timeout and a custom working directory.
  */
 
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
 import { isSensitiveName, redactSensitiveText } from '../../utils/redaction.js'
@@ -106,6 +106,7 @@ function runCommand(
 
     const child = spawn('bash', ['-c', command], {
       cwd: options.cwd,
+      detached: process.platform !== 'win32',
       env: buildSafeShellEnv(process.env),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -114,6 +115,7 @@ function runCommand(
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
 
     let timedOut = false
+    let aborted = false
     let settled = false
 
     const done = (exitCode: number): void => {
@@ -130,15 +132,17 @@ function runCommand(
       resolve({ stdout, stderr, exitCode })
     }
 
-    // Timeout handler
+    // Timeout handler — kill the whole process group so backgrounded
+    // children (`(sleep 5; ...) &`) do not outlive the parent.
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill('SIGKILL')
+      killProcessTree(child)
     }, options.timeoutMs)
 
-    // Abort-signal handler
+    // Abort-signal handler — same process-group cleanup as the timeout.
     const onAbort = (): void => {
-      child.kill('SIGKILL')
+      aborted = true
+      killProcessTree(child)
     }
 
     if (signal !== undefined) {
@@ -146,7 +150,7 @@ function runCommand(
     }
 
     child.on('close', (code: number | null) => {
-      const exitCode = code ?? (timedOut ? 124 : 1)
+      const exitCode = code ?? (timedOut ? 124 : aborted ? 130 : 1)
       done(exitCode)
     })
 
@@ -165,6 +169,28 @@ function runCommand(
       }
     })
   })
+}
+
+/**
+ * Kill the child and any descendants spawned through `&` / job-control on
+ * POSIX. We rely on `detached: true` at spawn time, which puts the bash
+ * shell in its own process group; sending SIGKILL to the negated PID
+ * delivers to every member of that group.
+ *
+ * Windows does not have process groups; fall back to killing the direct
+ * child only.
+ */
+function killProcessTree(child: ChildProcess): void {
+  if (child.pid !== undefined && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+      return
+    } catch {
+      // The child may already have exited; fall through to a direct kill,
+      // which is a no-op in that case.
+    }
+  }
+  child.kill('SIGKILL')
 }
 
 function buildSafeShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

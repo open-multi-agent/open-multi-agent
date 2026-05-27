@@ -126,6 +126,11 @@ export interface RunnerOptions {
   readonly toolPreset?: 'readonly' | 'readwrite' | 'full'
   readonly allowedTools?: readonly string[]
   readonly disallowedTools?: readonly string[]
+  /**
+   * Root directory passed to built-in filesystem tools via `ToolUseContext.cwd`.
+   * `null` disables the sandbox; `undefined` falls back to `process.cwd()`.
+   */
+  readonly cwd?: string | null
   /** Display name of the agent driving this runner (used in tool context). */
   readonly agentName?: string
   /** Short role description of the agent (used in tool context). */
@@ -1326,6 +1331,7 @@ export class AgentRunner {
         model: this.options.model,
       },
       abortSignal: options.abortSignal ?? this.options.abortSignal,
+      cwd: this.options.cwd === undefined ? process.cwd() : this.options.cwd,
       ...(options.team !== undefined ? { team: options.team } : {}),
     }
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtemp, rm, writeFile, readFile } from 'fs/promises'
+import { access, mkdtemp, rm, writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { fileReadTool } from '../src/tool/built-in/file-read.js'
@@ -21,14 +21,28 @@ import type { AgentRunResult, ToolUseContext } from '../src/types.js'
 // Helpers
 // ---------------------------------------------------------------------------
 
-const defaultContext: ToolUseContext = {
-  agent: { name: 'test-agent', role: 'tester', model: 'test' },
+let tmpDir: string
+let defaultContext: ToolUseContext
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-let tmpDir: string
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'oma-test-'))
+  defaultContext = {
+    agent: { name: 'test-agent', role: 'tester', model: 'test' },
+    cwd: tmpDir,
+  }
 })
 
 afterEach(async () => {
@@ -348,6 +362,89 @@ describe('bash', () => {
     expect(result.data).toContain('[redacted]')
     expect(result.data).not.toContain('sk-outputsecretvalue1234567890')
   })
+
+  it('kills background child processes on timeout', async () => {
+    const marker = join(tmpDir, 'background-child.txt')
+
+    const result = await bashTool.execute(
+      {
+        command: `(sleep 0.4; echo alive > ${shellQuote(marker)}) & sleep 5`,
+        timeout: 100,
+      },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('124')
+
+    // The backgrounded child would have written the marker after 400 ms if it
+    // had outlived the parent. Give it more than that and verify nothing was
+    // written.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(await fileExists(marker)).toBe(false)
+  })
+})
+
+// ===========================================================================
+// filesystem sandbox
+// ===========================================================================
+
+describe('filesystem sandbox', () => {
+  it('rejects relative paths in file_read', async () => {
+    const result = await fileReadTool.execute(
+      { path: 'relative.txt' },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('must be absolute')
+  })
+
+  it('rejects file_write outside the sandbox root', async () => {
+    const result = await fileWriteTool.execute(
+      { path: join(tmpdir(), 'oma-outside-write.txt'), content: 'outside' },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('outside allowed root')
+  })
+
+  it('rejects file_edit outside the sandbox root', async () => {
+    const result = await fileEditTool.execute(
+      {
+        path: join(tmpdir(), 'oma-outside-edit.txt'),
+        old_string: 'x',
+        new_string: 'y',
+      },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('outside allowed root')
+  })
+
+  it('opts out when cwd is null (relative paths and arbitrary roots accepted)', async () => {
+    const optOut: ToolUseContext = {
+      agent: { name: 'test-agent', role: 'tester', model: 'test' },
+      cwd: null,
+    }
+
+    // Relative path no longer rejected up front.
+    const relResult = await fileReadTool.execute(
+      { path: 'still-relative.txt' },
+      optOut,
+    )
+    expect(relResult.data).not.toContain('must be absolute')
+
+    // Absolute path outside any sandbox root is accepted (still fails because
+    // the file does not exist, but with a fs error rather than a sandbox error).
+    const absResult = await fileReadTool.execute(
+      { path: join(tmpdir(), 'oma-opt-out-missing.txt') },
+      optOut,
+    )
+    expect(absResult.data).not.toContain('outside allowed root')
+  })
 })
 
 // ===========================================================================
@@ -421,7 +518,7 @@ describe('glob', () => {
 
   it('errors on inaccessible path', async () => {
     const result = await globTool.execute(
-      { path: '/nonexistent/path/xyz' },
+      { path: join(tmpDir, 'missing') },
       defaultContext,
     )
 
@@ -523,7 +620,7 @@ describe('grep', () => {
 
   it('errors on inaccessible path', async () => {
     const result = await grepTool.execute(
-      { pattern: 'test', path: '/nonexistent/path/xyz' },
+      { pattern: 'test', path: join(tmpDir, 'missing') },
       defaultContext,
     )
 

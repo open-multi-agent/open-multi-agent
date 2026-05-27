@@ -9,6 +9,7 @@ import { mkdir, stat, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
+import { resolvePathWithinCwd } from './path-safety.js'
 
 // ---------------------------------------------------------------------------
 // Tool definition
@@ -32,18 +33,23 @@ export const fileWriteTool = defineTool({
     content: z.string().describe('The full content to write to the file.'),
   }),
 
-  execute: async (input) => {
+  execute: async (input, context) => {
+    const safePath = await resolvePathWithinCwd(input.path, context)
+    if (!safePath.ok) {
+      return { data: safePath.error, isError: true }
+    }
+
     // Determine whether the file already exists so we can report create vs update.
     let existed = false
     try {
-      await stat(input.path)
+      await stat(safePath.path)
       existed = true
     } catch {
       // File does not exist — will be created.
     }
 
     // Ensure parent directory hierarchy exists.
-    const parentDir = dirname(input.path)
+    const parentDir = dirname(safePath.path)
     try {
       await mkdir(parentDir, { recursive: true })
     } catch (err) {
@@ -57,12 +63,12 @@ export const fileWriteTool = defineTool({
 
     // Write the file.
     try {
-      await writeFile(input.path, input.content, 'utf8')
+      await writeFile(safePath.path, input.content, 'utf8')
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unknown error writing file.'
       return {
-        data: `Failed to write file "${input.path}": ${message}`,
+        data: `Failed to write file "${safePath.path}": ${message}`,
         isError: true,
       }
     }
@@ -73,7 +79,7 @@ export const fileWriteTool = defineTool({
 
     return {
       data:
-        `${action} "${input.path}" ` +
+        `${action} "${safePath.path}" ` +
         `(${lineCount} line${lineCount === 1 ? '' : 's'}, ${byteCount} bytes).`,
       isError: false,
     }

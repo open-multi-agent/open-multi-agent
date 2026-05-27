@@ -14,6 +14,7 @@ import { z } from 'zod'
 import type { ToolResult } from '../../types.js'
 import { defineTool } from '../framework.js'
 import { collectFiles } from './fs-walk.js'
+import { resolvePathWithinCwd } from './path-safety.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,8 +44,8 @@ export const grepTool = defineTool({
       .string()
       .optional()
       .describe(
-        'Directory or file path to search in. ' +
-          'Defaults to the current working directory.',
+        'Absolute directory or file path to search in. ' +
+          'Defaults to the tool working directory.',
       ),
     glob: z
       .string()
@@ -66,7 +67,13 @@ export const grepTool = defineTool({
   }),
 
   execute: async (input, context) => {
-    const searchPath = input.path ?? process.cwd()
+    const requestedPath = input.path ?? context.cwd ?? process.cwd()
+    const safePath = await resolvePathWithinCwd(requestedPath, context)
+    if (!safePath.ok) {
+      return { data: safePath.error, isError: true }
+    }
+
+    const searchPath = safePath.path
     const maxResults = input.maxResults ?? DEFAULT_MAX_RESULTS
 
     // Compile the regex once and surface bad patterns immediately.
@@ -86,6 +93,7 @@ export const grepTool = defineTool({
       return runRipgrep(input.pattern, searchPath, {
         glob: input.glob,
         maxResults,
+        root: safePath.root,
         signal: context.abortSignal,
       })
     }
@@ -94,6 +102,7 @@ export const grepTool = defineTool({
     return runNodeSearch(regex, searchPath, {
       glob: input.glob,
       maxResults,
+      root: safePath.root,
       signal: context.abortSignal,
     })
   },
@@ -106,6 +115,7 @@ export const grepTool = defineTool({
 interface SearchOptions {
   glob?: string
   maxResults: number
+  root: string
   signal: AbortSignal | undefined
 }
 
@@ -123,13 +133,14 @@ async function runRipgrep(
   if (options.glob !== undefined) {
     args.push('--glob', options.glob)
   }
-  args.push('--', pattern, searchPath)
+  const targetPath = relative(options.root, searchPath) || '.'
+  args.push('--', pattern, targetPath)
 
   return new Promise<ToolResult>((resolve) => {
     const chunks: Buffer[] = []
     const errChunks: Buffer[] = []
 
-    const child = spawn('rg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('rg', args, { cwd: options.root, stdio: ['ignore', 'pipe', 'pipe'] })
 
     child.stdout.on('data', (d: Buffer) => chunks.push(d))
     child.stderr.on('data', (d: Buffer) => errChunks.push(d))
@@ -234,7 +245,7 @@ async function runNodeSearch(
       regex.lastIndex = 0
       if (regex.test(lines[i])) {
         matches.push({
-          file: relative(process.cwd(), file) || file,
+          file: relative(options.root, file) || file,
           lineNumber: i + 1,
           text: lines[i],
         })

@@ -227,8 +227,16 @@ export interface ToolUseContext {
    * Tools should prefer `abortSignal` for simple cancellation checks.
    */
   readonly abortController?: AbortController
-  /** Working directory hint for file-system tools. */
-  readonly cwd?: string
+  /**
+   * Working directory for filesystem-tool sandboxing.
+   *
+   * - `string` — built-in filesystem tools (`file_read`, `file_write`,
+   *   `file_edit`, `grep`, `glob`) require absolute paths and reject paths
+   *   that resolve outside this directory (including via symlinks).
+   * - `null` — sandbox is explicitly disabled; tools accept arbitrary paths.
+   * - `undefined` — falls back to `process.cwd()` (sandbox enabled).
+   */
+  readonly cwd?: string | null
   /** Arbitrary caller-supplied metadata (session ID, request ID, etc.). */
   readonly metadata?: Readonly<Record<string, unknown>>
 }
@@ -402,6 +410,15 @@ export interface AgentConfig {
   readonly disallowedTools?: readonly string[]
   /** Predefined tool preset for common use cases. */
   readonly toolPreset?: 'readonly' | 'readwrite' | 'full'
+  /**
+   * Root directory used by built-in filesystem tools (`file_read`,
+   * `file_write`, `file_edit`, `grep`, `glob`). Paths must be absolute and
+   * resolve inside this directory; symlinks are resolved before the check.
+   *
+   * Defaults to {@link OrchestratorConfig.defaultCwd} (or `process.cwd()` if
+   * neither is set). Pass `null` to disable the sandbox for this agent.
+   */
+  readonly cwd?: string | null
   readonly maxTurns?: number
   readonly maxTokens?: number
   /** Maximum cumulative tokens (input + output) allowed for this run. */
@@ -768,6 +785,13 @@ export interface OrchestratorConfig {
   readonly defaultProvider?: SupportedProvider
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
+  /**
+   * Default root directory for built-in filesystem tools when an agent does
+   * not set its own {@link AgentConfig.cwd}. Defaults to `process.cwd()`,
+   * which enables the sandbox. Pass `null` to disable the sandbox globally
+   * (filesystem tools accept arbitrary absolute or relative paths).
+   */
+  readonly defaultCwd?: string | null
   readonly onProgress?: (event: OrchestratorEvent) => void
   readonly onTrace?: (event: TraceEvent) => void | Promise<void>
   /**
@@ -870,6 +894,12 @@ export interface CoordinatorConfig {
   readonly tools?: readonly string[]
   /** Tool names explicitly denied to the coordinator. */
   readonly disallowedTools?: readonly string[]
+  /**
+   * Root directory used by the coordinator's filesystem tools.
+   * Defaults to {@link OrchestratorConfig.defaultCwd}. Pass `null` to
+   * disable the sandbox for the coordinator only.
+   */
+  readonly cwd?: string | null
   readonly loopDetection?: LoopDetectionConfig
   readonly timeoutMs?: number
 }

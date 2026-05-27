@@ -9,6 +9,7 @@
 import { readFile, writeFile } from 'fs/promises'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
+import { resolvePathWithinCwd } from './path-safety.js'
 
 // ---------------------------------------------------------------------------
 // Tool definition
@@ -45,17 +46,22 @@ export const fileEditTool = defineTool({
       ),
   }),
 
-  execute: async (input) => {
+  execute: async (input, context) => {
+    const safePath = await resolvePathWithinCwd(input.path, context)
+    if (!safePath.ok) {
+      return { data: safePath.error, isError: true }
+    }
+
     // Read the existing file.
     let original: string
     try {
-      const buffer = await readFile(input.path)
+      const buffer = await readFile(safePath.path)
       original = buffer.toString('utf8')
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unknown error reading file.'
       return {
-        data: `Could not read "${input.path}": ${message}`,
+        data: `Could not read "${safePath.path}": ${message}`,
         isError: true,
       }
     }
@@ -65,7 +71,7 @@ export const fileEditTool = defineTool({
     if (occurrences === 0) {
       return {
         data:
-          `The string to replace was not found in "${input.path}".\n` +
+          `The string to replace was not found in "${safePath.path}".\n` +
           'Make sure `old_string` matches the file contents exactly, ' +
           'including indentation and line endings.',
         isError: true,
@@ -77,7 +83,7 @@ export const fileEditTool = defineTool({
     if (occurrences > 1 && !replaceAll) {
       return {
         data:
-          `\`old_string\` appears ${occurrences} times in "${input.path}". ` +
+          `\`old_string\` appears ${occurrences} times in "${safePath.path}". ` +
           'Provide a more specific string to uniquely identify the section you want ' +
           'to replace, or set `replace_all: true` to replace every occurrence.',
         isError: true,
@@ -91,12 +97,12 @@ export const fileEditTool = defineTool({
 
     // Persist the result.
     try {
-      await writeFile(input.path, updated, 'utf8')
+      await writeFile(safePath.path, updated, 'utf8')
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unknown error writing file.'
       return {
-        data: `Failed to write "${input.path}": ${message}`,
+        data: `Failed to write "${safePath.path}": ${message}`,
         isError: true,
       }
     }
@@ -105,7 +111,7 @@ export const fileEditTool = defineTool({
     return {
       data:
         `Replaced ${replacedCount} occurrence${replacedCount === 1 ? '' : 's'} ` +
-        `in "${input.path}".`,
+        `in "${safePath.path}".`,
       isError: false,
     }
   },

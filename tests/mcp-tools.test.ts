@@ -269,4 +269,31 @@ describe('connectMCPTools', () => {
     const structured = await connected.tools[0].execute({}, context)
     expect(structured.data).toContain('"count": 2')
   })
+
+  it('forwards the tool abort signal to MCP callTool', async () => {
+    listToolsMock.mockResolvedValue({
+      tools: [{ name: 'slow_tool', description: 'Slow op.', inputSchema: {} }],
+    })
+    callToolMock.mockResolvedValue({
+      content: [{ type: 'text', text: 'ok' }],
+      isError: false,
+    })
+
+    const controller = new AbortController()
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+    const connected = await connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })
+
+    await connected.tools[0].execute({}, {
+      ...context,
+      abortSignal: controller.signal,
+    })
+
+    expect(callToolMock.mock.calls[0]?.[2]).toMatchObject({
+      timeout: expect.any(Number),
+      signal: controller.signal,
+    })
+  })
 })

@@ -172,6 +172,7 @@ export class Agent {
       toolPreset: this.config.toolPreset,
       allowedTools: this.config.tools,
       disallowedTools: this.config.disallowedTools,
+      cwd: this.config.cwd,
       agentName: this.name,
       agentRole: this.config.systemPrompt?.slice(0, 50) ?? 'assistant',
       loopDetection: this.config.loopDetection,
@@ -664,6 +665,7 @@ export class Agent {
         model: this.config.model,
       },
       abortSignal,
+      cwd: this.config.cwd === undefined ? process.cwd() : this.config.cwd,
     }
   }
 }

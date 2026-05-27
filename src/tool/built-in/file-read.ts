@@ -8,6 +8,7 @@
 import { readFile } from 'fs/promises'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
+import { resolvePathWithinCwd } from './path-safety.js'
 
 // ---------------------------------------------------------------------------
 // Tool definition
@@ -43,16 +44,21 @@ export const fileReadTool = defineTool({
       ),
   }),
 
-  execute: async (input) => {
+  execute: async (input, context) => {
+    const safePath = await resolvePathWithinCwd(input.path, context)
+    if (!safePath.ok) {
+      return { data: safePath.error, isError: true }
+    }
+
     let raw: string
     try {
-      const buffer = await readFile(input.path)
+      const buffer = await readFile(safePath.path)
       raw = buffer.toString('utf8')
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unknown error reading file.'
       return {
-        data: `Could not read file "${input.path}": ${message}`,
+        data: `Could not read file "${safePath.path}": ${message}`,
         isError: true,
       }
     }
@@ -74,7 +80,7 @@ export const fileReadTool = defineTool({
     if (startIndex >= totalLines && totalLines > 0) {
       return {
         data:
-          `File "${input.path}" has ${totalLines} line${totalLines === 1 ? '' : 's'} ` +
+          `File "${safePath.path}" has ${totalLines} line${totalLines === 1 ? '' : 's'} ` +
           `but offset ${input.offset} is beyond the end.`,
         isError: true,
       }

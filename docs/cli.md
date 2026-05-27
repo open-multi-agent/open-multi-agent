@@ -170,6 +170,8 @@ If **`--team path.json`** is passed, the file’s top-level `team` property is i
 
 These files are arbitrary JSON objects merged into **`OrchestratorConfig`** and **`CoordinatorConfig`**. Function-valued options (`onProgress`, `onApproval`, etc.) cannot appear in JSON and are not supported by the CLI.
 
+Set `defaultCwd` on the orchestrator JSON, or `cwd` on individual agents/coordinator JSON, to choose the sandbox root for built-in filesystem tools. Paths passed to `file_read`, `file_write`, `file_edit`, `grep`, and `glob` must be absolute and resolve inside that root. Pass `null` to disable the sandbox.
+
 ---
 
 ## Output
@@ -260,6 +262,6 @@ esac
 ## Limitations (by design)
 
 - No TTY session, history, or `stdin` goal input.
-- No built-in **`cwd`** or metadata passed into `ToolUseContext` (tools use process cwd unless the library adds other hooks later).
+- No dedicated flag for the filesystem sandbox root; configure it through `defaultCwd` / `cwd` in the orchestrator or agent JSON.
 - No **`onApproval`** from JSON; non-interactive batch only.
 - Coordinator **`runTeam`** path still requires network and API keys like any other run.

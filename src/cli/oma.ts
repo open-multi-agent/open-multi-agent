@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Thin shell/CI wrapper over OpenMultiAgent — no interactive session, cwd binding,
- * approvals, or persistence.
+ * Thin shell/CI wrapper over OpenMultiAgent — no interactive session, approvals,
+ * or persistence. The filesystem-tool sandbox root is configurable through the
+ * orchestrator/agent JSON (`defaultCwd` / `cwd`).
  *
  * Exit codes:
  *   0 — finished; team run succeeded
