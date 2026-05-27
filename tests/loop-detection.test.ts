@@ -256,6 +256,25 @@ describe('AgentRunner loop detection', () => {
     expect(info.repetitions).toBe(3)
   })
 
+  it('terminates on repeated text responses from existing conversation history', async () => {
+    const runner = buildRunner([textResponse('stuck')], {
+      maxRepetitions: 3,
+      onLoopDetected: 'terminate',
+    })
+
+    const result = await runner.run([
+      { role: 'user', content: [{ type: 'text', text: 'first' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'stuck' }] },
+      { role: 'user', content: [{ type: 'text', text: 'second' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'stuck' }] },
+      { role: 'user', content: [{ type: 'text', text: 'third' }] },
+    ])
+
+    expect(result.loopDetected).toBe(true)
+    expect(result.turns).toBe(1)
+    expect(result.output).toBe('stuck')
+  })
+
   it('calls onWarning in terminate mode', async () => {
     const responses = [
       ...Array.from({ length: 5 }, () => toolUseResponse('echo', { message: 'hi' })),

@@ -328,6 +328,16 @@ function prependSyntheticPrefixToFirstUser(
   return [...messages.slice(0, userIdx), merged, ...messages.slice(userIdx + 1)]
 }
 
+function loopWarningText(kind: 'tool_repetition' | 'text_repetition'): string {
+  return kind === 'text_repetition'
+    ? 'WARNING: You appear to be generating the same response repeatedly. ' +
+        'This suggests you are stuck in a loop. Please try a different approach ' +
+        'or provide new information.'
+    : 'WARNING: You appear to be repeating the same tool calls with identical arguments. ' +
+        'This suggests you are stuck in a loop. Please try a different approach, use different ' +
+        'parameters, or explain what you are trying to accomplish.'
+}
+
 // ---------------------------------------------------------------------------
 // AgentRunner
 // ---------------------------------------------------------------------------
@@ -713,6 +723,19 @@ export class AgentRunner {
     const detector = this.options.loopDetection
       ? new LoopDetector(this.options.loopDetection)
       : null
+    if (detector !== null) {
+      for (const message of conversationMessages) {
+        if (message.role !== 'assistant') continue
+        const historicalToolUseBlocks = extractToolUseBlocks(message.content)
+        if (historicalToolUseBlocks.length > 0) {
+          detector.recordToolCalls(historicalToolUseBlocks)
+        }
+        const historicalText = extractText(message.content)
+        if (historicalText.length > 0) {
+          detector.recordText(historicalText)
+        }
+      }
+    }
     let loopDetected = false
     let loopWarned = false
     const loopAction = this.options.loopDetection?.onLoopDetected ?? 'warn'
@@ -824,8 +847,10 @@ export class AgentRunner {
         // ------------------------------------------------------------------
         let injectWarning = false
         let injectWarningKind: 'tool_repetition' | 'text_repetition' = 'tool_repetition'
-        if (detector && toolUseBlocks.length > 0) {
-          const toolInfo = detector.recordToolCalls(toolUseBlocks)
+        if (detector) {
+          const toolInfo = toolUseBlocks.length > 0
+            ? detector.recordToolCalls(toolUseBlocks)
+            : null
           const textInfo = turnText.length > 0 ? detector.recordText(turnText) : null
           const info = toolInfo ?? textInfo
 
@@ -865,6 +890,19 @@ export class AgentRunner {
         // Step 3: Decide whether to continue looping.
         // ------------------------------------------------------------------
         if (toolUseBlocks.length === 0) {
+          if (pendingBudgetExceeded) {
+            break
+          }
+          if (injectWarning) {
+            const warningMessage: LLMMessage = {
+              role: 'user',
+              content: [{ type: 'text', text: loopWarningText(injectWarningKind) }],
+            }
+            conversationMessages.push(warningMessage)
+            newMessages.push(warningMessage)
+            options.onMessage?.(warningMessage)
+            continue
+          }
           // Warn on first turn if tools were provided but model didn't use them.
           if (turns === 1 && toolDefs.length > 0 && options.onWarning) {
             const agentName = this.options.agentName ?? 'unknown'
@@ -989,14 +1027,7 @@ export class AgentRunner {
         // the LLM sees it alongside the results (avoids two consecutive user
         // messages which violates the alternating-role constraint).
         if (injectWarning) {
-          const warningText = injectWarningKind === 'text_repetition'
-            ? 'WARNING: You appear to be generating the same response repeatedly. ' +
-              'This suggests you are stuck in a loop. Please try a different approach ' +
-              'or provide new information.'
-            : 'WARNING: You appear to be repeating the same tool calls with identical arguments. ' +
-              'This suggests you are stuck in a loop. Please try a different approach, use different ' +
-              'parameters, or explain what you are trying to accomplish.'
-          toolResultBlocks.push({ type: 'text' as const, text: warningText })
+          toolResultBlocks.push({ type: 'text' as const, text: loopWarningText(injectWarningKind) })
         }
 
         const toolResultMessage: LLMMessage = {
