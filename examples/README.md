@@ -2,7 +2,7 @@
 
 Runnable scripts demonstrating `open-multi-agent`. Organized by category — pick one that matches what you're trying to do.
 
-All scripts run with `npx tsx examples/<category>/<name>.ts` and require the corresponding API key in your environment.
+All scripts run with `npx tsx examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment.
 
 ---
 
@@ -71,6 +71,7 @@ Hooking the framework up to outside-the-box tooling.
 |---------|-----------------|
 | [`integrations/trace-observability`](integrations/trace-observability.ts) | `onTrace` spans for LLM calls, tools, and tasks. |
 | [`integrations/mcp-github`](integrations/mcp-github.ts) | An MCP server's tools exposed to an agent via `connectMCPTools()`. |
+| [`integrations/mcp-bilig-workpaper`](integrations/mcp-bilig-workpaper.ts) | Bilig WorkPaper MCP tools for formula readback, recalculation, and persisted workbook JSON. |
 | [`integrations/with-vercel-ai-sdk/`](integrations/with-vercel-ai-sdk/) | Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming. |
 | [`integrations/express-customer-support/`](integrations/express-customer-support/) | Express REST API — `runTasks()` behind POST /tickets with per-agent Zod output schemas, mix-and-match provider env vars, and HTTP error mapping (400/502/504). |
 
