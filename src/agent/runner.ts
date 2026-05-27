@@ -37,6 +37,7 @@ import { TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
 import { emitTrace } from '../utils/trace.js'
 import { estimateTokens } from '../utils/tokens.js'
+import { redactSensitiveObject, redactSensitiveText } from '../utils/redaction.js'
 import type { ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 
@@ -966,8 +967,8 @@ export class AgentRunner {
               agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
               tool: block.name,
               isError: result.isError ?? false,
-              input: block.input,
-              output: result.data,
+              input: redactSensitiveObject(block.input),
+              output: redactSensitiveText(result.data),
               startMs: startTime,
               endMs: endTime,
               durationMs: duration,

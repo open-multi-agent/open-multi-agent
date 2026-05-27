@@ -59,7 +59,7 @@ export function llmMessagesToAiSdkModelMessages(messages: readonly LLMMessage[])
         } else if (block.type === 'reasoning') {
           const text =
             block.redactedData !== undefined && block.redactedData.length > 0
-              ? `[redacted_thinking]${block.redactedData}`
+              ? '[redacted_thinking]'
               : block.text
           acc.push({ type: 'reasoning', text })
         } else if (block.type === 'tool_use') {

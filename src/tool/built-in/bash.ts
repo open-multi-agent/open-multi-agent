@@ -8,12 +8,26 @@
 import { spawn } from 'child_process'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
+import { isSensitiveName, redactSensitiveText } from '../../utils/redaction.js'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT_MS = 30_000
+const SAFE_ENV_ALLOWLIST = new Set([
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'LOGNAME',
+  'PATH',
+  'SHELL',
+  'TEMP',
+  'TERM',
+  'TMP',
+  'TMPDIR',
+  'USER',
+])
 
 // ---------------------------------------------------------------------------
 // Tool definition
@@ -52,7 +66,7 @@ export const bashTool = defineTool({
       context.abortSignal,
     )
 
-    const combined = buildOutput(stdout, stderr, exitCode)
+    const combined = redactSensitiveText(buildOutput(stdout, stderr, exitCode))
     const isError = exitCode !== 0
 
     return {
@@ -92,7 +106,7 @@ function runCommand(
 
     const child = spawn('bash', ['-c', command], {
       cwd: options.cwd,
-      env: process.env,
+      env: buildSafeShellEnv(process.env),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -151,6 +165,17 @@ function runCommand(
       }
     })
   })
+}
+
+function buildSafeShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const safeEnv: NodeJS.ProcessEnv = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue
+    if (!SAFE_ENV_ALLOWLIST.has(name)) continue
+    if (isSensitiveName(name)) continue
+    safeEnv[name] = value
+  }
+  return safeEnv
 }
 
 /**

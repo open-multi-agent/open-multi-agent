@@ -134,8 +134,12 @@ import { connectMCPTools } from '@open-multi-agent/core/mcp'
 
 const { tools, disconnect } = await connectMCPTools({
   command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-github'],
-  env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN },
+  args: ['--no-install', '@modelcontextprotocol/server-github'],
+  env: {
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+  },
   namePrefix: 'github',
 })
 
@@ -148,5 +152,6 @@ Notes:
 - `@modelcontextprotocol/sdk` is an optional peer dependency, only needed when using MCP.
 - Current transport support is stdio.
 - MCP input validation is delegated to the MCP server (`inputSchema` is `z.any()`).
+- Prefer locally installed or pinned MCP server binaries and pass only the environment variables that server needs. Avoid spreading `process.env` into MCP subprocesses.
 
 See [`integrations/mcp-github`](../examples/integrations/mcp-github.ts) for a full runnable setup.
