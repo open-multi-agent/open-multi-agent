@@ -46,6 +46,7 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 | Mistral | `provider: 'openai'` + `baseURL: 'https://api.mistral.ai/v1'` | `MISTRAL_API_KEY` | `mistral-large-latest` | See [`providers/mistral`](../examples/providers/mistral.ts). |
 | Zhipu GLM | `provider: 'openai'` + `baseURL: 'https://open.bigmodel.cn/api/paas/v4'` | `ZHIPU_API_KEY` | `glm-4-plus` | See [`providers/zhipu`](../examples/providers/zhipu.ts). |
 | Qwen (DashScope) | `provider: 'openai'` + `baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1'` | `DASHSCOPE_API_KEY` | `qwen-plus` | See [`providers/qwen`](../examples/providers/qwen.ts). |
+| Moonshot AI (Kimi) | `provider: 'openai'` + `baseURL: 'https://api.moonshot.ai/v1'` | `MOONSHOT_API_KEY` | `kimi-k2.5` | See [`providers/moonshot`](../examples/providers/moonshot.ts). |
 | Doubao (ByteDance) | `provider: 'openai'` + `baseURL: 'https://ark.cn-beijing.volces.com/api/v3'` | `ARK_API_KEY` | `doubao-1-5-pro-32k-250115` | See [`providers/doubao`](../examples/providers/doubao.ts). |
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
