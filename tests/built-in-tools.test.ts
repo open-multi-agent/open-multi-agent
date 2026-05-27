@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { access, mkdtemp, rm, writeFile, readFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, rm, symlink, writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { fileReadTool } from '../src/tool/built-in/file-read.js'
@@ -503,7 +503,6 @@ describe('glob', () => {
 
   it('recurses into subdirectories', async () => {
     const sub = join(tmpDir, 'nested')
-    const { mkdir } = await import('fs/promises')
     await mkdir(sub, { recursive: true })
     await writeFile(join(sub, 'deep.ts'), '')
 
@@ -514,6 +513,29 @@ describe('glob', () => {
 
     expect(result.isError).toBe(false)
     expect(result.data).toContain('deep.ts')
+  })
+
+  it('does not follow symlinked directories outside the sandbox root', async () => {
+    const root = join(tmpDir, 'root')
+    const outside = join(tmpDir, 'outside')
+    await mkdir(root, { recursive: true })
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(root, 'safe.ts'), 'safe')
+    await writeFile(join(outside, 'secret.ts'), 'secret')
+    await symlink(outside, join(root, 'linked-outside'))
+
+    const result = await globTool.execute(
+      { path: root, pattern: '*.ts' },
+      {
+        ...defaultContext,
+        cwd: root,
+      },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('safe.ts')
+    expect(result.data).not.toContain('secret.ts')
+    expect(result.data).not.toContain('linked-outside')
   })
 
   it('errors on inaccessible path', async () => {
@@ -589,8 +611,6 @@ describe('grep', () => {
   it('searches recursively in a directory', async () => {
     const subDir = join(tmpDir, 'sub')
     await writeFile(join(tmpDir, 'a.txt'), 'findme here\n')
-    // Create subdir and file
-    const { mkdir } = await import('fs/promises')
     await mkdir(subDir, { recursive: true })
     await writeFile(join(subDir, 'b.txt'), 'findme there\n')
 

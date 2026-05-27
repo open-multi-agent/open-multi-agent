@@ -5,7 +5,7 @@
  * rules stay consistent.
  */
 
-import { readdir, stat } from 'fs/promises'
+import { lstat, readdir } from 'fs/promises'
 import { join } from 'path'
 
 /** Directories that are almost never useful to traverse for code search. */
@@ -62,14 +62,16 @@ async function walk(
 
     const fullPath = join(dir, entryName)
 
-    let entryInfo: Awaited<ReturnType<typeof stat>>
+    let entryInfo: Awaited<ReturnType<typeof lstat>>
     try {
-      entryInfo = await stat(fullPath)
+      entryInfo = await lstat(fullPath)
     } catch {
       continue
     }
 
-    if (entryInfo.isDirectory()) {
+    if (entryInfo.isSymbolicLink()) {
+      continue
+    } else if (entryInfo.isDirectory()) {
       if (!SKIP_DIRS.has(entryName)) {
         await walk(fullPath, glob, results, signal, maxFiles)
       }
