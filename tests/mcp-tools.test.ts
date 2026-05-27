@@ -208,4 +208,65 @@ describe('connectMCPTools', () => {
     expect(result.isError).toBe(true)
     expect(result.data).toContain('permission denied')
   })
+
+  it('cleans up MCP resources when discovery fails after connect', async () => {
+    listToolsMock.mockRejectedValue(new Error('tools/list failed'))
+
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+
+    await expect(connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })).rejects.toThrow('tools/list failed')
+
+    expect(clientCloseMock).toHaveBeenCalledTimes(1)
+    expect(transportCloseMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects duplicate normalized MCP tool names', async () => {
+    listToolsMock.mockResolvedValue({
+      tools: [
+        { name: 'repo/search', description: 'Search slash.', inputSchema: { type: 'object' } },
+        { name: 'repo_search', description: 'Search underscore.', inputSchema: { type: 'object' } },
+      ],
+    })
+
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+
+    await expect(connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })).rejects.toThrow('Duplicate MCP tool name after normalization: "repo_search"')
+
+    expect(clientCloseMock).toHaveBeenCalledTimes(1)
+    expect(transportCloseMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('serializes MCP toolResult first and falls back to structuredContent', async () => {
+    listToolsMock.mockResolvedValue({
+      tools: [{ name: 'structured', description: 'Structured output.', inputSchema: {} }],
+    })
+    callToolMock
+      .mockResolvedValueOnce({
+        toolResult: { ok: true },
+        content: [{ type: 'text', text: 'ignored content' }],
+        structuredContent: { ok: false },
+      })
+      .mockResolvedValueOnce({
+        structuredContent: { count: 2 },
+      })
+
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+    const connected = await connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })
+
+    const toolResult = await connected.tools[0].execute({}, context)
+    expect(toolResult.data).toContain('"ok": true')
+    expect(toolResult.data).not.toContain('ignored content')
+
+    const structured = await connected.tools[0].execute({}, context)
+    expect(structured.data).toContain('"count": 2')
+  })
 })
