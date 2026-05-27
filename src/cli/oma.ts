@@ -54,7 +54,7 @@ const PROVIDER_REFERENCE: ReadonlyArray<{
   { id: 'gemini', apiKeyEnv: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], baseUrlSupported: false },
   { id: 'grok', apiKeyEnv: ['XAI_API_KEY'], baseUrlSupported: true },
   { id: 'minimax', apiKeyEnv: ['MINIMAX_API_KEY'], baseUrlSupported: true, notes: 'Global endpoint: https://api.minimax.io/v1 (default). China endpoint: https://api.minimaxi.com/v1. Set MINIMAX_BASE_URL to choose, or pass baseURL in agent config.' },
-  { id: 'deepseek', apiKeyEnv: ['DEEPSEEK_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.deepseek.com/v1. Models: deepseek-chat (V3), deepseek-reasoner (thinking).' },
+  { id: 'deepseek', apiKeyEnv: ['DEEPSEEK_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.deepseek.com/v1. Models: deepseek-v4-flash (default), deepseek-v4-pro (flagship); both support 1M context. Legacy deepseek-chat/deepseek-reasoner retire 2026-07-24.' },
   { id: 'qiniu', apiKeyEnv: ['QINIU_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.qnaigc.com/v1. Set provider to qiniu and choose a model available to your key.' },
   {
     id: 'copilot',
@@ -287,7 +287,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   grok: 'grok-2-latest',
   copilot: 'gpt-4o',
   minimax: 'MiniMax-M2.7',
-  deepseek: 'deepseek-chat',
+  deepseek: 'deepseek-v4-flash',
   qiniu: 'deepseek-v3',
   bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
 }

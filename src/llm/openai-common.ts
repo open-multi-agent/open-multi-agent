@@ -105,9 +105,22 @@ export function toOpenAIMessages(
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
+  // Per DeepSeek V4 thinking-mode spec, when a conversation involves any
+  // tool call, ALL intermediate assistant messages must echo
+  // `reasoning_content` — not just the one that emitted the tool_use.
+  // Omitting reasoning on the final synthesis turn (tool_calls=None) 400s
+  // on the next user message. We approximate "tool-calling conversation"
+  // as "any tool_use anywhere in history"; non-tool conversations skip
+  // the echo entirely (per spec, reasoning would be ignored but still
+  // bloat context). See:
+  //   https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+  const conversationHasToolUse = messages.some((m) =>
+    m.content.some((b) => b.type === 'tool_use'),
+  )
+
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      const assistantMsg = toOpenAIAssistantMessage(msg, outboundOptions)
+      const assistantMsg = toOpenAIAssistantMessage(msg, outboundOptions, conversationHasToolUse)
       if (assistantMsg !== null) {
         result.push(assistantMsg)
       }
@@ -175,12 +188,20 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
 function toOpenAIAssistantMessage(
   msg: LLMMessage,
   outboundOptions?: ReasoningOutboundOptions,
+  conversationHasToolUse = false,
 ): ChatCompletionAssistantMessageParam | null {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
   const pendingThinkingParts: string[] = []
+  const echoProvider = outboundOptions?.nativeReasoningEchoProvider
   const enableReasoningReplay = outboundOptions?.preserveReasoningAsText === true
   const resolvedMaxChars = resolveReasoningOutboundMaxChars(outboundOptions)
+  // Collected only when an `echoProvider` is configured. Emitted as a
+  // `reasoning_content` field on the assistant payload below, gated by
+  // `conversationHasToolUse` (DeepSeek V4 rule: applies to every assistant
+  // message in a tool-calling conversation, including the final synthesis
+  // message that has no tool_calls of its own).
+  const echoEligibleReasoning: string[] = []
 
   for (const block of msg.content) {
     if (block.type === 'tool_use') {
@@ -192,14 +213,33 @@ function toOpenAIAssistantMessage(
           arguments: JSON.stringify(block.input),
         },
       })
-    } else if (block.type === 'reasoning' && enableReasoningReplay) {
-      // OpenAI-family adapters are uniformly capability `'never'` — every
-      // reasoning block falls back to text regardless of provenance.
-      const serialized = resolvedMaxChars === undefined
-        ? reasoningBlockToInlineText(block)
-        : reasoningBlockToInlineText(block, { maxChars: resolvedMaxChars })
-      if (serialized.length > 0) {
-        pendingThinkingParts.push(serialized)
+    } else if (block.type === 'reasoning') {
+      // Path A: native echo (adapter wired with nativeReasoningEchoProvider
+      // and the block's provenance matches). The block is queued for
+      // attachment as `reasoning_content`; gating by tool_use happens after
+      // the loop so we don't emit it on non-tool turns.
+      if (echoProvider !== undefined && block.provenance === echoProvider) {
+        const isRedacted = typeof block.redactedData === 'string' && block.redactedData.length > 0
+        if (!isRedacted && block.text.length > 0) {
+          echoEligibleReasoning.push(block.text)
+        }
+        // Either way, don't double-emit via the text-replay path below.
+        continue
+      }
+      // Path B: `<thinking>` text fallback for foreign-provenance blocks
+      // (or any block when this adapter doesn't support native echo) when
+      // `preserveReasoningAsText` is on. OpenAI-family adapters are
+      // capability `'never'` by default, so every reasoning block hits this
+      // branch in plain OpenAI use; DeepSeek (`'tool-use-only'`) hits this
+      // only for foreign-provenance blocks since its own-provenance ones
+      // are claimed by Path A above.
+      if (enableReasoningReplay) {
+        const serialized = resolvedMaxChars === undefined
+          ? reasoningBlockToInlineText(block)
+          : reasoningBlockToInlineText(block, { maxChars: resolvedMaxChars })
+        if (serialized.length > 0) {
+          pendingThinkingParts.push(serialized)
+        }
       }
     } else if (block.type === 'text') {
       if (pendingThinkingParts.length > 0) {
@@ -226,6 +266,21 @@ function toOpenAIAssistantMessage(
 
   if (toolCalls.length > 0) {
     assistantMsg.tool_calls = toolCalls
+  }
+
+  // DeepSeek V4 (thinking mode) returns 400 on follow-up requests if any
+  // intermediate assistant message in a tool-calling conversation drops
+  // `reasoning_content` — including the final synthesis message that has
+  // no tool_calls of its own. The gate is on the whole conversation, not
+  // this single message. Non-tool conversations skip the attachment (per
+  // spec, reasoning is ignored there but would still bloat context).
+  //
+  // The field is not declared on the upstream SDK type, so we attach it
+  // via an indexed cast; the SDK serialises arbitrary own properties.
+  if (conversationHasToolUse && echoEligibleReasoning.length > 0) {
+    const reasoningContent = echoEligibleReasoning.join('')
+    ;(assistantMsg as ChatCompletionAssistantMessageParam & { reasoning_content?: string })
+      .reasoning_content = reasoningContent
   }
 
   return assistantMsg
