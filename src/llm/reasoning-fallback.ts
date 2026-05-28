@@ -83,6 +83,28 @@ export interface ReasoningOutboundOptions {
   readonly preserveReasoningAsText?: boolean
   /** Mirrors {@link LLMChatOptions.compressReasoningText}. */
   readonly compressReasoningText?: boolean | { readonly minChars?: number }
+  /**
+   * Adapter name to use for native `reasoning_content` echo on outbound
+   * assistant messages inside a tool-calling conversation. Wired by adapters
+   * whose {@link LLMAdapter.capabilities.echoesReasoning} is `'tool-use-only'`
+   * (currently DeepSeek V4 thinking-mode — see PR #251 / DeepSeek API spec).
+   *
+   * When set, each assistant message is scanned for {@link ReasoningBlock}s
+   * whose {@link ReasoningBlock.provenance} matches this value. The collected
+   * reasoning is attached as a `reasoning_content` field on the outbound
+   * payload (a non-standard OpenAI-compat field) IF AND ONLY IF the overall
+   * conversation contains at least one `tool_use` block somewhere in its
+   * history. Non-tool conversations skip the attachment entirely.
+   *
+   * Foreign-provenance blocks fall through to the {@link preserveReasoningAsText}
+   * `<thinking>` text path when that flag is on, so the two mechanisms
+   * compose: native echo for own-provenance + tool-use; text fallback for
+   * everything else.
+   *
+   * Adapters that don't need this leave it unset (default `'never'` and
+   * `'own-issued'` capability paths).
+   */
+  readonly nativeReasoningEchoProvider?: string
 }
 
 /**
