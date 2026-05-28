@@ -64,6 +64,7 @@ import { emitTrace, generateRunId } from '../utils/trace.js'
 import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
+import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
 import { createTask } from '../task/task.js'
@@ -924,9 +925,9 @@ export class OpenMultiAgent {
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
       // `defaultCwd === undefined` means "use the default sandbox rooted at
-      // process.cwd()". An explicit `null` propagates through to disable the
-      // filesystem sandbox; a string sets a custom sandbox root.
-      defaultCwd: config.defaultCwd === undefined ? process.cwd() : config.defaultCwd,
+      // <cwd>/.agent-workspace". An explicit `null` propagates through to
+      // disable the filesystem sandbox; a string sets a custom sandbox root.
+      defaultCwd: config.defaultCwd === undefined ? defaultWorkspaceDir() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
       onApproval: config.onApproval,
       onPlanReady: config.onPlanReady,

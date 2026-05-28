@@ -49,6 +49,7 @@ import type {
 import { emitTrace, generateRunId } from '../utils/trace.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
+import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { createAdapter } from '../llm/adapter.js'
 import { AgentRunner, type RunnerOptions, type RunOptions, type RunResult } from './runner.js'
 import {
@@ -667,7 +668,7 @@ export class Agent {
         model: this.config.model,
       },
       abortSignal,
-      cwd: this.config.cwd === undefined ? process.cwd() : this.config.cwd,
+      cwd: this.config.cwd === undefined ? defaultWorkspaceDir() : this.config.cwd,
     }
   }
 }

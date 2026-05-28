@@ -13,6 +13,10 @@ import {
   BUILT_IN_TOOLS,
   delegateToAgentTool,
 } from '../src/tool/built-in/index.js'
+import {
+  DEFAULT_WORKSPACE_DIRNAME,
+  defaultWorkspaceDir,
+} from '../src/tool/built-in/path-safety.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 import { InMemoryStore } from '../src/memory/store.js'
 import type { AgentRunResult, ToolUseContext } from '../src/types.js'
@@ -444,6 +448,60 @@ describe('filesystem sandbox', () => {
       optOut,
     )
     expect(absResult.data).not.toContain("outside the agent's working directory")
+  })
+
+  it('defaultWorkspaceDir resolves to <cwd>/.agent-workspace', () => {
+    expect(DEFAULT_WORKSPACE_DIRNAME).toBe('.agent-workspace')
+    expect(defaultWorkspaceDir()).toBe(join(process.cwd(), '.agent-workspace'))
+  })
+
+  it('auto-creates the sandbox root on first write when missing', async () => {
+    // Point cwd at a path that does not yet exist. file_write should still
+    // succeed because the sandbox layer mkdir -p's the root on first use.
+    const freshRoot = join(tmpDir, 'fresh-workspace')
+    const ctx: ToolUseContext = {
+      agent: { name: 'test-agent', role: 'tester', model: 'test' },
+      cwd: freshRoot,
+    }
+
+    expect(await fileExists(freshRoot)).toBe(false)
+
+    const result = await fileWriteTool.execute(
+      { path: join(freshRoot, 'hello.txt'), content: 'hi' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(false)
+    expect(await fileExists(freshRoot)).toBe(true)
+    expect(await readFile(join(freshRoot, 'hello.txt'), 'utf8')).toBe('hi')
+  })
+
+  it('default workspace root prevents reading parent-directory files (L2-b core benefit)', async () => {
+    // Simulate the real default-cwd scenario: the agent's sandbox root is
+    // a `.agent-workspace` subdirectory inside an enclosing project root.
+    // Files in the enclosing root (e.g. .env, source files) must not be
+    // reachable just because the host happened to launch from there.
+    const projectRoot = await mkdtemp(join(tmpdir(), 'oma-project-'))
+    try {
+      await writeFile(join(projectRoot, '.env'), 'SECRET=do-not-leak')
+
+      const workspaceRoot = join(projectRoot, DEFAULT_WORKSPACE_DIRNAME)
+      const ctx: ToolUseContext = {
+        agent: { name: 'test-agent', role: 'tester', model: 'test' },
+        cwd: workspaceRoot,
+      }
+
+      const result = await fileReadTool.execute(
+        { path: join(projectRoot, '.env') },
+        ctx,
+      )
+
+      expect(result.isError).toBe(true)
+      expect(result.data).toContain("outside the agent's working directory")
+      expect(result.data).not.toContain('SECRET=do-not-leak')
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true })
+    }
   })
 })
 

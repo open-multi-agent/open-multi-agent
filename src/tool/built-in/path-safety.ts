@@ -1,6 +1,27 @@
-import { realpath } from 'fs/promises'
+import { mkdir, realpath } from 'fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { ToolUseContext } from '../../types.js'
+
+/**
+ * Subdirectory name used as the default sandbox root, relative to
+ * `process.cwd()`. Narrower than `process.cwd()` so a freshly configured
+ * agent cannot, by default, read or write the user's project source,
+ * `.env`, or `.git/` simply because the host happened to launch from the
+ * repo root.
+ *
+ * Override per-orchestrator with `OrchestratorConfig.defaultCwd`, or
+ * per-agent with `AgentConfig.cwd`. Pass `null` to disable the sandbox.
+ */
+export const DEFAULT_WORKSPACE_DIRNAME = '.agent-workspace'
+
+/**
+ * Resolve the default sandbox root: `<process.cwd()>/.agent-workspace`.
+ * Callers that want the legacy "entire current working directory"
+ * behaviour can pass `process.cwd()` explicitly to `defaultCwd` / `cwd`.
+ */
+export function defaultWorkspaceDir(): string {
+  return resolve(process.cwd(), DEFAULT_WORKSPACE_DIRNAME)
+}
 
 export type SafePathResult =
   | { ok: true; path: string; root: string }
@@ -29,11 +50,20 @@ export async function resolvePathWithinCwd(
   let realRoot: string
   try {
     realRoot = await realpath(root)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return {
-      ok: false,
-      error: `Could not resolve working directory "${root}": ${message}`,
+  } catch {
+    // Sandbox root does not exist. Auto-create and retry once.
+    // This keeps the default `<cwd>/.agent-workspace` ergonomic on first
+    // run, and lets host code point `defaultCwd` at a directory it has
+    // not pre-created.
+    try {
+      await mkdir(root, { recursive: true })
+      realRoot = await realpath(root)
+    } catch (mkdirErr) {
+      const message = mkdirErr instanceof Error ? mkdirErr.message : 'Unknown error'
+      return {
+        ok: false,
+        error: `Could not create or resolve working directory "${root}": ${message}`,
+      }
     }
   }
 
