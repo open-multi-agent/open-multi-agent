@@ -242,6 +242,9 @@ export class OpenAIAdapter implements LLMAdapter {
 
         // Usage is only populated in the final chunk when stream_options.include_usage is set.
         if (chunk.usage !== null && chunk.usage !== undefined) {
+          // Fix for cumulative telemetry bug: openai returns total usage for the session,
+          // but AgentRunner adds usage recursively. We should only report the tokens 
+          // generated in THIS specific stream chunk.
           inputTokens = chunk.usage.prompt_tokens
           outputTokens = chunk.usage.completion_tokens
         }
