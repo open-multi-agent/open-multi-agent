@@ -144,6 +144,7 @@ For shell and CI, use the JSON-first `oma` binary. See [docs/cli.md](./docs/cli.
 | **Streaming + structured output** | Token-by-token streaming on every adapter; Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. ([observability guide](./docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](./docs/shared-memory.md)) |
+| **Per-agent workspaces** | Each agent gets a sandboxed working directory by default (`<cwd>/.agent-workspace`). Override per-agent via `AgentConfig.cwd` or globally via `OrchestratorConfig.defaultCwd`; widen, narrow, or disable per use case. ([sandbox config](./docs/tool-configuration.md)) |
 
 Production controls (context strategies, task retry with backoff, loop detection, tool output truncation/compression) are covered in the [Production Checklist](#production-checklist).
 
@@ -334,6 +335,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Hard-cap spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
 
 ## Contributing
 

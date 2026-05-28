@@ -138,6 +138,7 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。([可观测性指南](./docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自家后端。([共享记忆](./docs/shared-memory.md)) |
+| **Per-agent 工作目录** | 每个 agent 默认拿到自己的沙箱化工作目录（`<cwd>/.agent-workspace`）。通过 `AgentConfig.cwd` 单 agent 覆盖，或通过 `OrchestratorConfig.defaultCwd` 全局覆盖；按需放宽、收窄或关闭。([沙箱配置](./docs/tool-configuration.md)) |
 
 生产级控制（上下文策略、任务重试退避、循环检测、工具输出截断/压缩）见 [生产级检查清单](#生产级检查清单)。
 
@@ -303,6 +304,7 @@ const agent: AgentConfig = {
 | 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
 ## 参与贡献
 
