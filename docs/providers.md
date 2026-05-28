@@ -29,6 +29,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | Doubao (Volcengine) | `provider: 'doubao'` | `ARK_API_KEY` | `doubao-seed-1-8-251228` | OpenAI-compatible. ByteDance Volcengine Ark endpoint `https://ark.cn-beijing.volces.com/api/v3`. See [`providers/doubao`](../examples/providers/doubao.ts). |
 | MiniMax (global) | `provider: 'minimax'` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | OpenAI-compatible. |
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M2.7` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`. |
+| MiMo | `provider: 'mimo'` | `MIMO_API_KEY` (+ optional `MIMO_BASE_URL`) | `mimo-v2.5-pro` | OpenAI-compatible. Defaults to pay-as-you-go endpoint `https://api.xiaomimimo.com/v1`; Token Plan keys (`tp-...`) require the cluster base URL from your subscription page, such as `https://token-plan-cn.xiaomimimo.com/v1`. Supports reasoning/tool-call loops through the built-in MiMo adapter. See [`providers/mimo`](../examples/providers/mimo.ts). |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |
 | AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `anthropic.claude-3-5-haiku-20241022-v1:0` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials come from env vars, shared config, or IAM role. Newer Claude models can require a cross-region inference profile prefix such as `us.`. Also supports Llama, Mistral, and Cohere. See [`providers/bedrock`](../examples/providers/bedrock.ts). Requires `npm install @aws-sdk/client-bedrock-runtime`. |
 
@@ -45,6 +46,7 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 | OpenRouter | `provider: 'openai'` + `baseURL: 'https://openrouter.ai/api/v1'` + `apiKey` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | |
 | Groq | `provider: 'openai'` + `baseURL: 'https://api.groq.com/openai/v1'` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | |
 | Mistral | `provider: 'openai'` + `baseURL: 'https://api.mistral.ai/v1'` | `MISTRAL_API_KEY` | `mistral-large-latest` | See [`providers/mistral`](../examples/providers/mistral.ts). |
+| MiMo | `provider: 'openai'` + `baseURL: 'https://api.xiaomimimo.com/v1'` | `MIMO_API_KEY` | `mimo-v2.5-pro` | Prefer the built-in `mimo` provider when using tool-calling agent loops. Token Plan users should set their `token-plan-*.xiaomimimo.com/v1` base URL. |
 | Zhipu GLM | `provider: 'openai'` + `baseURL: 'https://open.bigmodel.cn/api/paas/v4'` | `ZHIPU_API_KEY` | `glm-4-plus` | See [`providers/zhipu`](../examples/providers/zhipu.ts). |
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
