@@ -19,7 +19,9 @@ export async function resolvePathWithinCwd(
   if (!isAbsolute(inputPath)) {
     return {
       ok: false,
-      error: `Path "${inputPath}" must be absolute.`,
+      error:
+        `Path "${inputPath}" must be absolute. ` +
+        'Built-in filesystem tools require absolute paths.',
     }
   }
 
@@ -77,6 +79,10 @@ async function realExistingAncestor(path: string): Promise<string> {
 function outsideRoot(candidate: string, root: string): SafePathResult {
   return {
     ok: false,
-    error: `Path "${candidate}" is outside allowed root "${root}".`,
+    error:
+      `Path "${candidate}" is outside the agent's working directory "${root}". ` +
+      'Built-in filesystem tools are sandboxed to this directory; ' +
+      'set OrchestratorConfig.defaultCwd / AgentConfig.cwd to widen it, ' +
+      'or AgentConfig.cwd: null to disable the sandbox.',
   }
 }

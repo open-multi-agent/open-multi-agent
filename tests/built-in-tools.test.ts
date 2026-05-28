@@ -407,7 +407,7 @@ describe('filesystem sandbox', () => {
     )
 
     expect(result.isError).toBe(true)
-    expect(result.data).toContain('outside allowed root')
+    expect(result.data).toContain("outside the agent's working directory")
   })
 
   it('rejects file_edit outside the sandbox root', async () => {
@@ -421,7 +421,7 @@ describe('filesystem sandbox', () => {
     )
 
     expect(result.isError).toBe(true)
-    expect(result.data).toContain('outside allowed root')
+    expect(result.data).toContain("outside the agent's working directory")
   })
 
   it('opts out when cwd is null (relative paths and arbitrary roots accepted)', async () => {
@@ -443,7 +443,7 @@ describe('filesystem sandbox', () => {
       { path: join(tmpdir(), 'oma-opt-out-missing.txt') },
       optOut,
     )
-    expect(absResult.data).not.toContain('outside allowed root')
+    expect(absResult.data).not.toContain("outside the agent's working directory")
   })
 })
 
