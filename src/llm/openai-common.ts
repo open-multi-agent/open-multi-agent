@@ -78,6 +78,8 @@ export function getOpenAIReasoningText(source: unknown): string {
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
  */
 function hasToolResults(msg: LLMMessage): boolean {
+  if (typeof msg.content === 'string') return false
+  if (!Array.isArray(msg.content)) return false
   return msg.content.some((b) => b.type === 'tool_result')
 }
 
@@ -157,6 +159,13 @@ export function toOpenAIMessages(
  * Image blocks are converted to the OpenAI image_url content part format.
  */
 function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
+  if (typeof msg.content === 'string') {
+    return { role: 'user', content: msg.content }
+  }
+  if (!Array.isArray(msg.content)) {
+    return { role: 'user', content: String(msg.content) }
+  }
+
   if (msg.content.length === 1 && msg.content[0]?.type === 'text') {
     return { role: 'user', content: msg.content[0].text }
   }
@@ -190,6 +199,12 @@ function toOpenAIAssistantMessage(
   outboundOptions?: ReasoningOutboundOptions,
   conversationHasToolUse = false,
 ): ChatCompletionAssistantMessageParam | null {
+  if (typeof msg.content === 'string') {
+    return { role: 'assistant', content: msg.content }
+  }
+  if (!Array.isArray(msg.content)) {
+    return { role: 'assistant', content: String(msg.content) }
+  }
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
   const pendingThinkingParts: string[] = []
