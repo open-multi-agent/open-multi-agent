@@ -44,7 +44,7 @@ const customAgent: AgentConfig = {
 
 ## Filesystem Working Directory
 
-Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root.
+Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root. The `bash` tool is **not** sandboxed; use `disallowedTools: ['bash']` if path containment matters.
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
