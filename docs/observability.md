@@ -18,7 +18,7 @@ Common event types include `task_start`, `task_complete`, `task_retry`, `task_sk
 
 ## Trace Spans
 
-Use `onTrace` when you need structured spans for LLM calls, tool executions, and tasks. Each span carries parent IDs, durations, token counts, and tool I/O.
+Use `onTrace` when you need structured spans for LLM calls, tool executions, and tasks. Each span carries parent IDs, durations, token counts, and best-effort-redacted tool I/O.
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
@@ -28,7 +28,7 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
-Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own run database. See [`integrations/trace-observability`](../examples/integrations/trace-observability.ts) for a runnable example.
+Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own run database only after deciding what data is safe for that sink. See [`integrations/trace-observability`](../examples/integrations/trace-observability.ts) for a runnable example.
 
 ## Post-Run Dashboard
 
@@ -44,7 +44,7 @@ writeFileSync('run.html', renderTeamRunDashboard(result))
 
 The library does not write files by itself. The CLI can write dashboard HTML for you with `oma run --dashboard`; see [docs/cli.md](./cli.md).
 
-The dashboard HTML loads Tailwind CSS and Google Fonts from the network at view time. Opening the generated HTML requires an online environment unless you host or inline those assets yourself.
+The generated dashboard is self-contained and does not load remote scripts, stylesheets, or fonts. Sensitive-looking values in the embedded run payload are redacted before rendering.
 
 ## What to Persist
 

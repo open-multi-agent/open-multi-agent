@@ -69,6 +69,25 @@ describe('llmMessagesToAiSdkModelMessages', () => {
     expect(toolMsg.role).toBe('tool')
     expect(toolMsg.content[0]?.output).toEqual({ type: 'error-text', value: 'boom' })
   })
+
+  it('does not serialize opaque redacted reasoning payloads', () => {
+    const out = llmMessagesToAiSdkModelMessages([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'reasoning',
+            text: '',
+            redactedData: 'opaque-redacted-thinking-payload',
+          },
+        ],
+      },
+    ])
+
+    const assistant = out[0] as { role: string; content: Array<{ type: string; text: string }> }
+    expect(assistant.content[0]).toEqual({ type: 'reasoning', text: '[redacted_thinking]' })
+    expect(JSON.stringify(out)).not.toContain('opaque-redacted-thinking-payload')
+  })
 })
 
 describe('AISdkAdapter', () => {

@@ -317,6 +317,37 @@ describe('bash', () => {
     expect(result.isError).toBe(false)
     expect(result.data).toContain('command completed with no output')
   })
+
+  it('does not pass provider secrets from process.env into the shell', async () => {
+    const original = process.env['OPENAI_API_KEY']
+    process.env['OPENAI_API_KEY'] = 'sk-envsecretvalue1234567890'
+    try {
+      const result = await bashTool.execute(
+        { command: 'printf "%s" "$OPENAI_API_KEY"' },
+        defaultContext,
+      )
+
+      expect(result.isError).toBe(false)
+      expect(result.data).not.toContain('sk-envsecretvalue1234567890')
+    } finally {
+      if (original === undefined) {
+        delete process.env['OPENAI_API_KEY']
+      } else {
+        process.env['OPENAI_API_KEY'] = original
+      }
+    }
+  })
+
+  it('redacts sensitive-looking command output', async () => {
+    const result = await bashTool.execute(
+      { command: 'printf "OPENAI_API_KEY=sk-outputsecretvalue1234567890"' },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('[redacted]')
+    expect(result.data).not.toContain('sk-outputsecretvalue1234567890')
+  })
 })
 
 // ===========================================================================

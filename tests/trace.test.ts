@@ -251,6 +251,41 @@ describe('AgentRunner trace events', () => {
     expect(tool.durationMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('redacts sensitive-looking tool trace input and output', async () => {
+    const traces: TraceEvent[] = []
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'leaky',
+        description: 'returns a sensitive-looking value',
+        inputSchema: z.object({ apiKey: z.string(), query: z.string() }),
+        execute: async () => ({ data: 'Authorization: Bearer sk-tracesecretvalue1234567890' }),
+      }),
+    )
+    const executor = new ToolExecutor(registry)
+    const adapter = mockAdapter([
+      toolUseResponse('leaky', { apiKey: 'sk-inputsecretvalue1234567890', query: 'hello' }),
+      textResponse('Done'),
+    ])
+
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'test-model',
+      agentName: 'tooler',
+      allowedTools: ['leaky'],
+    })
+
+    await runner.run(
+      [{ role: 'user', content: [{ type: 'text', text: 'test' }] }],
+      { onTrace: (e) => { traces.push(e) }, runId: 'run-redact', traceAgent: 'tooler' },
+    )
+
+    const tool = traces.find((t): t is Extract<TraceEvent, { type: 'tool_call' }> => t.type === 'tool_call')!
+    expect(tool.input).toEqual({ apiKey: '[redacted]', query: 'hello' })
+    expect(tool.output).toContain('[redacted]')
+    expect(tool.output).not.toContain('sk-inputsecretvalue1234567890')
+    expect(tool.output).not.toContain('sk-tracesecretvalue1234567890')
+  })
+
   it('tool_call trace has isError: true on tool failure', async () => {
     const traces: TraceEvent[] = []
     const registry = new ToolRegistry()
@@ -499,4 +534,3 @@ describe('Agent trace events', () => {
     expect(llmTraces[1]!.turn).toBe(2)
   })
 })
-
