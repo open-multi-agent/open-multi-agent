@@ -343,7 +343,24 @@ export function fromOpenAICompletion(
         parsedInput = parsed as Record<string, unknown>
       }
     } catch {
-      // Malformed arguments from the model — surface as empty object.
+      // Malformed arguments from the model — attempt fallback for single-string parameter tools
+      // which often fail due to unescaped quotes or Python-style triple quotes.
+      const args = toolCall.function.arguments.trim()
+      const name = toolCall.function.name
+      if (name === 'run_python_script' || name === 'bash') {
+        const paramName = name === 'run_python_script' ? 'code' : 'command'
+        const regex = new RegExp(`\\{\\s*"${paramName}"\\s*:\\s*([\\s\\S]*?)\\s*\\}$`)
+        const match = args.match(regex)
+        if (match) {
+          let val = match[1]!.trim()
+          if (val.startsWith('"""') && val.endsWith('"""')) val = val.slice(3, -3)
+          else if (val.startsWith("'''") && val.endsWith("'''")) val = val.slice(3, -3)
+          else if (val.startsWith('"') && val.endsWith('"')) {
+            val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+          }
+          parsedInput = { [paramName]: val }
+        }
+      }
     }
 
     const toolUseBlock: ToolUseBlock = {
