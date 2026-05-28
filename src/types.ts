@@ -234,7 +234,8 @@ export interface ToolUseContext {
    *   `file_edit`, `grep`, `glob`) require absolute paths and reject paths
    *   that resolve outside this directory (including via symlinks).
    * - `null` — sandbox is explicitly disabled; tools accept arbitrary paths.
-   * - `undefined` — falls back to `process.cwd()` (sandbox enabled).
+   * - `undefined` — falls back to `<process.cwd()>/.agent-workspace`, an
+   *   auto-created sandbox subdirectory (sandbox enabled).
    */
   readonly cwd?: string | null
   /** Arbitrary caller-supplied metadata (session ID, request ID, etc.). */
@@ -840,9 +841,11 @@ export interface OrchestratorConfig {
   readonly defaultApiKey?: string
   /**
    * Default root directory for built-in filesystem tools when an agent does
-   * not set its own {@link AgentConfig.cwd}. Defaults to `process.cwd()`,
-   * which enables the sandbox. Pass `null` to disable the sandbox globally
-   * (filesystem tools accept arbitrary absolute or relative paths).
+   * not set its own {@link AgentConfig.cwd}. Defaults to
+   * `<process.cwd()>/.agent-workspace`, a sandbox subdirectory auto-created
+   * on first write. Pass `process.cwd()` to widen the sandbox to the entire
+   * working directory, or `null` to disable it globally (filesystem tools
+   * then accept arbitrary absolute or relative paths).
    */
   readonly defaultCwd?: string | null
   readonly onProgress?: (event: OrchestratorEvent) => void

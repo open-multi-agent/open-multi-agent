@@ -129,7 +129,8 @@ export interface RunnerOptions {
   readonly disallowedTools?: readonly string[]
   /**
    * Root directory passed to built-in filesystem tools via `ToolUseContext.cwd`.
-   * `null` disables the sandbox; `undefined` falls back to `process.cwd()`.
+   * `null` disables the sandbox; `undefined` falls back to
+   * `<process.cwd()>/.agent-workspace`.
    */
   readonly cwd?: string | null
   /** Display name of the agent driving this runner (used in tool context). */
