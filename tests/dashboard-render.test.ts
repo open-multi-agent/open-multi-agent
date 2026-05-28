@@ -89,4 +89,52 @@ describe('renderTeamRunDashboard', () => {
     }
     expect(parsed.tasks[0]!.result).toBe(result)
   })
+
+  it('does not reference remote dashboard assets', () => {
+    const html = renderTeamRunDashboard({
+      success: true,
+      goal: 'safe-goal',
+      tasks: [],
+      agentResults: new Map(),
+      totalTokenUsage: { input_tokens: 0, output_tokens: 0 },
+    })
+
+    expect(html).not.toMatch(/<script[^>]+src=/i)
+    expect(html).not.toMatch(/<link[^>]+href=/i)
+    expect(html).not.toContain('cdn.tailwindcss.com')
+    expect(html).not.toContain('fonts.googleapis.com')
+  })
+
+  it('redacts sensitive-looking values from the embedded JSON payload', () => {
+    const secret = 'sk-dashboardsecretvalue1234567890'
+    const html = renderTeamRunDashboard({
+      success: true,
+      goal: 'password=hunter2',
+      tasks: [
+        {
+          id: 't1',
+          title: 'task',
+          description: `OPENAI_API_KEY=${secret}`,
+          result: `Authorization: Bearer ${secret}`,
+          status: 'completed',
+          dependsOn: [],
+        } as { id: string; title: string; description: string; result: string; status: 'completed'; dependsOn: string[] },
+      ],
+      agentResults: new Map(),
+      totalTokenUsage: { input_tokens: 0, output_tokens: 0 },
+    })
+
+    const start = html.indexOf('id="oma-data">')
+    const contentStart = start + 'id="oma-data">'.length
+    const end = html.indexOf('</script>', contentStart)
+    const parsed = JSON.parse(html.slice(contentStart, end)) as {
+      goal: string
+      tasks: Array<{ description?: string; result?: string }>
+    }
+
+    expect(html).not.toContain(secret)
+    expect(parsed.goal).toBe('password=[redacted]')
+    expect(parsed.tasks[0]!.description).toBe('OPENAI_API_KEY=[redacted]')
+    expect(parsed.tasks[0]!.result).toBe('Authorization: [redacted]')
+  })
 })

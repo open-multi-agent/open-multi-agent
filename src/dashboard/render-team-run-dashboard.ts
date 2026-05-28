@@ -4,6 +4,7 @@
 
 import type { TeamRunResult } from '../types.js'
 import { layoutTasks } from './layout-tasks.js'
+import { redactSensitiveObject } from '../utils/redaction.js'
 
 /**
  * Escape serialized JSON so it can be embedded in HTML without closing a {@code <script>} tag.
@@ -30,7 +31,7 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
       nodeH: layout.nodeH,
     },
   }
-  const dataJson = escapeJsonForHtmlScript(JSON.stringify(payload))
+  const dataJson = escapeJsonForHtmlScript(JSON.stringify(redactSensitiveObject(payload)))
 
   return `<!DOCTYPE html>
 <html class="dark" lang="en">
@@ -38,98 +39,190 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Open Multi Agent</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap"
-        rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-        rel="stylesheet" />
-    <script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "inverse-surface": "#faf8ff",
-                        "secondary-dim": "#ecb200",
-                        "on-primary": "#005762",
-                        "on-tertiary-fixed-variant": "#006827",
-                        "primary-fixed-dim": "#00d4ec",
-                        "tertiary-container": "#5cfd80",
-                        "secondary": "#fdc003",
-                        "primary-dim": "#00d4ec",
-                        "surface-container": "#0f1930",
-                        "on-secondary": "#553e00",
-                        "surface": "#060e20",
-                        "on-surface": "#dee5ff",
-                        "surface-container-highest": "#192540",
-                        "on-secondary-fixed-variant": "#674c00",
-                        "on-tertiary-container": "#005d22",
-                        "secondary-fixed-dim": "#f7ba00",
-                        "surface-variant": "#192540",
-                        "surface-container-low": "#091328",
-                        "secondary-container": "#785900",
-                        "tertiary-fixed-dim": "#4bee74",
-                        "on-primary-fixed-variant": "#005762",
-                        "primary-container": "#00e3fd",
-                        "surface-dim": "#060e20",
-                        "error-container": "#9f0519",
-                        "on-error-container": "#ffa8a3",
-                        "primary-fixed": "#00e3fd",
-                        "tertiary-dim": "#4bee74",
-                        "surface-container-high": "#141f38",
-                        "background": "#060e20",
-                        "surface-bright": "#1f2b49",
-                        "error-dim": "#d7383b",
-                        "on-primary-container": "#004d57",
-                        "outline": "#6d758c",
-                        "error": "#ff716c",
-                        "on-secondary-container": "#fff6ec",
-                        "on-primary-fixed": "#003840",
-                        "inverse-on-surface": "#4d556b",
-                        "secondary-fixed": "#ffca4d",
-                        "tertiary-fixed": "#5cfd80",
-                        "on-tertiary-fixed": "#004819",
-                        "surface-tint": "#81ecff",
-                        "tertiary": "#b8ffbb",
-                        "outline-variant": "#40485d",
-                        "on-error": "#490006",
-                        "on-surface-variant": "#a3aac4",
-                        "surface-container-lowest": "#000000",
-                        "on-tertiary": "#006727",
-                        "primary": "#81ecff",
-                        "on-secondary-fixed": "#443100",
-                        "inverse-primary": "#006976",
-                        "on-background": "#dee5ff"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0px",
-                        "lg": "0px",
-                        "xl": "0px",
-                        "full": "9999px"
-                    },
-                    "fontFamily": {
-                        "headline": ["Space Grotesk"],
-                        "body": ["Inter"],
-                        "label": ["Space Grotesk"]
-                    }
-                },
-            },
-        }
-    </script>
     <style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        :root {
+            --surface: #060e20;
+            --surface-container: #0f1930;
+            --surface-container-high: #141f38;
+            --surface-container-low: #091328;
+            --surface-container-lowest: #000000;
+            --surface-variant: #192540;
+            --on-surface: #dee5ff;
+            --on-surface-variant: #a3aac4;
+            --primary: #81ecff;
+            --secondary: #fdc003;
+            --tertiary: #b8ffbb;
+            --error: #ff716c;
+            --outline: #6d758c;
+            --outline-variant: #40485d;
         }
-
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--surface);
+            color: var(--on-surface);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        p, h2, h3 { margin: 0; }
+        main {
+            display: flex;
+            gap: 1.5rem;
+            min-height: calc(100vh - 64px);
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        #viewport {
+            flex: 1;
+            min-height: 600px;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+        }
+        #viewport.cursor-grabbing { cursor: grabbing; }
+        #canvas {
+            position: absolute;
+            inset: 0;
+            transform-origin: top left;
+        }
+        #edgesLayer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        #detailsPanel {
+            position: relative;
+            width: min(400px, 100%);
+            background: var(--surface-container-high);
+            padding: 1.5rem;
+            border-left: 1px solid rgba(64, 72, 93, 0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        #closePanel {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            color: var(--on-surface-variant);
+            background: transparent;
+            border: 0;
+            cursor: pointer;
+        }
+        #closePanel:hover { color: var(--primary); }
+        #liveOutput {
+            background: var(--surface-container-lowest);
+            flex: 1;
+            min-height: 160px;
+            padding: 0.75rem;
+            font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+            overflow-y: auto;
+        }
+        #selectedTokenRatio {
+            height: 100%;
+            width: 0;
+            background: var(--primary);
+        }
+        .hidden { display: none !important; }
+        .material-symbols-outlined {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.75rem;
+            line-height: 1;
+        }
         .grid-pattern {
             background-image: radial-gradient(circle, #40485d 1px, transparent 1px);
             background-size: 24px 24px;
         }
-
         .node-active-glow {
             box-shadow: 0 0 15px rgba(129, 236, 255, 0.15);
+        }
+        .node {
+            position: absolute;
+            width: 16rem;
+            border-left: 2px solid var(--outline);
+            padding: 1rem;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .node h3 {
+            margin: 0.25rem 0;
+            font-size: 0.875rem;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .node span { display: inline-block; }
+        .flex { display: flex; }
+        .flex-1 { flex: 1; }
+        .flex-col { flex-direction: column; }
+        .grid { display: grid; }
+        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .justify-between { justify-content: space-between; }
+        .items-start { align-items: flex-start; }
+        .items-center { align-items: center; }
+        .gap-1 { gap: 0.25rem; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-4 { gap: 1rem; }
+        .gap-8 { gap: 2rem; }
+        .mb-1 { margin-bottom: 0.25rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .mb-6 { margin-bottom: 1.5rem; }
+        .mt-2 { margin-top: 0.5rem; }
+        .p-2 { padding: 0.5rem; }
+        .p-3 { padding: 0.75rem; }
+        .p-4 { padding: 1rem; }
+        .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+        .py-0\\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+        .w-full { width: 100%; }
+        .h-1 { height: 0.25rem; }
+        .text-xs { font-size: 0.75rem; }
+        .text-sm { font-size: 0.875rem; }
+        .text-lg { font-size: 1.125rem; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .font-bold { font-weight: 700; }
+        .font-black { font-weight: 900; }
+        .uppercase { text-transform: uppercase; }
+        .tracking-widest { letter-spacing: 0.08em; }
+        .bg-surface-container { background: var(--surface-container); }
+        .bg-surface-container-low { background: var(--surface-container-low); }
+        .bg-surface-container-lowest { background: var(--surface-container-lowest); }
+        .bg-surface-variant { background: var(--surface-variant); }
+        .text-primary { color: var(--primary); }
+        .text-secondary { color: var(--secondary); }
+        .text-tertiary { color: var(--tertiary); }
+        .text-error { color: var(--error); }
+        .text-outline { color: var(--outline); }
+        .text-on-surface { color: var(--on-surface); }
+        .text-on-surface-variant { color: var(--on-surface-variant); }
+        .border-tertiary { border-color: var(--tertiary); }
+        .border-error { border-color: var(--error); }
+        .border-outline { border-color: var(--outline); }
+        .border-secondary { border-color: var(--secondary); }
+        .opacity-60 { opacity: 0.6; }
+        .grayscale { filter: grayscale(1); }
+        .space-y-1 > * + * { margin-top: 0.25rem; }
+        .space-y-2 > * + * { margin-top: 0.5rem; }
+        .space-y-6 > * + * { margin-top: 1.5rem; }
+        .bg-gradient-to-b {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 4px;
+            height: 100vh;
+            background: linear-gradient(to bottom, var(--primary), var(--secondary), var(--tertiary));
+            opacity: 0.3;
+            z-index: 60;
+        }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 1023px) {
+            main { flex-direction: column; padding: 1rem; }
+            #detailsPanel { border-left: 0; border-top: 1px solid rgba(64, 72, 93, 0.4); }
+        }
+        @media (min-width: 1024px) {
+            main { flex-direction: row; }
         }
     </style>
 </head>

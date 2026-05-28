@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: rm -f package-lock.json && npm install
+      - run: npm ci
       - run: npm run lint
       - run: npm test
 
@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: rm -f package-lock.json && npm install
+      - run: npm ci
       - run: npm run test:coverage
       - uses: codecov/codecov-action@v5
         with:

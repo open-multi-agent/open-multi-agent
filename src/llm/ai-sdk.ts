@@ -78,9 +78,15 @@ export function llmMessagesToAiSdkModelMessages(
               : reasoningBlockToInlineText(block, { maxChars })
             if (text.length > 0) acc.push({ type: 'text', text })
           } else {
+            // Default-off back-compat path: pass framework reasoning through
+            // as AI SDK structured `{ type: 'reasoning' }`. For redacted
+            // blocks emit ONLY the `[redacted_thinking]` marker — never the
+            // opaque `redactedData` payload (would leak Anthropic-issued
+            // encrypted content into the AI SDK provider's request body;
+            // hardened upstream in 6b63302).
             const text =
               block.redactedData !== undefined && block.redactedData.length > 0
-                ? `[redacted_thinking]${block.redactedData}`
+                ? '[redacted_thinking]'
                 : block.text
             acc.push({ type: 'reasoning', text })
           }

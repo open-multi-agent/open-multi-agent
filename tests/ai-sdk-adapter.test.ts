@@ -70,6 +70,28 @@ describe('llmMessagesToAiSdkModelMessages', () => {
     expect(toolMsg.content[0]?.output).toEqual({ type: 'error-text', value: 'boom' })
   })
 
+  it('does not serialize opaque redacted reasoning payloads', () => {
+    // Security regression guard (upstream 6b63302): the back-compat default-off
+    // path must never leak the opaque `redactedData` blob into the AI SDK
+    // request body. We emit ONLY the `[redacted_thinking]` marker.
+    const out = llmMessagesToAiSdkModelMessages([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'reasoning',
+            text: '',
+            redactedData: 'opaque-redacted-thinking-payload',
+          },
+        ],
+      },
+    ])
+
+    const assistant = out[0] as { role: string; content: Array<{ type: string; text: string }> }
+    expect(assistant.content[0]).toEqual({ type: 'reasoning', text: '[redacted_thinking]' })
+    expect(JSON.stringify(out)).not.toContain('opaque-redacted-thinking-payload')
+  })
+
   describe('reasoning text fallback (#223 Phase 2)', () => {
     it('default-off: reasoning passes through as AI SDK structured part (back-compat)', () => {
       const out = llmMessagesToAiSdkModelMessages([

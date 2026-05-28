@@ -133,7 +133,7 @@ For shell and CI, use the JSON-first `oma` binary. See [docs/cli.md](./docs/cli.
 | Capability | What you get |
 |------------|--------------|
 | **Goal-driven coordinator** | One `runTeam(team, goal)` call. The coordinator decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. |
-| **Mix providers in one team** | 10 built-in: Anthropic, OpenAI, Azure, Bedrock, Gemini, Grok, DeepSeek, MiniMax, Qiniu, Copilot. Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full setup](./docs/providers.md)) |
+| **Mix providers in one team** | 11 built-in: Anthropic, OpenAI, Azure, Bedrock, Gemini, Grok, DeepSeek, Doubao, MiniMax, Qiniu, Copilot. Ollama / vLLM / LM Studio / OpenRouter / Groq via OpenAI-compatible. ([full setup](./docs/providers.md)) |
 | **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent`, custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](./docs/tool-configuration.md)) |
 | **Streaming + structured output** | Token-by-token streaming on every adapter; Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. ([observability guide](./docs/observability.md)) |
@@ -252,6 +252,7 @@ For products and platforms with a deep `open-multi-agent` integration. See the [
          │               │  - GrokAdapter         │
          │               │  - MiniMaxAdapter      │
          │               │  - DeepSeekAdapter     │
+         │               │  - DoubaoAdapter       │
          │               │  - QiniuAdapter        │
          │               └────────────────────────┘
 ┌────────▼──────────┐
@@ -285,7 +286,7 @@ const agent: AgentConfig = {
 
 | Kind | How to configure | Services |
 |------|------------------|----------|
-| Built-in shortcuts | Set `provider` to `anthropic`, `gemini`, `openai`, `azure-openai`, `copilot`, `grok`, `deepseek`, `minimax`, `qiniu`, or `bedrock`; the framework supplies the endpoint. | Anthropic, Gemini, OpenAI, Azure OpenAI, GitHub Copilot, xAI Grok, DeepSeek, MiniMax, Qiniu, AWS Bedrock |
+| Built-in shortcuts | Set `provider` to `anthropic`, `gemini`, `openai`, `azure-openai`, `copilot`, `grok`, `deepseek`, `doubao`, `minimax`, `qiniu`, or `bedrock`; the framework supplies the endpoint. | Anthropic, Gemini, OpenAI, Azure OpenAI, GitHub Copilot, xAI Grok, DeepSeek, Doubao (Volcengine), MiniMax, Qiniu, AWS Bedrock |
 | OpenAI-compatible endpoints | Set `provider: 'openai'` plus `baseURL` and, when needed, `apiKey`. | Ollama, vLLM, LM Studio, llama.cpp server, OpenRouter, Groq, Mistral |
 | Vercel AI SDK | Import `AISdkAdapter` from `@open-multi-agent/core/ai-sdk`; install optional peer `ai` plus an `@ai-sdk/*` provider. | [Any AI SDK provider](https://ai-sdk.dev/providers) (60+ models and hosts) |
 

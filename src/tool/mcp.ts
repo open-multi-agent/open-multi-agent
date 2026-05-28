@@ -105,6 +105,24 @@ function normalizeToolName(rawName: string, namePrefix?: string): string {
   return base.replace(/\//g, '_')
 }
 
+function assertUniqueNormalizedToolNames(
+  tools: readonly MCPToolDescriptor[],
+  namePrefix?: string,
+): void {
+  const seen = new Map<string, string>()
+  for (const tool of tools) {
+    const normalized = normalizeToolName(tool.name, namePrefix)
+    const previous = seen.get(normalized)
+    if (previous !== undefined) {
+      throw new Error(
+        `Duplicate MCP tool name after normalization: "${normalized}" ` +
+          `from "${previous}" and "${tool.name}".`,
+      )
+    }
+    seen.set(normalized, tool.name)
+  }
+}
+
 /** MCP `tools/list` JSON Schema; forwarded to the LLM as-is (runtime validation stays `z.any()`). */
 function mcpLlmInputSchema(
   schema: Record<string, unknown> | undefined,
@@ -251,46 +269,55 @@ export async function connectMCPTools(
     timeout: config.requestTimeoutMs ?? DEFAULT_MCP_REQUEST_TIMEOUT_MS,
   }
 
-  await client.connect(transport, requestOpts)
+  try {
+    await client.connect(transport, requestOpts)
 
-  const mcpTools = await listAllMcpTools(client, requestOpts)
+    const mcpTools = await listAllMcpTools(client, requestOpts)
+    assertUniqueNormalizedToolNames(mcpTools, config.namePrefix)
 
-  const tools: ToolDefinition[] = mcpTools.map((tool) =>
-    defineTool({
-      name: normalizeToolName(tool.name, config.namePrefix),
-      description: tool.description ?? `MCP tool: ${tool.name}`,
-      inputSchema: z.any(),
-      llmInputSchema: mcpLlmInputSchema(tool.inputSchema),
-      execute: async (input: Record<string, unknown>) => {
-        try {
-          const result = await client.callTool(
-            {
-              name: tool.name,
-              arguments: input,
-            },
-            undefined,
-            requestOpts,
-          )
-          return {
-            data: toToolResultData(result),
-            isError: result.isError === true,
+    const tools: ToolDefinition[] = mcpTools.map((tool) =>
+      defineTool({
+        name: normalizeToolName(tool.name, config.namePrefix),
+        description: tool.description ?? `MCP tool: ${tool.name}`,
+        inputSchema: z.any(),
+        llmInputSchema: mcpLlmInputSchema(tool.inputSchema),
+        execute: async (input: Record<string, unknown>) => {
+          try {
+            const result = await client.callTool(
+              {
+                name: tool.name,
+                arguments: input,
+              },
+              undefined,
+              requestOpts,
+            )
+            return {
+              data: toToolResultData(result),
+              isError: result.isError === true,
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error)
+            return {
+              data: `MCP tool "${tool.name}" failed: ${message}`,
+              isError: true,
+            }
           }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error)
-          return {
-            data: `MCP tool "${tool.name}" failed: ${message}`,
-            isError: true,
-          }
-        }
+        },
+      }),
+    )
+
+    return {
+      tools,
+      disconnect: async () => {
+        await client.close?.()
       },
-    }),
-  )
-
-  return {
-    tools,
-    disconnect: async () => {
-      await client.close?.()
-    },
+    }
+  } catch (error) {
+    await Promise.allSettled([
+      client.close?.() ?? Promise.resolve(),
+      transport.close?.() ?? Promise.resolve(),
+    ])
+    throw error
   }
 }

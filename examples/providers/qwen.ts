@@ -1,36 +1,40 @@
 /**
- * Multi-Agent Team Collaboration with Doubao (ByteDance)
+ * Multi-Agent Team Collaboration with Qwen (DashScope)
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses the built-in Doubao provider shortcut.
+ * to build a minimal Express.js REST API. Every agent uses Qwen through
+ * DashScope's OpenAI-compatible endpoint.
  *
  * Run:
- *   npx tsx examples/providers/doubao.ts
+ *   npx tsx examples/providers/qwen.ts
  *
  * Prerequisites:
- *   ARK_API_KEY environment variable must be set.
+ *   DASHSCOPE_API_KEY environment variable must be set.
  *
  * Available models:
- *   doubao-seed-1-8-251228 — Doubao Seed 1.8 model
+ *   qwen-plus  — balanced Qwen model for general coding and reasoning tasks
+ *   qwen-turbo — faster, lower-cost Qwen model
  */
 
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 
-const DOUBAO_API_KEY = process.env.ARK_API_KEY
+const QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+const QWEN_API_KEY = process.env.DASHSCOPE_API_KEY
 
-if (!DOUBAO_API_KEY) {
-  throw new Error('ARK_API_KEY environment variable must be set.')
+if (!QWEN_API_KEY) {
+  throw new Error('DASHSCOPE_API_KEY environment variable must be set.')
 }
 
 // ---------------------------------------------------------------------------
-// Agent definitions (all using Doubao via the built-in provider shortcut)
+// Agent definitions (all using Qwen via the OpenAI-compatible adapter)
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'doubao-seed-1-8-251228',
-  provider: 'doubao',
-  apiKey: DOUBAO_API_KEY,
+  model: 'qwen-plus',
+  provider: 'openai',
+  baseURL: QWEN_BASE_URL,
+  apiKey: QWEN_API_KEY,
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -41,9 +45,10 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'doubao-seed-1-8-251228',
-  provider: 'doubao',
-  apiKey: DOUBAO_API_KEY,
+  model: 'qwen-plus',
+  provider: 'openai',
+  baseURL: QWEN_BASE_URL,
+  apiKey: QWEN_API_KEY,
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -53,9 +58,10 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'doubao-seed-1-8-251228',
-  provider: 'doubao',
-  apiKey: DOUBAO_API_KEY,
+  model: 'qwen-turbo',
+  provider: 'openai',
+  baseURL: QWEN_BASE_URL,
+  apiKey: QWEN_API_KEY,
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -101,9 +107,10 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'doubao-seed-1-8-251228',
-  defaultProvider: 'doubao',
-  defaultApiKey: DOUBAO_API_KEY,
+  defaultModel: 'qwen-plus',
+  defaultProvider: 'openai',
+  defaultBaseURL: QWEN_BASE_URL,
+  defaultApiKey: QWEN_API_KEY,
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,
 })
@@ -119,7 +126,7 @@ console.log(`Team "${team.name}" created with agents: ${team.getAgents().map(a =
 console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
-const goal = `Create a minimal Express.js REST API in /tmp/doubao-api/ with:
+const goal = `Create a minimal Express.js REST API in /tmp/qwen-api/ with:
 - GET /health → { status: "ok" }
 - GET /users → returns a hardcoded array of 2 user objects
 - POST /users → accepts { name, email } body, logs it, returns 201

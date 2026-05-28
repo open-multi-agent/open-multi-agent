@@ -11,6 +11,7 @@
  *   - GEMINI_API_KEY
  *   - GITHUB_TOKEN
  *   - @modelcontextprotocol/sdk installed
+ *   - @modelcontextprotocol/server-github installed locally
  */
 
 import { Agent, ToolExecutor, ToolRegistry, registerBuiltInTools } from '../../src/index.js'
@@ -23,10 +24,12 @@ if (!process.env.GITHUB_TOKEN?.trim()) {
 
 const { tools, disconnect } = await connectMCPTools({
   command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-github'],
+  args: ['--no-install', '@modelcontextprotocol/server-github'],
   env: {
-    ...process.env,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    TMPDIR: process.env.TMPDIR,
   },
   namePrefix: 'github',
 })

@@ -972,9 +972,9 @@ export interface ToolCallTrace extends TraceEventBase {
   readonly type: 'tool_call'
   readonly tool: string
   readonly isError: boolean
-  /** The input arguments passed to the tool — mirrors the originating ToolUseBlock.input. */
+  /** The input arguments passed to the tool after best-effort sensitive-field redaction. */
   readonly input: Record<string, unknown>
-  /** The serialised output returned by the tool — mirrors ToolResult.data (truncation, if any, has already been applied by the executor). */
+  /** The serialised output returned by the tool after executor truncation and best-effort sensitive-value redaction. */
   readonly output: string
 }
 
