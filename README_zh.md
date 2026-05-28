@@ -71,7 +71,13 @@ const orchestrator = new OpenMultiAgent({
 })
 
 const team = orchestrator.createTeam('api-team', { name: 'api-team', agents, sharedMemory: true })
-const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
+
+// 内置文件系统工具默认沙箱根目录为 `<cwd>/.agent-workspace`，
+// 给 agent 的 prompt 里需要使用该目录内的绝对路径。
+const result = await orchestrator.runTeam(
+  team,
+  `Create a REST API for a todo list in ${process.cwd()}/.agent-workspace/todo-api/`,
+)
 
 console.log(result.success, result.totalTokenUsage.output_tokens)
 ```
