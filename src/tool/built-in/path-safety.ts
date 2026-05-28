@@ -1,5 +1,5 @@
 import { realpath } from 'fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { ToolUseContext } from '../../types.js'
 
 export type SafePathResult =
@@ -42,18 +42,19 @@ export async function resolvePathWithinCwd(
     return outsideRoot(candidate, realRoot)
   }
 
-  let realCandidate: string | undefined
-  try {
-    realCandidate = await realpath(candidate)
-  } catch {
-    realCandidate = await realExistingAncestor(candidate)
-  }
+  // Resolve symlinks all the way through the candidate. For paths that do
+  // not yet exist (e.g. `file_write` creating a new file), resolve the
+  // longest existing prefix and re-attach the non-existent suffix.
+  const realCandidate = await realpathTolerant(candidate)
 
   if (!isWithin(realCandidate, realRoot)) {
     return outsideRoot(candidate, realRoot)
   }
 
-  return { ok: true, path: candidate, root: realRoot }
+  // Return the symlink-resolved path so callers hand a symlink-free path to
+  // fs APIs. This closes the TOCTOU window where a symlink within the
+  // candidate could be swapped between this check and the actual fs call.
+  return { ok: true, path: realCandidate, root: realRoot }
 }
 
 function isWithin(candidate: string, root: string): boolean {
@@ -61,18 +62,14 @@ function isWithin(candidate: string, root: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-async function realExistingAncestor(path: string): Promise<string> {
-  let current = dirname(path)
-  while (true) {
-    try {
-      return await realpath(current)
-    } catch {
-      const parent = dirname(current)
-      if (parent === current) {
-        return current
-      }
-      current = parent
-    }
+async function realpathTolerant(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    const parent = dirname(path)
+    if (parent === path) return path
+    const realParent = await realpathTolerant(parent)
+    return join(realParent, basename(path))
   }
 }
 
