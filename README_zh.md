@@ -138,7 +138,7 @@ Shell 和 CI 场景使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cl
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。([可观测性指南](./docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自家后端。([共享记忆](./docs/shared-memory.md)) |
-| **Per-agent 工作目录** | 每个 agent 默认拿到自己的沙箱化工作目录（`<cwd>/.agent-workspace`）。通过 `AgentConfig.cwd` 单 agent 覆盖，或通过 `OrchestratorConfig.defaultCwd` 全局覆盖；按需放宽、收窄或关闭。([沙箱配置](./docs/tool-configuration.md)) |
+| **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](./docs/tool-configuration.md)) |
 
 生产级控制（上下文策略、任务重试退避、循环检测、工具输出截断/压缩）见 [生产级检查清单](#生产级检查清单)。
 

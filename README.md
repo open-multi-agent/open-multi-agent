@@ -144,7 +144,7 @@ For shell and CI, use the JSON-first `oma` binary. See [docs/cli.md](./docs/cli.
 | **Streaming + structured output** | Token-by-token streaming on every adapter; Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. ([observability guide](./docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](./docs/shared-memory.md)) |
-| **Per-agent workspaces** | Each agent gets a sandboxed working directory by default (`<cwd>/.agent-workspace`). Override per-agent via `AgentConfig.cwd` or globally via `OrchestratorConfig.defaultCwd`; widen, narrow, or disable per use case. ([sandbox config](./docs/tool-configuration.md)) |
+| **Sandboxed filesystem workspace** | Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by default; agents sharing the default configuration share this root. For per-agent isolation, set `AgentConfig.cwd`; for a different shared root, set `OrchestratorConfig.defaultCwd`; pass `null` to disable. ([sandbox config](./docs/tool-configuration.md)) |
 
 Production controls (context strategies, task retry with backoff, loop detection, tool output truncation/compression) are covered in the [Production Checklist](#production-checklist).
 
