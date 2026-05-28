@@ -53,6 +53,11 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from '../types.js'
+import {
+  reasoningBlockToInlineText,
+  resolveReasoningOutboundMaxChars,
+  type ReasoningOutboundOptions,
+} from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -62,30 +67,34 @@ import type {
  * Convert a single framework {@link ContentBlock} into an Anthropic
  * {@link ContentBlockParam} suitable for the `messages` array, or `null`
  * when the block has no faithful representation on the wire (e.g. a
- * reasoning block from another provider that lacks an Anthropic signature).
+ * reasoning block from another provider that lacks an Anthropic signature
+ * AND the user hasn't opted into the text fallback).
  *
  * `tool_result` blocks are only valid inside `user`-role messages, which is
  * handled by {@link toAnthropicMessages} based on role context.
  */
-function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam | null {
+function toAnthropicContentBlockParam(
+  block: ContentBlock,
+  outboundOptions: ReasoningOutboundOptions | undefined,
+): ContentBlockParam | null {
   switch (block.type) {
     case 'reasoning': {
       // Anthropic strictly validates the signature on echoed thinking
       // blocks, so we only round-trip blocks that originated here:
       //   - `redactedData` -> `redacted_thinking` (opaque, signature lives inside)
       //   - `signature`    -> `thinking` block with text + signature
-      // Cross-provider reasoning (e.g. Gemini thought summaries) and
-      // unsigned reasoning text from a single-turn final response carry no
-      // valid signature, so dropping them is safer than risking an API
-      // rejection on the next turn.
-      if (block.redactedData !== undefined) {
+      // For foreign-provenance or unsigned reasoning, fall back to plain
+      // `<thinking>` text when the user opts in (see #223 Phase 2), or
+      // drop silently (today's default) when opt-in is off.
+      const ownProvenance = block.provenance === 'anthropic'
+      if (ownProvenance && block.redactedData !== undefined) {
         const param: RedactedThinkingBlockParam = {
           type: 'redacted_thinking',
           data: block.redactedData,
         }
         return param
       }
-      if (block.signature !== undefined) {
+      if (ownProvenance && block.signature !== undefined) {
         const param: ThinkingBlockParam = {
           type: 'thinking',
           thinking: block.text,
@@ -93,7 +102,14 @@ function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam | 
         }
         return param
       }
-      return null
+      if (outboundOptions?.preserveReasoningAsText !== true) return null
+      const maxChars = resolveReasoningOutboundMaxChars(outboundOptions)
+      const text = maxChars === undefined
+        ? reasoningBlockToInlineText(block)
+        : reasoningBlockToInlineText(block, { maxChars })
+      if (text.length === 0) return null
+      const param: TextBlockParam = { type: 'text', text }
+      return param
     }
     case 'text': {
       const param: TextBlockParam = { type: 'text', text: block.text }
@@ -150,11 +166,14 @@ function toAnthropicContentBlockParam(block: ContentBlock): ContentBlockParam | 
  * enforce that here — the caller is responsible for producing a valid
  * conversation history.
  */
-function toAnthropicMessages(messages: LLMMessage[]): MessageParam[] {
+function toAnthropicMessages(
+  messages: LLMMessage[],
+  outboundOptions: ReasoningOutboundOptions | undefined,
+): MessageParam[] {
   return messages.map((msg): MessageParam => ({
     role: msg.role,
     content: msg.content
-      .map(toAnthropicContentBlockParam)
+      .map(block => toAnthropicContentBlockParam(block, outboundOptions))
       .filter((p): p is ContentBlockParam => p !== null),
   }))
 }
@@ -325,7 +344,7 @@ export class AnthropicAdapter implements LLMAdapter {
    * and handle these (e.g. rate limits, context window exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
-    const anthropicMessages = toAnthropicMessages(messages)
+    const anthropicMessages = toAnthropicMessages(messages, options)
     const effectiveMaxTokens = options.maxTokens ?? 4096
 
     const response = await this.#client.messages.create(
@@ -384,7 +403,7 @@ export class AnthropicAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
-    const anthropicMessages = toAnthropicMessages(messages)
+    const anthropicMessages = toAnthropicMessages(messages, options)
     const effectiveMaxTokens = options.maxTokens ?? 4096
 
     // MessageStream gives us typed events and handles SSE reconnect internally.

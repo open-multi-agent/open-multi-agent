@@ -179,6 +179,8 @@ export class Agent {
       maxTokenBudget: this.config.maxTokenBudget,
       contextStrategy: this.config.contextStrategy,
       compressToolResults: this.config.compressToolResults,
+      preserveReasoningAsText: this.config.preserveReasoningAsText,
+      compressReasoningText: this.config.compressReasoningText,
     }
 
     this.runner = new AgentRunner(

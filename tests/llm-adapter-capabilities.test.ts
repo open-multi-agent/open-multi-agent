@@ -48,6 +48,7 @@ import { DeepSeekAdapter } from '../src/llm/deepseek.js'
 import { GrokAdapter } from '../src/llm/grok.js'
 import { QiniuAdapter } from '../src/llm/qiniu.js'
 import { MiniMaxAdapter } from '../src/llm/minimax.js'
+import { MiMoAdapter } from '../src/llm/mimo.js'
 import { GeminiAdapter } from '../src/llm/gemini.js'
 import { BedrockAdapter } from '../src/llm/bedrock.js'
 
@@ -62,6 +63,7 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     ['grok', () => new GrokAdapter('dummy-key'), 'never' as const],
     ['qiniu', () => new QiniuAdapter('dummy-key'), 'never' as const],
     ['minimax', () => new MiniMaxAdapter('dummy-key'), 'never' as const],
+    ['mimo', () => new MiMoAdapter('dummy-key'), 'tool-use-only' as const],
     ['bedrock', () => new BedrockAdapter('us-east-1'), 'never' as const],
   ])('%s declares the documented name and capabilities', (expectedName, factory, expectedEcho) => {
     const adapter = factory()
@@ -80,15 +82,21 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     expect(new MiniMaxAdapter('dummy-key').capabilities).toEqual(parent)
   })
 
-  it('DeepSeek overrides `capabilities` to `tool-use-only`', () => {
-    // DeepSeek V4 thinking mode requires `reasoning_content` to be echoed
-    // back on follow-up requests with prior tool-use turns; without this
-    // override DeepSeek would inherit OpenAI's `'never'` and hit 400 on the
-    // second turn of any tool-using agent. See deepseek.ts capability docs.
+  it('DeepSeek and MiMo override `capabilities` to `tool-use-only`', () => {
+    // DeepSeek and MiMo thinking modes require `reasoning_content` to be
+    // echoed back on follow-up requests with prior tool-use turns; without
+    // this override they would inherit OpenAI's `'never'` and hit 400 on the
+    // second turn of a tool-using agent.
     expect(new DeepSeekAdapter('dummy-key').capabilities).toEqual({
       echoesReasoning: 'tool-use-only',
     })
+    expect(new MiMoAdapter('dummy-key').capabilities).toEqual({
+      echoesReasoning: 'tool-use-only',
+    })
     expect(new DeepSeekAdapter('dummy-key').capabilities).not.toEqual(
+      new OpenAIAdapter('dummy-key').capabilities,
+    )
+    expect(new MiMoAdapter('dummy-key').capabilities).not.toEqual(
       new OpenAIAdapter('dummy-key').capabilities,
     )
   })

@@ -548,6 +548,7 @@ describe('AnthropicAdapter', () => {
         type: 'reasoning',
         text: 'previous reasoning',
         signature: 'echo-sig-789',
+        provenance: 'anthropic',
       }
       const messages: LLMMessage[] = [
         { role: 'assistant', content: [reasoning, { type: 'tool_use', id: 't1', name: 's', input: {} }] },
@@ -570,6 +571,7 @@ describe('AnthropicAdapter', () => {
         type: 'reasoning',
         text: '',
         redactedData: 'opaque-payload',
+        provenance: 'anthropic',
       }
       const messages: LLMMessage[] = [
         { role: 'assistant', content: [reasoning, { type: 'text', text: 'ok' }] },
@@ -695,6 +697,111 @@ describe('AnthropicAdapter', () => {
           chatOpts({ maxTokens: 1024, thinking: { enabled: true } }),
         ),
       ).rejects.toThrow(/budgetTokens \(1024\) must be < maxTokens \(1024\)/)
+    })
+  })
+
+  // =========================================================================
+  // Phase 2 of #223 — cross-provider <thinking> text fallback (outbound)
+  // =========================================================================
+
+  describe('reasoning text fallback (#223 Phase 2)', () => {
+    it('default-off: foreign-provenance reasoning is dropped (regression guard)', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      const foreign: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'from openai',
+        provenance: 'openai',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [foreign, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([{ type: 'text', text: 'reply' }])
+    })
+
+    it('preserve=true: foreign-provenance reasoning becomes a text block', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      const foreign: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'from openai',
+        provenance: 'openai',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [foreign, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([
+        { type: 'text', text: '<thinking>from openai</thinking>' },
+        { type: 'text', text: 'reply' },
+      ])
+    })
+
+    it('preserve=true: own-provenance signed block still native-echoes (no fallback)', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      const own: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'mine',
+        signature: 'sig',
+        provenance: 'anthropic',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [own, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([
+        { type: 'thinking', thinking: 'mine', signature: 'sig' },
+        { type: 'text', text: 'reply' },
+      ])
+    })
+
+    it('preserve=true: own-provenance unsigned block falls back to text (no signature to echo)', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      const own: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'mine but unsigned',
+        provenance: 'anthropic',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [own, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([
+        { type: 'text', text: '<thinking>mine but unsigned</thinking>' },
+        { type: 'text', text: 'reply' },
+      ])
+    })
+
+    it('preserve=true: foreign redacted block uses [redacted] placeholder', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      const foreign: ReasoningBlock = {
+        type: 'reasoning',
+        text: '',
+        redactedData: 'opaque',
+        provenance: 'openai',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [foreign, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockCreate.mock.calls[0][0].messages
+      expect(sent[0].content).toEqual([
+        { type: 'text', text: '<thinking>[redacted]</thinking>' },
+        { type: 'text', text: 'reply' },
+      ])
     })
   })
 })

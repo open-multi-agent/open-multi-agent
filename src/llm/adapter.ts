@@ -39,7 +39,7 @@ import type { LLMAdapter } from '../types.js'
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
  * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'minimax' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'minimax' | 'mimo' | 'openai' | 'gemini' | 'qiniu'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -52,6 +52,7 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copi
  * - `gemini`       → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
  * - `grok`         → `XAI_API_KEY`
  * - `minimax`      → `MINIMAX_API_KEY`
+ * - `mimo`         → `MIMO_API_KEY`, optional `MIMO_BASE_URL`
  * - `deepseek`     → `DEEPSEEK_API_KEY`
  * - `doubao`       → `ARK_API_KEY`
  * - `qiniu`        → `QINIU_API_KEY`
@@ -103,6 +104,10 @@ export async function createAdapter(
     case 'minimax': {
       const { MiniMaxAdapter } = await import('./minimax.js')
       return new MiniMaxAdapter(apiKey, baseURL)
+    }
+    case 'mimo': {
+      const { MiMoAdapter } = await import('./mimo.js')
+      return new MiMoAdapter(apiKey, baseURL)
     }
     case 'deepseek': {
       const { DeepSeekAdapter } = await import('./deepseek.js')

@@ -601,6 +601,7 @@ describe('GeminiAdapter (contract)', () => {
         type: 'reasoning',
         text: 'previous thinking',
         signature: 'thought-sig-001',
+        provenance: 'gemini',
       }
       const messages: LLMMessage[] = [
         { role: 'assistant', content: [reasoning, { type: 'text', text: 'reply' }] },
@@ -659,6 +660,70 @@ describe('GeminiAdapter (contract)', () => {
         chatOpts({ thinking: { enabled: false, budgetTokens: 4096 } }),
       )
       expect(mockGenerateContent.mock.calls[1][0].config.thinkingConfig).toBeUndefined()
+    })
+  })
+
+  // =========================================================================
+  // Phase 2 of #223 — cross-provider <thinking> text fallback (outbound)
+  // =========================================================================
+
+  describe('reasoning text fallback (#223 Phase 2)', () => {
+    it('default-off: foreign-provenance reasoning is dropped (regression guard)', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      const foreign: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'from anthropic',
+        provenance: 'anthropic',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [foreign, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      expect(sent[0].parts).toEqual([{ text: 'reply' }])
+    })
+
+    it('preserve=true: foreign-provenance reasoning becomes a text part', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      const foreign: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'from anthropic',
+        provenance: 'anthropic',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [foreign, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      expect(sent[0].parts).toEqual([
+        { text: '<thinking>from anthropic</thinking>' },
+        { text: 'reply' },
+      ])
+    })
+
+    it('preserve=true: own-provenance signed block still native-echoes', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      const own: ReasoningBlock = {
+        type: 'reasoning',
+        text: 'mine',
+        signature: 'thought-sig',
+        provenance: 'gemini',
+      }
+      const messages: LLMMessage[] = [
+        { role: 'assistant', content: [own, { type: 'text', text: 'reply' }] },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sent = mockGenerateContent.mock.calls[0][0].contents
+      expect(sent[0].parts).toEqual([
+        { text: 'mine', thought: true, thoughtSignature: 'thought-sig' },
+        { text: 'reply' },
+      ])
     })
   })
 })

@@ -125,7 +125,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const deploymentName = resolveAzureDeploymentName(options.model)
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     const completion = await this.#client.chat.completions.create(
       {
@@ -174,7 +174,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
     const deploymentName = resolveAzureDeploymentName(options.model)
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     // We request usage in the final chunk so we can include it in the `done` event.
     const streamResponse = await this.#client.chat.completions.create(

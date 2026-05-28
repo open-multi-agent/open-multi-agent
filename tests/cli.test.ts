@@ -79,4 +79,14 @@ describe('PROVIDER_REFERENCE', () => {
       }),
     )
   })
+
+  it('includes the MiMo shortcut for provider list/template commands', () => {
+    expect(PROVIDER_REFERENCE).toContainEqual(
+      expect.objectContaining({
+        id: 'mimo',
+        apiKeyEnv: ['MIMO_API_KEY', 'MIMO_BASE_URL'],
+        baseUrlSupported: true,
+      }),
+    )
+  })
 })

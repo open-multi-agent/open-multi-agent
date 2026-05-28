@@ -27,57 +27,7 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
-
-const DEFAULT_REASONING_REPLAY_MAX_CHARS = 1200
-
-export interface OpenAIReasoningReplayOptions {
-  /**
-   * Opt-in switch for replaying framework `reasoning` blocks as inline
-   * `<thinking>...</thinking>` text in OpenAI-family request payloads.
-   *
-   * Defaults to `false` so existing users keep historical behavior:
-   * `reasoning` blocks are ignored on outbound assistant message conversion.
-   */
-  readonly enableReasoningTextReplay?: boolean
-  /**
-   * Maximum character budget for each replayed reasoning block after
-   * truncation. Explicit invalid values are clamped to a minimum of 1 char.
-   */
-  readonly maxReasoningReplayChars?: number
-  /**
-   * Adapter name to use for native `reasoning_content` echo on outbound
-   * assistant messages inside a tool-calling conversation.
-   *
-   * When set, each assistant message is scanned for {@link ReasoningBlock}s
-   * whose {@link ReasoningBlock.provenance} matches this value. The
-   * collected reasoning is attached as a `reasoning_content` field on the
-   * outbound payload (a non-standard OpenAI field that DeepSeek V4 accepts)
-   * if AND ONLY IF the overall conversation contains at least one
-   * `tool_use` block somewhere in its history.
-   *
-   * Behaviour rules:
-   *   - No `tool_use` anywhere in the conversation → all reasoning is
-   *     dropped (per DeepSeek spec: `reasoning_content` is ignored on
-   *     non-tool conversations and just pollutes context).
-   *   - Tool-calling conversation, any assistant message (including the
-   *     final synthesis message with no tool_calls) → matching-provenance
-   *     reasoning is echoed. This matches the spec: "在两个 user 消息之间，
-   *     如果模型进行了工具调用，则中间 assistant 的 reasoning_content 需参与
-   *     上下文拼接". Echoing only on tool-emitting messages would 400 on
-   *     the next user turn after a tool loop ends.
-   *   - Provenance mismatch (foreign reasoning) → block is skipped for
-   *     native echo. It MAY still fall through to the `<thinking>` text
-   *     replay path if {@link enableReasoningTextReplay} is on.
-   *   - Redacted blocks (`redactedData` set) → skipped; the placeholder we
-   *     emit on the `<thinking>` path is not appropriate to send as native
-   *     reasoning_content.
-   *
-   * Wired by adapters whose {@link LLMAdapter.capabilities.echoesReasoning}
-   * is `'tool-use-only'` (currently DeepSeek). OpenAI itself sets
-   * `'never'` and does NOT pass this option.
-   */
-  readonly nativeReasoningEchoProvider?: string
-}
+import { reasoningBlockToInlineText, resolveReasoningOutboundMaxChars, type ReasoningOutboundOptions } from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Framework → OpenAI
@@ -123,35 +73,6 @@ export function getOpenAIReasoningText(source: unknown): string {
   return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
 }
 
-function resolveReasoningReplayMaxChars(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_REASONING_REPLAY_MAX_CHARS
-  if (!Number.isFinite(value)) return 1
-  const floored = Math.floor(value)
-  if (floored < 1) return 1
-  return floored
-}
-
-function truncateReasoningForReplay(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text
-
-  const marker = '...[truncated]...'
-  if (marker.length >= maxChars) return text.slice(0, maxChars)
-
-  const budget = maxChars - marker.length
-  const head = Math.ceil(budget * 0.7)
-  const tail = budget - head
-  return `${text.slice(0, head)}${marker}${text.slice(text.length - tail)}`
-}
-
-function reasoningBlockToThinkingText(block: ReasoningBlock, maxChars: number): string {
-  if (typeof block.redactedData === 'string' && block.redactedData.length > 0) {
-    return '<thinking>[redacted]</thinking>'
-  }
-  if (block.text.length === 0) return ''
-  const bounded = truncateReasoningForReplay(block.text, maxChars)
-  return `<thinking>${bounded}</thinking>`
-}
-
 /**
  * Determine whether a framework message contains any `tool_result` content
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
@@ -180,7 +101,7 @@ function hasToolResults(msg: LLMMessage): boolean {
  */
 export function toOpenAIMessages(
   messages: LLMMessage[],
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
@@ -199,7 +120,7 @@ export function toOpenAIMessages(
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      const assistantMsg = toOpenAIAssistantMessage(msg, replayOptions, conversationHasToolUse)
+      const assistantMsg = toOpenAIAssistantMessage(msg, outboundOptions, conversationHasToolUse)
       if (assistantMsg !== null) {
         result.push(assistantMsg)
       }
@@ -266,15 +187,15 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
  */
 function toOpenAIAssistantMessage(
   msg: LLMMessage,
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
   conversationHasToolUse = false,
 ): ChatCompletionAssistantMessageParam | null {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
   const pendingThinkingParts: string[] = []
-  const echoProvider = replayOptions?.nativeReasoningEchoProvider
-  const enableReasoningReplay = replayOptions?.enableReasoningTextReplay === true
-  const maxReasoningChars = resolveReasoningReplayMaxChars(replayOptions?.maxReasoningReplayChars)
+  const echoProvider = outboundOptions?.nativeReasoningEchoProvider
+  const enableReasoningReplay = outboundOptions?.preserveReasoningAsText === true
+  const resolvedMaxChars = resolveReasoningOutboundMaxChars(outboundOptions)
   // Collected only when an `echoProvider` is configured. Emitted as a
   // `reasoning_content` field on the assistant payload below, gated by
   // `conversationHasToolUse` (DeepSeek V4 rule: applies to every assistant
@@ -305,10 +226,17 @@ function toOpenAIAssistantMessage(
         // Either way, don't double-emit via the text-replay path below.
         continue
       }
-      // Path B: legacy <thinking> text replay for foreign-provenance blocks
-      // (or any block when this adapter doesn't support native echo).
+      // Path B: `<thinking>` text fallback for foreign-provenance blocks
+      // (or any block when this adapter doesn't support native echo) when
+      // `preserveReasoningAsText` is on. OpenAI-family adapters are
+      // capability `'never'` by default, so every reasoning block hits this
+      // branch in plain OpenAI use; DeepSeek (`'tool-use-only'`) hits this
+      // only for foreign-provenance blocks since its own-provenance ones
+      // are claimed by Path A above.
       if (enableReasoningReplay) {
-        const serialized = reasoningBlockToThinkingText(block, maxReasoningChars)
+        const serialized = resolvedMaxChars === undefined
+          ? reasoningBlockToInlineText(block)
+          : reasoningBlockToInlineText(block, { maxChars: resolvedMaxChars })
         if (serialized.length > 0) {
           pendingThinkingParts.push(serialized)
         }
@@ -497,7 +425,7 @@ export function normalizeFinishReason(reason: string): string {
 export function buildOpenAIMessageList(
   messages: LLMMessage[],
   systemPrompt: string | undefined,
-  replayOptions?: OpenAIReasoningReplayOptions,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
@@ -505,6 +433,6 @@ export function buildOpenAIMessageList(
     result.push({ role: 'system', content: systemPrompt })
   }
 
-  result.push(...toOpenAIMessages(messages, replayOptions))
+  result.push(...toOpenAIMessages(messages, outboundOptions))
   return result
 }
