@@ -16,8 +16,14 @@
  *   provider/model slugs, such as `openai/gpt-4o-mini`.
  */
 
+import { join } from 'node:path'
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
+
+// Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
+// default; route generated output there so the demo runs without
+// disabling the sandbox.
+const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'openrouter-api')
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
@@ -127,7 +133,7 @@ console.log(`Using OpenRouter model: ${OPENROUTER_MODEL}`)
 console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
-const goal = `Create a minimal Express.js REST API in /tmp/express-api/ with:
+const goal = `Create a minimal Express.js REST API in ${OUTPUT_DIR}/ with:
 - GET /health -> { status: "ok" }
 - GET /users -> returns a hardcoded array of 2 user objects
 - POST /users -> accepts { name, email } body, logs it, returns 201

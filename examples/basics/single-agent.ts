@@ -11,8 +11,15 @@
  *   ANTHROPIC_API_KEY env var must be set.
  */
 
+import { join } from 'node:path'
 import { OpenMultiAgent, Agent, ToolRegistry, ToolExecutor, registerBuiltInTools } from '../../src/index.js'
 import type { OrchestratorEvent } from '../../src/types.js'
+
+// Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
+// default; write example output there so the demo runs without disabling
+// the sandbox.
+const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'single-agent')
+const GREET_FILE = join(OUTPUT_DIR, 'greet.ts')
 
 // ---------------------------------------------------------------------------
 // Part 1: Single agent via OpenMultiAgent (simplest path)
@@ -41,11 +48,11 @@ Use the bash tool to run commands and the file tools to read/write files.`,
     tools: ['bash', 'file_read', 'file_write'],
     maxTurns: 8,
   },
-  `Create a small TypeScript utility function in /tmp/greet.ts that:
+  `Create a small TypeScript utility function in ${GREET_FILE} that:
   1. Exports a function named greet(name: string): string
   2. Returns "Hello, <name>!"
   3. Adds a brief usage comment at the top of the file.
-  Then add a default call greet("World") at the bottom and run the file with: npx tsx /tmp/greet.ts`,
+  Then add a default call greet("World") at the bottom and run the file with: npx tsx ${GREET_FILE}`,
 )
 
 if (result.success) {

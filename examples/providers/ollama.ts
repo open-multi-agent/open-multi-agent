@@ -22,8 +22,14 @@
  *   3. ANTHROPIC_API_KEY env var must be set.
  */
 
+import { join } from 'node:path'
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
+
+// Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
+// default; route generated output there so the demo runs without
+// disabling the sandbox.
+const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'local-model-demo')
 
 // ---------------------------------------------------------------------------
 // Agents
@@ -37,7 +43,7 @@ const coder: AgentConfig = {
   model: 'claude-sonnet-4-6',
   provider: 'anthropic',
   systemPrompt: `You are a senior TypeScript developer. Write clean, well-typed,
-production-quality code. Use the tools to write files to /tmp/local-model-demo/.
+production-quality code. Use the tools to write files to ${OUTPUT_DIR}/.
 Always include brief JSDoc comments on exported functions.`,
   tools: ['bash', 'file_write'],
   maxTurns: 6,
@@ -119,8 +125,6 @@ const team = orchestrator.createTeam('local-cloud-team', {
 // ---------------------------------------------------------------------------
 // Task pipeline: code → review
 // ---------------------------------------------------------------------------
-
-const OUTPUT_DIR = '/tmp/local-model-demo'
 
 const tasks: Array<{
   title: string

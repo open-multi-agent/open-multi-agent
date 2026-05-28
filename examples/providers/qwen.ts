@@ -16,8 +16,14 @@
  *   qwen-turbo — faster, lower-cost Qwen model
  */
 
+import { join } from 'node:path'
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
+
+// Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
+// default; route generated output there so the demo runs without
+// disabling the sandbox.
+const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'qwen-api')
 
 const QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 const QWEN_API_KEY = process.env.DASHSCOPE_API_KEY
@@ -126,7 +132,7 @@ console.log(`Team "${team.name}" created with agents: ${team.getAgents().map(a =
 console.log('\nStarting team run...\n')
 console.log('='.repeat(60))
 
-const goal = `Create a minimal Express.js REST API in /tmp/qwen-api/ with:
+const goal = `Create a minimal Express.js REST API in ${OUTPUT_DIR}/ with:
 - GET /health → { status: "ok" }
 - GET /users → returns a hardcoded array of 2 user objects
 - POST /users → accepts { name, email } body, logs it, returns 201

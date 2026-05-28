@@ -59,6 +59,10 @@ const agent = new Agent(
     maxTurns: 8,
     parallelToolCalls: false,
     tools: tools.map((tool) => tool.name),
+    // Point the built-in filesystem sandbox at the same workDir the MCP
+    // server is operating on, so any verification reads the agent makes
+    // (e.g. with file_read) stay inside the per-run scratch directory.
+    cwd: workDir,
     systemPrompt: [
       'Use Bilig WorkPaper MCP tools to inspect and edit formula workbooks.',
       'Always verify a write by reading the recalculated output cell afterward.',

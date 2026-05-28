@@ -26,6 +26,7 @@
  * through the proxy.
  */
 
+import { join } from 'node:path'
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
 
@@ -36,7 +37,11 @@ import type { AgentConfig, OrchestratorEvent, Task } from '../../src/types.js'
 // See available tags at https://ollama.com/library/gemma4
 const OLLAMA_MODEL = 'gemma4:e2b'      // or 'gemma4:e4b', 'gemma4:26b'
 const OLLAMA_BASE_URL = 'http://localhost:11434/v1'
-const OUTPUT_DIR = '/tmp/gemma4-demo'
+// Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
+// default; route generated output there so the demo runs without
+// disabling the sandbox.
+const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'gemma4-demo')
+const AUTO_REPORT_DIR = join(process.cwd(), '.agent-workspace', 'gemma4-auto')
 
 // ---------------------------------------------------------------------------
 // Agents
@@ -173,7 +178,7 @@ const team2 = orchestrator2.createTeam('auto', {
 })
 
 const goal = `Check this machine's Node.js version, npm version, and OS info,
-then write a short Markdown summary report to /tmp/gemma4-auto/report.md`
+then write a short Markdown summary report to ${AUTO_REPORT_DIR}/report.md`
 
 const start2 = Date.now()
 const result2 = await orchestrator2.runTeam(team2, goal)
