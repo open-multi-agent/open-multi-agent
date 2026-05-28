@@ -44,33 +44,53 @@ const customAgent: AgentConfig = {
 
 ## Filesystem Working Directory
 
-Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root. The `bash` tool is **not** sandboxed; use `disallowedTools: ['bash']` if path containment matters.
+Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root.
+
+> **`bash` is not sandboxed.** Once an agent has a shell, any `cd /etc`, absolute path, or subshell trivially escapes a per-tool path check. The sandbox is therefore best understood as **path containment for built-in filesystem tools**, not a security boundary against arbitrary command execution. If full path containment matters, drop `bash` via `disallowedTools: ['bash']` (or omit it from your `tools` allowlist) and rely on the filesystem tools. Process-level isolation (containers, seatbelt, firejail) is the right tool for an actually-untrusted shell.
+
+### Three typical configurations
+
+```typescript
+import { OpenMultiAgent } from '@open-multi-agent/core'
+
+// 1. Default — sandbox rooted at `<cwd>/.agent-workspace`.
+//    The directory is auto-created on first write. Agents cannot read or
+//    write outside that subdirectory, which keeps source files, `.env`,
+//    `.git/`, and `node_modules` off-limits even when the host launched
+//    from the repo root.
+const defaultOrchestrator = new OpenMultiAgent()
+
+// 2. Widen the sandbox to the entire current working directory.
+//    Useful when the agent is a coding assistant operating on the user's
+//    project (the host already established trust by launching there).
+const wideOrchestrator = new OpenMultiAgent({
+  defaultCwd: process.cwd(),
+})
+
+// 3. Disable the sandbox entirely (relative and absolute paths anywhere).
+const unrestrictedOrchestrator = new OpenMultiAgent({
+  defaultCwd: null,
+})
+```
+
+### Custom sandbox root
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
-  defaultCwd: '/tmp/my-workspace',
+  defaultCwd: '/var/run/my-agent-workspace', // any absolute path
 })
 
 const agent: AgentConfig = {
   name: 'editor',
   model: 'claude-sonnet-4-6',
   toolPreset: 'readwrite',
-  cwd: '/tmp/my-workspace/packages/app', // optional per-agent override
+  cwd: '/var/run/my-agent-workspace/packages/app', // optional per-agent override
 }
 ```
 
-**Defaults.** If neither `AgentConfig.cwd` nor `OrchestratorConfig.defaultCwd` is set, both fall back to `process.cwd()` — the sandbox is **on by default**.
+**Resolution order.** `AgentConfig.cwd` (if set) → `OrchestratorConfig.defaultCwd` (if set) → `<process.cwd()>/.agent-workspace`. Pass `null` at either level to disable the sandbox for that scope.
 
-**Disable the sandbox.** Pass `null` to opt out and restore unrestricted paths (relative or absolute, any location):
-
-```typescript
-const orchestrator = new OpenMultiAgent({
-  defaultCwd: null, // disable sandbox for every agent that does not override
-})
-
-// or, per agent:
-const agent: AgentConfig = { name: 'unrestricted', model: '...', cwd: null }
-```
+**Auto-creation.** The sandbox root is `mkdir -p`'d on first write, so callers do not need to pre-create `.agent-workspace` (or any custom path).
 
 The `bash` tool runs in its own process group on POSIX, so timeouts and abort signals kill any backgrounded children rather than letting them outlive the parent.
 

@@ -170,7 +170,7 @@ If **`--team path.json`** is passed, the file’s top-level `team` property is i
 
 These files are arbitrary JSON objects merged into **`OrchestratorConfig`** and **`CoordinatorConfig`**. Function-valued options (`onProgress`, `onApproval`, etc.) cannot appear in JSON and are not supported by the CLI.
 
-Set `defaultCwd` on the orchestrator JSON, or `cwd` on individual agents/coordinator JSON, to choose the sandbox root for built-in filesystem tools. Paths passed to `file_read`, `file_write`, `file_edit`, `grep`, and `glob` must be absolute and resolve inside that root. Pass `null` to disable the sandbox.
+Set `defaultCwd` on the orchestrator JSON, or `cwd` on individual agents/coordinator JSON, to choose the sandbox root for built-in filesystem tools. Paths passed to `file_read`, `file_write`, `file_edit`, `grep`, and `glob` must be absolute and resolve inside that root. When `defaultCwd` is omitted, the sandbox defaults to `<cwd>/.agent-workspace` (auto-created on first write). Pass the string `"<process.cwd()>"`-equivalent absolute path to widen it to the full working directory, or `null` to disable the sandbox. The `bash` tool is intentionally not covered — see `docs/tool-configuration.md` for the rationale and recommended posture.
 
 ---
 

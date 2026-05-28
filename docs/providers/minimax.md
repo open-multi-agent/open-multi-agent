@@ -64,7 +64,12 @@ const agent: AgentConfig = {
 }
 
 const orchestrator = new OpenMultiAgent()
-const result = await orchestrator.runAgent(agent, 'Summarize /tmp/report.csv')
+// Built-in filesystem tools default to a `<cwd>/.agent-workspace` sandbox;
+// point the agent at an absolute path inside that root.
+const result = await orchestrator.runAgent(
+  agent,
+  `Summarize the file ${process.cwd()}/.agent-workspace/report.csv`,
+)
 console.log(result.output)
 ```
 

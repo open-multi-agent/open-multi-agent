@@ -71,7 +71,13 @@ const orchestrator = new OpenMultiAgent({
 })
 
 const team = orchestrator.createTeam('api-team', { name: 'api-team', agents, sharedMemory: true })
-const result = await orchestrator.runTeam(team, 'Create a REST API for a todo list in /tmp/todo-api/')
+
+// Built-in filesystem tools default to a `<cwd>/.agent-workspace` sandbox.
+// Point the agent at an absolute path inside that root.
+const result = await orchestrator.runTeam(
+  team,
+  `Create a REST API for a todo list in ${process.cwd()}/.agent-workspace/todo-api/`,
+)
 
 console.log(result.success, result.totalTokenUsage.output_tokens)
 ```

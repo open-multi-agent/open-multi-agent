@@ -4,6 +4,7 @@ coverage/
 *.tgz
 .DS_Store
 oma-dashboards/
+.agent-workspace/
 .github/brand/frames/
 .claude/
 .npmrc
