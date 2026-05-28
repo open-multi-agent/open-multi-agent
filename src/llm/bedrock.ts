@@ -53,6 +53,11 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from '../types.js'
+import {
+  reasoningBlockToInlineText,
+  resolveReasoningOutboundMaxChars,
+  type ReasoningOutboundOptions,
+} from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -73,10 +78,18 @@ function base64ToUint8Array(b64: string): Uint8Array {
  * Convert a single framework {@link ContentBlock} into a Bedrock
  * {@link BedrockContentBlock} for the messages array.
  *
- * Reasoning blocks are dropped on input — see the `case 'reasoning'` arm below
- * for the round-trip limitation that forces this.
+ * Reasoning blocks are converted via the shared cross-provider fallback
+ * (see #223): dropped silently by default; emitted as a standalone text
+ * block wrapped in `<thinking>...</thinking>` when
+ * {@link LLMChatOptions.preserveReasoningAsText} is `true`. Native echo
+ * (which would require writing the signature into Bedrock's
+ * `reasoningContent.reasoningText.signature` shape) is still pending —
+ * see {@link BedrockAdapter.capabilities} for the gating rationale.
  */
-function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null {
+function toBedrockContentBlock(
+  block: ContentBlock,
+  outboundOptions: ReasoningOutboundOptions | undefined,
+): BedrockContentBlock | null {
   switch (block.type) {
     case 'text':
       return { text: block.text }
@@ -109,15 +122,18 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
       }
     }
 
-    case 'reasoning':
-      // Bedrock requires the original reasoning text plus its `signature`
-      // (and `redactedData` for redacted blocks) to be echoed back unchanged
-      // when continuing a multi-turn tool-use conversation with extended
-      // thinking. The IR now carries these fields on {@link ReasoningBlock}
-      // (added in #200), but wiring them through Bedrock's
-      // `reasoningContent.reasoningText.signature` shape has been deferred
-      // to a follow-up PR — until then, we drop reasoning on input.
-      return null
+    case 'reasoning': {
+      // Capability is `'never'` (see BedrockAdapter.capabilities) — all
+      // reasoning falls back to text when the user opts in, regardless of
+      // provenance. When opt-in is off, drop silently (today's default).
+      if (outboundOptions?.preserveReasoningAsText !== true) return null
+      const maxChars = resolveReasoningOutboundMaxChars(outboundOptions)
+      const text = maxChars === undefined
+        ? reasoningBlockToInlineText(block)
+        : reasoningBlockToInlineText(block, { maxChars })
+      if (text.length === 0) return null
+      return { text }
+    }
 
     default: {
       const _exhaustive: never = block
@@ -131,17 +147,19 @@ function toBedrockContentBlock(block: ContentBlock): BedrockContentBlock | null 
  *
  * System prompt is passed separately via `options.systemPrompt` and handled
  * in `chat()`/`stream()` — it never appears as a message role in the framework.
- * Reasoning blocks are silently dropped on input — see {@link toBedrockContentBlock}
- * for why; multi-turn tool-use flows with extended thinking are tracked as
- * a follow-up to #200's phase-1 IR additions.
+ * Reasoning blocks are routed via {@link toBedrockContentBlock}'s fallback —
+ * see #223 for the cross-provider preservation design.
  */
-function toBedrockMessages(messages: LLMMessage[]): BedrockMessage[] {
+function toBedrockMessages(
+  messages: LLMMessage[],
+  outboundOptions: ReasoningOutboundOptions | undefined,
+): BedrockMessage[] {
   const bedrockMessages: BedrockMessage[] = []
 
   for (const msg of messages) {
     const content: BedrockContentBlock[] = []
     for (const block of msg.content) {
-      const converted = toBedrockContentBlock(block)
+      const converted = toBedrockContentBlock(block, outboundOptions)
       if (converted !== null) content.push(converted)
     }
     if (content.length > 0) {
@@ -242,7 +260,7 @@ export class BedrockAdapter implements LLMAdapter {
   // -------------------------------------------------------------------------
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
-    const bedrockMessages = toBedrockMessages(messages)
+    const bedrockMessages = toBedrockMessages(messages, options)
     const system = options.systemPrompt ? [{ text: options.systemPrompt }] : undefined
 
     const input: ConstructorParameters<typeof ConverseCommand>[0] = {
@@ -286,7 +304,7 @@ export class BedrockAdapter implements LLMAdapter {
   // -------------------------------------------------------------------------
 
   async *stream(messages: LLMMessage[], options: LLMStreamOptions): AsyncIterable<StreamEvent> {
-    const bedrockMessages = toBedrockMessages(messages)
+    const bedrockMessages = toBedrockMessages(messages, options)
     const system = options.systemPrompt ? [{ text: options.systemPrompt }] : undefined
 
     const input: ConstructorParameters<typeof ConverseStreamCommand>[0] = {

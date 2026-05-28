@@ -19,16 +19,13 @@
  *   produced from native API extraction (and always stamped with
  *   `provenance`), never from text parsing.
  *
- * PHASE 1 STATUS:
- *   This helper is exported but not yet wired into any adapter outbound
- *   path. It is introduced ahead of behaviour wiring so the IR additions
- *   (`ReasoningBlock.provenance`, `LLMAdapter.capabilities`) can land
- *   independently and be reviewed in isolation. Phase 2 (#223) will:
- *     - Add `AgentConfig.preserveReasoningAcrossProviders` opt-in.
- *     - Wire each `echoesReasoning: 'never'` and `'own-issued'` adapter's
- *       outbound path to call this helper when appropriate.
- *     - Fold the OpenAI-family private helper added in #234 into this one
- *       so there is a single source of truth.
+ * Wiring (post #223 Phase 2): every adapter outbound path consults
+ * {@link ReasoningOutboundOptions} resolved from
+ * {@link AgentConfig.preserveReasoningAsText} +
+ * {@link AgentConfig.compressReasoningText}. When opt-in is off, reasoning
+ * blocks that can't be native-echoed are dropped silently (preserving
+ * pre-Phase-2 behaviour). When opt-in is on, they pass through
+ * {@link reasoningBlockToInlineText} and become inline `<thinking>` text.
  */
 
 import type { ReasoningBlock } from '../types.js'
@@ -36,10 +33,20 @@ import type { ReasoningBlock } from '../types.js'
 /**
  * Default maximum character budget per `<thinking>` block after truncation.
  * Aligned with the value used by the OpenAI-family private replay helper
- * shipped in #234 (`openai-common.ts:31`) so Phase 2 consolidation is
- * behaviour-preserving.
+ * shipped in #234 so the Phase 2 consolidation is behaviour-preserving.
  */
 export const DEFAULT_REASONING_FALLBACK_MAX_CHARS = 1200
+
+/**
+ * Sentinel value the resolver returns when the caller explicitly disables
+ * truncation (`compressReasoningText: false`). Exported so the special-case
+ * branch in {@link resolveMaxChars} stays searchable — removing the branch
+ * would silently re-introduce truncation for users who opted out.
+ *
+ * Equal to `Number.POSITIVE_INFINITY`; the resolver maps it to
+ * `Number.MAX_SAFE_INTEGER` so `text.length <= maxChars` is always true.
+ */
+export const NO_TRUNCATION = Number.POSITIVE_INFINITY
 
 /** Marker inserted between head and tail when reasoning text is truncated. */
 const TRUNCATION_MARKER = '...[truncated]...'
@@ -50,15 +57,85 @@ const REDACTED_PLACEHOLDER = '<thinking>[redacted]</thinking>'
 export interface ReasoningFallbackOptions {
   /**
    * Hard upper bound on the inner text length (the `<thinking>` wrapper
-   * itself is not counted). Values below 1 are clamped to 1; non-finite
-   * values are treated as 1. When omitted, defaults to
-   * {@link DEFAULT_REASONING_FALLBACK_MAX_CHARS}.
+   * itself is not counted). Special values:
+   *   - `undefined` → defaults to {@link DEFAULT_REASONING_FALLBACK_MAX_CHARS}.
+   *   - {@link NO_TRUNCATION} (`Number.POSITIVE_INFINITY`) → no truncation;
+   *     the entire reasoning text passes through unchanged. This is the
+   *     sentinel returned by {@link resolveReasoningOutboundMaxChars} when
+   *     the caller sets `compressReasoningText: false`.
+   *   - Any other non-finite value (`NaN`, `-Infinity`) → clamped to 1
+   *     (defensive — these values are invalid input).
+   *   - Finite values below 1 → clamped to 1.
+   *   - Finite values ≥ 1 → used as-is (floored).
    */
   readonly maxChars?: number
 }
 
+/**
+ * Outbound-conversion options derived from {@link AgentConfig}'s reasoning
+ * fields. Threaded through every adapter's outbound IR-to-native conversion
+ * so each can opt the user into the cross-provider `<thinking>` text
+ * fallback (see #223). Internal to the LLM layer — adapters pick the values
+ * out of {@link LLMChatOptions} themselves.
+ */
+export interface ReasoningOutboundOptions {
+  /** Mirrors {@link LLMChatOptions.preserveReasoningAsText}. */
+  readonly preserveReasoningAsText?: boolean
+  /** Mirrors {@link LLMChatOptions.compressReasoningText}. */
+  readonly compressReasoningText?: boolean | { readonly minChars?: number }
+  /**
+   * Adapter name to use for native `reasoning_content` echo on outbound
+   * assistant messages inside a tool-calling conversation. Wired by adapters
+   * whose {@link LLMAdapter.capabilities.echoesReasoning} is `'tool-use-only'`
+   * (currently DeepSeek V4 thinking-mode — see PR #251 / DeepSeek API spec).
+   *
+   * When set, each assistant message is scanned for {@link ReasoningBlock}s
+   * whose {@link ReasoningBlock.provenance} matches this value. The collected
+   * reasoning is attached as a `reasoning_content` field on the outbound
+   * payload (a non-standard OpenAI-compat field) IF AND ONLY IF the overall
+   * conversation contains at least one `tool_use` block somewhere in its
+   * history. Non-tool conversations skip the attachment entirely.
+   *
+   * Foreign-provenance blocks fall through to the {@link preserveReasoningAsText}
+   * `<thinking>` text path when that flag is on, so the two mechanisms
+   * compose: native echo for own-provenance + tool-use; text fallback for
+   * everything else.
+   *
+   * Adapters that don't need this leave it unset (default `'never'` and
+   * `'own-issued'` capability paths).
+   */
+  readonly nativeReasoningEchoProvider?: string
+}
+
+/**
+ * Resolve {@link ReasoningOutboundOptions} to the `maxChars` value accepted
+ * by {@link reasoningBlockToInlineText}. Encodes the
+ * default-on-when-preserve-on semantics documented in #223:
+ *
+ *   - `preserve=false`           → returns `undefined` (fallback never runs;
+ *                                  callers must check `preserve` themselves)
+ *   - `compress=undefined`/`true`→ returns `undefined` so the helper applies
+ *                                  its own default head+tail budget
+ *   - `compress=false`           → returns {@link NO_TRUNCATION}; the helper
+ *                                  treats this as a no-op cap (full text)
+ *   - `compress={minChars: N}`   → `N` (the threshold value also serves as
+ *                                  the truncation cap)
+ */
+export function resolveReasoningOutboundMaxChars(
+  options: ReasoningOutboundOptions | undefined,
+): number | undefined {
+  if (options?.preserveReasoningAsText !== true) return undefined
+  const compress = options.compressReasoningText
+  if (compress === false) return NO_TRUNCATION
+  if (compress === undefined || compress === true) {
+    return undefined  // helper applies its own default when maxChars omitted
+  }
+  return compress.minChars  // undefined → helper default, number → that cap
+}
+
 function resolveMaxChars(value: number | undefined): number {
   if (value === undefined) return DEFAULT_REASONING_FALLBACK_MAX_CHARS
+  if (value === NO_TRUNCATION) return Number.MAX_SAFE_INTEGER
   if (!Number.isFinite(value)) return 1
   const floored = Math.floor(value)
   if (floored < 1) return 1

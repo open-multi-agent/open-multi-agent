@@ -141,6 +141,10 @@ export interface RunnerOptions {
    * See {@link AgentConfig.compressToolResults} for details.
    */
   readonly compressToolResults?: boolean | { readonly minChars?: number }
+  /** See {@link AgentConfig.preserveReasoningAsText}. */
+  readonly preserveReasoningAsText?: boolean
+  /** See {@link AgentConfig.compressReasoningText}. */
+  readonly compressReasoningText?: boolean | { readonly minChars?: number }
 }
 
 /**
@@ -716,6 +720,8 @@ export class AgentRunner {
       presencePenalty: this.options.presencePenalty,
       extraBody: this.options.extraBody,
       thinking: this.options.thinking,
+      preserveReasoningAsText: this.options.preserveReasoningAsText,
+      compressReasoningText: this.options.compressReasoningText,
       systemPrompt: this.options.systemPrompt,
       abortSignal: effectiveAbortSignal,
     }

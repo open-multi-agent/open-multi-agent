@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_REASONING_FALLBACK_MAX_CHARS,
+  NO_TRUNCATION,
   reasoningBlockToInlineText,
 } from '../src/llm/reasoning-fallback.js'
 import type { ReasoningBlock } from '../src/types.js'
@@ -79,10 +80,32 @@ describe('reasoningBlockToInlineText', () => {
       expect(out).toBe('<thinking>abc</thinking>')
     })
 
-    it('clamps non-finite maxChars to 1', () => {
+    it('clamps non-finite maxChars to 1 (except positive Infinity)', () => {
       const block: ReasoningBlock = { type: 'reasoning', text: 'abc' }
       expect(reasoningBlockToInlineText(block, { maxChars: NaN })).toBe('<thinking>a</thinking>')
-      expect(reasoningBlockToInlineText(block, { maxChars: Infinity })).toBe('<thinking>a</thinking>')
+      expect(reasoningBlockToInlineText(block, { maxChars: -Infinity })).toBe('<thinking>a</thinking>')
+    })
+
+    it('treats positive Infinity maxChars as no truncation', () => {
+      // The resolver maps Infinity → MAX_SAFE_INTEGER so text.length <= maxChars
+      // is always true and the text passes through unchanged. This is the
+      // sentinel callers use when AgentConfig.compressReasoningText is `false`.
+      const text = 'x'.repeat(5000)
+      const block: ReasoningBlock = { type: 'reasoning', text }
+      expect(reasoningBlockToInlineText(block, { maxChars: Infinity })).toBe(`<thinking>${text}</thinking>`)
+    })
+
+    it('NO_TRUNCATION constant behaves identically to Number.POSITIVE_INFINITY', () => {
+      // Runtime invariant: this guards against a future refactor that
+      // accidentally removes the special-case branch in resolveMaxChars or
+      // re-binds NO_TRUNCATION to a different value. Without this assertion
+      // the JSDoc contract on `maxChars` could silently drift from runtime.
+      expect(NO_TRUNCATION).toBe(Number.POSITIVE_INFINITY)
+      const text = 'y'.repeat(3000)
+      const block: ReasoningBlock = { type: 'reasoning', text }
+      expect(reasoningBlockToInlineText(block, { maxChars: NO_TRUNCATION })).toBe(
+        `<thinking>${text}</thinking>`,
+      )
     })
 
     it('clamps maxChars below 1 to 1', () => {

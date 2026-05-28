@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { toOpenAIMessages } from '../src/llm/openai-common.js'
 import type { LLMMessage } from '../src/types.js'
 
+type OutboundOpts = {
+  preserveReasoningAsText?: boolean
+  compressReasoningText?: boolean | { minChars?: number }
+}
+
 function getAssistantContent(
   messages: LLMMessage[],
-  replayOptions?: { enableReasoningTextReplay?: boolean; maxReasoningReplayChars?: number },
+  outboundOptions?: OutboundOpts,
 ): string | null {
-  const output = toOpenAIMessages(messages, replayOptions)
+  const output = toOpenAIMessages(messages, outboundOptions)
   const first = output[0]
   if (first === undefined || first.role !== 'assistant') {
     throw new Error('expected first message to be assistant')
@@ -51,7 +56,7 @@ describe('toOpenAIMessages reasoning fallback', () => {
       },
     ]
 
-    expect(getAssistantContent(messages, { enableReasoningTextReplay: true })).toBe('<thinking>plan first</thinking>Now execute.')
+    expect(getAssistantContent(messages, { preserveReasoningAsText: true })).toBe('<thinking>plan first</thinking>Now execute.')
   })
 
   it('keeps redacted reasoning with placeholder text', () => {
@@ -65,7 +70,7 @@ describe('toOpenAIMessages reasoning fallback', () => {
       },
     ]
 
-    expect(getAssistantContent(messages, { enableReasoningTextReplay: true })).toBe('<thinking>[redacted]</thinking>Proceeding.')
+    expect(getAssistantContent(messages, { preserveReasoningAsText: true })).toBe('<thinking>[redacted]</thinking>Proceeding.')
   })
 
   it('retains fallback text when no regular text block exists', () => {
@@ -76,10 +81,10 @@ describe('toOpenAIMessages reasoning fallback', () => {
       },
     ]
 
-    expect(getAssistantContent(messages, { enableReasoningTextReplay: true })).toBe('<thinking>intermediate chain</thinking>')
+    expect(getAssistantContent(messages, { preserveReasoningAsText: true })).toBe('<thinking>intermediate chain</thinking>')
   })
 
-  it('bounds replay size with truncation when enabled', () => {
+  it('bounds replay size when compress.minChars is set', () => {
     const messages: LLMMessage[] = [
       {
         role: 'assistant',
@@ -91,14 +96,57 @@ describe('toOpenAIMessages reasoning fallback', () => {
     ]
 
     const content = getAssistantContent(messages, {
-      enableReasoningTextReplay: true,
-      maxReasoningReplayChars: 32,
+      preserveReasoningAsText: true,
+      compressReasoningText: { minChars: 32 },
     })
     expect(content).not.toBeNull()
     expect(content!).toContain('<thinking>')
     expect(content!).toContain('[truncated')
     expect(extractThinkingContent(content).length).toBeLessThanOrEqual(32)
     expect(content!.endsWith('Done.')).toBe(true)
+  })
+
+  it('skips truncation when compressReasoningText is explicitly false', () => {
+    // Footgun mode: caller opts into preserve + opts out of compression.
+    // The full reasoning text should pass through unchanged.
+    const longText = 'x'.repeat(5000)
+    const messages: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: longText },
+          { type: 'text', text: 'Done.' },
+        ],
+      },
+    ]
+
+    const content = getAssistantContent(messages, {
+      preserveReasoningAsText: true,
+      compressReasoningText: false,
+    })
+    expect(content).toBe(`<thinking>${longText}</thinking>Done.`)
+  })
+
+  it('defaults compress to on when preserve is true and compress is undefined', () => {
+    // Maintainer guidance from #223: "tie compress default-on to the preserve
+    // flag". A very long text should be truncated even without an explicit
+    // compress setting.
+    const longText = 'y'.repeat(5000)
+    const messages: LLMMessage[] = [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: longText },
+          { type: 'text', text: 'Done.' },
+        ],
+      },
+    ]
+
+    const content = getAssistantContent(messages, {
+      preserveReasoningAsText: true,
+    })
+    expect(extractThinkingContent(content).length).toBeLessThan(longText.length)
+    expect(content!).toContain('[truncated')
   })
 
   it('omits reasoning-only assistant messages when fallback is disabled', () => {
@@ -112,8 +160,10 @@ describe('toOpenAIMessages reasoning fallback', () => {
     expect(toOpenAIMessages(messages)).toEqual([])
   })
 
-  it('clamps explicit invalid max chars to minimum bound', () => {
-    const invalidValues = [0, -3, 0.5, Number.NaN, Number.POSITIVE_INFINITY]
+  it('clamps explicit invalid compress.minChars to minimum bound', () => {
+    // Note: positive Infinity is intentionally NOT in this list — it now
+    // means "no truncation" rather than "clamp to 1". See reasoning-fallback.ts.
+    const invalidValues = [0, -3, 0.5, Number.NaN]
     const baseMessages: LLMMessage[] = [
       {
         role: 'assistant',
@@ -126,8 +176,8 @@ describe('toOpenAIMessages reasoning fallback', () => {
 
     for (const value of invalidValues) {
       const content = getAssistantContent(baseMessages, {
-        enableReasoningTextReplay: true,
-        maxReasoningReplayChars: value,
+        preserveReasoningAsText: true,
+        compressReasoningText: { minChars: value },
       })
       expect(extractThinkingContent(content).length).toBe(1)
       expect(content!.endsWith('Done.')).toBe(true)

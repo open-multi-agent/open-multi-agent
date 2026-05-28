@@ -395,4 +395,72 @@ describe('BedrockAdapter', () => {
       })
     })
   })
+
+  // =========================================================================
+  // Phase 2 of #223 — cross-provider <thinking> text fallback (outbound)
+  // =========================================================================
+
+  describe('reasoning text fallback (#223 Phase 2)', () => {
+    function lastSentMessages(): Array<Record<string, unknown>> {
+      const cmd = mockSend.mock.calls[0][0]
+      return (cmd.input.messages ?? []) as Array<Record<string, unknown>>
+    }
+
+    it('default-off: reasoning blocks dropped on outbound (regression guard)', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'plan', provenance: 'anthropic' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      expect(lastSentMessages()[0]?.content).toEqual([{ text: 'reply' }])
+    })
+
+    it('preserve=true: reasoning becomes a standalone text block', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'plan first', provenance: 'anthropic' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      expect(lastSentMessages()[0]?.content).toEqual([
+        { text: '<thinking>plan first</thinking>' },
+        { text: 'reply' },
+      ])
+    })
+
+    it('preserve=true: redacted reasoning uses [redacted] placeholder', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: '', redactedData: 'opaque', provenance: 'anthropic' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      expect(lastSentMessages()[0]?.content).toEqual([
+        { text: '<thinking>[redacted]</thinking>' },
+        { text: 'reply' },
+      ])
+    })
+  })
 })

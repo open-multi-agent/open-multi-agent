@@ -50,6 +50,11 @@ import type {
   ThinkingConfig,
   ToolUseBlock,
 } from '../types.js'
+import {
+  reasoningBlockToInlineText,
+  resolveReasoningOutboundMaxChars,
+  type ReasoningOutboundOptions,
+} from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -79,12 +84,18 @@ function toGeminiRole(role: 'user' | 'assistant'): string {
  * sequence that produced the call. We attach it to the outgoing Part
  * whenever the source {@link ToolUseBlock} carries a signature. Thought
  * summaries (incoming text Parts with `thought: true` surfaced as
- * {@link ReasoningBlock}) are echoed back only when they carry a signature
- * — Gemini 3 recommends round-tripping these signatures, but unsigned
- * reasoning (e.g. cross-provider blocks or Gemini 2.5 thought summaries
- * which never carry signatures) is dropped to keep context lean.
+ * {@link ReasoningBlock}) are echoed back natively only when they carry a
+ * signature AND `provenance === 'gemini'` (Phase 1 contract). For unsigned
+ * own-provenance blocks, foreign-provenance blocks, or Gemini 2.5 thought
+ * summaries (which never carry signatures), the post-Phase-2 behaviour
+ * depends on {@link AgentConfig.preserveReasoningAsText}: when opt-in is
+ * set, the block falls back to inline `<thinking>` text via the shared
+ * helper; when off, it drops silently (pre-Phase-2 default).
  */
-function toGeminiContents(messages: LLMMessage[]): Content[] {
+function toGeminiContents(
+  messages: LLMMessage[],
+  outboundOptions: ReasoningOutboundOptions | undefined,
+): Content[] {
   // First pass: build id → name map for resolving tool results.
   const toolNameById = new Map<string, string>()
   for (const msg of messages) {
@@ -100,17 +111,26 @@ function toGeminiContents(messages: LLMMessage[]): Content[] {
     for (const block of msg.content) {
       switch (block.type) {
         case 'reasoning': {
-          // Echo only when we have a signature to round-trip — see JSDoc
-          // above. Drop unsigned reasoning silently rather than emitting an
-          // empty/unsigned text part that would inflate context for no
-          // protocol benefit.
-          if (block.signature === undefined) break
-          const part: Part = {
-            text: block.text,
-            thought: true,
-            thoughtSignature: block.signature,
+          // Native echo only when this is a Gemini-own block with signature
+          // (matches the Phase-1 own-issued contract). Foreign-provenance or
+          // unsigned reasoning falls back to plain `<thinking>` text when the
+          // user opts in (see #223 Phase 2), or drops silently otherwise.
+          const ownProvenance = block.provenance === 'gemini'
+          if (ownProvenance && block.signature !== undefined) {
+            const part: Part = {
+              text: block.text,
+              thought: true,
+              thoughtSignature: block.signature,
+            }
+            parts.push(part)
+            break
           }
-          parts.push(part)
+          if (outboundOptions?.preserveReasoningAsText !== true) break
+          const maxChars = resolveReasoningOutboundMaxChars(outboundOptions)
+          const text = maxChars === undefined
+            ? reasoningBlockToInlineText(block)
+            : reasoningBlockToInlineText(block, { maxChars })
+          if (text.length > 0) parts.push({ text })
           break
         }
 
@@ -391,7 +411,7 @@ export class GeminiAdapter implements LLMAdapter {
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const id = generateId()
-    const contents = toGeminiContents(messages)
+    const contents = toGeminiContents(messages, options)
 
     const response = await this.#client.models.generateContent({
       model: options.model,
@@ -428,7 +448,7 @@ export class GeminiAdapter implements LLMAdapter {
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
     const id = generateId()
-    const contents = toGeminiContents(messages)
+    const contents = toGeminiContents(messages, options)
 
     try {
       const streamResponse = await this.#client.models.generateContentStream({

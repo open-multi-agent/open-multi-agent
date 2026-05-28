@@ -22,6 +22,11 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 import { normalizeFinishReason } from './openai-common.js'
+import {
+  reasoningBlockToInlineText,
+  resolveReasoningOutboundMaxChars,
+  type ReasoningOutboundOptions,
+} from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Message conversion — OMA <-> AI SDK ModelMessage
@@ -42,9 +47,19 @@ function collectToolNamesByCallId(messages: readonly LLMMessage[]): Map<string, 
  * Convert framework {@link LLMMessage}s to AI SDK {@link ModelMessage}s.
  * Exported for unit tests and for callers who need to preflight prompts.
  */
-export function llmMessagesToAiSdkModelMessages(messages: readonly LLMMessage[]): ModelMessage[] {
+export function llmMessagesToAiSdkModelMessages(
+  messages: readonly LLMMessage[],
+  outboundOptions?: ReasoningOutboundOptions,
+): ModelMessage[] {
   const toolNamesByCallId = collectToolNamesByCallId(messages)
   const out: ModelMessage[] = []
+  // When `preserveReasoningAsText` is enabled, swap the AI SDK structured
+  // reasoning emit for a `<thinking>` text part — honouring the adapter's
+  // declared `'never'` capability (see #223 Phase 2). When the flag is off,
+  // we preserve the pre-Phase-2 behaviour of passing structured reasoning
+  // through to the AI SDK provider, since some providers may handle it.
+  const preserveAsText = outboundOptions?.preserveReasoningAsText === true
+  const maxChars = resolveReasoningOutboundMaxChars(outboundOptions)
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
@@ -57,11 +72,24 @@ export function llmMessagesToAiSdkModelMessages(messages: readonly LLMMessage[])
         if (block.type === 'text') {
           acc.push({ type: 'text', text: block.text })
         } else if (block.type === 'reasoning') {
-          const text =
-            block.redactedData !== undefined && block.redactedData.length > 0
-              ? '[redacted_thinking]'
-              : block.text
-          acc.push({ type: 'reasoning', text })
+          if (preserveAsText) {
+            const text = maxChars === undefined
+              ? reasoningBlockToInlineText(block)
+              : reasoningBlockToInlineText(block, { maxChars })
+            if (text.length > 0) acc.push({ type: 'text', text })
+          } else {
+            // Default-off back-compat path: pass framework reasoning through
+            // as AI SDK structured `{ type: 'reasoning' }`. For redacted
+            // blocks emit ONLY the `[redacted_thinking]` marker — never the
+            // opaque `redactedData` payload (would leak Anthropic-issued
+            // encrypted content into the AI SDK provider's request body;
+            // hardened upstream in 6b63302).
+            const text =
+              block.redactedData !== undefined && block.redactedData.length > 0
+                ? '[redacted_thinking]'
+                : block.text
+            acc.push({ type: 'reasoning', text })
+          }
         } else if (block.type === 'tool_use') {
           acc.push({
             type: 'tool-call',
@@ -192,12 +220,21 @@ export class AISdkAdapter implements LLMAdapter {
   readonly name = 'ai-sdk'
 
   readonly capabilities = {
-    // Conservative default: the AI SDK proxies many providers and the
-    // adapter cannot introspect at IR-conversion time which underlying
-    // provider would natively accept reasoning input. `'never'` keeps the
-    // outbound path safe (always falls back via Phase 2 helper) without
-    // risking signature-mismatch errors. Phase 2 may refine this if a
-    // per-call provider hint becomes available on the AI SDK surface.
+    // `'never'` means: this framework cannot natively round-trip a
+    // {@link ReasoningBlock} into the AI SDK in a provider-agnostic way —
+    // the AI SDK proxies many providers and we can't introspect at
+    // IR-conversion time which underlying provider would accept reasoning.
+    //
+    // When `preserveReasoningAsText` is set, the outbound conversion in
+    // `llmMessagesToAiSdkModelMessages` honours this by downgrading to
+    // inline `<thinking>` text via the shared helper.
+    //
+    // When the opt-in is OFF, however, we keep the pre-Phase-2 back-compat
+    // behaviour of passing the framework's `ReasoningBlock` through as an
+    // AI SDK structured `{ type: 'reasoning' }` part, letting the SDK
+    // handle it per-provider. This is a deliberate exception to the
+    // `'never'` semantic (which strictly would mean drop-on-default), made
+    // to avoid silently changing what existing AI-SDK users see today.
     echoesReasoning: 'never' as const,
   }
 
@@ -209,7 +246,7 @@ export class AISdkAdapter implements LLMAdapter {
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const { generateText, tool, jsonSchema } = await import('ai')
-    const aiMessages = llmMessagesToAiSdkModelMessages(messages)
+    const aiMessages = llmMessagesToAiSdkModelMessages(messages, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     const tools =
       options.tools !== undefined && options.tools.length > 0
@@ -249,7 +286,7 @@ export class AISdkAdapter implements LLMAdapter {
 
   async *stream(messages: LLMMessage[], options: LLMStreamOptions): AsyncIterable<StreamEvent> {
     const { streamText, tool, jsonSchema } = await import('ai')
-    const aiMessages = llmMessagesToAiSdkModelMessages(messages)
+    const aiMessages = llmMessagesToAiSdkModelMessages(messages, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
     const tools =
       options.tools !== undefined && options.tools.length > 0
