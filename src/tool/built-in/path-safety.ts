@@ -30,6 +30,7 @@ export type SafePathResult =
 export async function resolvePathWithinCwd(
   inputPath: string,
   context: ToolUseContext,
+  options: { ensureRoot?: boolean } = {},
 ): Promise<SafePathResult> {
   // Sandbox explicitly disabled. Return the input path verbatim so the
   // tool behaves as if no sandbox were in place.
@@ -50,11 +51,19 @@ export async function resolvePathWithinCwd(
   let realRoot: string
   try {
     realRoot = await realpath(root)
-  } catch {
-    // Sandbox root does not exist. Auto-create and retry once.
-    // This keeps the default `<cwd>/.agent-workspace` ergonomic on first
-    // run, and lets host code point `defaultCwd` at a directory it has
-    // not pre-created.
+  } catch (err) {
+    if (!options.ensureRoot) {
+      // Read-only callers (file_read, file_edit, grep, glob) treat a
+      // missing sandbox root as an error rather than silently creating
+      // it. Only file_write opts in via `ensureRoot: true` so that the
+      // very first write to a fresh workspace works without manual
+      // mkdir.
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return {
+        ok: false,
+        error: `Could not resolve working directory "${root}": ${message}`,
+      }
+    }
     try {
       await mkdir(root, { recursive: true })
       realRoot = await realpath(root)

@@ -476,6 +476,28 @@ describe('filesystem sandbox', () => {
     expect(await readFile(join(freshRoot, 'hello.txt'), 'utf8')).toBe('hi')
   })
 
+  it('does not auto-create the sandbox root when read-only tools see a missing root', async () => {
+    // file_read, file_edit, grep, and glob must not silently create the
+    // sandbox root on a caller's behalf. Only file_write opts into that
+    // behaviour via `ensureRoot: true`.
+    const freshRoot = join(tmpDir, 'readonly-fresh-workspace')
+    const ctx: ToolUseContext = {
+      agent: { name: 'test-agent', role: 'tester', model: 'test' },
+      cwd: freshRoot,
+    }
+
+    expect(await fileExists(freshRoot)).toBe(false)
+
+    const result = await fileReadTool.execute(
+      { path: join(freshRoot, 'whatever.txt') },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('Could not resolve working directory')
+    expect(await fileExists(freshRoot)).toBe(false)
+  })
+
   it('default workspace root prevents reading parent-directory files (L2-b core benefit)', async () => {
     // Simulate the real default-cwd scenario: the agent's sandbox root is
     // a `.agent-workspace` subdirectory inside an enclosing project root.
@@ -485,7 +507,11 @@ describe('filesystem sandbox', () => {
     try {
       await writeFile(join(projectRoot, '.env'), 'SECRET=do-not-leak')
 
+      // Pre-create the workspace root so this test exercises the
+      // outside-root rejection path rather than the missing-root path.
       const workspaceRoot = join(projectRoot, DEFAULT_WORKSPACE_DIRNAME)
+      await mkdir(workspaceRoot, { recursive: true })
+
       const ctx: ToolUseContext = {
         agent: { name: 'test-agent', role: 'tester', model: 'test' },
         cwd: workspaceRoot,

@@ -34,7 +34,7 @@ export const fileWriteTool = defineTool({
   }),
 
   execute: async (input, context) => {
-    const safePath = await resolvePathWithinCwd(input.path, context)
+    const safePath = await resolvePathWithinCwd(input.path, context, { ensureRoot: true })
     if (!safePath.ok) {
       return { data: safePath.error, isError: true }
     }
