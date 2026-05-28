@@ -14,7 +14,7 @@ import { z } from 'zod'
 import type { ToolResult } from '../../types.js'
 import { defineTool } from '../framework.js'
 import { collectFiles } from './fs-walk.js'
-import { resolvePathWithinCwd } from './path-safety.js'
+import { defaultWorkspaceDir, resolvePathWithinCwd } from './path-safety.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -67,7 +67,7 @@ export const grepTool = defineTool({
   }),
 
   execute: async (input, context) => {
-    const requestedPath = input.path ?? context.cwd ?? process.cwd()
+    const requestedPath = input.path ?? context.cwd ?? defaultWorkspaceDir()
     const safePath = await resolvePathWithinCwd(requestedPath, context)
     if (!safePath.ok) {
       return { data: safePath.error, isError: true }

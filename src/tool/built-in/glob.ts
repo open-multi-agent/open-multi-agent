@@ -11,7 +11,7 @@ import { z } from 'zod'
 import type { ToolResult } from '../../types.js'
 import { collectFiles, matchesGlob } from './fs-walk.js'
 import { defineTool } from '../framework.js'
-import { resolvePathWithinCwd } from './path-safety.js'
+import { defaultWorkspaceDir, resolvePathWithinCwd } from './path-safety.js'
 
 const DEFAULT_MAX_FILES = 500
 
@@ -49,7 +49,7 @@ export const globTool = defineTool({
   }),
 
   execute: async (input, context): Promise<ToolResult> => {
-    const requestedRoot = input.path ?? context.cwd ?? process.cwd()
+    const requestedRoot = input.path ?? context.cwd ?? defaultWorkspaceDir()
     const safeRoot = await resolvePathWithinCwd(requestedRoot, context)
     if (!safeRoot.ok) {
       return { data: safeRoot.error, isError: true }

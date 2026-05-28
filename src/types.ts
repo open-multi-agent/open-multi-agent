@@ -416,8 +416,9 @@ export interface AgentConfig {
    * `file_write`, `file_edit`, `grep`, `glob`). Paths must be absolute and
    * resolve inside this directory; symlinks are resolved before the check.
    *
-   * Defaults to {@link OrchestratorConfig.defaultCwd} (or `process.cwd()` if
-   * neither is set). Pass `null` to disable the sandbox for this agent.
+   * Defaults to {@link OrchestratorConfig.defaultCwd} (or
+   * `<process.cwd()>/.agent-workspace` if neither is set). Pass `null` to
+   * disable the sandbox for this agent.
    */
   readonly cwd?: string | null
   readonly maxTurns?: number

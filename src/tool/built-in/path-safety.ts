@@ -47,7 +47,7 @@ export async function resolvePathWithinCwd(
     }
   }
 
-  const root = resolve(context.cwd ?? process.cwd())
+  const root = resolve(context.cwd ?? defaultWorkspaceDir())
   let realRoot: string
   try {
     realRoot = await realpath(root)

@@ -476,6 +476,30 @@ describe('filesystem sandbox', () => {
     expect(await readFile(join(freshRoot, 'hello.txt'), 'utf8')).toBe('hi')
   })
 
+  it('falls back to defaultWorkspaceDir when ToolUseContext omits cwd', async () => {
+    // High-level callers (OpenMultiAgent / Agent / AgentRunner) inject a
+    // cwd into ToolUseContext. Low-level callers that go straight to the
+    // exported tool functions (fileReadTool.execute, etc.) may omit it.
+    // In that case the sandbox layer must still narrow to
+    // `<process.cwd()>/.agent-workspace`, not silently fall back to
+    // `process.cwd()` (which would expose the entire host project).
+    const ctx: ToolUseContext = {
+      agent: { name: 'test-agent', role: 'tester', model: 'test' },
+      // cwd intentionally omitted
+    }
+
+    const result = await fileReadTool.execute(
+      { path: join(process.cwd(), 'package.json') },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    // Whether the .agent-workspace directory happens to exist or not,
+    // the error must reference it (either as the missing root or as the
+    // sandbox root the candidate is outside of).
+    expect(result.data).toContain('.agent-workspace')
+  })
+
   it('does not auto-create the sandbox root when read-only tools see a missing root', async () => {
     // file_read, file_edit, grep, and glob must not silently create the
     // sandbox root on a caller's behalf. Only file_write opts into that
