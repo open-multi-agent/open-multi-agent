@@ -140,7 +140,7 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **Human-in-the-loop** | Gate execution with `onPlanReady` (approve the plan before any agent runs) and `onApproval` (approve between task rounds), or inspect first with `planOnly`. |
 | **Lifecycle hooks + cancellation** | `beforeRun` rewrites the prompt, `afterRun` post-processes or rejects the result; pass an `AbortSignal` to cancel a run in flight. |
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
-| **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash env, and dashboard output. ([observability guide](./docs/observability.md)) |
+| **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](./docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](./docs/shared-memory.md)) |
 | **Sandboxed filesystem workspace** | Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by default; agents sharing the default configuration share this root. For per-agent isolation, set `AgentConfig.cwd`; for a different shared root, set `OrchestratorConfig.defaultCwd`; pass `null` to disable. ([sandbox config](./docs/tool-configuration.md)) |
 
@@ -363,7 +363,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Hard-cap spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
-| Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash env, and dashboard payloads | built-in (on by default) |
+| Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
 
 ## Documentation

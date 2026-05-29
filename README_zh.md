@@ -140,7 +140,7 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）卡点，或用 `planOnly` 先预览。 |
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
-| **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 环境变量和 dashboard 输出中自动脱敏。([可观测性指南](./docs/observability.md)) |
+| **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](./docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自家后端。([共享记忆](./docs/shared-memory.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](./docs/tool-configuration.md)) |
 
@@ -363,7 +363,7 @@ await oma.runAgent(
 | 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
-| 脱敏密钥 | 自动——API key、token、Authorization header 从 trace、bash 环境变量、dashboard payload 中剥除 | 内置（默认开启） |
+| 脱敏密钥 | 自动——API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
 ## 文档
