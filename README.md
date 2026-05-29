@@ -386,7 +386,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260507" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
 </a>
 
 <details>
@@ -405,6 +405,8 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@NamelessNATM](https://github.com/NamelessNATM) (agent delegation base implementation)
 - [@MyPrototypeWhat](https://github.com/MyPrototypeWhat) (reasoning blocks, reasoning_effort, sampling parity, trace input/output)
 - [@SiMinus](https://github.com/SiMinus) (streaming reasoning events)
+- [@matthewYang08](https://github.com/matthewYang08) (OpenAI reasoning-to-text fallback)
+- [@dvirarad](https://github.com/dvirarad) (OpenAI-family adapter hardening)
 
 **Provider integrations**
 
@@ -415,6 +417,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@Deathwing](https://github.com/Deathwing) (GitHub Copilot)
 - [@JackChiang233](https://github.com/JackChiang233) (Qiniu)
 - [@CodingBangboo](https://github.com/CodingBangboo) (AWS Bedrock)
+- [@kidoom](https://github.com/kidoom) (MiMo, Doubao)
 
 **Examples & cookbook**
 
@@ -431,24 +434,20 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@DaiMao-UT](https://github.com/DaiMao-UT) (paper replication triage)
 - [@oooooowoooooo](https://github.com/oooooowoooooo) (rare disease information triage)
 - [@CodingBangboo](https://github.com/CodingBangboo) (Express customer support pipeline)
+- [@nuthalapativarun](https://github.com/nuthalapativarun) (Doubao and Zhipu provider examples)
+- [@goodneamtakenbydogs](https://github.com/goodneamtakenbydogs) (Moonshot and Qwen provider examples)
+- [@suans4746-del](https://github.com/suans4746-del) (narrative puzzle hint arbitration)
+- [@gregkonush](https://github.com/gregkonush) (Bilig WorkPaper MCP integration)
 
 **Docs & tests**
 
 - [@tmchow](https://github.com/tmchow) (llama.cpp docs)
 - [@kenrogers](https://github.com/kenrogers) (OpenRouter docs)
 - [@jadegold55](https://github.com/jadegold55) (LLM adapter test coverage)
+- [@btroops](https://github.com/btroops) (DeepSeek tool-calling tests)
+- [@nuthalapativarun](https://github.com/nuthalapativarun) (context-management docs)
 
 </details>
-
-## Star History
-
-<a href="https://star-history.com/#open-multi-agent/open-multi-agent&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&theme=dark&v=20260425" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
- </picture>
-</a>
 
 ## License
 

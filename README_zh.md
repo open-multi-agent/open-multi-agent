@@ -386,7 +386,7 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 ## 贡献者
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260507" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
 </a>
 
 <details>
@@ -405,6 +405,8 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@NamelessNATM](https://github.com/NamelessNATM)（agent 委派基础实现）
 - [@MyPrototypeWhat](https://github.com/MyPrototypeWhat)（reasoning blocks、reasoning_effort、采样参数对齐、trace 输入输出）
 - [@SiMinus](https://github.com/SiMinus)（流式 reasoning 事件）
+- [@matthewYang08](https://github.com/matthewYang08)（OpenAI reasoning 转文本回退）
+- [@dvirarad](https://github.com/dvirarad)（OpenAI 系列 adapter 健壮性）
 
 **Provider 集成**
 
@@ -415,6 +417,7 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@Deathwing](https://github.com/Deathwing)（GitHub Copilot）
 - [@JackChiang233](https://github.com/JackChiang233)（Qiniu）
 - [@CodingBangboo](https://github.com/CodingBangboo)（AWS Bedrock）
+- [@kidoom](https://github.com/kidoom)（MiMo、Doubao）
 
 **示例与 Cookbook**
 
@@ -431,24 +434,20 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@DaiMao-UT](https://github.com/DaiMao-UT)（论文复现分诊）
 - [@oooooowoooooo](https://github.com/oooooowoooooo)（罕见病信息分诊）
 - [@CodingBangboo](https://github.com/CodingBangboo)（Express 客服流水线）
+- [@nuthalapativarun](https://github.com/nuthalapativarun)（Doubao、Zhipu provider 示例）
+- [@goodneamtakenbydogs](https://github.com/goodneamtakenbydogs)（Moonshot、Qwen provider 示例）
+- [@suans4746-del](https://github.com/suans4746-del)（叙事谜题提示仲裁）
+- [@gregkonush](https://github.com/gregkonush)（Bilig WorkPaper MCP 集成）
 
 **文档与测试**
 
 - [@tmchow](https://github.com/tmchow)（llama.cpp 文档）
 - [@kenrogers](https://github.com/kenrogers)（OpenRouter 文档）
 - [@jadegold55](https://github.com/jadegold55)（LLM adapter 测试覆盖）
+- [@btroops](https://github.com/btroops)（DeepSeek 工具调用测试）
+- [@nuthalapativarun](https://github.com/nuthalapativarun)（上下文管理文档）
 
 </details>
-
-## Star 趋势
-
-<a href="https://star-history.com/#open-multi-agent/open-multi-agent&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&theme=dark&v=20260425" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=open-multi-agent/open-multi-agent&type=Date&v=20260425" />
- </picture>
-</a>
 
 ## 许可证
 
