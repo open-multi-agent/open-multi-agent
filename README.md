@@ -48,7 +48,7 @@ Graph-first frameworks make you enumerate every node and edge up front. `open-mu
 
 ## Contents
 
-[Quick Start](#quick-start) · [Three Ways to Run](#three-ways-to-run) · [Features](#features) · [Orchestration Controls](#orchestration-controls) · [Examples](#examples) · [How Is This Different?](#how-is-this-different-from-x) · [Ecosystem](#ecosystem) · [Architecture](#architecture) · [Supported Providers](#supported-providers) · [Production Checklist](#production-checklist) · [Documentation](#documentation) · [Contributing](#contributing)
+[Quick Start](#quick-start) · [Three Ways to Run](#three-ways-to-run) · [Features](#features) · [Orchestration Controls](#orchestration-controls) · [Ecosystem](#ecosystem) · [Examples](#examples) · [How Is This Different?](#how-is-this-different-from-x) · [Architecture](#architecture) · [Supported Providers](#supported-providers) · [Production Checklist](#production-checklist) · [Documentation](#documentation) · [Contributing](#contributing)
 
 ## Quick Start
 
@@ -185,6 +185,33 @@ await orchestrator.runTeam(team, goal, {
 
 **Shell & CI.** Use the JSON-first `oma` binary. See [docs/cli.md](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md).
 
+## Ecosystem
+
+`open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
+
+### In production
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~60 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly inside a Docker runtime. Confirmed production use.
+
+Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here.
+
+### Integrations
+
+- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
+
+Built an integration? See the [integration guide](examples/integrations/README.md) for how to submit a reference or vendor example and get your product listed.
+
+### Provider community offers
+
+Limited-time provider offers for `open-multi-agent` users. Listings are not paid endorsements.
+
+- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M2.7 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md).
+
+### Featured partner
+
+For products and platforms with a deep `open-multi-agent` integration. See the [Featured partner program](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md) for terms and how to apply.
+
 ## Examples
 
 [`examples/`](./examples/) is organized by category: basics, cookbook, patterns, providers, and integrations. See [`examples/README.md`](./examples/README.md) for the full index. ([`production/`](./examples/production/README.md) is open for contributions — see the acceptance criteria.)
@@ -235,33 +262,6 @@ A quick router. Mechanism breakdown follows.
 **vs. CrewAI.** CrewAI is the mature multi-agent option in Python. OMA targets TypeScript backends with three runtime dependencies and direct Node.js embedding. Roughly comparable orchestration surface; the choice is the language stack.
 
 **vs. Vercel AI SDK.** AI SDK provides the LLM-call layer — provider abstraction, streaming, tool calls, and structured outputs. It does not orchestrate goal-driven multi-agent teams. The two are complementary: AI SDK for app surfaces and single-agent calls, OMA when you need a team.
-
-## Ecosystem
-
-`open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
-
-### In production
-
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~60 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly inside a Docker runtime. Confirmed production use.
-
-Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here.
-
-### Integrations
-
-- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
-
-Built an integration? See the [integration guide](examples/integrations/README.md) for how to submit a reference or vendor example and get your product listed.
-
-### Provider community offers
-
-Limited-time provider offers for `open-multi-agent` users. Listings are not paid endorsements.
-
-- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M2.7 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md).
-
-### Featured partner
-
-For products and platforms with a deep `open-multi-agent` integration. See the [Featured partner program](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md) for terms and how to apply.
 
 ## Architecture
 
