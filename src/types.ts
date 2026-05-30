@@ -745,6 +745,51 @@ export interface TeamRunResult {
 }
 
 // ---------------------------------------------------------------------------
+// Consensus (proposer + judge verification)
+// ---------------------------------------------------------------------------
+
+/**
+ * Judge roster and refutation-loop options shared by
+ * {@link OpenMultiAgent.runConsensus} and the per-task `verify` hook. The
+ * proposer is supplied separately (an agent for `runConsensus`, the task's own
+ * result for the `verify` hook).
+ */
+export interface ConsensusVerifyOptions {
+  /** Verifier roster. Judges run sequentially so quorum/budget can stop the rest. */
+  readonly judges: readonly AgentConfig[]
+  /** `'refute'` (default): identical skeptic framing. `'lens'`: distinct angle per judge. */
+  readonly mode?: 'refute' | 'lens'
+  /** Accepting judges required for consensus. Default `ceil(judges.length / 2)`. */
+  readonly quorum?: number
+  /** Maximum proposer↔judge rounds. Default `2`. */
+  readonly maxRounds?: number
+  /** Zod schema validated against each judge verdict; a failure counts as dissent. */
+  readonly verdictSchema?: ZodSchema
+  /** Action when a round misses quorum. Default `'revise'`. */
+  readonly onDissent?: 'revise' | 'reject' | 'keep'
+  /** Override the default verifier prompt; a function gives per-judge framing. */
+  readonly judgePrompt?: string | ((judge: string) => string)
+}
+
+/** Options for {@link OpenMultiAgent.runConsensus}. */
+export interface ConsensusOptions extends ConsensusVerifyOptions {
+  /** Proposer agent(s). An array runs all (N-best); usage counts against the parent budget. */
+  readonly proposer: AgentConfig | readonly AgentConfig[]
+}
+
+/** Result of a consensus run (or per-task `verify` hook). */
+export interface ConsensusResult {
+  readonly answer: string
+  /** `accepted` when quorum was reached (or `onDissent: 'keep'`); else `rejected`. */
+  readonly verdict: 'accepted' | 'rejected'
+  /** Dissenting critiques across all rounds, prefixed with the judge name. */
+  readonly dissent: string[]
+  readonly rounds: number
+  /** Usage attributable to consensus (proposer + judges + revisions). */
+  readonly tokenUsage: TokenUsage
+}
+
+// ---------------------------------------------------------------------------
 // Task
 // ---------------------------------------------------------------------------
 
@@ -798,6 +843,12 @@ export interface Task {
   readonly retryDelayMs?: number
   /** Exponential backoff multiplier (default: 2). */
   readonly retryBackoff?: number
+  /**
+   * Opt-in consensus verification of this task's result. When set, judges try
+   * to refute the completed task's output; their usage counts against the same
+   * parent `maxTokenBudget`. Tasks without `verify` run unchanged.
+   */
+  readonly verify?: ConsensusVerifyOptions
 }
 
 // ---------------------------------------------------------------------------
@@ -973,6 +1024,7 @@ export type TraceEventType =
   | 'agent'
   | 'plan_ready'
   | 'agent_stream'
+  | 'consensus'
 
 /** Shared fields present on every trace event. */
 export interface TraceEventBase {
@@ -1045,6 +1097,15 @@ export interface AgentStreamTrace extends TraceEventBase {
   readonly streamType: StreamEvent['type']
 }
 
+/** Emitted for each judge verdict during a consensus run. `agent` is the judge name. */
+export interface ConsensusTrace extends TraceEventBase {
+  readonly type: 'consensus'
+  readonly round: number
+  readonly accepted: boolean
+  /** The judge's critique when it dissented. */
+  readonly dissent?: string
+}
+
 /** Discriminated union of all trace event types. */
 export type TraceEvent =
   | LLMCallTrace
@@ -1053,6 +1114,7 @@ export type TraceEvent =
   | AgentTrace
   | PlanReadyTrace
   | AgentStreamTrace
+  | ConsensusTrace
 
 // ---------------------------------------------------------------------------
 // Memory

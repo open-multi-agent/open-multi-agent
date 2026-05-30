@@ -44,6 +44,9 @@
 import type {
   AgentConfig,
   AgentRunResult,
+  ConsensusOptions,
+  ConsensusResult,
+  ConsensusVerifyOptions,
   CoordinatorConfig,
   RunTeamOptions,
   OrchestratorConfig,
@@ -57,6 +60,7 @@ import type {
   TeamRunResult,
   TokenUsage,
 } from '../types.js'
+import type { ZodSchema } from 'zod'
 import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
@@ -68,6 +72,7 @@ import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
 import { createTask } from '../task/task.js'
+import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
 import { TokenBudgetExceededError } from '../errors.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
@@ -346,6 +351,7 @@ interface ParsedTaskSpec {
   maxRetries?: number
   retryDelayMs?: number
   retryBackoff?: number
+  verify?: ConsensusVerifyOptions
 }
 
 /**
@@ -774,6 +780,12 @@ async function executeQueue(
           task: task.id,
           data: result,
         } satisfies OrchestratorEvent)
+
+        // Opt-in consensus verification: judges scrutinise this task's result,
+        // their usage charged to the same parent budget as the rest of the run.
+        if (task.verify && !ctx.budgetExceededTriggered) {
+          await runTaskVerify(task, assignee, result, sharedMem, queue, ctx)
+        }
       } else {
         queue.fail(task.id, result.output)
         config.onProgress?.({
@@ -887,6 +899,313 @@ async function buildTaskPrompt(
   }
 
   return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// Consensus (proposer + judge verification)
+// ---------------------------------------------------------------------------
+
+/** Orchestrator-level defaults applied to ephemeral consensus agents. */
+interface ConsensusAgentDefaults {
+  readonly defaultProvider: OrchestratorConfig['defaultProvider']
+  readonly defaultBaseURL: OrchestratorConfig['defaultBaseURL']
+  readonly defaultApiKey: OrchestratorConfig['defaultApiKey']
+  readonly defaultCwd: OrchestratorConfig['defaultCwd']
+  readonly maxConcurrency: number
+}
+
+/** Skeptic framing applied to every judge (refute mode and lens-mode base). */
+const DEFAULT_VERIFIER_INSTRUCTION =
+  'You are a rigorous skeptic reviewing a proposed answer to the question shown below. ' +
+  'Judge the answer against what that question actually asks: hunt for errors, unsupported ' +
+  'claims, gaps, and faulty reasoning, then decide whether it withstands scrutiny.'
+
+/** Per-judge review angles used in `lens` mode (assigned round-robin by index). */
+const CONSENSUS_LENSES = [
+  'factual correctness and logical soundness',
+  'completeness and coverage of the question',
+  'edge cases, failure modes, and counterexamples',
+  'clarity, precision, and freedom from ambiguity',
+  'hidden assumptions and unstated premises',
+  'evidence, citations, and verifiability',
+] as const
+
+/** Verdict contract appended to every judge prompt. */
+const VERDICT_INSTRUCTION =
+  'Respond ONLY with a JSON object {"accept": <true|false>, "critique": "<concise reason>"}. ' +
+  'Set "accept" to true only if the answer withstands scrutiny; otherwise set it false ' +
+  'and explain the problem in "critique".'
+
+/** Apply orchestrator defaults to a consensus agent config, mirroring buildPool. */
+function applyConsensusDefaults(config: AgentConfig, defaults: ConsensusAgentDefaults): AgentConfig {
+  return {
+    ...config,
+    provider: config.provider ?? defaults.defaultProvider,
+    baseURL: config.baseURL ?? defaults.defaultBaseURL,
+    apiKey: config.apiKey ?? defaults.defaultApiKey,
+    cwd: config.cwd === undefined ? defaults.defaultCwd : config.cwd,
+  }
+}
+
+/** Build the user prompt sent to a single judge, always including the original question. */
+function buildJudgePrompt(p: {
+  judge: string
+  answer: string
+  prompt: string
+  mode: 'refute' | 'lens'
+  judgeIndex: number
+  judgePrompt?: string | ((judge: string) => string)
+}): string {
+  let instruction: string
+  if (p.judgePrompt !== undefined) {
+    instruction = typeof p.judgePrompt === 'function' ? p.judgePrompt(p.judge) : p.judgePrompt
+  } else if (p.mode === 'lens') {
+    const lens = CONSENSUS_LENSES[p.judgeIndex % CONSENSUS_LENSES.length]!
+    instruction = `${DEFAULT_VERIFIER_INSTRUCTION}\nFocus specifically on: ${lens}. ` +
+      'If that angle is irrelevant to this question, accept the answer rather than inventing objections.'
+  } else {
+    instruction = DEFAULT_VERIFIER_INSTRUCTION
+  }
+  return [
+    instruction,
+    '',
+    '## Question',
+    p.prompt,
+    '',
+    '## Proposed answer',
+    p.answer,
+    '',
+    '## Your verdict',
+    VERDICT_INSTRUCTION,
+  ].join('\n')
+}
+
+/** Build the proposer prompt for a revision round, feeding back the dissent. */
+function buildRevisePrompt(prompt: string, dissent: readonly string[]): string {
+  return [
+    prompt,
+    '',
+    '## Reviewer critiques to address',
+    ...dissent.map((d) => `- ${d}`),
+    '',
+    'Revise your answer to address every critique above. Respond with the improved answer only.',
+  ].join('\n')
+}
+
+/** Parse a judge's raw output into an accept/critique decision. */
+function parseJudgeVerdict(
+  output: string,
+  verdictSchema?: ZodSchema,
+): { accept: boolean; critique: string } {
+  let parsed: unknown
+  try {
+    parsed = extractJSON(output)
+  } catch {
+    return { accept: false, critique: 'Judge output was not valid JSON.' }
+  }
+  if (verdictSchema) {
+    try {
+      validateOutput(verdictSchema, parsed)
+    } catch (err) {
+      return { accept: false, critique: `Verdict failed schema validation: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  }
+  const obj = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+  const accept = typeof obj['accept'] === 'boolean' ? obj['accept'] : false
+  const critique = typeof obj['critique'] === 'string' && obj['critique']
+    ? obj['critique']
+    : accept ? '' : 'No critique provided.'
+  return { accept, critique }
+}
+
+/** Inputs to {@link runConsensusCore} — the judge loop shared by `runConsensus` and the `verify` hook. */
+interface ConsensusCoreParams {
+  readonly team: Team
+  readonly prompt: string
+  /** Proposed answer to scrutinise (proposer output, or the task result). */
+  readonly initialAnswer: string
+  /** Usage attributable so far that should be reported back (proposer usage, or zero for the verify hook). */
+  readonly initialUsage: TokenUsage
+  /** Tokens already spent that count toward the budget but are not re-reported (e.g. prior task usage). */
+  readonly budgetBaseTokens: number
+  readonly judges: readonly AgentConfig[]
+  readonly mode: 'refute' | 'lens'
+  readonly quorum: number
+  readonly maxRounds: number
+  readonly verdictSchema?: ZodSchema
+  readonly onDissent: 'revise' | 'reject' | 'keep'
+  readonly judgePrompt?: string | ((judge: string) => string)
+  readonly budget?: number
+  /** Re-run on a revision round (the proposer, or the task assignee). */
+  readonly reviseProposer?: AgentConfig
+  readonly defaults: ConsensusAgentDefaults
+  readonly onTrace?: OrchestratorConfig['onTrace']
+  readonly runId?: string
+  /** Existing pool to reuse; a fresh one is created when omitted. */
+  readonly pool?: AgentPool
+}
+
+/**
+ * Run the judge/refutation loop over a proposed answer: judges run sequentially
+ * (so quorum and budget can stop the rest), dissent is recorded to shared memory
+ * and trace, and `onDissent` decides whether to revise, reject, or keep.
+ */
+async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusResult> {
+  const {
+    team, prompt, judges, mode, quorum, maxRounds, verdictSchema, onDissent,
+    judgePrompt, budget, budgetBaseTokens, reviseProposer, defaults, onTrace, runId,
+  } = params
+
+  const pool = params.pool ?? new AgentPool(Math.max(1, defaults.maxConcurrency))
+  const sharedMem = team.getSharedMemoryInstance()
+
+  let answer = params.initialAnswer
+  let usage = params.initialUsage
+  const dissent: string[] = []
+  let rounds = 0
+  let accepted = false
+
+  const overBudget = (): boolean =>
+    budget !== undefined && budgetBaseTokens + usage.input_tokens + usage.output_tokens > budget
+
+  const runEphemeral = (config: AgentConfig, text: string): Promise<AgentRunResult> =>
+    pool.runEphemeral(buildAgent(applyConsensusDefaults(config, defaults)), text)
+
+  // Proposer usage was already accumulated by the caller; bail before judging if it blew the budget.
+  if (overBudget()) {
+    return { answer, verdict: 'rejected', dissent, rounds, tokenUsage: usage }
+  }
+
+  let budgetHit = false
+  for (let round = 1; round <= maxRounds; round++) {
+    rounds = round
+    let acceptCount = 0
+    const roundDissent: string[] = []
+
+    for (let j = 0; j < judges.length; j++) {
+      const judge = judges[j]!
+      const judgeText = buildJudgePrompt({ judge: judge.name, answer, prompt, mode, judgeIndex: j, judgePrompt })
+      const r = await runEphemeral(judge, judgeText)
+      usage = addUsage(usage, r.tokenUsage)
+      if (overBudget()) { budgetHit = true; break }
+
+      const verdict = parseJudgeVerdict(r.output, verdictSchema)
+      if (verdict.accept) {
+        acceptCount++
+        if (acceptCount >= quorum) { accepted = true; break }
+      } else {
+        const labelled = `${judge.name}: ${verdict.critique}`
+        roundDissent.push(labelled)
+        dissent.push(labelled)
+        if (sharedMem) {
+          await sharedMem.write(judge.name, `consensus:round:${round}:dissent`, verdict.critique)
+        }
+        if (onTrace) {
+          const now = Date.now()
+          emitTrace(onTrace, {
+            type: 'consensus',
+            runId: runId ?? '',
+            agent: judge.name,
+            round,
+            accepted: false,
+            dissent: verdict.critique,
+            startMs: now,
+            endMs: now,
+            durationMs: 0,
+          })
+        }
+      }
+    }
+
+    if (budgetHit || accepted) break
+
+    // Round missed quorum. Revise (if rounds remain) or stop.
+    if (onDissent === 'revise' && round < maxRounds && reviseProposer) {
+      const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, roundDissent))
+      usage = addUsage(usage, r.tokenUsage)
+      if (r.success && r.output) answer = r.output
+      if (overBudget()) { budgetHit = true; break }
+      continue
+    }
+    break
+  }
+
+  const verdict: 'accepted' | 'rejected' =
+    accepted || (!budgetHit && onDissent === 'keep') ? 'accepted' : 'rejected'
+  return { answer, verdict, dissent, rounds, tokenUsage: usage }
+}
+
+/**
+ * Run the per-task `verify` hook after a task completes: feed the task result
+ * into the consensus loop, fold judge usage into the run's cumulative budget,
+ * and replace the task result when consensus revises it.
+ */
+async function runTaskVerify(
+  task: Task,
+  assignee: string,
+  result: AgentRunResult,
+  sharedMem: ReturnType<Team['getSharedMemoryInstance']>,
+  queue: TaskQueue,
+  ctx: RunContext,
+): Promise<void> {
+  const verify = task.verify!
+  const { team, config } = ctx
+  const assigneeConfig = team.getAgents().find((a) => a.name === assignee)
+
+  const consensus = await runConsensusCore({
+    team,
+    prompt: task.description,
+    initialAnswer: result.output,
+    initialUsage: ZERO_USAGE,
+    budgetBaseTokens: ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens,
+    judges: verify.judges,
+    mode: verify.mode ?? 'refute',
+    quorum: Math.max(1, verify.quorum ?? Math.ceil(verify.judges.length / 2)),
+    maxRounds: Math.max(1, verify.maxRounds ?? 2),
+    verdictSchema: verify.verdictSchema,
+    onDissent: verify.onDissent ?? 'revise',
+    judgePrompt: verify.judgePrompt,
+    budget: ctx.maxTokenBudget,
+    reviseProposer: assigneeConfig,
+    defaults: {
+      defaultProvider: config.defaultProvider,
+      defaultBaseURL: config.defaultBaseURL,
+      defaultApiKey: config.defaultApiKey,
+      defaultCwd: config.defaultCwd,
+      maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
+    },
+    onTrace: config.onTrace,
+    ...(ctx.runId ? { runId: ctx.runId } : {}),
+  })
+
+  ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, consensus.tokenUsage)
+  // Keep the reported per-task usage consistent (mirrors how delegation usage rolls in).
+  const stored = ctx.agentResults.get(`${assignee}:${task.id}`)
+  if (stored) {
+    ctx.agentResults.set(`${assignee}:${task.id}`, {
+      ...stored,
+      tokenUsage: addUsage(stored.tokenUsage, consensus.tokenUsage),
+    })
+  }
+
+  // A revised answer supersedes the task result for downstream consumers.
+  if (consensus.answer && consensus.answer !== result.output) {
+    queue.update(task.id, { result: consensus.answer })
+    if (sharedMem) await sharedMem.write(assignee, `task:${task.id}:result`, consensus.answer)
+  }
+
+  const total = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
+  if (!ctx.budgetExceededTriggered && ctx.maxTokenBudget !== undefined && total > ctx.maxTokenBudget) {
+    ctx.budgetExceededTriggered = true
+    const err = new TokenBudgetExceededError('orchestrator', total, ctx.maxTokenBudget)
+    ctx.budgetExceededReason = err.message
+    config.onProgress?.({
+      type: 'budget_exceeded',
+      agent: assignee,
+      task: task.id,
+      data: err,
+    } satisfies OrchestratorEvent)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1412,6 +1731,7 @@ export class OpenMultiAgent {
       maxRetries?: number
       retryDelayMs?: number
       retryBackoff?: number
+      verify?: ConsensusVerifyOptions
     }>,
     options?: { abortSignal?: AbortSignal },
   ): Promise<TeamRunResult> {
@@ -1429,6 +1749,7 @@ export class OpenMultiAgent {
         maxRetries: t.maxRetries,
         retryDelayMs: t.retryDelayMs,
         retryBackoff: t.retryBackoff,
+        verify: t.verify,
       })),
       agentConfigs,
       queue,
@@ -1465,6 +1786,98 @@ export class OpenMultiAgent {
     }))
 
     return this.buildTeamRunResult(agentResults, undefined, taskRecords)
+  }
+
+  // -------------------------------------------------------------------------
+  // Consensus
+  // -------------------------------------------------------------------------
+
+  /**
+   * Run a proposer→judge consensus over a single prompt.
+   *
+   * The proposer emits an answer; judges try to refute it over up to
+   * `maxRounds`, exiting early once `quorum` accept. Proposer and judge token
+   * usage all count against the orchestrator's `maxTokenBudget` — crossing it
+   * stops issuing further judge calls, exactly like delegation and `runTasks`.
+   */
+  async runConsensus(
+    team: Team,
+    prompt: string,
+    options: ConsensusOptions,
+  ): Promise<ConsensusResult> {
+    const proposers = Array.isArray(options.proposer) ? options.proposer : [options.proposer]
+    if (proposers.length === 0) {
+      throw new Error('runConsensus: at least one proposer is required.')
+    }
+    if (options.judges.length === 0) {
+      throw new Error('runConsensus: at least one judge is required.')
+    }
+
+    const mode = options.mode ?? 'refute'
+    const maxRounds = Math.max(1, options.maxRounds ?? 2)
+    const quorum = Math.max(1, options.quorum ?? Math.ceil(options.judges.length / 2))
+    const onDissent = options.onDissent ?? 'revise'
+    const budget = this.config.maxTokenBudget
+    const defaults: ConsensusAgentDefaults = {
+      defaultProvider: this.config.defaultProvider,
+      defaultBaseURL: this.config.defaultBaseURL,
+      defaultApiKey: this.config.defaultApiKey,
+      defaultCwd: this.config.defaultCwd,
+      maxConcurrency: this.config.maxConcurrency,
+    }
+
+    const pool = new AgentPool(Math.max(1, this.config.maxConcurrency))
+    let usage: TokenUsage = ZERO_USAGE
+
+    // Step 2: run proposer(s); accumulate usage and honour the budget before judging.
+    const candidates: string[] = []
+    for (const proposerConfig of proposers) {
+      const r = await pool.runEphemeral(
+        buildAgent(applyConsensusDefaults(proposerConfig, defaults)),
+        prompt,
+      )
+      usage = addUsage(usage, r.tokenUsage)
+      if (r.success && r.output) candidates.push(r.output)
+      if (budget !== undefined && usage.input_tokens + usage.output_tokens > budget) {
+        this.config.onProgress?.({
+          type: 'budget_exceeded',
+          agent: proposerConfig.name,
+          data: new TokenBudgetExceededError(
+            proposerConfig.name,
+            usage.input_tokens + usage.output_tokens,
+            budget,
+          ),
+        })
+        return {
+          answer: candidates.join('\n\n---\n\n'),
+          verdict: 'rejected',
+          dissent: [],
+          rounds: 0,
+          tokenUsage: usage,
+        }
+      }
+    }
+
+    return runConsensusCore({
+      team,
+      prompt,
+      initialAnswer: candidates.join('\n\n---\n\n'),
+      initialUsage: usage,
+      budgetBaseTokens: 0,
+      judges: options.judges,
+      mode,
+      quorum,
+      maxRounds,
+      verdictSchema: options.verdictSchema,
+      onDissent,
+      judgePrompt: options.judgePrompt,
+      budget,
+      reviseProposer: proposers[0],
+      defaults,
+      onTrace: this.config.onTrace,
+      runId: this.config.onTrace ? generateRunId() : undefined,
+      pool,
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -1695,6 +2108,7 @@ export class OpenMultiAgent {
         maxRetries: spec.maxRetries,
         retryDelayMs: spec.retryDelayMs,
         retryBackoff: spec.retryBackoff,
+        verify: spec.verify,
       })
       const titleKey = normalizeTitle(spec.title)
       if ((titleCounts.get(titleKey) ?? 0) === 1) {
