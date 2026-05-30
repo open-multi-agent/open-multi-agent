@@ -48,7 +48,7 @@
 
 ## 目录
 
-[快速开始](#快速开始) · [三种运行模式](#三种运行模式) · [功能一览](#功能一览) · [编排控制](#编排控制) · [示例](#示例) · [与其他框架对比](#与其他框架对比) · [生态](#生态) · [架构](#架构) · [支持的 Provider](#支持的-provider) · [生产级检查清单](#生产级检查清单) · [文档](#文档) · [参与贡献](#参与贡献)
+[快速开始](#快速开始) · [三种运行模式](#三种运行模式) · [功能一览](#功能一览) · [编排控制](#编排控制) · [生态](#生态) · [示例](#示例) · [与其他框架对比](#与其他框架对比) · [架构](#架构) · [支持的 Provider](#支持的-provider) · [生产级检查清单](#生产级检查清单) · [文档](#文档) · [参与贡献](#参与贡献)
 
 ## 快速开始
 
@@ -185,6 +185,33 @@ await orchestrator.runTeam(team, goal, {
 
 **Shell 和 CI。** 使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cli.md](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md)。
 
+## 生态
+
+`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
+
+### 生产环境在用
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+
+如果在生产或 side project 中使用了 `open-multi-agent`，[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
+
+### 集成
+
+- **[Engram](https://www.engram-memory.com)** — "AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar，检测跨运行的委派环、重复和速率突增。
+
+做了 `open-multi-agent` 集成？见[集成提交指南](examples/integrations/README.md)：如何提交 reference / vendor 示例，以及如何被列入这里。
+
+### Provider 社区优惠
+
+面向 `open-multi-agent` 用户的限时 provider 优惠。该列表不代表付费背书或唯一官方推荐。
+
+- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M2.7。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md)。
+
+### Featured partner
+
+面向已经深度集成 `open-multi-agent` 的产品和平台。条款和申请方式见 [Featured partner 计划](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md)。
+
 ## 示例
 
 [`examples/`](./examples/) 按类别分为 basics、cookbook、patterns、providers、integrations。完整索引见 [`examples/README.md`](./examples/README.md)。（[`production/`](./examples/production/README.md) 正在征集贡献——见收录标准。）
@@ -235,33 +262,6 @@ await orchestrator.runTeam(team, goal, {
 **对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 面向 TypeScript 后端，3 个运行时依赖，直接嵌入 Node.js。编排能力大致持平，按语言栈选。
 
 **对比 Vercel AI SDK。** AI SDK 是应用和 LLM 调用层（provider 抽象、流式、tool call、结构化输出）。它不做多智能体编排。两者互补：单 agent 调用使用 AI SDK，需要多 agent 协作时引入 OMA。
-
-## 生态
-
-`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
-
-### 生产环境在用
-
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
-
-如果在生产或 side project 中使用了 `open-multi-agent`，[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。
-
-### 集成
-
-- **[Engram](https://www.engram-memory.com)** — "AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar，检测跨运行的委派环、重复和速率突增。
-
-做了 `open-multi-agent` 集成？见[集成提交指南](examples/integrations/README.md)：如何提交 reference / vendor 示例，以及如何被列入这里。
-
-### Provider 社区优惠
-
-面向 `open-multi-agent` 用户的限时 provider 优惠。该列表不代表付费背书或唯一官方推荐。
-
-- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M2.7。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md)。
-
-### Featured partner
-
-面向已经深度集成 `open-multi-agent` 的产品和平台。条款和申请方式见 [Featured partner 计划](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md)。
 
 ## 架构
 
