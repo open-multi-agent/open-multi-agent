@@ -37,3 +37,23 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
           fail_ci_if_error: false
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Assert npm tarball ships only dist + metadata
+        run: |
+          bad=$(npm pack --dry-run --json \
+            | jq -r '.[0].files[].path' \
+            | grep -vE '^(dist/|README\.md$|LICENSE$|package\.json$)' || true)
+          if [ -n "$bad" ]; then
+            echo "Unexpected files staged for the npm tarball:"
+            echo "$bad"
+            echo "Only dist/, README.md, LICENSE, package.json may ship."
+            echo "Fix the \"files\" field in package.json (no whole-directory entries like docs/examples/tests/src)."
+            exit 1
+          fi
