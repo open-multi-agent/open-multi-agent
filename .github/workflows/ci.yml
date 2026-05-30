@@ -45,15 +45,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Assert npm tarball ships only dist + metadata
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Assert the npm tarball ships exactly the expected files
         run: |
-          bad=$(npm pack --dry-run --json \
-            | jq -r '.[0].files[].path' \
-            | grep -vE '^(dist/|README\.md$|LICENSE$|package\.json$)' || true)
-          if [ -n "$bad" ]; then
+          paths=$(npm pack --dry-run --json | jq -r '.[0].files[].path')
+          unexpected=$(echo "$paths" | grep -vE '^(dist/|README\.md$|LICENSE$|package\.json$)' || true)
+          if [ -n "$unexpected" ]; then
             echo "Unexpected files staged for the npm tarball:"
-            echo "$bad"
+            echo "$unexpected"
             echo "Only dist/, README.md, LICENSE, package.json may ship."
-            echo "Fix the \"files\" field in package.json (no whole-directory entries like docs/examples/tests/src)."
+            exit 1
+          fi
+          missing=""
+          for f in dist/index.js dist/index.d.ts dist/cli/oma.js dist/mcp.js dist/mcp.d.ts dist/ai-sdk.js dist/ai-sdk.d.ts; do
+            echo "$paths" | grep -qxF "$f" || missing="$missing $f"
+          done
+          if [ -n "$missing" ]; then
+            echo "Required entry points missing from the npm tarball:$missing"
+            echo "Either the build did not run or an entry was dropped from package.json \"files\"."
             exit 1
           fi
