@@ -119,9 +119,9 @@ export class SharedMemory {
    *
    * @param agentName - The writing agent's name (used as a namespace prefix).
    * @param key       - Logical key within the agent's namespace.
-   * @param value     - Value to store. Strings are stored as-is; other
-   *                    JSON-serializable types (objects, arrays, numbers) are
-   *                    stored directly.
+   * @param value     - Value to store. Non-string values are serialised via
+   *                    {@link JSON.stringify} before storage; the underlying
+   *                    store always receives a string.
    * @param metadata  - Optional extra metadata stored alongside the entry.
    * @param schema    - Optional Zod schema to validate `value` before writing.
    *                    Throws {@link ZodError} when validation fails.
@@ -136,8 +136,9 @@ export class SharedMemory {
     if (schema) {
       schema.parse(value)
     }
+    const serialised = JSON.stringify(value) ?? 'null'
     const namespacedKey = SharedMemory.namespaceKey(agentName, key)
-    await this.store.set(namespacedKey, value, {
+    await this.store.set(namespacedKey, serialised, {
       ...metadata,
       agent: agentName,
     })
@@ -185,14 +186,15 @@ export class SharedMemory {
     if (schema) {
       schema.parse(value)
     }
+    const serialised = JSON.stringify(value) ?? 'null'
     const namespacedKey = SharedMemory.namespaceKey(agentName, key)
     const fullMetadata = { ...metadata, agent: agentName }
     if (typeof this.store.setWithExpiry === 'function') {
       const expiresAtTurn = this.turnCount + ttlTurns
-      await this.store.setWithExpiry(namespacedKey, value, expiresAtTurn, fullMetadata)
+      await this.store.setWithExpiry(namespacedKey, serialised, expiresAtTurn, fullMetadata)
     } else {
       // Custom store doesn't support TTL — degrade to plain set.
-      await this.store.set(namespacedKey, value, fullMetadata)
+      await this.store.set(namespacedKey, serialised, fullMetadata)
     }
   }
 
@@ -210,11 +212,28 @@ export class SharedMemory {
    * cron, etc.). Reading is therefore safe to call from concurrent processes
    * without the risk of stomping on a fresh write to the same key.
    */
+  /**
+   * Read an entry by its fully-qualified key (`<agentName>/<key>`).
+   *
+   * Returns `null` when the key is absent **or** when the entry has expired
+   * (per its `expiresAtTurn` against the current turn counter). Expired
+   * entries are filtered out but **not** deleted from the underlying store —
+   * deletion is left to the store impl (Redis has native TTL, Postgres a
+   * cron, etc.). Reading is therefore safe to call from concurrent processes
+   * without the risk of stomping on a fresh write to the same key.
+   *
+   * Stored values that are valid JSON are parsed back to their original type.
+   * Plain strings are returned as-is (try/catch fallback for backward
+   * compatibility with entries written via {@link getStore}).
+   */
   async read(key: string): Promise<MemoryEntry | null> {
     const entry = await this.store.get(key)
     if (entry === null) return null
     if (this.isExpired(entry)) return null
-    return entry
+    return {
+      ...entry,
+      value: parseStoredValue(entry.value),
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -289,18 +308,19 @@ export class SharedMemory {
         byAgent.set(agent, group)
       }
       let strVal: string
-      if (typeof entry.value === 'string') {
-        strVal = entry.value
-      } else if (entry.value === null || entry.value === undefined) {
-        strVal = String(entry.value) // 'null' or 'undefined'
-      } else if (typeof entry.value === 'object') {
+      const parsed = parseStoredValue(entry.value)
+      if (typeof parsed === 'string') {
+        strVal = parsed
+      } else if (parsed === null || parsed === undefined) {
+        strVal = String(parsed)
+      } else if (typeof parsed === 'object') {
         try {
-          strVal = JSON.stringify(entry.value, null, 2)
+          strVal = JSON.stringify(parsed, null, 2)
         } catch {
-          strVal ='[Circular/Unserializable Object]'
+          strVal = '[Circular/Unserializable Object]'
         }
       } else {
-        strVal = String(entry.value) // for numbers, booleans, symbols, etc.
+        strVal = String(parsed) // number or boolean
       }
       group.push({ localKey, value: strVal })
     }
@@ -357,5 +377,27 @@ export class SharedMemory {
    */
   private filterExpired(entries: MemoryEntry[]): MemoryEntry[] {
     return entries.filter((entry) => !this.isExpired(entry))
+  }
+}
+
+/**
+ * Attempt to parse a stored string back to its original type.
+ *
+ * `SharedMemory.write()` serialises values via {@link JSON.stringify}, so
+ * the store always holds strings. On read, we reverse the process. Plain
+ * strings that happen to be stored directly (e.g. via {@link getStore}) are
+ * returned as-is via a `try/catch` fallback.
+ *
+ * @param value - The raw value from the underlying store (expected to be
+ *                a string, but accepts `unknown` for type compatibility).
+ * @returns The parsed value when the string is valid JSON, or the string
+ *          itself when it is not.
+ */
+function parseStoredValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return value
   }
 }

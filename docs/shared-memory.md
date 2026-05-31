@@ -57,7 +57,7 @@ await mem.write('counter', 'remaining', 7)
 await mem.write('checker', 'valid', true)
 ```
 
-The underlying `MemoryStore` always stores values as strings (via `JSON.stringify`). On read, `entry.value` is typed as `unknown` — downstream callers should narrow it with a type guard or `JSON.parse()`.
+`SharedMemory` serialises values to JSON strings before writing to the underlying `MemoryStore` and deserialises them back to their original type on read, so downstream callers receive well-typed data without manual parsing.
 
 ### Schema validation (Zod)
 
