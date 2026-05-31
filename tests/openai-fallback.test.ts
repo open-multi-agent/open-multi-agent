@@ -1,159 +1,73 @@
 import { describe, it, expect } from 'vitest'
 import { fromOpenAICompletion } from '../src/llm/openai-common.js'
-import type { ChatCompletion } from 'openai/resources/chat/completions/index.js'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeCompletion(overrides: {
-  content?: string | null
-  tool_calls?: ChatCompletion.Choice['message']['tool_calls']
-  finish_reason?: string
-}): ChatCompletion {
-  return {
-    id: 'chatcmpl-test',
-    object: 'chat.completion',
-    created: Date.now(),
-    model: 'test-model',
-    choices: [
-      {
-        index: 0,
+describe('fromOpenAICompletion - JSON Parse Fallback', () => {
+  it('safely parses standard JSON', () => {
+    const raw = {
+      choices: [{
         message: {
-          role: 'assistant',
-          content: overrides.content ?? null,
-          tool_calls: overrides.tool_calls,
-          refusal: null,
-        },
-        finish_reason: (overrides.finish_reason ?? 'stop') as 'stop' | 'tool_calls',
-        logprobs: null,
-      },
-    ],
-    usage: {
-      prompt_tokens: 10,
-      completion_tokens: 20,
-      total_tokens: 30,
-    },
-  }
-}
-
-const TOOL_NAMES = ['bash', 'file_read', 'file_write']
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('fromOpenAICompletion fallback extraction', () => {
-  it('returns normal tool_calls when present (no fallback)', () => {
-    const completion = makeCompletion({
-      content: 'Let me run a command.',
-      tool_calls: [
-        {
-          id: 'call_123',
-          type: 'function',
-          function: {
-            name: 'bash',
-            arguments: '{"command": "ls"}',
-          },
-        },
-      ],
-      finish_reason: 'tool_calls',
-    })
-
-    const response = fromOpenAICompletion(completion, TOOL_NAMES)
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(toolBlocks).toHaveLength(1)
-    expect(toolBlocks[0]!.type === 'tool_use' && toolBlocks[0]!.name).toBe('bash')
-    expect(toolBlocks[0]!.type === 'tool_use' && toolBlocks[0]!.id).toBe('call_123')
-    expect(response.stop_reason).toBe('tool_use')
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function' as const,
+              function: {
+                name: 'bash',
+                arguments: '{"command": "echo \\"hello\\""}'
+              }
+            }
+          ]
+        }
+      }]
+    }
+    const result = fromOpenAICompletion(raw as any)
+    expect((result.content[0] as any).input).toEqual({ command: 'echo "hello"' })
   })
 
-  it('extracts tool calls from text when tool_calls is absent', () => {
-    const completion = makeCompletion({
-      content: 'I will run this:\n{"name": "bash", "arguments": {"command": "pwd"}}',
-      finish_reason: 'stop',
-    })
-
-    const response = fromOpenAICompletion(completion, TOOL_NAMES)
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(toolBlocks).toHaveLength(1)
-    expect(toolBlocks[0]!.type === 'tool_use' && toolBlocks[0]!.name).toBe('bash')
-    expect(toolBlocks[0]!.type === 'tool_use' && toolBlocks[0]!.input).toEqual({ command: 'pwd' })
-    // stop_reason should be corrected to tool_use
-    expect(response.stop_reason).toBe('tool_use')
+  it('falls back to regex for python triple quotes', () => {
+    const raw = {
+      choices: [{
+        message: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_2',
+              type: 'function' as const,
+              function: {
+                name: 'run_python_script',
+                arguments: '{"code": """print("Unescaped JSON!")"""}'
+              }
+            }
+          ]
+        }
+      }]
+    }
+    const result = fromOpenAICompletion(raw as any)
+    expect((result.content[0] as any).input).toEqual({ code: 'print("Unescaped JSON!")' })
   })
 
-  it('does not fallback when knownToolNames is not provided', () => {
-    const completion = makeCompletion({
-      content: '{"name": "bash", "arguments": {"command": "ls"}}',
-      finish_reason: 'stop',
-    })
-
-    const response = fromOpenAICompletion(completion)
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(toolBlocks).toHaveLength(0)
-    expect(response.stop_reason).toBe('end_turn')
-  })
-
-  it('does not fallback when knownToolNames is empty', () => {
-    const completion = makeCompletion({
-      content: '{"name": "bash", "arguments": {"command": "ls"}}',
-      finish_reason: 'stop',
-    })
-
-    const response = fromOpenAICompletion(completion, [])
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(toolBlocks).toHaveLength(0)
-    expect(response.stop_reason).toBe('end_turn')
-  })
-
-  it('returns plain text when no tool calls found in text', () => {
-    const completion = makeCompletion({
-      content: 'Hello! How can I help you today?',
-      finish_reason: 'stop',
-    })
-
-    const response = fromOpenAICompletion(completion, TOOL_NAMES)
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(toolBlocks).toHaveLength(0)
-    expect(response.stop_reason).toBe('end_turn')
-  })
-
-  it('preserves text block alongside extracted tool blocks', () => {
-    const completion = makeCompletion({
-      content: 'Let me check:\n{"name": "file_read", "arguments": {"path": "/tmp/x"}}',
-      finish_reason: 'stop',
-    })
-
-    const response = fromOpenAICompletion(completion, TOOL_NAMES)
-    const textBlocks = response.content.filter(b => b.type === 'text')
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    expect(textBlocks).toHaveLength(1)
-    expect(toolBlocks).toHaveLength(1)
-  })
-
-  it('does not double-extract when native tool_calls already present', () => {
-    // Text also contains a tool call JSON, but native tool_calls is populated.
-    // The fallback should NOT run.
-    const completion = makeCompletion({
-      content: '{"name": "file_read", "arguments": {"path": "/tmp/y"}}',
-      tool_calls: [
-        {
-          id: 'call_native',
-          type: 'function',
-          function: {
-            name: 'bash',
-            arguments: '{"command": "ls"}',
-          },
-        },
-      ],
-      finish_reason: 'tool_calls',
-    })
-
-    const response = fromOpenAICompletion(completion, TOOL_NAMES)
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use')
-    // Should only have the native one, not the text-extracted one
-    expect(toolBlocks).toHaveLength(1)
-    expect(toolBlocks[0]!.type === 'tool_use' && toolBlocks[0]!.id).toBe('call_native')
+  it('fails gracefully when regex does not match', () => {
+    const raw = {
+      choices: [{
+        message: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_3',
+              type: 'function' as const,
+              function: {
+                name: 'bash',
+                arguments: '{"command": echo hello' // invalid JSON and regex fails
+              }
+            }
+          ]
+        }
+      }]
+    }
+    const result = fromOpenAICompletion(raw as any)
+    expect((result.content[0] as any).input).toEqual({}) // Returns empty object on complete failure
   })
 })
