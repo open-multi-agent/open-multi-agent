@@ -33,6 +33,8 @@
 import OpenAI from 'openai'
 import type {
   ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions/index.js'
 
 import type {
@@ -53,7 +55,9 @@ import {
   fromOpenAICompletion,
   normalizeFinishReason,
   buildOpenAIMessageList,
+  getOpenAIReasoningText,
 } from './openai-common.js'
+import type { ReasoningOutboundOptions } from './reasoning-fallback.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,22 @@ import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 export class OpenAIAdapter implements LLMAdapter {
   readonly name: string = 'openai'
 
+  // The field type is intentionally widened to the full union (rather than
+  // narrowed to `'never'` via `as const`) so subclasses can override with a
+  // different value — DeepSeek currently uses `'tool-use-only'` for native
+  // `reasoning_content` echo on tool-use turns (per PR #251).
+  //
+  // OpenAI itself stays `'never'`: Chat Completions does not accept
+  // `reasoning_content` on input under any circumstance. When the user sets
+  // `AgentConfig.preserveReasoningAsText` (PR #260 / #223 Phase 2), the
+  // outbound conversion in `toOpenAIMessages` downgrades each reasoning
+  // block to inline `<thinking>` text via the shared helper in
+  // `reasoning-fallback.ts`. Without the opt-in, reasoning blocks are
+  // dropped silently on outbound.
+  readonly capabilities: { readonly echoesReasoning: 'never' | 'own-issued' | 'tool-use-only' } = {
+    echoesReasoning: 'never',
+  }
+
   readonly #client: OpenAI
 
   constructor(apiKey?: string, baseURL?: string) {
@@ -75,6 +95,36 @@ export class OpenAIAdapter implements LLMAdapter {
       apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
       baseURL,
     })
+  }
+
+  /**
+   * Build the per-call options forwarded to {@link buildOpenAIMessageList}.
+   *
+   * Composes two orthogonal mechanisms:
+   *  1. **`nativeReasoningEchoProvider`** — set when this adapter's
+   *     capability is `'tool-use-only'` (DeepSeek). Triggers native
+   *     `reasoning_content` echo on assistant messages whose reasoning
+   *     blocks carry matching provenance AND the conversation contains
+   *     `tool_use`. See PR #251 / DeepSeek V4 thinking-mode spec.
+   *  2. **`preserveReasoningAsText` / `compressReasoningText`** — opt-in
+   *     `<thinking>` text fallback from the user's `AgentConfig`. Applies
+   *     to foreign-provenance reasoning AND to all reasoning on `'never'`
+   *     adapters. See #223 Phase 2.
+   *
+   * The two paths are mutually exclusive per block: native echo claims
+   * own-provenance blocks first; text fallback claims everything else.
+   * Subclasses inherit `chat()` / `stream()` and so automatically pick up
+   * both behaviours; no subclass override needed.
+   */
+  protected buildMessageOptions(options: LLMChatOptions): ReasoningOutboundOptions | undefined {
+    const wantsNativeEcho = this.capabilities.echoesReasoning === 'tool-use-only'
+    const wantsTextFallback = options.preserveReasoningAsText === true
+    if (!wantsNativeEcho && !wantsTextFallback) return undefined
+    return {
+      preserveReasoningAsText: options.preserveReasoningAsText,
+      compressReasoningText: options.compressReasoningText,
+      nativeReasoningEchoProvider: wantsNativeEcho ? this.name : undefined,
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -89,12 +139,13 @@ export class OpenAIAdapter implements LLMAdapter {
    * handle these (e.g. rate limits, context length exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions(options))
 
     const completion = await this.#client.chat.completions.create(
       {
-        model: options.model,
-        messages: openAIMessages,
+        // Sampling params first so extraBody can override them. Structural
+        // fields (model/messages/tools/stream) come after extraBody so users
+        // cannot accidentally clobber them via extraBody.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
@@ -102,17 +153,24 @@ export class OpenAIAdapter implements LLMAdapter {
         top_p: options.topP,
         top_k: options.topK,
         min_p: options.minP,
+        parallel_tool_calls: options.parallelToolCalls,
+        reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
+        model: options.model,
+        messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: false,
-      } as any, // Cast for local OpenAI-compatible servers accepting non-standard params like top_k / min_p
+        // Cast covers `top_k` / `min_p` and arbitrary `extraBody` keys,
+        // which local OpenAI-compatible servers (vLLM, llama-server) accept
+        // but the upstream SDK type does not declare.
+      } as ChatCompletionCreateParamsNonStreaming,
       {
         signal: options.abortSignal,
       },
     )
 
     const toolNames = options.tools?.map(t => t.name)
-    return fromOpenAICompletion(completion, toolNames)
+    return fromOpenAICompletion(completion, toolNames, this.name)
   }
 
   // -------------------------------------------------------------------------
@@ -124,6 +182,7 @@ export class OpenAIAdapter implements LLMAdapter {
    *
    * Sequence guarantees match {@link AnthropicAdapter.stream}:
    * - Zero or more `text` events
+   * - Zero or more `reasoning` events
    * - Zero or more `tool_use` events (emitted once per tool call, after
    *   arguments have been fully assembled)
    * - Exactly one terminal event: `done` or `error`
@@ -132,14 +191,12 @@ export class OpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
-    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt)
+    const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions(options))
 
     // We request usage in the final chunk so we can include it in the `done` event.
-    console.log("PROMPT_SENT: " + JSON.stringify(openAIMessages, null, 2))
     const streamResponse = await this.#client.chat.completions.create(
       {
-        model: options.model,
-        messages: openAIMessages,
+        // See chat() above for the rationale behind this field ordering.
         max_tokens: options.maxTokens,
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
@@ -147,11 +204,15 @@ export class OpenAIAdapter implements LLMAdapter {
         top_p: options.topP,
         top_k: options.topK,
         min_p: options.minP,
+        parallel_tool_calls: options.parallelToolCalls,
+        reasoning_effort: options.thinking?.effort,
         ...options.extraBody,
+        model: options.model,
+        messages: openAIMessages,
         tools: options.tools ? options.tools.map(toOpenAITool) : undefined,
         stream: true,
         stream_options: { include_usage: true },
-      } as any, // Cast for local OpenAI-compatible servers accepting non-standard params like top_k / min_p
+      } as ChatCompletionCreateParamsStreaming,
       {
         signal: options.abortSignal,
       },
@@ -171,52 +232,38 @@ export class OpenAIAdapter implements LLMAdapter {
     >()
 
     // Full text accumulator for the `done` response.
+    let fullReasoning = ''
     let fullText = ''
 
     try {
-      for await (const chunk of streamResponse as any) {
+      for await (const chunk of streamResponse) {
         completionId = chunk.id
         completionModel = chunk.model
 
         // Usage is only populated in the final chunk when stream_options.include_usage is set.
         if (chunk.usage !== null && chunk.usage !== undefined) {
-          // Fix for cumulative telemetry bug: openai returns total usage for the session,
-          // but AgentRunner adds usage recursively. We should only report the tokens 
-          // generated in THIS specific stream chunk.
           inputTokens = chunk.usage.prompt_tokens
           outputTokens = chunk.usage.completion_tokens
         }
 
-        const choice: ChatCompletionChunk.Choice | undefined = chunk.choices[0]
+        const choice: ChatCompletionChunk.Choice | undefined = chunk.choices?.[0]
         if (choice === undefined) continue
 
-        const delta = choice.delta as any
-        console.log(`[DEBUG_DELTA] content=${JSON.stringify(delta.content)} reasoning=${JSON.stringify(delta.reasoning_content)}`)
+        const delta = choice.delta
 
         // --- text delta ---
-        let textContent = ''
-        if (delta.reasoning_content !== null && delta.reasoning_content !== undefined) {
-          // llama-server natively separates <think> blocks into reasoning_content.
-          // We wrap it back into <think> tags so the rest of the app's parsing works smoothly.
-          // Note: reasoning_content streams incrementally just like content.
-          if (!fullText.includes('<think>')) {
-             textContent += '<think>\n'
-          }
-          textContent += delta.reasoning_content
-        }
         if (delta.content !== null && delta.content !== undefined) {
-          // If we had reasoning content previously and now we are getting regular content,
-          // we need to close the think block if we haven't already.
-          if (fullText.includes('<think>') && !fullText.includes('</think>')) {
-             textContent += '\n</think>\n'
-          }
-          textContent += delta.content
-        }
-        
-        if (textContent.length > 0) {
-          fullText += textContent
-          const textEvent: StreamEvent = { type: 'text', data: textContent }
+          fullText += delta.content
+          const textEvent: StreamEvent = { type: 'text', data: delta.content }
           yield textEvent
+        }
+
+        // --- reasoning delta ---
+        const reasoningDelta = getOpenAIReasoningText(delta)
+        if (reasoningDelta.length > 0) {
+          fullReasoning += reasoningDelta
+          const reasoningEvent: StreamEvent = { type: 'reasoning', data: reasoningDelta }
+          yield reasoningEvent
         }
 
         // --- tool call delta ---
@@ -286,6 +333,9 @@ export class OpenAIAdapter implements LLMAdapter {
 
       // Build the complete content array for the done response.
       const doneContent: ContentBlock[] = []
+      if (fullReasoning.length > 0) {
+        doneContent.push({ type: 'reasoning', text: fullReasoning, provenance: this.name })
+      }
       if (fullText.length > 0) {
         const textBlock: TextBlock = { type: 'text', text: fullText }
         doneContent.push(textBlock)

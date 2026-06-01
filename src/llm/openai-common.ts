@@ -22,10 +22,12 @@ import type {
   LLMMessage,
   LLMResponse,
   LLMToolDef,
+  ReasoningBlock,
   TextBlock,
   ToolUseBlock,
 } from '../types.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
+import { reasoningBlockToInlineText, resolveReasoningOutboundMaxChars, type ReasoningOutboundOptions } from './reasoning-fallback.js'
 
 // ---------------------------------------------------------------------------
 // Framework → OpenAI
@@ -45,13 +47,37 @@ export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
   }
 }
 
+function extractReasoningText(value: unknown): string {
+  if (typeof value === 'string') return value
+
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part === null || typeof part !== 'object') return ''
+
+        const record = part as Record<string, unknown>
+        if (typeof record['text'] === 'string') return record['text']
+        if (typeof record['content'] === 'string') return record['content']
+        if (typeof record['reasoning_content'] === 'string') return record['reasoning_content']
+        return ''
+      })
+      .join('')
+  }
+
+  return ''
+}
+
+export function getOpenAIReasoningText(source: unknown): string {
+  if (source === null || typeof source !== 'object') return ''
+  return extractReasoningText((source as Record<string, unknown>)['reasoning_content'])
+}
+
 /**
  * Determine whether a framework message contains any `tool_result` content
  * blocks, which must be serialised as separate OpenAI `tool`-role messages.
  */
 function hasToolResults(msg: LLMMessage): boolean {
-  if (typeof msg.content === 'string') return false
-  if (!Array.isArray(msg.content)) return false
   return msg.content.some((b) => b.type === 'tool_result')
 }
 
@@ -62,23 +88,48 @@ function hasToolResults(msg: LLMMessage): boolean {
  * `tool_result` blocks are expanded into top-level `tool`-role messages
  * because OpenAI uses a dedicated role for tool results rather than embedding
  * them inside user-content arrays.
+ *
+ * For mixed user messages (tool_result + text/image), the tool messages are
+ * emitted FIRST so they sit immediately after the assistant's `tool_calls`.
+ * The OpenAI Chat Completions API requires every assistant `tool_calls` block
+ * to be answered by tool-role messages before any subsequent user-role
+ * message; inserting a user message between them produces a 400 error
+ * ("messages with role 'tool' must be a response to a preceding message
+ * with 'tool_calls'"). This path is exercised in practice by the agent
+ * runner's loop-detection warning injection (see {@link AgentRunner}, which
+ * appends a text warning to a tool_result message when a loop is detected).
  */
-export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageParam[] {
+export function toOpenAIMessages(
+  messages: LLMMessage[],
+  outboundOptions?: ReasoningOutboundOptions,
+): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
+
+  // Per DeepSeek V4 thinking-mode spec, when a conversation involves any
+  // tool call, ALL intermediate assistant messages must echo
+  // `reasoning_content` — not just the one that emitted the tool_use.
+  // Omitting reasoning on the final synthesis turn (tool_calls=None) 400s
+  // on the next user message. We approximate "tool-calling conversation"
+  // as "any tool_use anywhere in history"; non-tool conversations skip
+  // the echo entirely (per spec, reasoning would be ignored but still
+  // bloat context). See:
+  //   https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+  const conversationHasToolUse = messages.some((m) =>
+    m.content.some((b) => b.type === 'tool_use'),
+  )
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      result.push(toOpenAIAssistantMessage(msg))
+      const assistantMsg = toOpenAIAssistantMessage(msg, outboundOptions, conversationHasToolUse)
+      if (assistantMsg !== null) {
+        result.push(assistantMsg)
+      }
     } else {
       // user role
       if (!hasToolResults(msg)) {
         result.push(toOpenAIUserMessage(msg))
       } else {
-        const nonToolBlocks = msg.content.filter((b) => b.type !== 'tool_result')
-        if (nonToolBlocks.length > 0) {
-          result.push(toOpenAIUserMessage({ role: 'user', content: nonToolBlocks }))
-        }
-
+        // Emit tool messages first to satisfy OpenAI's strict ordering rule.
         for (const block of msg.content) {
           if (block.type === 'tool_result') {
             const toolMsg: ChatCompletionToolMessageParam = {
@@ -88,6 +139,11 @@ export function toOpenAIMessages(messages: LLMMessage[]): ChatCompletionMessageP
             }
             result.push(toolMsg)
           }
+        }
+
+        const nonToolBlocks = msg.content.filter((b) => b.type !== 'tool_result')
+        if (nonToolBlocks.length > 0) {
+          result.push(toOpenAIUserMessage({ role: 'user', content: nonToolBlocks }))
         }
       }
     }
@@ -129,9 +185,23 @@ function toOpenAIUserMessage(msg: LLMMessage): ChatCompletionUserMessageParam {
  * Convert an `assistant`-role framework message into an OpenAI assistant message.
  * `tool_use` blocks become `tool_calls`; `text` blocks become message content.
  */
-function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessageParam {
+function toOpenAIAssistantMessage(
+  msg: LLMMessage,
+  outboundOptions?: ReasoningOutboundOptions,
+  conversationHasToolUse = false,
+): ChatCompletionAssistantMessageParam | null {
   const toolCalls: ChatCompletionMessageToolCall[] = []
   const textParts: string[] = []
+  const pendingThinkingParts: string[] = []
+  const echoProvider = outboundOptions?.nativeReasoningEchoProvider
+  const enableReasoningReplay = outboundOptions?.preserveReasoningAsText === true
+  const resolvedMaxChars = resolveReasoningOutboundMaxChars(outboundOptions)
+  // Collected only when an `echoProvider` is configured. Emitted as a
+  // `reasoning_content` field on the assistant payload below, gated by
+  // `conversationHasToolUse` (DeepSeek V4 rule: applies to every assistant
+  // message in a tool-calling conversation, including the final synthesis
+  // message that has no tool_calls of its own).
+  const echoEligibleReasoning: string[] = []
 
   for (const block of msg.content) {
     if (block.type === 'tool_use') {
@@ -143,9 +213,50 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
           arguments: JSON.stringify(block.input),
         },
       })
+    } else if (block.type === 'reasoning') {
+      // Path A: native echo (adapter wired with nativeReasoningEchoProvider
+      // and the block's provenance matches). The block is queued for
+      // attachment as `reasoning_content`; gating by tool_use happens after
+      // the loop so we don't emit it on non-tool turns.
+      if (echoProvider !== undefined && block.provenance === echoProvider) {
+        const isRedacted = typeof block.redactedData === 'string' && block.redactedData.length > 0
+        if (!isRedacted && block.text.length > 0) {
+          echoEligibleReasoning.push(block.text)
+        }
+        // Either way, don't double-emit via the text-replay path below.
+        continue
+      }
+      // Path B: `<thinking>` text fallback for foreign-provenance blocks
+      // (or any block when this adapter doesn't support native echo) when
+      // `preserveReasoningAsText` is on. OpenAI-family adapters are
+      // capability `'never'` by default, so every reasoning block hits this
+      // branch in plain OpenAI use; DeepSeek (`'tool-use-only'`) hits this
+      // only for foreign-provenance blocks since its own-provenance ones
+      // are claimed by Path A above.
+      if (enableReasoningReplay) {
+        const serialized = resolvedMaxChars === undefined
+          ? reasoningBlockToInlineText(block)
+          : reasoningBlockToInlineText(block, { maxChars: resolvedMaxChars })
+        if (serialized.length > 0) {
+          pendingThinkingParts.push(serialized)
+        }
+      }
     } else if (block.type === 'text') {
-      textParts.push(block.text)
+      if (pendingThinkingParts.length > 0) {
+        textParts.push(`${pendingThinkingParts.join('')}${block.text}`)
+        pendingThinkingParts.length = 0
+      } else {
+        textParts.push(block.text)
+      }
     }
+  }
+
+  if (pendingThinkingParts.length > 0) {
+    textParts.push(pendingThinkingParts.join(''))
+  }
+
+  if (toolCalls.length === 0 && textParts.length === 0) {
+    return null
   }
 
   const assistantMsg: ChatCompletionAssistantMessageParam = {
@@ -155,6 +266,21 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
 
   if (toolCalls.length > 0) {
     assistantMsg.tool_calls = toolCalls
+  }
+
+  // DeepSeek V4 (thinking mode) returns 400 on follow-up requests if any
+  // intermediate assistant message in a tool-calling conversation drops
+  // `reasoning_content` — including the final synthesis message that has
+  // no tool_calls of its own. The gate is on the whole conversation, not
+  // this single message. Non-tool conversations skip the attachment (per
+  // spec, reasoning is ignored there but would still bloat context).
+  //
+  // The field is not declared on the upstream SDK type, so we attach it
+  // via an indexed cast; the SDK serialises arbitrary own properties.
+  if (conversationHasToolUse && echoEligibleReasoning.length > 0) {
+    const reasoningContent = echoEligibleReasoning.join('')
+    ;(assistantMsg as ChatCompletionAssistantMessageParam & { reasoning_content?: string })
+      .reasoning_content = reasoningContent
   }
 
   return assistantMsg
@@ -176,29 +302,36 @@ function toOpenAIAssistantMessage(msg: LLMMessage): ChatCompletionAssistantMessa
  *                          that looks like a tool call, the fallback extractor
  *                          uses this list to validate matches. Pass the names
  *                          of tools sent in the request for best results.
+ * @param provenance      - Optional adapter-name string stamped onto any
+ *                          extracted {@link ReasoningBlock}, so downstream
+ *                          outbound paths can distinguish native-echo eligible
+ *                          blocks from foreign ones (see #223). Each
+ *                          OpenAI-family adapter should pass its own
+ *                          {@link LLMAdapter.name}.
  */
 export function fromOpenAICompletion(
   completion: ChatCompletion,
   knownToolNames?: string[],
+  provenance?: string,
 ): LLMResponse {
-  const choice = completion.choices[0]
+  const choice = completion.choices?.[0]
   if (choice === undefined) {
     throw new Error('OpenAI returned a completion with no choices')
   }
 
   const content: ContentBlock[] = []
-  const message = choice.message as any // Cast to any to access reasoning_content
+  const message = choice.message
 
-  let fullText = ''
-  if (message.reasoning_content !== null && message.reasoning_content !== undefined) {
-    fullText += `<think>\n${message.reasoning_content}\n</think>\n`
+  const reasoningText = getOpenAIReasoningText(message)
+  if (reasoningText.length > 0) {
+    const reasoningBlock: ReasoningBlock = provenance !== undefined
+      ? { type: 'reasoning', text: reasoningText, provenance }
+      : { type: 'reasoning', text: reasoningText }
+    content.push(reasoningBlock)
   }
+
   if (message.content !== null && message.content !== undefined) {
-    fullText += message.content
-  }
-
-  if (fullText.length > 0) {
-    const textBlock: TextBlock = { type: 'text', text: fullText }
+    const textBlock: TextBlock = { type: 'text', text: message.content }
     content.push(textBlock)
   }
 
@@ -247,9 +380,11 @@ export function fromOpenAICompletion(
     !hasNativeToolCalls &&
     knownToolNames !== undefined &&
     knownToolNames.length > 0 &&
-    fullText.length > 0
+    message.content !== null &&
+    message.content !== undefined &&
+    message.content.length > 0
   ) {
-    const extracted = extractToolCallsFromText(fullText, knownToolNames)
+    const extracted = extractToolCallsFromText(message.content, knownToolNames)
     if (extracted.length > 0) {
       content.push(...extracted)
     }
@@ -303,6 +438,7 @@ export function normalizeFinishReason(reason: string): string {
 export function buildOpenAIMessageList(
   messages: LLMMessage[],
   systemPrompt: string | undefined,
+  outboundOptions?: ReasoningOutboundOptions,
 ): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = []
 
@@ -310,6 +446,6 @@ export function buildOpenAIMessageList(
     result.push({ role: 'system', content: systemPrompt })
   }
 
-  result.push(...toOpenAIMessages(messages))
+  result.push(...toOpenAIMessages(messages, outboundOptions))
   return result
 }
