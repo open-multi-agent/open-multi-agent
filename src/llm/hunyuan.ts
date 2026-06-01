@@ -17,8 +17,8 @@ import { OpenAIAdapter } from './openai.js'
  *   provider: 'hunyuan'
  *   model: 'hy3-preview' (or any model available to your Hunyuan API key)
  *
- * Tool calling is supported on the hy3-preview, hunyuan-turbos, hunyuan-t1,
- * and hunyuan-functioncall model families.
+ * Tool calling is verified on the hy3-preview, hunyuan-turbos, and
+ * hunyuan-functioncall model families.
  *
  * Tencent exposes Hunyuan through two independent OpenAI-compatible surfaces
  * with separate API-key namespaces:
