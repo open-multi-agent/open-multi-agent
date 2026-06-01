@@ -399,4 +399,57 @@ describe('per-task verify hook', () => {
     expect(j2.calls()).toBe(0) // budget gate stopped the remaining judge
     expect(budgetEvents.length).toBe(1)
   })
+
+  it('does not overwrite the task result when the revision is still rejected', async () => {
+    // Worker emits 'original' first, then 'revised' once it sees its prior answer.
+    const worker = captureAdapter((p) => (p.includes('previous answer') ? 'revised' : 'original'))
+    const judge = captureAdapter(DISSENT) // never accepts → verdict stays rejected
+    const orch = new OpenMultiAgent()
+    const team = orch.createTeam('t', {
+      name: 't',
+      agents: [agent('worker', worker.adapter)],
+      sharedMemory: true,
+    })
+
+    const run = await orch.runTasks(team, [
+      {
+        title: 'verified',
+        description: 'do work',
+        assignee: 'worker',
+        verify: { judges: [agent('judge', judge.adapter)], quorum: 1, maxRounds: 2, onDissent: 'revise' },
+      },
+    ])
+    const taskId = run.tasks![0]!.id
+
+    const mem = team.getSharedMemoryInstance()!
+    // Rejected revision must not supersede the original task result downstream.
+    const result = await mem.read(`worker/task:${taskId}:result`)
+    expect(result?.value).toBe('original')
+    // The verdict is surfaced as a task-level outcome.
+    const verdict = await mem.read(`worker/task:${taskId}:verdict`)
+    expect(verdict?.value).toMatch(/^rejected/)
+  })
+
+  it('feeds the prior answer into the revision prompt', async () => {
+    const worker = captureAdapter((p) => (p.includes('previous answer') ? 'revised' : 'original'))
+    const judge = captureAdapter(DISSENT)
+    const orch = new OpenMultiAgent()
+    const team = orch.createTeam('t', {
+      name: 't',
+      agents: [agent('worker', worker.adapter)],
+    })
+
+    await orch.runTasks(team, [
+      {
+        title: 'verified',
+        description: 'do work',
+        assignee: 'worker',
+        verify: { judges: [agent('judge', judge.adapter)], quorum: 1, maxRounds: 2, onDissent: 'revise' },
+      },
+    ])
+
+    // The revision prompt (worker's 2nd call) must echo the answer being revised.
+    expect(worker.prompts[1]).toContain('## Your previous answer')
+    expect(worker.prompts[1]).toContain('original')
+  })
 })

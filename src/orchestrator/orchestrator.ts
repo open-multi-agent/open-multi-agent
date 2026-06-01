@@ -980,15 +980,18 @@ function buildJudgePrompt(p: {
   ].join('\n')
 }
 
-/** Build the proposer prompt for a revision round, feeding back the dissent. */
-function buildRevisePrompt(prompt: string, dissent: readonly string[]): string {
+/** Build the proposer prompt for a revision round, feeding back the prior answer and the dissent. */
+function buildRevisePrompt(prompt: string, answer: string, dissent: readonly string[]): string {
   return [
     prompt,
+    '',
+    '## Your previous answer',
+    answer,
     '',
     '## Reviewer critiques to address',
     ...dissent.map((d) => `- ${d}`),
     '',
-    'Revise your answer to address every critique above. Respond with the improved answer only.',
+    'Revise the previous answer to address every critique above. Respond with the improved answer only.',
   ].join('\n')
 }
 
@@ -1124,7 +1127,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
 
     // Round missed quorum. Revise (if rounds remain) or stop.
     if (onDissent === 'revise' && round < maxRounds && reviseProposer) {
-      const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, roundDissent))
+      const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, answer, roundDissent))
       usage = addUsage(usage, r.tokenUsage)
       if (r.success && r.output) answer = r.output
       if (overBudget()) { budgetHit = true; break }
@@ -1163,7 +1166,10 @@ async function runTaskVerify(
     budgetBaseTokens: ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens,
     judges: verify.judges,
     mode: verify.mode ?? 'refute',
-    quorum: Math.max(1, verify.quorum ?? Math.ceil(verify.judges.length / 2)),
+    quorum: Math.min(
+      verify.judges.length,
+      Math.max(1, verify.quorum ?? Math.ceil(verify.judges.length / 2)),
+    ),
     maxRounds: Math.max(1, verify.maxRounds ?? 2),
     verdictSchema: verify.verdictSchema,
     onDissent: verify.onDissent ?? 'revise',
@@ -1191,8 +1197,18 @@ async function runTaskVerify(
     })
   }
 
-  // A revised answer supersedes the task result for downstream consumers.
-  if (consensus.answer && consensus.answer !== result.output) {
+  // Surface the verdict as a task-level outcome so downstream agents and the
+  // final synthesis can see whether the result survived scrutiny.
+  if (sharedMem) {
+    const summary = consensus.verdict === 'accepted'
+      ? 'accepted'
+      : `rejected${consensus.dissent.length ? `: ${consensus.dissent.join('; ')}` : ''}`
+    await sharedMem.write(assignee, `task:${task.id}:verdict`, summary)
+  }
+
+  // Only an *accepted* revision supersedes the task result downstream; a rejected
+  // revision is recorded as dissent but never overwrites the original output.
+  if (consensus.verdict === 'accepted' && consensus.answer && consensus.answer !== result.output) {
     queue.update(task.id, { result: consensus.answer })
     if (sharedMem) await sharedMem.write(assignee, `task:${task.id}:result`, consensus.answer)
   }
@@ -1818,7 +1834,10 @@ export class OpenMultiAgent {
 
     const mode = options.mode ?? 'refute'
     const maxRounds = Math.max(1, options.maxRounds ?? 2)
-    const quorum = Math.max(1, options.quorum ?? Math.ceil(options.judges.length / 2))
+    const quorum = Math.min(
+      options.judges.length,
+      Math.max(1, options.quorum ?? Math.ceil(options.judges.length / 2)),
+    )
     const onDissent = options.onDissent ?? 'revise'
     const budget = this.config.maxTokenBudget
     const defaults: ConsensusAgentDefaults = {
