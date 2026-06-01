@@ -1,8 +1,9 @@
 /**
  * @fileoverview Hunyuan (Tencent) adapter.
  *
- * Thin wrapper around OpenAIAdapter that hard-codes Tencent Hunyuan's official
- * OpenAI-compatible endpoint and HUNYUAN_API_KEY environment variable fallback.
+ * Thin wrapper around OpenAIAdapter that defaults to Tencent Hunyuan's current
+ * MaaS / TokenHub OpenAI-compatible endpoint, with a HUNYUAN_API_KEY
+ * environment variable fallback.
  */
 
 import { OpenAIAdapter } from './openai.js'
@@ -14,10 +15,10 @@ import { OpenAIAdapter } from './openai.js'
  *
  * Usage:
  *   provider: 'hunyuan'
- *   model: 'hunyuan-turbos-latest' (or any model available to your Hunyuan API key)
+ *   model: 'hy3-preview' (or any model available to your Hunyuan API key)
  *
- * Tool calling is supported on the hunyuan-turbos, hunyuan-t1, and
- * hunyuan-functioncall model families.
+ * Tool calling is supported on the hy3-preview, hunyuan-turbos, hunyuan-t1,
+ * and hunyuan-functioncall model families.
  *
  * Tencent exposes Hunyuan through two independent OpenAI-compatible surfaces
  * with separate API-key namespaces:
