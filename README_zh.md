@@ -321,7 +321,7 @@ const agent: AgentConfig = {
 
 | 类型 | 配置方式 | 服务 |
 |------|--------|------|
-| 内置快捷方式 | 设 `provider` 为 `anthropic`、`gemini`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`doubao`、`minimax`、`mimo`、`qiniu`、`bedrock`；框架自带 endpoint。 | Anthropic、Gemini、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、Doubao（火山引擎）、MiniMax、MiMo、Qiniu、AWS Bedrock |
+| 内置快捷方式 | 设 `provider` 为 `anthropic`、`gemini`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`doubao`、`hunyuan`、`minimax`、`mimo`、`qiniu`、`bedrock`；框架自带 endpoint。 | Anthropic、Gemini、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、Doubao（火山引擎）、Hunyuan（腾讯混元 MaaS）、MiniMax、MiMo、Qiniu、AWS Bedrock |
 | OpenAI 兼容端点 | 设 `provider: 'openai'` + `baseURL`，必要时加 `apiKey`。 | Ollama、vLLM、LM Studio、llama.cpp server、OpenRouter、Groq、Mistral、Moonshot（Kimi）、Qwen、Zhipu（智谱） |
 | Vercel AI SDK | 从 `@open-multi-agent/core/ai-sdk` 导入 `AISdkAdapter`；安装可选 peer `ai` 加一个 `@ai-sdk/*` provider。 | [任意 AI SDK provider](https://ai-sdk.dev/providers)（60+ 模型与平台） |
 

@@ -39,7 +39,7 @@ import type { LLMAdapter } from '../types.js'
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
  * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'minimax' | 'mimo' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'hunyuan' | 'minimax' | 'mimo' | 'openai' | 'gemini' | 'qiniu'
 
 /**
  * Instantiate the appropriate {@link LLMAdapter} for the given provider.
@@ -55,6 +55,8 @@ export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copi
  * - `mimo`         → `MIMO_API_KEY`, optional `MIMO_BASE_URL`
  * - `deepseek`     → `DEEPSEEK_API_KEY`
  * - `doubao`       → `ARK_API_KEY`
+ * - `hunyuan`      → `HUNYUAN_API_KEY`, optional `HUNYUAN_BASE_URL`
+ *                     (defaults to the Tencent MaaS / TokenHub endpoint)
  * - `qiniu`        → `QINIU_API_KEY`
  * - `bedrock`      → no API key; credentials via AWS SDK default provider chain
  *                     (env vars, shared config, IAM role). Pass `region` (4th arg)
@@ -116,6 +118,10 @@ export async function createAdapter(
     case 'doubao': {
       const { DoubaoAdapter } = await import('./doubao.js')
       return new DoubaoAdapter(apiKey, baseURL)
+    }
+    case 'hunyuan': {
+      const { HunyuanAdapter } = await import('./hunyuan.js')
+      return new HunyuanAdapter(apiKey, baseURL)
     }
     case 'qiniu': {
       const { QiniuAdapter } = await import('./qiniu.js')
