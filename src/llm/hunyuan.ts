@@ -35,6 +35,25 @@ import { OpenAIAdapter } from './openai.js'
 export class HunyuanAdapter extends OpenAIAdapter {
   readonly name = 'hunyuan'
 
+  // Hunyuan's interleaved-thinking mode (hy3-preview with
+  // `reasoning_effort: 'low' | 'high'`) requires the prior turn's
+  // `reasoning_content` to be backfilled on every follow-up request that
+  // continues a tool-calling conversation, otherwise the chain of thought is
+  // broken and answer quality degrades. See:
+  //   https://cloud.tencent.com/document/product/1823/130930 (Interleaved Thinking)
+  //   https://cloud.tencent.com/document/product/1823/132252 (Hunyuan call guide)
+  // `'tool-use-only'` makes the OpenAIAdapter base class pass
+  // `nativeReasoningEchoProvider: 'hunyuan'` to the message builder, which
+  // re-attaches `reasoning_content` on assistant turns of a tool-using
+  // conversation that carry a hunyuan-provenance reasoning block. Non-thinking
+  // models on this provider (e.g. hunyuan-turbos, hunyuan-functioncall) never
+  // emit `reasoning_content`, so the echo is a no-op for them — safe as a
+  // family-wide default. (Unlike DeepSeek, Hunyuan does not hard-400 when the
+  // field is dropped; the spec frames it as a quality requirement.)
+  override readonly capabilities = {
+    echoesReasoning: 'tool-use-only' as const,
+  }
+
   constructor(apiKey?: string, baseURL?: string) {
     // Default to the current Tencent MaaS / TokenHub endpoint; allow override
     // of baseURL (legacy Tencent Cloud endpoint, proxies, or future clusters).

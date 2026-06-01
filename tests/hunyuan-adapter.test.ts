@@ -39,6 +39,16 @@ describe('HunyuanAdapter', () => {
     expect(adapter.name).toBe('hunyuan')
   })
 
+  it('overrides capabilities to echoesReasoning: "tool-use-only"', () => {
+    // hy3-preview's interleaved-thinking mode requires `reasoning_content` to
+    // be backfilled on every tool-using turn (Tencent TokenHub spec). The
+    // override propagates `nativeReasoningEchoProvider: 'hunyuan'` to the
+    // message builder; non-thinking Hunyuan models emit no reasoning, so the
+    // echo is a no-op for them. Must NOT inherit OpenAI's default `'never'`.
+    const adapter = new HunyuanAdapter('dummy-key')
+    expect(adapter.capabilities).toEqual({ echoesReasoning: 'tool-use-only' })
+  })
+
   it('uses HUNYUAN_API_KEY by default', () => {
     const original = process.env['HUNYUAN_API_KEY']
     process.env['HUNYUAN_API_KEY'] = 'hunyuan-test-key-123'
