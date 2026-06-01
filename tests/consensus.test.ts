@@ -315,6 +315,24 @@ describe('runConsensus dissent plumbing', () => {
     expect(consensusTraces.length).toBe(1)
     expect(consensusTraces[0]).toMatchObject({ accepted: false, round: 1, agent: 'judge' })
   })
+
+  it('emits an accepted trace for a judge that accepts (no dissent)', async () => {
+    const traces: TraceEvent[] = []
+    const orch = new OpenMultiAgent({ onTrace: (e) => traces.push(e) })
+    const team = orch.createTeam('t', { name: 't', agents: [], sharedMemory: true })
+
+    await orch.runConsensus(team, 'go', {
+      proposer: agent('proposer', captureAdapter('answer').adapter),
+      judges: [agent('judge', captureAdapter(ACCEPT).adapter)],
+      quorum: 1,
+      maxRounds: 1,
+    })
+
+    const consensusTraces = traces.filter((t) => t.type === 'consensus')
+    expect(consensusTraces.length).toBe(1)
+    expect(consensusTraces[0]).toMatchObject({ accepted: true, round: 1, agent: 'judge' })
+    expect((consensusTraces[0] as { dissent?: string }).dissent).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------

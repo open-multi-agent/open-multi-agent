@@ -1090,6 +1090,23 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
       if (overBudget()) { budgetHit = true; break }
 
       const verdict = parseJudgeVerdict(r.output, verdictSchema)
+
+      // Trace every verdict (accept or dissent); shared memory records dissent only.
+      if (onTrace) {
+        const now = Date.now()
+        emitTrace(onTrace, {
+          type: 'consensus',
+          runId: runId ?? '',
+          agent: judge.name,
+          round,
+          accepted: verdict.accept,
+          ...(verdict.accept ? {} : { dissent: verdict.critique }),
+          startMs: now,
+          endMs: now,
+          durationMs: 0,
+        })
+      }
+
       if (verdict.accept) {
         acceptCount++
         if (acceptCount >= quorum) { accepted = true; break }
@@ -1099,20 +1116,6 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
         dissent.push(labelled)
         if (sharedMem) {
           await sharedMem.write(judge.name, `consensus:round:${round}:dissent`, verdict.critique)
-        }
-        if (onTrace) {
-          const now = Date.now()
-          emitTrace(onTrace, {
-            type: 'consensus',
-            runId: runId ?? '',
-            agent: judge.name,
-            round,
-            accepted: false,
-            dissent: verdict.critique,
-            startMs: now,
-            endMs: now,
-            durationMs: 0,
-          })
         }
       }
     }

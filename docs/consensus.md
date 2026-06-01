@@ -60,4 +60,4 @@ Consensus token usage counts against the parent budget exactly like delegation d
 
 ## Observability
 
-Each dissenting verdict is written to shared memory (under the judge's namespace, key `consensus:round:N:dissent`) and emitted as a `consensus` trace event via `onTrace`, so you can audit which judge objected and why.
+Every judge verdict is emitted as a `consensus` trace event via `onTrace` (with `accepted` set to the judge's decision and `dissent` carrying the critique when it objected), so you can audit each round. Dissenting critiques are additionally written to shared memory (under the judge's namespace, key `consensus:round:N:dissent`).
