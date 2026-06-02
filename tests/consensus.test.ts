@@ -87,6 +87,25 @@ describe('runConsensus token accounting', () => {
     expect(res.answer).toBe('Paris.')
   })
 
+  it('rejects (never accepts) when every proposer produces no output', async () => {
+    // A proposer that yields nothing must not come back accepted on an empty answer.
+    const proposer = captureAdapter('', { input_tokens: 4, output_tokens: 0 })
+    const judge = captureAdapter(ACCEPT)
+    const orch = new OpenMultiAgent()
+    const team = orch.createTeam('t', { name: 't', agents: [] })
+
+    const res = await orch.runConsensus(team, 'go', {
+      proposer: agent('proposer', proposer.adapter),
+      judges: [agent('judge', judge.adapter)],
+      quorum: 1,
+    })
+
+    expect(res.verdict).toBe('rejected')
+    expect(res.answer).toBe('')
+    expect(judge.calls()).toBe(0) // nothing to judge → judges never run
+    expect(res.tokenUsage).toEqual({ input_tokens: 4, output_tokens: 0 })
+  })
+
   it('stops issuing judge calls once cumulative usage crosses the parent budget', async () => {
     // proposer 20, judge1 +10 = 30 > budget 25 → stop before judge2.
     const proposer = captureAdapter('answer', { input_tokens: 10, output_tokens: 10 })
@@ -428,6 +447,46 @@ describe('per-task verify hook', () => {
     // The verdict is surfaced as a task-level outcome.
     const verdict = await mem.read(`worker/task:${taskId}:verdict`)
     expect(verdict?.value).toMatch(/^rejected/)
+  })
+
+  it('surfaces an accepted revision to the caller, not just downstream', async () => {
+    // Judge dissents on the original, accepts once it sees the revision.
+    const worker = captureAdapter((p) => (p.includes('previous answer') ? 'revised' : 'original'))
+    const judge = captureAdapter((p) => (p.includes('revised') ? ACCEPT : DISSENT))
+    const events: { type: string; output: string }[] = []
+    const orch = new OpenMultiAgent({
+      onProgress: (e) => {
+        if (e.type === 'task_complete' || e.type === 'agent_complete') {
+          events.push({ type: e.type, output: (e.data as { output: string }).output })
+        }
+      },
+    })
+    const team = orch.createTeam('t', {
+      name: 't',
+      agents: [agent('worker', worker.adapter)],
+      sharedMemory: true,
+    })
+
+    const run = await orch.runTasks(team, [
+      {
+        title: 'verified',
+        description: 'do work',
+        assignee: 'worker',
+        verify: { judges: [agent('judge', judge.adapter)], quorum: 1, maxRounds: 2, onDissent: 'revise' },
+      },
+    ])
+    const taskId = run.tasks![0]!.id
+
+    // The accepted revision must reach the returned result, the progress events,
+    // and shared memory — not vanish while only downstream tasks see it.
+    expect(run.agentResults.get('worker')?.output).toBe('revised')
+    expect(events).toEqual([
+      { type: 'task_complete', output: 'revised' },
+      { type: 'agent_complete', output: 'revised' },
+    ])
+    const mem = team.getSharedMemoryInstance()!
+    expect((await mem.read(`worker/task:${taskId}:result`))?.value).toBe('revised')
+    expect((await mem.read(`worker/task:${taskId}:verdict`))?.value).toBe('accepted')
   })
 
   it('feeds the prior answer into the revision prompt', async () => {

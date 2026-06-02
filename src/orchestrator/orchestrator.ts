@@ -755,37 +755,44 @@ async function executeQueue(
       }
 
       if (result.success) {
-        // Persist result into shared memory so other agents can read it
         const sharedMem = team.getSharedMemoryInstance()
+
+        // Opt-in consensus verification runs *before* the task is finalised so the
+        // verified outcome (accepted → revised, rejected → original) flows into the
+        // queue, shared memory, progress events, and agentResults as one consistent
+        // result. Judge usage is charged to the same parent budget as the rest of the run.
+        let effective = result
+        if (task.verify && !ctx.budgetExceededTriggered) {
+          effective = await runTaskVerify(task, assignee, result, sharedMem, ctx)
+        }
+
+        // Reflect the verified result in the per-task record the caller receives.
+        ctx.agentResults.set(`${assignee}:${task.id}`, effective)
+
+        // Persist result into shared memory so other agents can read it
         if (sharedMem) {
-          await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
+          await sharedMem.write(assignee, `task:${task.id}:result`, effective.output)
           // Advance the turn counter so any TTL-tagged entries written during
           // this task can be expired by subsequent reads.
           sharedMem.advanceTurn()
         }
 
-        const completedTask = queue.complete(task.id, result.output)
+        const completedTask = queue.complete(task.id, effective.output)
         completedThisRound.push(completedTask)
 
         config.onProgress?.({
           type: 'task_complete',
           task: task.id,
           agent: assignee,
-          data: result,
+          data: effective,
         } satisfies OrchestratorEvent)
 
         config.onProgress?.({
           type: 'agent_complete',
           agent: assignee,
           task: task.id,
-          data: result,
+          data: effective,
         } satisfies OrchestratorEvent)
-
-        // Opt-in consensus verification: judges scrutinise this task's result,
-        // their usage charged to the same parent budget as the rest of the run.
-        if (task.verify && !ctx.budgetExceededTriggered) {
-          await runTaskVerify(task, assignee, result, sharedMem, queue, ctx)
-        }
       } else {
         queue.fail(task.id, result.output)
         config.onProgress?.({
@@ -1142,18 +1149,20 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
 }
 
 /**
- * Run the per-task `verify` hook after a task completes: feed the task result
- * into the consensus loop, fold judge usage into the run's cumulative budget,
- * and replace the task result when consensus revises it.
+ * Run the per-task `verify` hook before a task is finalised: feed the task
+ * result into the consensus loop, fold judge usage into the run's cumulative
+ * budget, surface the verdict, and return the effective result — the accepted
+ * revision when judges revise it, otherwise the original. The caller uses this
+ * to finalise the task so the queue, shared memory, events, and agentResults
+ * all agree on the verified outcome.
  */
 async function runTaskVerify(
   task: Task,
   assignee: string,
   result: AgentRunResult,
   sharedMem: ReturnType<Team['getSharedMemoryInstance']>,
-  queue: TaskQueue,
   ctx: RunContext,
-): Promise<void> {
+): Promise<AgentRunResult> {
   const verify = task.verify!
   const { team, config } = ctx
   const assigneeConfig = team.getAgents().find((a) => a.name === assignee)
@@ -1188,14 +1197,6 @@ async function runTaskVerify(
   })
 
   ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, consensus.tokenUsage)
-  // Keep the reported per-task usage consistent (mirrors how delegation usage rolls in).
-  const stored = ctx.agentResults.get(`${assignee}:${task.id}`)
-  if (stored) {
-    ctx.agentResults.set(`${assignee}:${task.id}`, {
-      ...stored,
-      tokenUsage: addUsage(stored.tokenUsage, consensus.tokenUsage),
-    })
-  }
 
   // Surface the verdict as a task-level outcome so downstream agents and the
   // final synthesis can see whether the result survived scrutiny.
@@ -1204,13 +1205,6 @@ async function runTaskVerify(
       ? 'accepted'
       : `rejected${consensus.dissent.length ? `: ${consensus.dissent.join('; ')}` : ''}`
     await sharedMem.write(assignee, `task:${task.id}:verdict`, summary)
-  }
-
-  // Only an *accepted* revision supersedes the task result downstream; a rejected
-  // revision is recorded as dissent but never overwrites the original output.
-  if (consensus.verdict === 'accepted' && consensus.answer && consensus.answer !== result.output) {
-    queue.update(task.id, { result: consensus.answer })
-    if (sharedMem) await sharedMem.write(assignee, `task:${task.id}:result`, consensus.answer)
   }
 
   const total = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
@@ -1224,6 +1218,17 @@ async function runTaskVerify(
       task: task.id,
       data: err,
     } satisfies OrchestratorEvent)
+  }
+
+  // Only an *accepted* revision supersedes the task result; a rejected revision is
+  // recorded as dissent but the caller finalises with the original output. Judge
+  // usage rolls into the per-task usage (mirrors how delegation usage rolls in).
+  const useRevision =
+    consensus.verdict === 'accepted' && consensus.answer && consensus.answer !== result.output
+  return {
+    ...result,
+    output: useRevision ? consensus.answer : result.output,
+    tokenUsage: addUsage(result.tokenUsage, consensus.tokenUsage),
   }
 }
 
@@ -1878,6 +1883,12 @@ export class OpenMultiAgent {
           tokenUsage: usage,
         }
       }
+    }
+
+    // Every proposer failed or returned empty output: there is nothing to judge.
+    // Bail with a rejected verdict so an empty answer can never come back accepted.
+    if (candidates.length === 0) {
+      return { answer: '', verdict: 'rejected', dissent: [], rounds: 0, tokenUsage: usage }
     }
 
     return runConsensusCore({
