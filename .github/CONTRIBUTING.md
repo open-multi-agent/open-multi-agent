@@ -24,7 +24,7 @@ npm run test:watch   # Vitest watch mode
 
 ## Running Tests
 
-All tests live in `tests/`. They test core modules (TaskQueue, SharedMemory, ToolExecutor, Semaphore) without requiring API keys or network access.
+All tests live in `tests/` and run without API keys or network access — adapter tests mock the provider SDKs, and the rest cover core modules (TaskQueue, SharedMemory, ToolExecutor, Semaphore, and more).
 
 ```bash
 npm test
@@ -61,7 +61,7 @@ See the [README](../README.md#architecture) for an architecture diagram. Key ent
 - **Task system**: `src/task/queue.ts`, `src/task/task.ts` — dependency DAG
 - **Agent**: `src/agent/runner.ts` — conversation loop
 - **Tools**: `src/tool/framework.ts`, `src/tool/executor.ts` — tool registry and execution
-- **LLM adapters**: `src/llm/` — Anthropic, OpenAI, Copilot
+- **LLM adapters**: `src/llm/` — 12 built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
 
 ## Where to Contribute
 

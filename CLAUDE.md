@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the working map for editing this repository: the conventions, the layer layout, the non-obvious invariants, and pointers into `docs/`. It stays lean because it loads into every Claude Code session. Conceptual architecture, the provider table, and the production checklist live in [README.md](README.md); detailed subsystem behavior lives in [`docs/`](docs/) and is linked inline below rather than duplicated here.
 
 ## Commands
 
@@ -15,113 +15,70 @@ npm run test:e2e       # E2E suite (requires RUN_E2E=1, real API keys)
 node dist/cli/oma.js help   # After build: shell/CI CLI (`oma` when installed via npm bin)
 ```
 
-Tests live in `tests/` (vitest); E2E suite under `tests/e2e/`. Examples in `examples/` are standalone scripts requiring API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) and are organized by intent: `basics/`, `cookbook/`, `patterns/`, `providers/`, `integrations/`, `production/`, with shared `fixtures/`. CLI usage and JSON schemas: `docs/cli.md`.
+Tests live in `tests/` (vitest), E2E under `tests/e2e/`. Standalone `examples/` need real API keys and are grouped by intent (`basics/`, `cookbook/`, `patterns/`, `providers/`, `integrations/`, `production/`).
+
+## Code style & workflow
+
+- **ESM imports need `.js` extensions**: `import { X } from './foo.js'` even though the source is `foo.ts`. TypeScript strict; no eslint/prettier, so match existing patterns.
+- **After a change**, run `npm run lint` (typecheck) + the relevant tests. `tests/` need no API keys; `examples/` and `tests/e2e/` do.
+- **Keep runtime deps at three** (`@anthropic-ai/sdk`, `openai`, `zod`); new SDKs enter as lazy optional peers.
+- **PRs** must pass `npm run lint && npm test` (CI on Node 18/20/22). Conventional commits, reference PR/issue #. Full flow: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 ## Architecture
 
-ES module TypeScript framework for multi-agent orchestration. Three runtime dependencies: `@anthropic-ai/sdk`, `openai`, `zod`. Optional peer deps `@aws-sdk/client-bedrock-runtime` (Bedrock), `@google/genai` (Gemini), and `@modelcontextprotocol/sdk` (MCP) are loaded lazily so users only install what they use; the three-dependency promise covers `dependencies` only.
-
-### Core Execution Flow
+ES module TypeScript framework for multi-agent orchestration. **Three runtime dependencies only**: `@anthropic-ai/sdk`, `openai`, `zod`. Optional peers (`@aws-sdk/client-bedrock-runtime`, `@google/genai`, `@modelcontextprotocol/sdk`, `ai`) load lazily via dynamic `import()` so unused SDKs never resolve; the three-dependency promise covers `dependencies` only.
 
 **`OpenMultiAgent`** (`src/orchestrator/orchestrator.ts`) is the top-level public API with three execution modes:
 
 1. **`runAgent(config, prompt)`** — single agent, one-shot
-2. **`runTeam(team, goal)`** — automatic orchestration: a temporary "coordinator" agent decomposes the goal into a task DAG via LLM call, then tasks execute in dependency order
-3. **`runTasks(team, tasks)`** — explicit task pipeline with user-defined dependencies
+2. **`runTeam(team, goal)`** — a temporary "coordinator" agent decomposes the goal into a task DAG (a single coordinator pass), then tasks run in dependency order
+3. **`runTasks(team, tasks)`** — explicit task pipeline with user-defined `dependsOn`
 
 ### The Coordinator Pattern (runTeam)
 
-This is the framework's key feature. When `runTeam()` is called:
-1. A coordinator agent receives the goal + agent roster and produces a JSON task array (title, description, assignee, dependsOn)
-2. `TaskQueue` resolves dependencies topologically — independent tasks run in parallel, dependent tasks wait
-3. `Scheduler` auto-assigns any unassigned tasks (strategies: `dependency-first` default, `round-robin`, `least-busy`, `capability-match`)
-4. Each task result is written to `SharedMemory` so subsequent agents see prior results
-5. The coordinator synthesizes all task results into a final output
+The framework's key feature. The coordinator receives goal + roster → emits a JSON task array (title, description, assignee, dependsOn) → `TaskQueue` resolves dependencies topologically (independent tasks run in parallel, dependents wait) → `Scheduler` auto-assigns unassigned tasks (`dependency-first` default; also `round-robin`, `least-busy`, `capability-match`) → each result is written to `SharedMemory` for later agents → the coordinator synthesizes the final output.
 
 ### Layer Map
 
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
-| Orchestrator | `orchestrator/orchestrator.ts`, `orchestrator/scheduler.ts` | Top-level API, task decomposition, coordinator pattern |
-| Team | `team/team.ts`, `team/messaging.ts` | Agent roster, MessageBus (point-to-point + broadcast), SharedMemory binding |
-| Agent | `agent/agent.ts`, `agent/runner.ts`, `agent/pool.ts`, `agent/structured-output.ts`, `agent/loop-detector.ts` | Agent lifecycle (idle→running→completed/error), conversation loop, concurrency pool with Semaphore, structured output validation, sliding-window loop detection |
-| Task | `task/queue.ts`, `task/task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
-| Tool | `tool/framework.ts`, `tool/executor.ts`, `tool/mcp.ts`, `tool/text-tool-extractor.ts`, `tool/built-in/` | `defineTool()` with Zod schemas, ToolRegistry, parallel batch execution with concurrency semaphore, MCP integration, fallback text-format tool-call extraction for local models |
-| LLM | `llm/adapter.ts` + per-provider files (`anthropic`, `openai`, `azure-openai`, `bedrock`, `gemini`, `grok`, `deepseek`, `minimax`, `qiniu`, `copilot`) + `openai-common.ts` | `LLMAdapter` interface (`chat` + `stream`); async `createAdapter()` factory imports the chosen adapter lazily so unused SDKs aren't loaded; `baseURL` parameter targets OpenAI-compatible servers (Ollama, vLLM, LM Studio) |
-| Memory | `memory/shared.ts`, `memory/store.ts` | Namespaced key-value store (`agentName/key`), markdown summary injection into prompts. Custom backends via `TeamConfig.sharedMemoryStore` (any `MemoryStore` impl); `sharedMemory: true` uses the default in-process store |
-| Dashboard | `dashboard/render-team-run-dashboard.ts`, `dashboard/layout-tasks.ts` | Pure HTML renderer for the post-run team task DAG (no I/O) |
-| CLI | `cli/oma.ts` | Shell/CI entry; built to `dist/cli/oma.js` and exposed as the `oma` npm bin |
-| Utils | `utils/semaphore.ts`, `utils/tokens.ts`, `utils/keywords.ts`, `utils/trace.ts` | Concurrency primitive, token accounting, keyword helpers, trace plumbing |
-| Errors | `errors.ts` | Shared error types |
-| Types | `types.ts` | All interfaces in one file to avoid circular deps |
-| Exports | `index.ts` (root, `'@open-multi-agent/core'`), `mcp.ts` (subpath, `'@open-multi-agent/core/mcp'`), `ai-sdk.ts` (subpath, `'@open-multi-agent/core/ai-sdk'`) | Public API surface; MCP and AI SDK bridges are separate entry points so users without those optional peers don't break TS on the main import |
+| Orchestrator | `orchestrator/orchestrator.ts`, `scheduler.ts` | Top-level API, task decomposition, retry/backoff, coordinator |
+| Team | `team/team.ts`, `messaging.ts` | Agent roster, MessageBus (point-to-point + broadcast), SharedMemory binding |
+| Agent | `agent/agent.ts`, `runner.ts`, `pool.ts`, `structured-output.ts`, `loop-detector.ts` | Lifecycle (idle→running→completed/error), conversation loop, concurrency pool + per-agent mutex, structured-output validation, loop detection |
+| Task | `task/queue.ts`, `task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
+| Tool | `tool/framework.ts`, `executor.ts`, `mcp.ts`, `text-tool-extractor.ts`, `built-in/` | `defineTool()` + Zod, ToolRegistry, parallel batch exec, MCP bridge, local-model text tool-call fallback, filesystem sandbox |
+| LLM | `llm/adapter.ts` + 12 per-provider files + `openai-common.ts` + `reasoning-fallback.ts` | `LLMAdapter` (`chat` + `stream`); lazy `createAdapter()` factory; `baseURL` for OpenAI-compatible servers; cross-provider reasoning round-tripping |
+| Memory | `memory/shared.ts`, `store.ts` | Namespaced KV store (`agentName/key`), markdown summary injection; pluggable `MemoryStore` backends |
+| Dashboard | `dashboard/*.ts` | Pure HTML renderer for the post-run task DAG (no I/O) |
+| CLI | `cli/oma.ts` | Shell/CI entry; built to `dist/cli/oma.js`, exposed as the `oma` npm bin |
+| Utils | `utils/*.ts` | Semaphore, token accounting, keyword helpers, trace plumbing, secret/PII redaction |
+| Types / Errors | `types.ts`, `errors.ts` | All interfaces in one file (avoids circular deps); shared error types |
+| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts` | Root + `/mcp` + `/ai-sdk` subpaths so optional peers don't break the main import |
 
-### Agent Conversation Loop (AgentRunner)
+### Non-obvious invariants
 
-`AgentRunner.run()`: send messages → extract tool-use blocks → execute tools in parallel batch → append results → loop until `end_turn` or `maxTurns` exhausted. Accumulates `TokenUsage` across all turns.
+Behavior that isn't visible from any single file and will cause bugs if missed:
 
-### Context Compaction
+- **Tool errors never throw** — they're caught and returned as `ToolResult(isError: true)`. Task failures cascade to dependents (independent tasks continue); LLM API errors propagate to the caller.
+- **`delegate_to_agent` is opt-in and orchestration-only** — injected only inside `runTeam`/`runTasks` pool workers, never in standalone `runAgent` or the `isSimpleGoal` short-circuit. Self-delegation, cycles, unknown targets, depth > `maxDelegationDepth` (default 3), and pool-slot exhaustion are all rejected in the tool; delegated token usage counts against the parent budget. → [docs/tool-configuration.md](docs/tool-configuration.md)
+- **Filesystem tools are sandboxed, `bash` is not** — `file_read/file_write/file_edit/grep/glob` resolve every path (symlinks included) within `AgentConfig.cwd` / `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables the sandbox; `process.cwd()` widens it. → [docs/tool-configuration.md](docs/tool-configuration.md)
+- **Reasoning is dropped unless opted in** — provider-native `ReasoningBlock`s the target adapter can't echo are silently dropped unless `AgentConfig.preserveReasoningAsText` is on (then converted to inline `<thinking>` text). `<thinking>` text is never parsed back into a signed block. → [docs/context-management.md](docs/context-management.md)
+- **Local-model tool-call fallback** — `text-tool-extractor.ts` only runs when the server emits no native `tool_calls` (Ollama/vLLM/LM Studio); native calls always win.
+- **Secrets are auto-redacted** from traces, bash output, and dashboard payloads (`utils/redaction.ts`).
 
-Long multi-turn runs risk exceeding the context window. `AgentRunner` offers three strategies (configured via `AgentConfig.contextStrategy`):
+### Subsystem docs
 
-- **`sliding-window`** — keeps the last N turns, dropping older ones. Preserves `tool_use`/`tool_result` pairs so the LLM never sees orphaned tool blocks.
-- **`compact`** — rewrites the conversation inline without an LLM call, collapsing large tool outputs that exceed a size threshold.
-- **`summarize`** — asks the LLM to summarise the history so far, replacing it with a concise digest. Image blocks are stripped before the summarise call to avoid ballooning token cost.
+Detailed behavior is documented in `docs/` — the single source of truth, so update it there rather than copying detail into this file:
 
-Optionally, `compressToolResults` (default false) truncates large tool results to a head+tail excerpt, keeping the total under a configurable `minChars` threshold. Delegation tool_result blocks are exempt from compression so the parent agent retains the full sub-agent output.
-
-### Concurrency Control
-
-Three semaphore layers: `AgentPool` pool-level (max concurrent agent runs, default 5), `AgentPool` per-agent mutex (serializes concurrent runs on the same `Agent` instance), and `ToolExecutor` (max concurrent tool calls, default 4).
-
-### Structured Output
-
-Optional `outputSchema` (Zod) on `AgentConfig`. When set, the agent's final output is parsed as JSON and validated. On validation failure, one retry with error feedback is attempted. Validated data is available via `result.structured`. Logic lives in `agent/structured-output.ts`, wired into `Agent.executeRun()`.
-
-### Task Retry
-
-Optional `maxRetries`, `retryDelayMs`, `retryBackoff` on task config (used via `runTasks()`). `executeWithRetry()` in `orchestrator.ts` handles the retry loop with exponential backoff (capped at 30s). Token usage is accumulated across all attempts. Emits `task_retry` event via `onProgress`.
-
-### Error Handling
-
-- Tool errors → caught, returned as `ToolResult(isError: true)`, never thrown
-- Task failures → retry if `maxRetries > 0`, then cascade to all dependents; independent tasks continue
-- LLM API errors → propagate to caller
-
-### Built-in Tools
-
-`bash`, `file_read`, `file_write`, `file_edit`, `grep`, `glob` — registered via `registerBuiltInTools(registry)`. `grep` and `glob` share a recursive directory walker in `tool/built-in/fs-walk.ts` (with a `SKIP_DIRS` set for `.git`, `node_modules`, `dist`, etc.) so their filtering rules stay consistent. `delegate_to_agent` is opt-in (`registerBuiltInTools(registry, { includeDelegateTool: true })`) and only wired up inside pool workers by `runTeam`/`runTasks` — see "Agent Delegation" below.
-
-### Local Model Support
-
-`tool/text-tool-extractor.ts` is a safety-net fallback for OpenAI-compatible local servers (Ollama thinking-model bug, vLLM, LM Studio) that emit tool calls as plain text instead of native `tool_calls` blocks. It recognises raw JSON, markdown-fenced JSON, Hermes-style `<tool_call>` tags, and JSON leaked inside unclosed `<think>` tags. Native `tool_calls` from the server always win; this only runs when none are present.
-
-### MCP Integration
-
-`connectMCPTools()` (in `tool/mcp.ts`) bridges Model Context Protocol servers into the `ToolRegistry`. Imported lazily and exposed via the dedicated `@open-multi-agent/core/mcp` package subpath (`src/mcp.ts`) so users who don't need MCP don't load `@modelcontextprotocol/sdk`.
-
-### Vercel AI SDK bridge
-
-`AISdkAdapter` (in `llm/ai-sdk.ts`) implements `LLMAdapter` via AI SDK `generateText` / `streamText`. Exposed via `@open-multi-agent/core/ai-sdk` (`src/ai-sdk.ts`) so users without the optional peer `ai` are not forced to resolve those types on the main barrel import.
-
-### Loop Detection
-
-Optional `LoopDetectionConfig` on the agent runner triggers `agent/loop-detector.ts`, a sliding-window detector that hashes tool-call signatures (with sorted JSON keys) and text outputs to catch agents stuck repeating the same actions across turns.
-
-### Agent Delegation
-
-`delegate_to_agent` (in `src/tool/built-in/delegate.ts`) lets an agent synchronously hand a sub-prompt to another roster agent and receive its final output as a tool result. Only active during orchestrated runs; standalone `runAgent` and the `runTeam` short-circuit path (`isSimpleGoal` hit) do not inject it.
-
-Guards (all enforced in the tool itself, before `runDelegatedAgent` is called):
-
-- **Self-delegation:** rejected (`target === context.agent.name`)
-- **Unknown agent:** rejected (target not in team roster)
-- **Cycle detection:** rejected if target already in `TeamInfo.delegationChain` (prevents `A → B → A` from burning tokens up to the depth cap)
-- **Depth cap:** `OrchestratorConfig.maxDelegationDepth` (default 3)
-- **Pool deadlock:** rejected when `AgentPool.availableRunSlots < 1`, without calling the pool
-
-The delegated run's `AgentRunResult.tokenUsage` is surfaced via `ToolResult.metadata.tokenUsage`; the runner accumulates it into `totalUsage` before the next `maxTokenBudget` check, so delegation cannot silently bypass the parent's budget. Delegation tool_result blocks are exempt from `compressToolResults` and the `compact` context strategy so the parent agent retains the full sub-agent output across turns. Best-effort SharedMemory audit writes at `{caller}/delegation:{target}:{timestamp}-{rand}` if the team has shared memory enabled.
+| Topic | Code | Doc |
+|-------|------|-----|
+| Context strategies, summarization, reasoning round-tripping | `agent/runner.ts`, `llm/reasoning-fallback.ts` | [context-management.md](docs/context-management.md) |
+| Tool presets, custom tools, sandbox, delegation, MCP | `tool/` | [tool-configuration.md](docs/tool-configuration.md) |
+| Providers, env vars, local servers, AI SDK bridge | `llm/` | [providers.md](docs/providers.md) |
+| Shared memory + custom backends | `memory/` | [shared-memory.md](docs/shared-memory.md) |
+| Tracing, progress events, dashboard | `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md) |
+| CLI usage + JSON schemas | `cli/oma.ts` | [cli.md](docs/cli.md) |
 
 ### Adding an LLM Adapter
 
-Implement `LLMAdapter` interface with `chat(messages, options)` and `stream(messages, options)`, add the provider name to the `SupportedProvider` union, then register a new `case` in the `createAdapter()` factory in `src/llm/adapter.ts`. Use a dynamic `await import('./your-provider.js')` so the SDK only loads when that provider is requested. OpenAI-compatible providers should accept the `baseURL` parameter and reuse helpers from `openai-common.ts`.
+Implement `LLMAdapter` (`chat` + `stream`), add the provider name to the `SupportedProvider` union, then register a `case` in the `createAdapter()` factory in `src/llm/adapter.ts` using a dynamic `await import('./your-provider.js')` so the SDK loads only when that provider is requested. OpenAI-compatible providers should accept `baseURL` and reuse helpers from `openai-common.ts`.
