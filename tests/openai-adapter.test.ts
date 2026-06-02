@@ -377,6 +377,18 @@ describe('OpenAIAdapter', () => {
       expect((toolEvents[0].data as ToolUseBlock).input).toEqual({})
     })
 
+    it('repairs triple-quoted tool arguments through the shared helper', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        toolCallChunk(0, 'call_1', 'search', '{"query": """hello"""}', 'tool_calls'),
+        { id: 'chatcmpl-123', model: 'gpt-4o', choices: [], usage: { prompt_tokens: 5, completion_tokens: 3 } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const toolEvents = events.filter(e => e.type === 'tool_use')
+      expect((toolEvents[0].data as ToolUseBlock).input).toEqual({ query: 'hello' })
+    })
+
     it('yields error event on stream failure', async () => {
       mockCreate.mockResolvedValue(
         (async function* () { throw new Error('Stream exploded') })(),

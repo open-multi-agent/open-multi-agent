@@ -56,6 +56,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
   getOpenAIReasoningText,
+  repairToolArgs,
 } from './openai-common.js'
 import type { ReasoningOutboundOptions } from './reasoning-fallback.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
@@ -304,20 +305,8 @@ export class OpenAIAdapter implements LLMAdapter {
             parsedInput = parsed as Record<string, unknown>
           }
         } catch {
-          // Malformed JSON — attempt fallback for single-string parameter tools
-          // which often fail due to unescaped quotes or Python-style triple quotes.
-          const args = buf.argsJson.trim()
-          const match = args.match(/\{\s*"([^"]+)"\s*:\s*([\s\S]*?)\s*\}$/)
-          if (match) {
-            const paramName = match[1]!
-            let val = match[2]!.trim()
-            if (val.startsWith('"""') && val.endsWith('"""')) val = val.slice(3, -3)
-            else if (val.startsWith("'''") && val.endsWith("'''")) val = val.slice(3, -3)
-            else if (val.startsWith('"') && val.endsWith('"')) {
-              val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-            }
-            parsedInput = { [paramName]: val }
-          }
+          const repaired = repairToolArgs(buf.argsJson)
+          if (repaired) parsedInput = repaired
         }
 
         const toolUseBlock: ToolUseBlock = {
