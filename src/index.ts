@@ -167,6 +167,8 @@ export type {
   TeamConfig,
   TeamRunResult,
   RunTeamOptions,
+  PlanArtifact,
+  PlanTaskArtifact,
 
   // Dashboard (static HTML)
   TaskExecutionMetrics,

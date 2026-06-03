@@ -1136,6 +1136,91 @@ describe('OpenMultiAgent', () => {
         types.filter((t) => t === 'agent_complete').length,
       )
     })
+
+    it('creates a serializable artifact from planOnly output and replays without coordinator', async () => {
+      mockAdapterResponses = [
+        '```json\n[' +
+          '{"title": "Research", "description": "Research the topic", "assignee": "worker-a"},' +
+          '{"title": "Write", "description": "Write the guide", "assignee": "worker-b", "dependsOn": ["Research"]}' +
+          ']\n```',
+      ]
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg())
+
+      const planOnlyResult = await oma.runTeam(team, complexGoal, { planOnly: true })
+      const plan = oma.createPlanArtifact(planOnlyResult)
+
+      expect(JSON.parse(JSON.stringify(plan))).toEqual(plan)
+      expect(plan.goal).toBe(complexGoal)
+      expect(plan.tasks).toHaveLength(2)
+      expect(plan.tasks[0]).toMatchObject({ title: 'Research', description: 'Research the topic', assignee: 'worker-a' })
+      expect(plan.tasks[1]?.dependsOn).toEqual([plan.tasks[0]?.id])
+
+      capturedChatOptions = []
+      capturedPrompts = []
+      mockAdapterResponses = ['research done', 'write done', 'coordinator should not be called']
+
+      const replay = await oma.runFromPlan(team, plan)
+
+      expect(replay.success).toBe(true)
+      expect(replay.goal).toBe(complexGoal)
+      expect(capturedChatOptions).toHaveLength(2)
+      expect(replay.agentResults.has('coordinator')).toBe(false)
+      expect(replay.tasks?.map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        assignee: task.assignee,
+        dependsOn: task.dependsOn,
+      }))).toEqual(plan.tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        assignee: task.assignee,
+        dependsOn: task.dependsOn ?? [],
+      })))
+      expect(capturedPrompts[0]).toContain('# Task: Research')
+      expect(capturedPrompts[1]).toContain('# Task: Write')
+      expect(capturedPrompts[1]).toContain('### Research (by worker-a)')
+      expect(capturedPrompts[1]).toContain('research done')
+    })
+
+    it('replays a persisted plan exactly without resolving dependencies by title', async () => {
+      const executionOrder: string[] = []
+      const adapter: LLMAdapter = {
+        name: 'recording',
+        async chat(messages) {
+          const prompt = extractUserPrompt(messages)
+          const title = prompt.includes('# Task: Second') ? 'second' : 'first'
+          executionOrder.push(title)
+          return textResponse(`${title} done`)
+        },
+        async *stream() {
+          yield { type: 'done' as const, data: {} }
+        },
+      }
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), adapter },
+        { ...agentConfig('worker-b'), adapter },
+      ]))
+      const plan = {
+        version: 1 as const,
+        goal: 'persisted goal',
+        tasks: [
+          { id: 'stable-first-id', title: 'First', description: 'Do first', assignee: 'worker-a' },
+          { id: 'stable-second-id', title: 'Second', description: 'Do second', assignee: 'worker-b', dependsOn: ['stable-first-id'] },
+        ],
+      }
+
+      const replay = await oma.runFromPlan(team, plan)
+
+      expect(replay.success).toBe(true)
+      expect(executionOrder).toEqual(['first', 'second'])
+      expect(replay.tasks?.map((task) => task.id)).toEqual(['stable-first-id', 'stable-second-id'])
+      expect(replay.tasks?.[1]?.dependsOn).toEqual(['stable-first-id'])
+      expect(replay.agentResults.has('coordinator')).toBe(false)
+    })
   })
 
   describe('stream trace events', () => {

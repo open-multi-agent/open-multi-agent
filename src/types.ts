@@ -744,6 +744,29 @@ export interface TeamRunResult {
   readonly totalTokenUsage: TokenUsage
 }
 
+/** A single serializable task in a deterministic replay plan. */
+export interface PlanTaskArtifact {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly assignee?: string
+  readonly dependsOn?: readonly string[]
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
+}
+
+/**
+ * Serializable plan artifact that can be persisted and later replayed without
+ * invoking the coordinator again.
+ */
+export interface PlanArtifact {
+  readonly version: 1
+  readonly goal?: string
+  readonly tasks: readonly PlanTaskArtifact[]
+}
+
 // ---------------------------------------------------------------------------
 // Task
 // ---------------------------------------------------------------------------
@@ -770,6 +793,7 @@ export interface TaskExecutionRecord {
   readonly assignee?: string
   readonly status: TaskStatus
   readonly dependsOn: readonly string[]
+  readonly description?: string
   readonly metrics?: TaskExecutionMetrics
 }
 
