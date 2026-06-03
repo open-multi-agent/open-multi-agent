@@ -1058,6 +1058,24 @@ export type TraceEvent =
 // Memory
 // ---------------------------------------------------------------------------
 
+/** JSON-serializable value accepted by {@link SharedMemory}. */
+export type SharedMemoryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly SharedMemoryValue[]
+  | { readonly [key: string]: SharedMemoryValue }
+
+/** Parsed entry returned by {@link SharedMemory}; the raw {@link MemoryStore} remains string-only. */
+export interface SharedMemoryEntry extends Omit<MemoryEntry, 'value'> {
+  readonly value: SharedMemoryValue
+}
+
+/** Optional write-time validation for shared memory values. */
+export interface SharedMemoryWriteOptions {
+  readonly schema?: ZodSchema<SharedMemoryValue>
+}
 /** A single key-value record stored in a {@link MemoryStore}. */
 export interface MemoryEntry {
   readonly key: string

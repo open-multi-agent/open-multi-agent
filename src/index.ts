@@ -195,6 +195,9 @@ export type {
   // Memory
   MemoryEntry,
   MemoryStore,
+  SharedMemoryEntry,
+  SharedMemoryValue,
+  SharedMemoryWriteOptions,
 } from './types.js'
 
 export { generateRunId } from './utils/trace.js'
