@@ -167,6 +167,11 @@ export type {
   TeamConfig,
   TeamRunResult,
   RunTeamOptions,
+  RunTasksOptions,
+  ModelRouteConfig,
+  ModelRoutingMatch,
+  ModelRoutingRule,
+  ModelRoutingPolicy,
 
   // Dashboard (static HTML)
   TaskExecutionMetrics,

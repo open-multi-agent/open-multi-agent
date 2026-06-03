@@ -694,12 +694,62 @@ export interface TeamConfig {
   readonly maxConcurrency?: number
 }
 
+/** Model/provider/API-key override selected by a model routing rule. */
+export interface ModelRouteConfig {
+  /** Model selected for the matched run. */
+  readonly model: string
+  /** Provider selected for the matched run. Defaults to the agent's provider/default provider when omitted. */
+  readonly provider?: SupportedProvider
+  /** Custom base URL for OpenAI-compatible or self-hosted endpoints. */
+  readonly baseURL?: string
+  /** API key selected for the matched run. */
+  readonly apiKey?: string
+  /** AWS region selected for Bedrock routes. */
+  readonly region?: string
+}
+
+/** Deterministic, predicate-free route selector for a model routing rule. */
+export interface ModelRoutingMatch {
+  /** Orchestration phase to match. */
+  readonly phase?: 'coordinator' | 'synthesis' | 'short-circuit' | 'worker' | 'delegated'
+  /** Agent name to match. */
+  readonly agent?: string
+  /** Task role to match, supplied by explicit tasks or coordinator JSON. */
+  readonly taskRole?: string
+  /** Task priority to match, supplied by explicit tasks or coordinator JSON. */
+  readonly taskPriority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Match tasks that have no dependents in the current execution graph. */
+  readonly leaf?: boolean
+  /** Match tasks that depend on one or more prior tasks. */
+  readonly hasDependencies?: boolean
+}
+
+/** A single deterministic model routing rule. Rules are evaluated in array order; first match wins. */
+export interface ModelRoutingRule {
+  readonly match: ModelRoutingMatch
+  readonly route: ModelRouteConfig
+}
+
+/** Opt-in, deterministic model routing policy for team orchestration calls. */
+export interface ModelRoutingPolicy {
+  readonly rules: readonly ModelRoutingRule[]
+}
+
+/** Per-call options for {@link OpenMultiAgent.runTasks}. */
+export interface RunTasksOptions {
+  readonly abortSignal?: AbortSignal
+  /**
+   * Opt-in deterministic model routing. When omitted, existing agent and
+   * coordinator model selection is unchanged.
+   */
+  readonly modelRouting?: ModelRoutingPolicy
+}
+
 /**
  * Per-call options for {@link OpenMultiAgent.runTeam}. Differs from
  * {@link OrchestratorConfig} by being scoped to a single invocation.
  */
-export interface RunTeamOptions {
-  readonly abortSignal?: AbortSignal
+export interface RunTeamOptions extends RunTasksOptions {
   readonly coordinator?: CoordinatorConfig
   /**
    * When true, the coordinator decomposes the goal but no task agents run.
@@ -726,6 +776,11 @@ export interface RunTeamOptions {
    * single-agent path (no coordinator) ignore this option.
    */
   readonly revealCoordinator?: boolean
+  /**
+   * Opt-in deterministic model routing. When omitted, existing agent and
+   * coordinator model selection is unchanged.
+   */
+  readonly modelRouting?: ModelRoutingPolicy
 }
 
 /** Aggregated result for a full team run. */
@@ -789,6 +844,10 @@ export interface Task {
    * - `all`: full shared-memory summary
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  /** Caller-defined task role used by model routing rules. */
+  readonly role?: string
+  /** Caller-defined task priority used by model routing rules. */
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
   result?: string
   readonly createdAt: Date
   updatedAt: Date

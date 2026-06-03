@@ -375,6 +375,56 @@ describe('OpenMultiAgent', () => {
       expect(secondPrompt).toContain('task:')
       expect(secondPrompt).not.toContain('## Context from prerequisite tasks')
     })
+
+    it('routes leaf worker tasks to an explicit cheaper model without mutating the team', async () => {
+      mockAdapterResponses = ['worker output']
+
+      const oma = new OpenMultiAgent({ defaultModel: 'premium-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      await oma.runTasks(team, [
+        { title: 'Leaf', description: 'Do leaf work', assignee: 'worker-a' },
+      ], {
+        modelRouting: {
+          rules: [{ match: { phase: 'worker', leaf: true }, route: { model: 'cheap-worker-model' } }],
+        },
+      })
+
+      expect(capturedChatOptions[0]?.model).toBe('cheap-worker-model')
+      expect(team.getAgents()[0]?.model).toBe('default-worker-model')
+    })
+
+    it('routes critical dependent tasks to an explicit premium model', async () => {
+      mockAdapterResponses = ['research output', 'review output']
+
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      await oma.runTasks(team, [
+        { title: 'Research', description: 'Gather facts', assignee: 'worker-a' },
+        {
+          title: 'Review',
+          description: 'Check the result',
+          assignee: 'worker-a',
+          dependsOn: ['Research'],
+          priority: 'critical',
+        },
+      ], {
+        modelRouting: {
+          rules: [
+            { match: { phase: 'worker', taskPriority: 'critical', hasDependencies: true }, route: { model: 'premium-review-model' } },
+            { match: { phase: 'worker', leaf: true }, route: { model: 'cheap-worker-model' } },
+          ],
+        },
+      })
+
+      expect(capturedChatOptions[0]?.model).toBe('default-worker-model')
+      expect(capturedChatOptions[1]?.model).toBe('premium-review-model')
+    })
   })
 
   describe('runTeam', () => {

@@ -207,9 +207,29 @@ export class AgentPool {
     agent: Agent,
     prompt: string,
     runOptions?: Partial<RunOptions>,
+    streamCallback?: (event: StreamEvent) => void,
   ): Promise<AgentRunResult> {
     await this.semaphore.acquire()
     try {
+      if (streamCallback) {
+        let result: AgentRunResult | null = null
+        for await (const event of agent.stream(prompt, runOptions)) {
+          try {
+            streamCallback(event)
+          } catch {
+            // Streaming callback must not affect execution; mirrors run().
+          }
+          if (event.type === 'done') result = event.data as AgentRunResult
+          if (event.type === 'error') throw event.data as Error
+        }
+        return result ?? {
+          success: false,
+          output: '',
+          messages: [],
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          toolCalls: [],
+        }
+      }
       return await agent.run(prompt, runOptions)
     } finally {
       this.semaphore.release()

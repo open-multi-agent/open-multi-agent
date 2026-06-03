@@ -35,6 +35,8 @@ export function createTask(input: {
   maxRetries?: number
   retryDelayMs?: number
   retryBackoff?: number
+  role?: string
+  priority?: 'low' | 'normal' | 'high' | 'critical'
 }): Task {
   const now = new Date()
   return {
@@ -51,6 +53,8 @@ export function createTask(input: {
     maxRetries: input.maxRetries,
     retryDelayMs: input.retryDelayMs,
     retryBackoff: input.retryBackoff,
+    role: input.role,
+    priority: input.priority,
   }
 }
 
