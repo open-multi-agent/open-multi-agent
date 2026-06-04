@@ -51,6 +51,7 @@ import type {
   OrchestratorEvent,
   RunTasksOptions,
   RunTeamOptions,
+  StreamEvent,
   Task,
   TaskExecutionMetrics,
   TaskExecutionRecord,
@@ -680,7 +681,7 @@ async function executeQueue(
         return
       }
 
-      const agentConfig = team.getAgents().find((a) => a.name === assignee)
+      const agentConfig = team.getAgent(assignee)
       if (!agentConfig) {
         const msg = `Agent "${assignee}" not found in team for task "${task.title}".`
         queue.fail(task.id, msg)
@@ -739,46 +740,57 @@ async function executeQueue(
         ...traceBase,
         team: buildTaskAgentTeamInfo(ctx, task.id, traceBase, 0, [assignee]),
       }
-      const routedAgent = buildAgent(withModelRoute({
-        ...agentConfig,
-        provider: agentConfig.provider ?? config.defaultProvider,
-        baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
-        apiKey: agentConfig.apiKey ?? config.defaultApiKey,
-        cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
-      }, routeMatches(ctx.modelRouting, {
+      const workerRoute = routeMatches(ctx.modelRouting, {
         phase: 'worker',
         agent: assignee,
         task,
         leaf: ctx.taskLeafById.get(task.id),
-      })), { includeDelegateTool: true })
+      })
+      const routedAgent = workerRoute
+        ? buildAgent(withModelRoute({
+            ...agentConfig,
+            provider: agentConfig.provider ?? config.defaultProvider,
+            baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
+            apiKey: agentConfig.apiKey ?? config.defaultApiKey,
+            cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
+          }, workerRoute), { includeDelegateTool: true })
+        : undefined
+      const streamCallback = config.onAgentStream
+        ? (event: StreamEvent) => {
+            if (config.onTrace) {
+              const streamMs = Date.now()
+              emitTrace(config.onTrace, {
+                type: 'agent_stream',
+                runId: ctx.runId ?? '',
+                taskId: task.id,
+                agent: assignee,
+                streamType: event.type,
+                startMs: streamMs,
+                endMs: streamMs,
+                durationMs: 0,
+              })
+            }
+            config.onAgentStream!(assignee, event)
+          }
+        : undefined
 
       const taskStartMs = Date.now()
       let retryCount = 0
 
       const result = await executeWithRetry(
-        () => pool.runEphemeral(
-          routedAgent,
-          prompt,
-          runOptions,
-          config.onAgentStream
-            ? (event) => {
-                if (config.onTrace) {
-                  const streamMs = Date.now()
-                  emitTrace(config.onTrace, {
-                    type: 'agent_stream',
-                    runId: ctx.runId ?? '',
-                    taskId: task.id,
-                    agent: assignee,
-                    streamType: event.type,
-                    startMs: streamMs,
-                    endMs: streamMs,
-                    durationMs: 0,
-                  })
-                }
-                config.onAgentStream!(assignee, event)
-              }
-            : undefined,
-        ),
+        () => routedAgent
+          ? pool.runEphemeral(
+              routedAgent,
+              prompt,
+              runOptions,
+              streamCallback,
+            )
+          : pool.run(
+              assignee,
+              prompt,
+              runOptions,
+              streamCallback,
+            ),
         task,
         (retryData) => {
           retryCount++
@@ -1854,7 +1866,7 @@ export class OpenMultiAgent {
   }
 
   /** Build an {@link AgentPool} from a list of agent configurations. */
-  private buildPool(agentConfigs: AgentConfig[], modelRouting?: ModelRoutingPolicy): AgentPool {
+  private buildPool(agentConfigs: AgentConfig[]): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
       const effective: AgentConfig = {
@@ -1865,11 +1877,7 @@ export class OpenMultiAgent {
         apiKey: config.apiKey ?? this.config.defaultApiKey,
         cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       }
-      const routed = withModelRoute(
-        effective,
-        routeMatches(modelRouting, { phase: 'worker', agent: config.name }),
-      )
-      pool.add(buildAgent(routed, { includeDelegateTool: true }))
+      pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }
     return pool
   }
