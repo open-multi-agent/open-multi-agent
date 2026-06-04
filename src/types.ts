@@ -984,6 +984,17 @@ export interface OrchestratorConfig {
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
   /**
+   * Fallback tool grant for agents that declare neither {@link AgentConfig.tools}
+   * nor {@link AgentConfig.toolPreset}. Built-in tools are opt-in (default-deny):
+   * an agent with no grant resolves to zero built-in tools. Set this (e.g.
+   * `'full'`) to restore the pre-default-deny convenience of granting every
+   * built-in tool — including the unsandboxed `bash` — to such agents in one
+   * line. Per-agent `tools` / `toolPreset` always override it; it never widens
+   * an agent that already declares a grant. Does not apply to the internal
+   * coordinator (which never calls tools).
+   */
+  readonly defaultToolPreset?: 'readonly' | 'readwrite' | 'full'
+  /**
    * Default root directory for built-in filesystem tools when an agent does
    * not set its own {@link AgentConfig.cwd}. Defaults to
    * `<process.cwd()>/.agent-workspace`, a sandbox subdirectory auto-created

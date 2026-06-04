@@ -614,6 +614,19 @@ export class AgentRunner {
     const runtimeCustomToolNames = new Set(runtimeCustomTools.map(t => t.name))
     let filteredTools = allTools.filter(t => !runtimeCustomToolNames.has(t.name))
 
+    // Default-deny: built-in (non-runtime) tools require a positive grant via
+    // `toolPreset` or `allowedTools`. With neither set, an agent resolves to
+    // zero built-in tools — `bash` and the filesystem tools are opt-in, the
+    // same default-deny model #87 enforces for cross-agent context. Runtime /
+    // custom tools (registered via `addTool` / `customTools`) are exempt:
+    // registering them is the grant. All tools still respect the denylist and
+    // framework rails below.
+    const hasPositiveGrant =
+      this.options.toolPreset !== undefined || this.options.allowedTools !== undefined
+    if (!hasPositiveGrant) {
+      filteredTools = []
+    }
+
     // 1. Apply preset filter if set
     if (this.options.toolPreset) {
       const presetTools = new Set(TOOL_PRESETS[this.options.toolPreset] as readonly string[])
@@ -708,8 +721,13 @@ export class AgentRunner {
     let budgetExceeded = false
 
     // Build the stable LLM options once; model / tokens / temp don't change.
-    // resolveTools() returns LLMToolDef[] with three-layer filtering applied.
+    // resolveTools() returns LLMToolDef[] with default-deny + filtering applied.
     const toolDefs = this.resolveTools()
+    // The single source of truth for what this agent may execute. The model is
+    // only offered `toolDefs`, but a confused model (or prompt injection) can
+    // still emit a tool_use for an ungranted name; gate execution on this set
+    // so a registered-but-ungranted tool can never run silently.
+    const grantedToolNames = new Set(toolDefs.map((t) => t.name))
 
     // Per-call abortSignal takes precedence over the static one.
     const effectiveAbortSignal = options.abortSignal ?? this.options.abortSignal
@@ -955,16 +973,30 @@ export class AgentRunner {
           const startTime = Date.now()
           let result: ToolResult
 
-          try {
-            result = await this.toolExecutor.execute(
-              block.name,
-              block.input,
-              toolContext,
-            )
-          } catch (err) {
-            // Tool executor errors become error results — the loop continues.
-            const message = err instanceof Error ? err.message : String(err)
-            result = { data: message, isError: true }
+          if (!grantedToolNames.has(block.name)) {
+            // Default-deny enforcement: the model asked for a tool that
+            // resolveTools() did not grant (an ungranted built-in such as
+            // `bash`, or a name introduced via prompt injection). Surface a
+            // clear signal rather than silently executing a registered tool.
+            result = {
+              data:
+                `Tool "${block.name}" is not granted to this agent. ` +
+                'Built-in tools are opt-in: grant it via the agent\'s "tools" allowlist or ' +
+                '"toolPreset" (or set the orchestrator\'s "defaultToolPreset").',
+              isError: true,
+            }
+          } else {
+            try {
+              result = await this.toolExecutor.execute(
+                block.name,
+                block.input,
+                toolContext,
+              )
+            } catch (err) {
+              // Tool executor errors become error results — the loop continues.
+              const message = err instanceof Error ? err.message : String(err)
+              result = { data: message, isError: true }
+            }
           }
 
           const endTime = Date.now()

@@ -63,6 +63,8 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// Built-in tools are opt-in (default-deny): each agent gets only the tools it
+// lists in `tools` (or a `toolPreset`). List neither and the agent gets none.
 const agents: AgentConfig[] = [
   { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
   { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
@@ -144,7 +146,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **Goal-driven coordinator** | One `runTeam(team, goal)` call decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. Unassigned tasks are auto-scheduled — `dependency-first` (default), `round-robin`, `least-busy`, or `capability-match`. |
 | **Mix providers in one team** | 12 built-in providers plus any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, Groq), mixed freely in one team. Local servers that emit tool calls as plain text are recovered by a fallback parser. ([full list](#supported-providers) · [setup](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **Extended thinking / reasoning** | One `thinking` config maps to Anthropic thinking, Gemini `thinkingConfig`, and OpenAI `reasoning_effort`; reasoning is streamed as events, with opt-in preservation across a provider switch. ([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
-| **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent` (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
+| **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), all **opt-in** (default-deny — grant via `tools` / `toolPreset`), plus `delegate_to_agent` handoff (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **Streaming + structured output** | Token-by-token streaming on every adapter (per-agent during team runs via `onAgentStream`); Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Human-in-the-loop** | Gate execution with `onPlanReady` (approve the plan before any agent runs) and `onApproval` (approve between task rounds), or inspect first with `planOnly`. |
 | **Pin and replay plans** | Serialize a `planOnly` decomposition with `createPlanArtifact`, then `runFromPlan` replays the exact task graph without re-invoking the coordinator. ([`patterns/plan-replay`](examples/patterns/plan-replay.ts)) |
@@ -375,6 +377,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
+| Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
 
 ## Documentation

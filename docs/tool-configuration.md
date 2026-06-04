@@ -2,6 +2,43 @@
 
 Agents can be configured with fine-grained tool access control using presets, allowlists, and denylists.
 
+## Built-in tools are opt-in (default-deny)
+
+Built-in tools — `bash` and the filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) — are **default-deny**. An agent receives a built-in tool only when it is granted explicitly via `tools` (an allowlist of names) or `toolPreset`. An agent that sets **neither** resolves to **zero** built-in tools:
+
+```typescript
+// No tools / toolPreset → this agent cannot run bash or touch the filesystem.
+const llmOnly: AgentConfig = { name: 'writer', model: 'claude-sonnet-4-6' }
+
+// Opt in explicitly.
+const coder: AgentConfig = {
+  name: 'coder',
+  model: 'claude-sonnet-4-6',
+  tools: ['file_read', 'file_write', 'bash'],
+}
+```
+
+This holds uniformly across `runAgent`, `runTeam` / `runTasks`, the `runTeam` simple-goal short-circuit, and a standalone `Agent`. Calling `registerBuiltInTools()` makes tools _available to grant_ — it does not grant them; the agent still needs `tools` / `toolPreset`. If the model emits a call to a registered-but-ungranted tool (a confused model, or text steered by prompt injection), the runner returns a clear `"not granted"` error instead of executing it.
+
+**Two things stay true once a tool is granted — design around them:**
+
+- **`bash` is not sandboxed.** Granting it gives the agent arbitrary shell on the host (see [_Filesystem Working Directory_](#filesystem-working-directory) below). Only the filesystem tools are path-contained.
+- **Tool output flows to your model provider.** Every tool result is appended to the conversation and sent to the configured LLM on the next turn. Anything a tool reads — file contents, command output, fetched pages — leaves your process and reaches the provider. Grant read access deliberately.
+
+**Custom / runtime tools are exempt from the grant requirement** — registering them _is_ the grant. Tools passed via `customTools` or `agent.addTool()` are always available (they still respect `disallowedTools`); see [_Custom Tools_](#custom-tools). **`delegate_to_agent`** (team orchestration handoff) follows the default-deny rule like any other built-in: grant it with `tools: ['delegate_to_agent']` on each agent you want to be able to delegate.
+
+### Restoring the previous "all tools" behavior
+
+Before default-deny, an agent with no tool config received every registered built-in — including the unsandboxed `bash`. To restore that convenience in one line, set `defaultToolPreset` on the orchestrator:
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  defaultToolPreset: 'full', // agents with no tools/toolPreset get the full preset
+})
+```
+
+`defaultToolPreset` is a **fallback**: it applies only to agents that declare neither `tools` nor `toolPreset`. Per-agent config always overrides it, and it never widens an agent that already declares a grant. It does not apply to the internal coordinator (which never calls tools).
+
 ## Tool Presets
 
 Predefined tool sets for common use cases:
@@ -40,7 +77,7 @@ const customAgent: AgentConfig = {
 }
 ```
 
-**Resolution order:** preset → allowlist → denylist → framework safety rails.
+**Resolution order:** default-deny (no preset _and_ no allowlist ⇒ zero built-in tools) → preset → allowlist → denylist → framework safety rails. Custom / runtime tools bypass the grant step (registration is the grant) but still honor the denylist.
 
 ## Filesystem Working Directory
 

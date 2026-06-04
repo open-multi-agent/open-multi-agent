@@ -65,6 +65,7 @@ describe('Per-call abortSignal reaches tool context (#99)', () => {
     const runner = new AgentRunner(adapter, registry, executor, {
       model: 'mock',
       agentName: 'test',
+      allowedTools: ['spy'],
     })
 
     const messages: LLMMessage[] = [
@@ -121,6 +122,7 @@ describe('Per-call abortSignal reaches tool context (#99)', () => {
       model: 'mock',
       agentName: 'test',
       abortSignal: staticController.signal,
+      allowedTools: ['spy'],
     })
 
     const messages: LLMMessage[] = [
