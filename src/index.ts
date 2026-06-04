@@ -113,7 +113,7 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
-export { TokenBudgetExceededError } from './errors.js'
+export { TokenBudgetExceededError, InvalidMessageError } from './errors.js'
 
 // ---------------------------------------------------------------------------
 // Memory

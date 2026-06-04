@@ -48,6 +48,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
 } from './openai-common.js'
+import { assertValidMessages } from './validate.js'
 
 // ---------------------------------------------------------------------------
 // Copilot auth — OAuth2 device flow + token exchange
@@ -302,6 +303,7 @@ export class CopilotAdapter implements LLMAdapter {
   // -------------------------------------------------------------------------
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const client = await this.#createClient()
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
@@ -335,6 +337,7 @@ export class CopilotAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const client = await this.#createClient()
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
