@@ -1319,6 +1319,10 @@ export class OpenMultiAgent {
         status: task.status,
         dependsOn: task.dependsOn ?? [],
         description: task.description,
+        memoryScope: task.memoryScope,
+        maxRetries: task.maxRetries,
+        retryDelayMs: task.retryDelayMs,
+        retryBackoff: task.retryBackoff,
         metrics: undefined,
       }))
       this.config.onProgress?.({
@@ -1341,6 +1345,10 @@ export class OpenMultiAgent {
       status: task.status,
       dependsOn: task.dependsOn ?? [],
       description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
       metrics: taskMetrics.get(task.id),
     }))
 
@@ -1420,6 +1428,10 @@ export class OpenMultiAgent {
           description: task.description,
           ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
           ...(task.dependsOn.length > 0 ? { dependsOn: task.dependsOn } : {}),
+          ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+          ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+          ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+          ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
         }
       }),
     }
@@ -1742,6 +1754,10 @@ export class OpenMultiAgent {
       status: task.status,
       dependsOn: task.dependsOn ?? [],
       description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
       metrics: ctx.taskMetrics.get(task.id),
     }))
 

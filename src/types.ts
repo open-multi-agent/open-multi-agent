@@ -794,6 +794,15 @@ export interface TaskExecutionRecord {
   readonly status: TaskStatus
   readonly dependsOn: readonly string[]
   readonly description?: string
+  /**
+   * Execution config, carried so a `planOnly` snapshot can be serialized into a
+   * lossless replay artifact (see {@link PlanTaskArtifact}). Populated from the
+   * task; `undefined` when the task did not set them.
+   */
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
   readonly metrics?: TaskExecutionMetrics
 }
 

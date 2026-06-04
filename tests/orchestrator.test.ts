@@ -1221,6 +1221,38 @@ describe('OpenMultiAgent', () => {
       expect(replay.tasks?.[1]?.dependsOn).toEqual(['stable-first-id'])
       expect(replay.agentResults.has('coordinator')).toBe(false)
     })
+
+    it('round-trips memoryScope and retry config through the plan artifact', async () => {
+      mockAdapterResponses = [
+        '```json\n[' +
+          '{"title": "Deep dive", "description": "Investigate", "assignee": "worker-a", "memoryScope": "all", "maxRetries": 2, "retryDelayMs": 500, "retryBackoff": 3}' +
+          ']\n```',
+      ]
+      const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })
+      const team = oma.createTeam('t', teamCfg())
+
+      const planOnlyResult = await oma.runTeam(team, complexGoal, { planOnly: true })
+      const plan = oma.createPlanArtifact(planOnlyResult)
+
+      // Execution config survives serialization into the artifact...
+      expect(plan.tasks[0]).toMatchObject({
+        memoryScope: 'all',
+        maxRetries: 2,
+        retryDelayMs: 500,
+        retryBackoff: 3,
+      })
+      expect(JSON.parse(JSON.stringify(plan))).toEqual(plan)
+
+      // ...and replay applies it, surfacing it back on the task record.
+      mockAdapterResponses = ['done']
+      const replay = await oma.runFromPlan(team, plan)
+      expect(replay.tasks?.[0]).toMatchObject({
+        memoryScope: 'all',
+        maxRetries: 2,
+        retryDelayMs: 500,
+        retryBackoff: 3,
+      })
+    })
   })
 
   describe('stream trace events', () => {
