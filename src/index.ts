@@ -113,7 +113,7 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
-export { TokenBudgetExceededError } from './errors.js'
+export { TokenBudgetExceededError, InvalidMessageError } from './errors.js'
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -172,6 +172,8 @@ export type {
   ModelRoutingMatch,
   ModelRoutingRule,
   ModelRoutingPolicy,
+  PlanArtifact,
+  PlanTaskArtifact,
 
   // Dashboard (static HTML)
   TaskExecutionMetrics,
@@ -200,6 +202,9 @@ export type {
   // Memory
   MemoryEntry,
   MemoryStore,
+  SharedMemoryEntry,
+  SharedMemoryValue,
+  SharedMemoryWriteOptions,
 } from './types.js'
 
 export { generateRunId } from './utils/trace.js'

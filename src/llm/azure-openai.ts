@@ -61,6 +61,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
 } from './openai-common.js'
+import { assertValidMessages } from './validate.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
 // ---------------------------------------------------------------------------
@@ -124,6 +125,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
    * handle these (e.g. rate limits, context length exceeded, deployment not found).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const deploymentName = resolveAzureDeploymentName(options.model)
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
@@ -173,6 +175,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const deploymentName = resolveAzureDeploymentName(options.model)
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 

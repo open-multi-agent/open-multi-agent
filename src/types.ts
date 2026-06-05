@@ -799,6 +799,29 @@ export interface TeamRunResult {
   readonly totalTokenUsage: TokenUsage
 }
 
+/** A single serializable task in a deterministic replay plan. */
+export interface PlanTaskArtifact {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly assignee?: string
+  readonly dependsOn?: readonly string[]
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
+}
+
+/**
+ * Serializable plan artifact that can be persisted and later replayed without
+ * invoking the coordinator again.
+ */
+export interface PlanArtifact {
+  readonly version: 1
+  readonly goal?: string
+  readonly tasks: readonly PlanTaskArtifact[]
+}
+
 // ---------------------------------------------------------------------------
 // Task
 // ---------------------------------------------------------------------------
@@ -825,6 +848,16 @@ export interface TaskExecutionRecord {
   readonly assignee?: string
   readonly status: TaskStatus
   readonly dependsOn: readonly string[]
+  readonly description?: string
+  /**
+   * Execution config, carried so a `planOnly` snapshot can be serialized into a
+   * lossless replay artifact (see {@link PlanTaskArtifact}). Populated from the
+   * task; `undefined` when the task did not set them.
+   */
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
   readonly metrics?: TaskExecutionMetrics
 }
 
@@ -1117,6 +1150,24 @@ export type TraceEvent =
 // Memory
 // ---------------------------------------------------------------------------
 
+/** JSON-serializable value accepted by {@link SharedMemory}. */
+export type SharedMemoryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly SharedMemoryValue[]
+  | { readonly [key: string]: SharedMemoryValue }
+
+/** Parsed entry returned by {@link SharedMemory}; the raw {@link MemoryStore} remains string-only. */
+export interface SharedMemoryEntry extends Omit<MemoryEntry, 'value'> {
+  readonly value: SharedMemoryValue
+}
+
+/** Optional write-time validation for shared memory values. */
+export interface SharedMemoryWriteOptions {
+  readonly schema?: ZodSchema<SharedMemoryValue>
+}
 /** A single key-value record stored in a {@link MemoryStore}. */
 export interface MemoryEntry {
   readonly key: string

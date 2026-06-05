@@ -122,10 +122,17 @@ Tokens: 12847 output tokens
 | 自动编排团队 | `runTeam()` | 给一个目标，框架自动规划和执行 | [`basics/team-collaboration`](examples/basics/team-collaboration.ts) |
 | 显式任务管线 | `runTasks()` | 你自己定义任务图和分配 | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
-不执行 agent，只预览协调者拆出的任务 DAG：
+不执行 agent，只预览协调者拆出的任务 DAG；也可以把这份计划固定下来，之后无需再次调用协调者就重放同一张图：
 
 ```ts
-const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+// 先拆解一次，审阅计划
+const preview = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+// 转成可 diff、可纳入版本控制的产物（纯 JSON）
+const plan = orchestrator.createPlanArtifact(preview)
+
+// 之后：重放完全相同的图（task id、依赖、assignee 都不变），不经过协调者
+const result = await orchestrator.runFromPlan(team, plan)
 ```
 
 ## 功能一览
@@ -138,6 +145,7 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出（团队运行时通过 `onAgentStream` 拿到每个 agent 的流）；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）卡点，或用 `planOnly` 先预览。 |
+| **固定并重放计划** | 用 `createPlanArtifact` 把 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
@@ -236,6 +244,7 @@ await orchestrator.runTeam(team, goal, {
 - [`patterns/cost-tiered-pipeline`](examples/patterns/cost-tiered-pipeline.ts)：每个阶段分配不同 model，用 `onTrace` 的 token 计数估算各 model 的 USD 成本。
 - [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)：`AgentPool.runParallel()` 做 MapReduce 风格 fan-out。
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts)：`delegate_to_agent` 同步子智能体委派。
+- [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 把目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不重跑协调者。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，给 LLM 调用、工具、任务发结构化 span。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：用 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用，OMA `runTeam()` 配合 AI SDK `useChat` 流式输出。

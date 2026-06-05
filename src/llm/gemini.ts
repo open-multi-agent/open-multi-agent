@@ -55,6 +55,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
+import { assertValidMessages } from './validate.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -410,6 +411,7 @@ export class GeminiAdapter implements LLMAdapter {
    * which is the idiomatic pattern for `@google/genai`.
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const id = generateId()
     const contents = toGeminiContents(messages, options)
 
@@ -447,6 +449,7 @@ export class GeminiAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const id = generateId()
     const contents = toGeminiContents(messages, options)
 
