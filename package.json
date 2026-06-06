@@ -28,7 +28,8 @@
     "./ai-sdk": {
       "types": "./dist/ai-sdk.d.ts",
       "import": "./dist/ai-sdk.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsc",
@@ -52,7 +53,10 @@
     "tool-use",
     "agent-framework"
   ],
-  "author": "",
+  "author": {
+    "name": "open-multi-agent",
+    "url": "https://github.com/open-multi-agent"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
