@@ -170,6 +170,11 @@ export type {
   PlanArtifact,
   PlanTaskArtifact,
 
+  // Consensus
+  ConsensusOptions,
+  ConsensusVerifyOptions,
+  ConsensusResult,
+
   // Dashboard (static HTML)
   TaskExecutionMetrics,
   TaskExecutionRecord,
@@ -193,6 +198,7 @@ export type {
   AgentTrace,
   PlanReadyTrace,
   AgentStreamTrace,
+  ConsensusTrace,
 
   // Memory
   MemoryEntry,
