@@ -1,6 +1,6 @@
 {
   "name": "@open-multi-agent/core",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "TypeScript multi-agent framework — one runTeam() call from goal to result. Auto task decomposition, parallel execution. 3 dependencies, deploys anywhere Node.js runs.",
   "files": [
     "dist",
@@ -28,7 +28,8 @@
     "./ai-sdk": {
       "types": "./dist/ai-sdk.d.ts",
       "import": "./dist/ai-sdk.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsc",
@@ -52,7 +53,10 @@
     "tool-use",
     "agent-framework"
   ],
-  "author": "",
+  "author": {
+    "name": "open-multi-agent",
+    "url": "https://github.com/open-multi-agent"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

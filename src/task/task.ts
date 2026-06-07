@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { Task, TaskStatus } from '../types.js'
+import type { ConsensusVerifyOptions, Task, TaskStatus } from '../types.js'
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -37,6 +37,7 @@ export function createTask(input: {
   retryBackoff?: number
   role?: string
   priority?: 'low' | 'normal' | 'high' | 'critical'
+  verify?: ConsensusVerifyOptions
 }): Task {
   const now = new Date()
   return {
@@ -55,6 +56,7 @@ export function createTask(input: {
     retryBackoff: input.retryBackoff,
     role: input.role,
     priority: input.priority,
+    verify: input.verify,
   }
 }
 
