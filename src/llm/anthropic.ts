@@ -58,6 +58,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
+import { assertValidMessages } from './validate.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -344,6 +345,7 @@ export class AnthropicAdapter implements LLMAdapter {
    * and handle these (e.g. rate limits, context window exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const anthropicMessages = toAnthropicMessages(messages, options)
     const effectiveMaxTokens = options.maxTokens ?? 4096
 
@@ -403,6 +405,7 @@ export class AnthropicAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const anthropicMessages = toAnthropicMessages(messages, options)
     const effectiveMaxTokens = options.maxTokens ?? 4096
 

@@ -124,10 +124,17 @@ Local models via Ollama need no API key, see [`providers/ollama`](examples/provi
 
 For answers that need scrutiny, `runConsensus()` runs a proposer→judge verification loop (with an opt-in per-task `verify` hook). See [Consensus](./docs/consensus.md).
 
-Preview the coordinator's task DAG without executing agents:
+Preview the coordinator's task DAG without executing it, or pin that plan and replay the same graph later without another coordinator call:
 
 ```ts
-const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+// Decompose once and review the plan
+const preview = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+// Turn it into a diffable, version-controllable artifact (plain JSON)
+const plan = orchestrator.createPlanArtifact(preview)
+
+// Later: replay the exact graph (same task ids, deps, assignees), no coordinator
+const result = await orchestrator.runFromPlan(team, plan)
 ```
 
 ## Features
@@ -140,6 +147,7 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent` (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **Streaming + structured output** | Token-by-token streaming on every adapter (per-agent during team runs via `onAgentStream`); Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Human-in-the-loop** | Gate execution with `onPlanReady` (approve the plan before any agent runs) and `onApproval` (approve between task rounds), or inspect first with `planOnly`. |
+| **Pin and replay plans** | Serialize a `planOnly` decomposition with `createPlanArtifact`, then `runFromPlan` replays the exact task graph without re-invoking the coordinator. ([`patterns/plan-replay`](examples/patterns/plan-replay.ts)) |
 | **Lifecycle hooks + cancellation** | `beforeRun` rewrites the prompt, `afterRun` post-processes or rejects the result; pass an `AbortSignal` to cancel a run in flight. |
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
@@ -238,6 +246,7 @@ End-to-end scenarios you can run today. Each one is a complete, opinionated work
 - [`patterns/cost-tiered-pipeline`](examples/patterns/cost-tiered-pipeline.ts): assign a different model per stage and estimate per-model USD cost from `onTrace` token counts.
 - [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts): MapReduce-style fan-out via `AgentPool.runParallel()`.
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts): synchronous sub-agent delegation via `delegate_to_agent`.
+- [`patterns/plan-replay`](examples/patterns/plan-replay.ts): decompose a goal once with `planOnly`, serialize it with `createPlanArtifact`, then replay the same DAG via `runFromPlan` without re-running the coordinator.
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app combining OMA `runTeam()` with AI SDK `useChat` streaming.

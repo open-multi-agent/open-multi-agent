@@ -186,6 +186,16 @@ Every invocation prints **one JSON document** to stdout, followed by a newline.
 {
   "command": "run",
   "success": true,
+  "goal": "Build a REST API with token auth",
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Design the database schema",
+      "assignee": "architect",
+      "status": "completed",
+      "dependsOn": []
+    }
+  ],
   "totalTokenUsage": { "input_tokens": 0, "output_tokens": 0 },
   "agentResults": {
     "architect": {

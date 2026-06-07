@@ -49,6 +49,8 @@ import type {
   ConsensusVerifyOptions,
   CoordinatorConfig,
   RunTeamOptions,
+  PlanArtifact,
+  PlanTaskArtifact,
   OrchestratorConfig,
   OrchestratorEvent,
   Task,
@@ -71,7 +73,7 @@ import { registerBuiltInTools } from '../tool/built-in/index.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
-import { createTask } from '../task/task.js'
+import { createTask, validateTaskDependencies } from '../task/task.js'
 import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
 import { TokenBudgetExceededError } from '../errors.js'
@@ -1659,6 +1661,11 @@ export class OpenMultiAgent {
         assignee: task.assignee,
         status: task.status,
         dependsOn: task.dependsOn ?? [],
+        description: task.description,
+        memoryScope: task.memoryScope,
+        maxRetries: task.maxRetries,
+        retryDelayMs: task.retryDelayMs,
+        retryBackoff: task.retryBackoff,
         metrics: undefined,
       }))
       this.config.onProgress?.({
@@ -1680,6 +1687,11 @@ export class OpenMultiAgent {
       assignee: task.assignee,
       status: task.status,
       dependsOn: task.dependsOn ?? [],
+      description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
       metrics: taskMetrics.get(task.id),
     }))
 
@@ -1731,8 +1743,70 @@ export class OpenMultiAgent {
   }
 
   // -------------------------------------------------------------------------
-  // Explicit-task team run
+  // Explicit-task and plan replay team runs
   // -------------------------------------------------------------------------
+
+  /**
+   * Convert a plan-only {@link TeamRunResult} into a serializable plan artifact.
+   *
+   * The input must come from `runTeam(team, goal, { planOnly: true })` on a
+   * version that records task descriptions. Executed run results are rejected
+   * because their task records are not a replay contract.
+   */
+  createPlanArtifact(result: TeamRunResult): PlanArtifact {
+    if (result.planOnly !== true || !result.tasks) {
+      throw new Error('createPlanArtifact requires a plan-only TeamRunResult.')
+    }
+
+    return {
+      version: 1,
+      ...(result.goal !== undefined ? { goal: result.goal } : {}),
+      tasks: result.tasks.map((task): PlanTaskArtifact => {
+        if (!task.description) {
+          throw new Error(`Plan task "${task.id}" is missing a description and cannot be replayed.`)
+        }
+        return {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+          ...(task.dependsOn.length > 0 ? { dependsOn: task.dependsOn } : {}),
+          ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+          ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+          ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+          ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+        }
+      }),
+    }
+  }
+
+  /**
+   * Replay a persisted plan artifact without invoking the coordinator.
+   *
+   * Task IDs, dependencies, assignees, titles, and descriptions are used exactly
+   * as stored in the artifact. This is intentionally execution-only; it does not
+   * synthesize a coordinator final answer and it does not implement durable
+   * checkpoints.
+   */
+  async runFromPlan(
+    team: Team,
+    plan: PlanArtifact,
+    options?: { abortSignal?: AbortSignal },
+  ): Promise<TeamRunResult> {
+    if (plan.version !== 1) {
+      throw new Error(`Unsupported plan artifact version: ${String(plan.version)}`)
+    }
+
+    const queue = new TaskQueue()
+    const tasks = this.tasksFromPlan(plan)
+    const validation = validateTaskDependencies(tasks)
+    if (!validation.valid) {
+      throw new Error(`Invalid plan artifact: ${validation.errors.join(' ')}`)
+    }
+    queue.addBatch(tasks)
+
+    return this.executeExplicitTaskQueue(team, queue, options, plan.goal)
+  }
 
   /**
    * Run a team with an explicitly provided task list.
@@ -1761,7 +1835,6 @@ export class OpenMultiAgent {
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const queue = new TaskQueue()
-    const scheduler = new Scheduler('dependency-first')
 
     this.loadSpecsIntoQueue(
       tasks.map((t) => ({
@@ -1779,37 +1852,7 @@ export class OpenMultiAgent {
       queue,
     )
 
-    scheduler.autoAssign(queue, agentConfigs)
-
-    const pool = this.buildPool(agentConfigs)
-    const agentResults = new Map<string, AgentRunResult>()
-    const ctx: RunContext = {
-      team,
-      pool,
-      scheduler,
-      agentResults,
-      config: this.config,
-      runId: this.config.onTrace ? generateRunId() : undefined,
-      abortSignal: options?.abortSignal,
-      cumulativeUsage: ZERO_USAGE,
-      maxTokenBudget: this.config.maxTokenBudget,
-      budgetExceededTriggered: false,
-      budgetExceededReason: undefined,
-      taskMetrics: new Map<string, TaskExecutionMetrics>(),
-    }
-
-    await executeQueue(queue, ctx)
-
-    const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
-      id: task.id,
-      title: task.title,
-      assignee: task.assignee,
-      status: task.status,
-      dependsOn: task.dependsOn ?? [],
-      metrics: ctx.taskMetrics.get(task.id),
-    }))
-
-    return this.buildTeamRunResult(agentResults, undefined, taskRecords)
+    return this.executeExplicitTaskQueue(team, queue, options)
   }
 
   // -------------------------------------------------------------------------
@@ -2100,6 +2143,71 @@ export class OpenMultiAgent {
       'Synthesise the above results into a comprehensive final answer that addresses the original goal.',
       'If some tasks failed or were skipped, note any gaps in the result.',
     ].join('\n')
+  }
+
+  private tasksFromPlan(plan: PlanArtifact): Task[] {
+    const now = new Date()
+    return plan.tasks.map((task): Task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: 'pending' as TaskStatus,
+      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+      ...(task.dependsOn && task.dependsOn.length > 0 ? { dependsOn: [...task.dependsOn] } : {}),
+      ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      result: undefined,
+      createdAt: now,
+      updatedAt: now,
+      ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+      ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+      ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+    }))
+  }
+
+  private async executeExplicitTaskQueue(
+    team: Team,
+    queue: TaskQueue,
+    options?: { abortSignal?: AbortSignal },
+    goal?: string,
+  ): Promise<TeamRunResult> {
+    const agentConfigs = team.getAgents()
+    const scheduler = new Scheduler('dependency-first')
+    scheduler.autoAssign(queue, agentConfigs)
+
+    const pool = this.buildPool(agentConfigs)
+    const agentResults = new Map<string, AgentRunResult>()
+    const ctx: RunContext = {
+      team,
+      pool,
+      scheduler,
+      agentResults,
+      config: this.config,
+      runId: this.config.onTrace ? generateRunId() : undefined,
+      abortSignal: options?.abortSignal,
+      cumulativeUsage: ZERO_USAGE,
+      maxTokenBudget: this.config.maxTokenBudget,
+      budgetExceededTriggered: false,
+      budgetExceededReason: undefined,
+      taskMetrics: new Map<string, TaskExecutionMetrics>(),
+    }
+
+    await executeQueue(queue, ctx)
+
+    const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
+      id: task.id,
+      title: task.title,
+      assignee: task.assignee,
+      status: task.status,
+      dependsOn: task.dependsOn ?? [],
+      description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
+      metrics: ctx.taskMetrics.get(task.id),
+    }))
+
+    return this.buildTeamRunResult(agentResults, goal, taskRecords)
   }
 
   /**

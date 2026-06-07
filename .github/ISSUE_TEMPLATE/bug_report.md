@@ -32,7 +32,7 @@ Paste any error messages or logs here
 
 - OS: [e.g. macOS 14, Ubuntu 22.04]
 - Node.js version: [e.g. 20.11]
-- Package version: [e.g. 0.1.0]
+- Package version: [e.g. 1.6.0]
 - LLM provider: [e.g. Anthropic, OpenAI]
 
 ## Additional context

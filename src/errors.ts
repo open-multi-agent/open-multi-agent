@@ -17,3 +17,18 @@ export class TokenBudgetExceededError extends Error {
     this.name = 'TokenBudgetExceededError'
   }
 }
+
+/**
+ * Raised when a message list passed to an adapter violates the
+ * {@link LLMMessage}[] contract (e.g. a `content` that isn't a `ContentBlock[]`).
+ * Surfaced at the adapter entry so the violation fails loudly instead of
+ * crashing deep in provider-specific message conversion.
+ */
+export class InvalidMessageError extends Error {
+  readonly code = 'INVALID_MESSAGE'
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidMessageError'
+  }
+}

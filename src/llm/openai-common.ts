@@ -291,6 +291,28 @@ function toOpenAIAssistantMessage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Repair malformed single-string tool-call arguments after `JSON.parse` fails.
+ * Local models frequently break single-parameter tools with unescaped quotes or
+ * Python-style triple quotes (`"""`/`'''`). Returns the repaired argument object,
+ * or null when the input doesn't match the single-parameter `{"name": value}` shape.
+ */
+export function repairToolArgs(raw: string): Record<string, unknown> | null {
+  const args = raw.trim()
+  const match = args.match(/\{\s*"([^"]+)"\s*:\s*([\s\S]*?)\s*\}$/)
+  if (match) {
+    const paramName = match[1]!
+    let val = match[2]!.trim()
+    if (val.startsWith('"""') && val.endsWith('"""')) val = val.slice(3, -3)
+    else if (val.startsWith("'''") && val.endsWith("'''")) val = val.slice(3, -3)
+    else if (val.startsWith('"') && val.endsWith('"')) {
+      val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    }
+    return { [paramName]: val }
+  }
+  return null
+}
+
+/**
  * Convert an OpenAI {@link ChatCompletion} into a framework {@link LLMResponse}.
  *
  * Takes only the first choice (index 0), consistent with how the framework
@@ -343,7 +365,8 @@ export function fromOpenAICompletion(
         parsedInput = parsed as Record<string, unknown>
       }
     } catch {
-      // Malformed arguments from the model — surface as empty object.
+      const repaired = repairToolArgs(toolCall.function.arguments)
+      if (repaired) parsedInput = repaired
     }
 
     const toolUseBlock: ToolUseBlock = {
