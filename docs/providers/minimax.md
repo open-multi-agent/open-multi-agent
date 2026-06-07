@@ -2,7 +2,7 @@
 
 <img src="../../.github/brand/minimax-banner.png" alt="MiniMax" width="600">
 
-MiniMax M2.7 can be used in OMA's TypeScript multi-agent workflows with a simple provider config.
+MiniMax M3 can be used in OMA's TypeScript multi-agent workflows with a simple provider config.
 
 ## Community offer
 
@@ -15,15 +15,9 @@ OMA users get **12% off** the MiniMax Token Plan. Valid until **2026-06-30**.
 
 This is a limited-time community offer, not a paid endorsement.
 
-## About MiniMax M2.7
+## About MiniMax M3
 
-MiniMax describes M2.7 as:
-
-> MiniMax M2.7 is MiniMax's first self-evolution model, capable of autonomously building complex Agent Harnesses and completing high-complexity productivity tasks via Agent Teams, advanced Skills, and Tool Search Tool. It excels in software engineering, end-to-end project delivery, and office scenarios, with stable task execution, environment interaction, and identity-preserving capabilities.
-
-MiniMax 对 M2.7 的描述：
-
-> MiniMax M2.7 是 MiniMax 首个深度参与自我迭代的模型，可自主构建复杂 Agent Harness，并基于 Agent Teams、复杂 Skills、Tool Search Tool 等能力完成高复杂度生产力任务；其在软件工程、端到端项目交付及办公场景中表现优异，多项评测接近行业领先水平，同时具备稳定的复杂任务执行、环境交互能力以及良好的情商与身份保持能力。
+MiniMax M3 is MiniMax's latest flagship model. It supports a 512K context window with up to 128K output tokens and accepts image inputs alongside text. M3 is now the recommended default; M2.7 and `MiniMax-M2.7-highspeed` remain available for callers that pin a model explicitly.
 
 ## Setup
 
@@ -45,7 +39,7 @@ export MINIMAX_BASE_URL=https://api.minimaxi.com/v1
 const agent: AgentConfig = {
   name: 'my-agent',
   provider: 'minimax',
-  model: 'MiniMax-M2.7',
+  model: 'MiniMax-M3',
   systemPrompt: 'You are a helpful assistant.',
 }
 ```
@@ -58,7 +52,7 @@ import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 const agent: AgentConfig = {
   name: 'analyst',
   provider: 'minimax',
-  model: 'MiniMax-M2.7',
+  model: 'MiniMax-M3',
   systemPrompt: 'Analyze data and produce concise reports.',
   tools: ['bash', 'file_read', 'file_write'],
 }

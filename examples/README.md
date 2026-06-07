@@ -31,7 +31,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/bedrock`](providers/bedrock.ts) | AWS Bedrock (Claude via Converse API) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
 | [`providers/grok`](providers/grok.ts) | xAI Grok | `XAI_API_KEY` |
 | [`providers/gemini`](providers/gemini.ts) | Google Gemini | `GEMINI_API_KEY` |
-| [`providers/minimax`](providers/minimax.ts) | MiniMax M2.7 | `MINIMAX_API_KEY` |
+| [`providers/minimax`](providers/minimax.ts) | MiniMax M3 | `MINIMAX_API_KEY` |
 | [`providers/mimo`](providers/mimo.ts) | MiMo V2.5 Pro | `MIMO_API_KEY` |
 | [`providers/hunyuan`](providers/hunyuan.ts) | Tencent Hunyuan (MaaS, hy3) | `HUNYUAN_API_KEY` |
 | [`providers/deepseek`](providers/deepseek.ts) | DeepSeek Chat | `DEEPSEEK_API_KEY` |

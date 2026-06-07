@@ -290,7 +290,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   gemini: 'gemini-2.0-flash',
   grok: 'grok-2-latest',
   copilot: 'gpt-4o',
-  minimax: 'MiniMax-M2.7',
+  minimax: 'MiniMax-M3',
   mimo: 'mimo-v2.5-pro',
   deepseek: 'deepseek-v4-flash',
   doubao: 'doubao-seed-1-8-251228',
