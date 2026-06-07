@@ -17,7 +17,7 @@ This is a limited-time community offer, not a paid endorsement.
 
 ## About MiniMax M3
 
-MiniMax M3 is MiniMax's latest flagship model. It supports a 512K context window with up to 128K output tokens and accepts image inputs alongside text. M3 is now the recommended default; M2.7 and `MiniMax-M2.7-highspeed` remain available for callers that pin a model explicitly.
+MiniMax M3 is MiniMax's latest flagship model. It supports up to a 1M-token context window (512K guaranteed minimum) and accepts image inputs alongside text. M3 is now the recommended default; M2.7 and `MiniMax-M2.7-highspeed` remain available for callers that pin a model explicitly.
 
 ## Setup
 
