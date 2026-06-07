@@ -990,8 +990,9 @@ export interface OrchestratorConfig {
    * `'full'`) to restore the pre-default-deny convenience of granting every
    * built-in tool — including the unsandboxed `bash` — to such agents in one
    * line. Per-agent `tools` / `toolPreset` always override it; it never widens
-   * an agent that already declares a grant. Does not apply to the internal
-   * coordinator (which never calls tools).
+   * an agent that already declares a grant. It is not applied to the internal
+   * coordinator, the final-synthesis pass, or consensus (proposer / judge)
+   * agents, which run from their own configs; grant those per agent.
    */
   readonly defaultToolPreset?: 'readonly' | 'readwrite' | 'full'
   /**

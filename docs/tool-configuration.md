@@ -37,7 +37,7 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
-`defaultToolPreset` is a **fallback**: it applies only to agents that declare neither `tools` nor `toolPreset`. Per-agent config always overrides it, and it never widens an agent that already declares a grant. It does not apply to the internal coordinator (which never calls tools).
+`defaultToolPreset` is a **fallback**: it applies only to agents that declare neither `tools` nor `toolPreset`. Per-agent config always overrides it, and it never widens an agent that already declares a grant. It is not applied to the internal coordinator, the final-synthesis pass, or the consensus proposer / judge agents (`runConsensus` and the per-task `verify` hook), which run from their own configs; grant tools to those per agent.
 
 ## Tool Presets
 
