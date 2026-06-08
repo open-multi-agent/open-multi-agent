@@ -121,6 +121,13 @@ export { TokenBudgetExceededError, InvalidMessageError } from './errors.js'
 
 export { InMemoryStore } from './memory/store.js'
 export { SharedMemory } from './memory/shared.js'
+export {
+  Checkpoint,
+  CHECKPOINT_KEY_PREFIX,
+  DEFAULT_CHECKPOINT_KEY,
+  checkpointKey,
+  isCheckpointKey,
+} from './memory/checkpoint.js'
 
 // ---------------------------------------------------------------------------
 // Types — all public interfaces re-exported for consumer type-checking
@@ -168,6 +175,8 @@ export type {
   TeamRunResult,
   RunTeamOptions,
   RunTasksOptions,
+  RunTaskSpec,
+  RestoreOptions,
   ModelRouteConfig,
   ModelRoutingMatch,
   ModelRoutingRule,
@@ -192,6 +201,11 @@ export type {
   OrchestratorConfig,
   OrchestratorEvent,
   CoordinatorConfig,
+  CheckpointOptions,
+  CheckpointSnapshot,
+  CompletedTaskCheckpoint,
+  TaskQueueSnapshot,
+  TaskSnapshot,
 
   // Trace
   TraceEventType,
@@ -208,6 +222,8 @@ export type {
   // Memory
   MemoryEntry,
   MemoryStore,
+  MemoryEntrySnapshot,
+  SharedMemorySnapshot,
   SharedMemoryEntry,
   SharedMemoryValue,
   SharedMemoryWriteOptions,

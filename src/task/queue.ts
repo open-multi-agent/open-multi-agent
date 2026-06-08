@@ -6,7 +6,7 @@
  * orchestrators can react without polling.
  */
 
-import type { Task, TaskStatus } from '../types.js'
+import type { Task, TaskQueueSnapshot, TaskSnapshot, TaskStatus } from '../types.js'
 import { isTaskReady } from './task.js'
 
 // ---------------------------------------------------------------------------
@@ -91,6 +91,53 @@ export class TaskQueue {
     for (const task of tasks) {
       this.add(task)
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshot / restore
+  // ---------------------------------------------------------------------------
+
+  /** Returns a serializable snapshot of all tasks and their status partitions. */
+  snapshot(): TaskQueueSnapshot {
+    const tasks = this.list()
+    return {
+      version: 1,
+      tasks: tasks.map(TaskQueue.taskToSnapshot),
+      pending: tasks.filter((task) => task.status === 'pending').map((task) => task.id),
+      inProgress: tasks.filter((task) => task.status === 'in_progress').map((task) => task.id),
+      completed: tasks.filter((task) => task.status === 'completed').map((task) => task.id),
+      failed: tasks.filter((task) => task.status === 'failed').map((task) => task.id),
+      blocked: tasks.filter((task) => task.status === 'blocked').map((task) => task.id),
+      skipped: tasks.filter((task) => task.status === 'skipped').map((task) => task.id),
+    }
+  }
+
+  /**
+   * Rebuilds a queue from a snapshot.
+   *
+   * By default this is an exact round-trip, including `'in_progress'` tasks.
+   * Restores that resume execution should pass `{ resetInProgress: true }` so
+   * a task that was running during a crash becomes runnable again once its
+   * dependencies are satisfied.
+   */
+  static fromSnapshot(
+    snapshot: TaskQueueSnapshot,
+    options: { readonly resetInProgress?: boolean } = {},
+  ): TaskQueue {
+    if (snapshot.version !== 1) {
+      throw new Error(`TaskQueue.fromSnapshot: unsupported snapshot version ${String(snapshot.version)}.`)
+    }
+
+    const queue = new TaskQueue()
+    const tasks = snapshot.tasks.map((task) => TaskQueue.taskFromSnapshot(task))
+    const restored = options.resetInProgress
+      ? TaskQueue.resetRestoredInProgress(tasks)
+      : tasks
+
+    for (const task of restored) {
+      queue.tasks.set(task.id, task)
+    }
+    return queue
   }
 
   // ---------------------------------------------------------------------------
@@ -465,5 +512,72 @@ export class TaskQueue {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error(`TaskQueue: task "${taskId}" not found.`)
     return task
+  }
+
+  private static taskToSnapshot(task: Task): TaskSnapshot {
+    return {
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+      ...(task.dependsOn !== undefined ? { dependsOn: [...task.dependsOn] } : {}),
+      ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      ...(task.role !== undefined ? { role: task.role } : {}),
+      ...(task.priority !== undefined ? { priority: task.priority } : {}),
+      ...(task.result !== undefined ? { result: task.result } : {}),
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+      ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+      ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+      ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+    }
+  }
+
+  private static taskFromSnapshot(snapshot: TaskSnapshot): Task {
+    return {
+      id: snapshot.id,
+      title: snapshot.title,
+      description: snapshot.description,
+      status: snapshot.status,
+      ...(snapshot.assignee !== undefined ? { assignee: snapshot.assignee } : {}),
+      ...(snapshot.dependsOn !== undefined ? { dependsOn: [...snapshot.dependsOn] } : {}),
+      ...(snapshot.memoryScope !== undefined ? { memoryScope: snapshot.memoryScope } : {}),
+      ...(snapshot.role !== undefined ? { role: snapshot.role } : {}),
+      ...(snapshot.priority !== undefined ? { priority: snapshot.priority } : {}),
+      ...(snapshot.result !== undefined ? { result: snapshot.result } : {}),
+      createdAt: TaskQueue.parseSnapshotDate(snapshot.createdAt),
+      updatedAt: TaskQueue.parseSnapshotDate(snapshot.updatedAt),
+      ...(snapshot.maxRetries !== undefined ? { maxRetries: snapshot.maxRetries } : {}),
+      ...(snapshot.retryDelayMs !== undefined ? { retryDelayMs: snapshot.retryDelayMs } : {}),
+      ...(snapshot.retryBackoff !== undefined ? { retryBackoff: snapshot.retryBackoff } : {}),
+    }
+  }
+
+  private static parseSnapshotDate(value: string): Date {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? new Date() : date
+  }
+
+  private static resetRestoredInProgress(tasks: Task[]): Task[] {
+    const initial = tasks.map((task): Task =>
+      task.status === 'in_progress'
+        ? { ...task, status: 'pending', updatedAt: new Date() }
+        : task,
+    )
+    const taskById = new Map<string, Task>(initial.map((task) => [task.id, task]))
+
+    return initial.map((task): Task => {
+      if (task.status !== 'pending' && task.status !== 'blocked') return task
+      const pendingTask = { ...task, status: 'pending' as TaskStatus }
+      const ready = isTaskReady(pendingTask, initial, taskById)
+      if (ready && task.status === 'blocked') {
+        return { ...task, status: 'pending', updatedAt: new Date() }
+      }
+      if (!ready && task.status === 'pending') {
+        return { ...task, status: 'blocked', updatedAt: new Date() }
+      }
+      return task
+    })
   }
 }

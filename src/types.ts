@@ -735,9 +735,34 @@ export interface ModelRoutingPolicy {
   readonly rules: readonly ModelRoutingRule[]
 }
 
+/** Input task descriptor accepted by {@link OpenMultiAgent.runTasks}. */
+export interface RunTaskSpec {
+  readonly title: string
+  readonly description: string
+  readonly assignee?: string
+  readonly dependsOn?: string[]
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly verify?: ConsensusVerifyOptions
+}
+
 /** Per-call options for {@link OpenMultiAgent.runTasks}. */
 export interface RunTasksOptions {
   readonly abortSignal?: AbortSignal
+  /**
+   * Opt-in durable task checkpointing. When enabled, the orchestrator writes a
+   * checkpoint after each successfully completed task using the configured
+   * {@link MemoryStore}. Defaults to off.
+   *
+   * `true` uses the team's shared-memory store when available, otherwise a
+   * private in-memory store for the run. Pass an object to provide a durable
+   * store or custom key/run id.
+   */
+  readonly checkpoint?: boolean | CheckpointOptions
   /**
    * Opt-in deterministic model routing. When omitted, existing agent and
    * coordinator model selection is unchanged.
@@ -984,6 +1009,11 @@ export interface OrchestratorConfig {
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
   /**
+   * Default checkpoint configuration for `runTeam`, `runTasks`, `runFromPlan`,
+   * and `restore`. Per-call options override this value. Defaults to off.
+   */
+  readonly checkpoint?: boolean | CheckpointOptions
+  /**
    * Fallback tool grant for agents that declare neither {@link AgentConfig.tools}
    * nor {@link AgentConfig.toolPreset}. Built-in tools are opt-in (default-deny):
    * an agent with no grant resolves to zero built-in tools. Set this (e.g.
@@ -1046,6 +1076,97 @@ export interface OrchestratorConfig {
    * Only invoked by runTeam(). Not called for runAgent() or runTasks().
    */
   readonly onAgentStream?: (agentName: string, event: StreamEvent) => void
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint / restore
+// ---------------------------------------------------------------------------
+
+/** Configuration for opt-in checkpoint persistence. */
+export interface CheckpointOptions {
+  /**
+   * Set to `false` to disable a default checkpoint config for a single run.
+   * Omitted or `true` enables checkpointing.
+   */
+  readonly enabled?: boolean
+  /** Durable store used for checkpoint records. Defaults to the team's shared-memory store. */
+  readonly store?: MemoryStore
+  /** Exact store key for the latest checkpoint. Takes precedence over `runId`. */
+  readonly key?: string
+  /** Logical run id used to derive a checkpoint key when `key` is omitted. */
+  readonly runId?: string
+}
+
+/** Options accepted by {@link OpenMultiAgent.restore}. */
+export interface RestoreOptions extends RunTasksOptions {
+  /** Optional goal attached to the restored result when no checkpoint goal exists. */
+  readonly goal?: string
+}
+
+/** Serializable form of a {@link MemoryEntry}. */
+export interface MemoryEntrySnapshot {
+  readonly key: string
+  readonly value: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+  readonly createdAt: string
+  readonly expiresAtTurn?: number
+}
+
+/** Serializable form of {@link SharedMemory}. */
+export interface SharedMemorySnapshot {
+  readonly version: 1
+  readonly turnCount: number
+  readonly entries: readonly MemoryEntrySnapshot[]
+}
+
+/** Serializable form of a {@link Task}. */
+export interface TaskSnapshot {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly status: TaskStatus
+  readonly assignee?: string
+  readonly dependsOn?: readonly string[]
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly result?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
+}
+
+/** Serializable state of a {@link TaskQueue}. */
+export interface TaskQueueSnapshot {
+  readonly version: 1
+  readonly tasks: readonly TaskSnapshot[]
+  readonly pending: readonly string[]
+  readonly inProgress: readonly string[]
+  readonly completed: readonly string[]
+  readonly failed: readonly string[]
+  readonly blocked: readonly string[]
+  readonly skipped: readonly string[]
+}
+
+/** Result recorded for a completed task inside a checkpoint. */
+export interface CompletedTaskCheckpoint {
+  readonly taskId: string
+  readonly assignee?: string
+  readonly result?: string
+}
+
+/** Full persisted checkpoint for a task-based run. */
+export interface CheckpointSnapshot {
+  readonly version: 1
+  readonly mode: 'runTeam' | 'runTasks'
+  readonly createdAt: string
+  readonly runId?: string
+  readonly goal?: string
+  readonly queue: TaskQueueSnapshot
+  readonly sharedMemory?: SharedMemorySnapshot
+  readonly completedTaskResults: readonly CompletedTaskCheckpoint[]
 }
 
 /**

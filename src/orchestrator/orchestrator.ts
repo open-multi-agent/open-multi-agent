@@ -44,6 +44,8 @@
 import type {
   AgentConfig,
   AgentRunResult,
+  CheckpointOptions,
+  CheckpointSnapshot,
   ConsensusOptions,
   ConsensusResult,
   ConsensusVerifyOptions,
@@ -54,6 +56,8 @@ import type {
   PlanTaskArtifact,
   OrchestratorConfig,
   OrchestratorEvent,
+  RestoreOptions,
+  RunTaskSpec,
   RunTasksOptions,
   RunTeamOptions,
   StreamEvent,
@@ -77,6 +81,8 @@ import { registerBuiltInTools } from '../tool/built-in/index.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
+import { Checkpoint } from '../memory/checkpoint.js'
+import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
 import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
@@ -529,6 +535,7 @@ interface RunContext {
   readonly scheduler: Scheduler
   readonly agentResults: Map<string, AgentRunResult>
   readonly config: OrchestratorConfig
+  readonly checkpoint?: ActiveCheckpoint
   /** Trace run ID, present when `onTrace` is configured. */
   readonly runId?: string
   /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
@@ -546,6 +553,14 @@ interface RunContext {
   readonly modelRouting?: ModelRoutingPolicy
   readonly taskById: ReadonlyMap<string, Task>
   readonly taskLeafById: ReadonlyMap<string, boolean>
+}
+
+interface ActiveCheckpoint {
+  readonly manager: Checkpoint
+  readonly mode: CheckpointSnapshot['mode']
+  readonly goal?: string
+  readonly runId?: string
+  saveChain: Promise<void>
 }
 
 /**
@@ -642,6 +657,35 @@ function buildTaskAgentTeamInfo(
     delegationChain,
     runDelegatedAgent,
   }
+}
+
+async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<void> {
+  const active = ctx.checkpoint
+  if (!active) return
+
+  const sharedMem = ctx.team.getSharedMemoryInstance()
+  const completedTaskResults = queue.getByStatus('completed').map((task) => ({
+    taskId: task.id,
+    ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+    ...(task.result !== undefined ? { result: task.result } : {}),
+  }))
+
+  const snapshot: CheckpointSnapshot = {
+    version: 1,
+    mode: active.mode,
+    createdAt: new Date().toISOString(),
+    ...(active.runId !== undefined ? { runId: active.runId } : {}),
+    ...(active.goal !== undefined ? { goal: active.goal } : {}),
+    queue: queue.snapshot(),
+    ...(sharedMem ? { sharedMemory: await sharedMem.snapshot() } : {}),
+    completedTaskResults,
+  }
+
+  const nextSave = active.saveChain
+    .catch(() => undefined)
+    .then(() => active.manager.save(snapshot))
+  active.saveChain = nextSave
+  await nextSave
 }
 
 /**
@@ -904,6 +948,7 @@ async function executeQueue(
 
         const completedTask = queue.complete(task.id, effective.output)
         completedThisRound.push(completedTask)
+        await saveRunCheckpoint(queue, ctx)
 
         config.onProgress?.({
           type: 'task_complete',
@@ -1369,10 +1414,11 @@ async function runTaskVerify(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
+  private readonly fallbackCheckpointStore = new InMemoryStore()
   private completedTaskCount = 0
 
   /**
@@ -1398,6 +1444,7 @@ export class OpenMultiAgent {
       defaultCwd: config.defaultCwd === undefined ? defaultWorkspaceDir() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
       defaultToolPreset: config.defaultToolPreset,
+      checkpoint: config.checkpoint,
       onApproval: config.onApproval,
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
@@ -1732,12 +1779,19 @@ export class OpenMultiAgent {
     // Step 4: Build pool and execute
     // ------------------------------------------------------------------
     const pool = this.buildPool(agentConfigs)
+    const activeCheckpoint = this.createActiveCheckpoint(
+      team,
+      options?.checkpoint ?? this.config.checkpoint,
+      'runTeam',
+      goal,
+    )
     const ctx: RunContext = {
       team,
       pool,
       scheduler,
       agentResults,
       config: this.config,
+      ...(activeCheckpoint ? { checkpoint: activeCheckpoint } : {}),
       runId,
       abortSignal: options?.abortSignal,
       cumulativeUsage,
@@ -1920,13 +1974,13 @@ export class OpenMultiAgent {
    *
    * Task IDs, dependencies, assignees, titles, and descriptions are used exactly
    * as stored in the artifact. This is intentionally execution-only; it does not
-   * synthesize a coordinator final answer and it does not implement durable
-   * checkpoints.
+   * synthesize a coordinator final answer. Durable checkpoints are available
+   * through the same opt-in `checkpoint` option used by `runTasks`.
    */
   async runFromPlan(
     team: Team,
     plan: PlanArtifact,
-    options?: { abortSignal?: AbortSignal },
+    options?: RunTasksOptions,
   ): Promise<TeamRunResult> {
     if (plan.version !== 1) {
       throw new Error(`Unsupported plan artifact version: ${String(plan.version)}`)
@@ -1943,6 +1997,119 @@ export class OpenMultiAgent {
     return this.executeExplicitTaskQueue(team, queue, options, plan.goal)
   }
 
+  async restore(
+    team: Team,
+    tasks: ReadonlyArray<RunTaskSpec>,
+    options?: RestoreOptions,
+  ): Promise<TeamRunResult>
+  async restore(
+    team: Team,
+    plan: PlanArtifact,
+    options?: RestoreOptions,
+  ): Promise<TeamRunResult>
+  async restore(
+    team: Team,
+    options?: RestoreOptions,
+  ): Promise<TeamRunResult>
+  async restore(
+    team: Team,
+    tasksOrOptions?: ReadonlyArray<RunTaskSpec> | PlanArtifact | RestoreOptions,
+    maybeOptions?: RestoreOptions,
+  ): Promise<TeamRunResult> {
+    const hasTaskSource = Array.isArray(tasksOrOptions) || this.isPlanArtifact(tasksOrOptions)
+    const options = hasTaskSource ? maybeOptions : tasksOrOptions as RestoreOptions | undefined
+    const activeCheckpoint = this.createActiveCheckpoint(
+      team,
+      options?.checkpoint ?? this.config.checkpoint ?? true,
+      'runTasks',
+      options?.goal,
+    )
+
+    const snapshot = activeCheckpoint ? await activeCheckpoint.manager.loadLatest() : null
+    if (!snapshot) {
+      if (Array.isArray(tasksOrOptions)) {
+        const queue = new TaskQueue()
+        this.loadSpecsIntoQueue(
+          tasksOrOptions.map((t) => ({
+            title: t.title,
+            description: t.description,
+            assignee: t.assignee,
+            dependsOn: t.dependsOn,
+            memoryScope: t.memoryScope,
+            maxRetries: t.maxRetries,
+            retryDelayMs: t.retryDelayMs,
+            retryBackoff: t.retryBackoff,
+            role: t.role,
+            priority: t.priority,
+            verify: t.verify,
+          })),
+          team.getAgents(),
+          queue,
+        )
+        return this.executeExplicitTaskQueue(
+          team,
+          queue,
+          options,
+          options?.goal,
+          undefined,
+          activeCheckpoint,
+        )
+      }
+      if (this.isPlanArtifact(tasksOrOptions)) {
+        const queue = new TaskQueue()
+        const tasks = this.tasksFromPlan(tasksOrOptions)
+        const validation = validateTaskDependencies(tasks)
+        if (!validation.valid) {
+          throw new Error(`Invalid plan artifact: ${validation.errors.join(' ')}`)
+        }
+        queue.addBatch(tasks)
+        return this.executeExplicitTaskQueue(
+          team,
+          queue,
+          options,
+          tasksOrOptions.goal ?? options?.goal,
+          undefined,
+          activeCheckpoint,
+        )
+      }
+
+      const queue = new TaskQueue()
+      return this.executeExplicitTaskQueue(
+        team,
+        queue,
+        options,
+        options?.goal,
+        undefined,
+        activeCheckpoint,
+      )
+    }
+
+    const sharedMem = team.getSharedMemoryInstance()
+    if (sharedMem && snapshot.sharedMemory) {
+      await sharedMem.restore(snapshot.sharedMemory)
+    }
+
+    const queue = TaskQueue.fromSnapshot(snapshot.queue, { resetInProgress: true })
+    const agentResults = this.agentResultsFromCheckpoint(snapshot, queue)
+    const checkpointForResume: ActiveCheckpoint | undefined = activeCheckpoint
+      ? {
+          ...activeCheckpoint,
+          mode: snapshot.mode,
+          ...(snapshot.goal !== undefined ? { goal: snapshot.goal } : {}),
+          ...(snapshot.runId !== undefined ? { runId: snapshot.runId } : {}),
+        }
+      : undefined
+
+    return this.executeExplicitTaskQueue(
+      team,
+      queue,
+      options,
+      snapshot.goal ?? options?.goal,
+      agentResults,
+      checkpointForResume,
+    )
+  }
+
   /**
    * Run a team with an explicitly provided task list.
    *
@@ -1955,19 +2122,7 @@ export class OpenMultiAgent {
    */
   async runTasks(
     team: Team,
-    tasks: ReadonlyArray<{
-      title: string
-      description: string
-      assignee?: string
-      dependsOn?: string[]
-      memoryScope?: 'dependencies' | 'all'
-      maxRetries?: number
-      retryDelayMs?: number
-      retryBackoff?: number
-      role?: string
-      priority?: 'low' | 'normal' | 'high' | 'critical'
-      verify?: ConsensusVerifyOptions
-    }>,
+    tasks: ReadonlyArray<RunTaskSpec>,
     options?: RunTasksOptions,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
@@ -2308,19 +2463,28 @@ export class OpenMultiAgent {
     queue: TaskQueue,
     options?: RunTasksOptions,
     goal?: string,
+    initialAgentResults?: Map<string, AgentRunResult>,
+    activeCheckpoint?: ActiveCheckpoint,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler('dependency-first')
     scheduler.autoAssign(queue, agentConfigs)
 
     const pool = this.buildPool(agentConfigs)
-    const agentResults = new Map<string, AgentRunResult>()
+    const agentResults = initialAgentResults ?? new Map<string, AgentRunResult>()
+    const checkpoint = activeCheckpoint ?? this.createActiveCheckpoint(
+      team,
+      options?.checkpoint ?? this.config.checkpoint,
+      'runTasks',
+      goal,
+    )
     const ctx: RunContext = {
       team,
       pool,
       scheduler,
       agentResults,
       config: this.config,
+      ...(checkpoint ? { checkpoint } : {}),
       runId: this.config.onTrace ? generateRunId() : undefined,
       abortSignal: options?.abortSignal,
       cumulativeUsage: ZERO_USAGE,
@@ -2350,6 +2514,55 @@ export class OpenMultiAgent {
     }))
 
     return this.buildTeamRunResult(agentResults, goal, taskRecords)
+  }
+
+  private createActiveCheckpoint(
+    team: Team,
+    config: boolean | CheckpointOptions | undefined,
+    mode: CheckpointSnapshot['mode'],
+    goal?: string,
+  ): ActiveCheckpoint | undefined {
+    if (config === undefined || config === false) return undefined
+    const options = config === true ? {} : config
+    if (options.enabled === false) return undefined
+
+    const store = options.store ?? team.getSharedMemory() ?? this.fallbackCheckpointStore
+    return {
+      manager: new Checkpoint(store, options),
+      mode,
+      ...(goal !== undefined ? { goal } : {}),
+      ...(options.runId !== undefined ? { runId: options.runId } : {}),
+      saveChain: Promise.resolve(),
+    }
+  }
+
+  private agentResultsFromCheckpoint(
+    snapshot: CheckpointSnapshot,
+    queue: TaskQueue,
+  ): Map<string, AgentRunResult> {
+    const taskById = new Map(queue.list().map((task) => [task.id, task]))
+    const agentResults = new Map<string, AgentRunResult>()
+
+    for (const completed of snapshot.completedTaskResults) {
+      const task = taskById.get(completed.taskId)
+      const assignee = completed.assignee ?? task?.assignee ?? 'unknown'
+      const output = completed.result ?? task?.result ?? ''
+      agentResults.set(`${assignee}:${completed.taskId}`, {
+        success: true,
+        output,
+        messages: [],
+        tokenUsage: ZERO_USAGE,
+        toolCalls: [],
+      })
+    }
+
+    return agentResults
+  }
+
+  private isPlanArtifact(value: unknown): value is PlanArtifact {
+    if (value === null || typeof value !== 'object') return false
+    const artifact = value as Record<string, unknown>
+    return artifact['version'] === 1 && Array.isArray(artifact['tasks'])
   }
 
   /**

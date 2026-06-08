@@ -8,8 +8,10 @@
  */
 
 import type {
+  MemoryEntrySnapshot,
   MemoryEntry,
   MemoryStore,
+  SharedMemorySnapshot,
   SharedMemoryEntry,
   SharedMemoryValue,
   SharedMemoryWriteOptions,
@@ -23,6 +25,7 @@ import { InMemoryStore } from './store.js'
 const STORE_METHODS = ['get', 'set', 'list', 'delete', 'clear'] as const
 const STRUCTURED_VALUE_ENCODING = 'json'
 const STRUCTURED_VALUE_METADATA_KEY = 'sharedMemoryValueEncoding'
+const RESERVED_STORE_PREFIXES = ['__oma_checkpoint__/'] as const
 
 
 /**
@@ -113,6 +116,62 @@ export class SharedMemory {
   /** Current turn count. Useful for tests and observability. */
   getTurnCount(): number {
     return this.turnCount
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshot / restore
+  // ---------------------------------------------------------------------------
+
+  /** Returns a serializable snapshot of all non-expired shared-memory entries. */
+  async snapshot(): Promise<SharedMemorySnapshot> {
+    return {
+      version: 1,
+      turnCount: this.turnCount,
+      entries: this.filterExpired(await this.store.list()).map(SharedMemory.entryToSnapshot),
+    }
+  }
+
+  /**
+   * Rebuilds a {@link SharedMemory} instance from a snapshot.
+   *
+   * Snapshot entry values remain string-only at the {@link MemoryStore}
+   * boundary; structured values are recovered through their metadata when read.
+   */
+  static async fromSnapshot(
+    snapshot: SharedMemorySnapshot,
+    store?: MemoryStore,
+  ): Promise<SharedMemory> {
+    const memory = new SharedMemory(store)
+    await memory.restore(snapshot)
+    return memory
+  }
+
+  /**
+   * Restores this instance from a snapshot. Existing non-checkpoint entries in
+   * the backing store are replaced; reserved checkpoint records are preserved
+   * so the same store can hold both agent memory and checkpoints.
+   */
+  async restore(snapshot: SharedMemorySnapshot): Promise<void> {
+    if (snapshot.version !== 1) {
+      throw new Error(`SharedMemory.restore: unsupported snapshot version ${String(snapshot.version)}.`)
+    }
+
+    const existing = await this.store.list()
+    for (const entry of existing) {
+      if (!SharedMemory.isReservedStoreKey(entry.key)) {
+        await this.store.delete(entry.key)
+      }
+    }
+
+    for (const entry of snapshot.entries) {
+      if (SharedMemory.isReservedStoreKey(entry.key)) continue
+      if (entry.expiresAtTurn !== undefined && typeof this.store.setWithExpiry === 'function') {
+        await this.store.setWithExpiry(entry.key, entry.value, entry.expiresAtTurn, entry.metadata)
+      } else {
+        await this.store.set(entry.key, entry.value, entry.metadata)
+      }
+    }
+    this.turnCount = snapshot.turnCount
   }
 
   // ---------------------------------------------------------------------------
@@ -213,6 +272,7 @@ export class SharedMemory {
    * without the risk of stomping on a fresh write to the same key.
    */
   async read(key: string): Promise<SharedMemoryEntry | null> {
+    if (SharedMemory.isReservedStoreKey(key)) return null
     const entry = await this.store.get(key)
     if (entry === null) return null
     if (this.isExpired(entry)) return null
@@ -330,6 +390,20 @@ export class SharedMemory {
     return `${agentName}/${key}`
   }
 
+  private static isReservedStoreKey(key: string): boolean {
+    return RESERVED_STORE_PREFIXES.some((prefix) => key.startsWith(prefix))
+  }
+
+  private static entryToSnapshot(entry: MemoryEntry): MemoryEntrySnapshot {
+    return {
+      key: entry.key,
+      value: entry.value,
+      ...(entry.metadata !== undefined ? { metadata: { ...entry.metadata } } : {}),
+      createdAt: entry.createdAt.toISOString(),
+      ...(entry.expiresAtTurn !== undefined ? { expiresAtTurn: entry.expiresAtTurn } : {}),
+    }
+  }
+
   private static serializeValue<TValue extends SharedMemoryValue>(
     value: TValue,
     options?: SharedMemoryWriteOptions,
@@ -440,6 +514,6 @@ export class SharedMemory {
    * `expiresAtTurn` are always kept.
    */
   private filterExpired(entries: MemoryEntry[]): MemoryEntry[] {
-    return entries.filter((entry) => !this.isExpired(entry))
+    return entries.filter((entry) => !SharedMemory.isReservedStoreKey(entry.key) && !this.isExpired(entry))
   }
 }
