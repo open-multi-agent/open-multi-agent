@@ -137,6 +137,8 @@ const plan = orchestrator.createPlanArtifact(preview)
 const result = await orchestrator.runFromPlan(team, plan)
 ```
 
+Route orchestration phases to different models with an opt-in `modelRouting` policy: a flagship model plans, a cheap model runs the leaf tasks. Match by phase, agent, task role/priority, or leaf status; first match wins, and omitting it leaves model selection unchanged. See [Model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md).
+
 ## Features
 
 | Capability | What you get |
@@ -386,6 +388,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — the JSON-first `oma` binary for shell and CI.
 - [Consensus](./docs/consensus.md) — the `runConsensus` proposer→judge primitive, the per-task `verify` hook, and the budget invariant.
+- [Model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — the opt-in `modelRouting` policy: match by phase / agent / role / priority / leaf, first match wins.
 
 ## Contributing
 

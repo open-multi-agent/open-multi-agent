@@ -135,6 +135,8 @@ const plan = orchestrator.createPlanArtifact(preview)
 const result = await orchestrator.runFromPlan(team, plan)
 ```
 
+用一份可选的 `modelRouting` 策略，把不同编排阶段路由到不同模型：旗舰模型负责规划，便宜模型跑叶子任务。可按 phase、agent、任务 role/priority 或 leaf 状态匹配；first match wins，不设置则模型选择保持不变。见 [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)。
+
 ## 功能一览
 
 | 能力 | 说明 |
@@ -383,6 +385,7 @@ await oma.runAgent(
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
+- [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — 可选的 `modelRouting` 策略：按 phase / agent / role / priority / leaf 匹配，first match wins。
 
 ## 参与贡献
 
