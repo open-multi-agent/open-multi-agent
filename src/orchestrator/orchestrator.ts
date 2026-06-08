@@ -245,6 +245,29 @@ function buildAgent(
   return new Agent(config, registry, executor)
 }
 
+/**
+ * Apply the orchestrator's {@link OrchestratorConfig.defaultToolPreset} as a
+ * fallback grant for an agent that declares neither `tools` nor `toolPreset`.
+ *
+ * Built-in tools are opt-in (default-deny): an agent with no grant resolves to
+ * zero built-in tools. This fills that gap when the orchestrator opts in to a
+ * default. Per-agent grants always win — the default never widens an agent that
+ * already declares `tools` or `toolPreset`.
+ */
+function applyDefaultToolPreset(
+  config: AgentConfig,
+  defaultToolPreset: OrchestratorConfig['defaultToolPreset'],
+): AgentConfig {
+  if (
+    defaultToolPreset === undefined
+    || config.tools !== undefined
+    || config.toolPreset !== undefined
+  ) {
+    return config
+  }
+  return { ...config, toolPreset: defaultToolPreset }
+}
+
 /** Promise-based delay. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -580,13 +603,13 @@ function buildTaskAgentTeamInfo(
       task: ctx.taskById.get(taskId),
       leaf: ctx.taskLeafById.get(taskId),
     })
-    const effective: AgentConfig = withModelRoute({
+    const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
       ...targetConfig,
       provider: targetConfig.provider ?? ctx.config.defaultProvider,
       baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
       apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
       cwd: targetConfig.cwd === undefined ? ctx.config.defaultCwd : targetConfig.cwd,
-    }, route)
+    }, ctx.config.defaultToolPreset), route)
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
     const nestedTeam = buildTaskAgentTeamInfo(
@@ -755,13 +778,13 @@ async function executeQueue(
         leaf: ctx.taskLeafById.get(task.id),
       })
       const routedAgent = workerRoute
-        ? buildAgent(withModelRoute({
+        ? buildAgent(withModelRoute(applyDefaultToolPreset({
             ...agentConfig,
             provider: agentConfig.provider ?? config.defaultProvider,
             baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
             apiKey: agentConfig.apiKey ?? config.defaultApiKey,
             cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
-          }, workerRoute), { includeDelegateTool: true })
+          }, config.defaultToolPreset), workerRoute), { includeDelegateTool: true })
         : undefined
       const streamCallback = config.onAgentStream
         ? (event: StreamEvent) => {
@@ -1346,8 +1369,8 @@ async function runTaskVerify(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
 
   private readonly teams: Map<string, Team> = new Map()
   private completedTaskCount = 0
@@ -1374,6 +1397,7 @@ export class OpenMultiAgent {
       // disable the filesystem sandbox; a string sets a custom sandbox root.
       defaultCwd: config.defaultCwd === undefined ? defaultWorkspaceDir() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
+      defaultToolPreset: config.defaultToolPreset,
       onApproval: config.onApproval,
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
@@ -1428,14 +1452,14 @@ export class OpenMultiAgent {
     options?: { abortSignal?: AbortSignal },
   ): Promise<AgentRunResult> {
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
-    const effective: AgentConfig = {
+    const effective: AgentConfig = applyDefaultToolPreset({
       ...config,
       provider: config.provider ?? this.config.defaultProvider,
       baseURL: config.baseURL ?? this.config.defaultBaseURL,
       apiKey: config.apiKey ?? this.config.defaultApiKey,
       cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       maxTokenBudget: effectiveBudget,
-    }
+    }, this.config.defaultToolPreset)
     const agent = buildAgent(effective)
     this.config.onProgress?.({
       type: 'agent_start',
@@ -1535,14 +1559,14 @@ export class OpenMultiAgent {
       // to avoid duplicate progress events and double completedTaskCount.
       // Events are emitted here; counting is handled by buildTeamRunResult().
       const effectiveBudget = resolveTokenBudget(bestAgent.maxTokenBudget, this.config.maxTokenBudget)
-      const effective: AgentConfig = withModelRoute({
+      const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
         ...bestAgent,
         provider: bestAgent.provider ?? this.config.defaultProvider,
         baseURL: bestAgent.baseURL ?? this.config.defaultBaseURL,
         apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
         cwd: bestAgent.cwd === undefined ? this.config.defaultCwd : bestAgent.cwd,
         maxTokenBudget: effectiveBudget,
-      }, routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
+      }, this.config.defaultToolPreset), routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
       const agent = buildAgent(effective)
 
       this.config.onProgress?.({
@@ -2424,14 +2448,14 @@ export class OpenMultiAgent {
   private buildPool(agentConfigs: AgentConfig[]): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
-      const effective: AgentConfig = {
+      const effective: AgentConfig = applyDefaultToolPreset({
         ...config,
         model: config.model,
         provider: config.provider ?? this.config.defaultProvider,
         baseURL: config.baseURL ?? this.config.defaultBaseURL,
         apiKey: config.apiKey ?? this.config.defaultApiKey,
         cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
-      }
+      }, this.config.defaultToolPreset)
       pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }
     return pool

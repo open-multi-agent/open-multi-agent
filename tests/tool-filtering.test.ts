@@ -108,8 +108,11 @@ describe('Tool filtering', () => {
     })
   })
 
-  describe('resolveTools - no filtering', () => {
-    it('returns all tools when no filters are set', () => {
+  describe('resolveTools - default-deny (no grant)', () => {
+    it('resolves to zero built-in tools when neither toolPreset nor allowedTools is set', () => {
+      // Default-deny: built-in tools are opt-in. With no positive grant, only
+      // runtime-added custom tools (registration is the grant) survive — the
+      // unsandboxed `bash` and the filesystem tools are NOT exposed.
       const runner = new AgentRunner(mockAdapter, registry, executor, {
         model: 'test-model',
       })
@@ -117,15 +120,20 @@ describe('Tool filtering', () => {
       const tools = (runner as any).resolveTools() as LLMToolDef[]
       const toolNames = tools.map((t: LLMToolDef) => t.name).sort()
 
-      expect(toolNames).toEqual([
-        'bash',
-        'custom_tool',
-        'file_edit',
-        'file_read',
-        'file_write',
-        'glob',
-        'grep',
-      ])
+      expect(toolNames).toEqual(['custom_tool'])
+    })
+
+    it('does not expose bash or filesystem tools without a grant', () => {
+      const runner = new AgentRunner(mockAdapter, registry, executor, {
+        model: 'test-model',
+      })
+
+      const tools = (runner as any).resolveTools() as LLMToolDef[]
+      const toolNames = new Set(tools.map((t: LLMToolDef) => t.name))
+
+      for (const builtin of ['bash', 'file_read', 'file_write', 'file_edit', 'grep', 'glob']) {
+        expect(toolNames.has(builtin)).toBe(false)
+      }
     })
   })
 
@@ -207,16 +215,19 @@ describe('Tool filtering', () => {
   })
 
   describe('resolveTools - denylist filtering', () => {
-    it('denylist filters correctly', () => {
+    it('denylist subtracts from a granted preset (and still blocks runtime tools)', () => {
+      // A denylist is a subtractive filter, not a grant. Pair it with a positive
+      // grant so the subtraction is observable. `full` grants every built-in;
+      // the denylist then removes `bash` (a built-in) and `custom_tool` (runtime).
       const runner = new AgentRunner(mockAdapter, registry, executor, {
         model: 'test-model',
+        toolPreset: 'full',
         disallowedTools: ['bash', 'custom_tool'],
       })
 
       const tools = (runner as any).resolveTools() as LLMToolDef[]
       const toolNames = tools.map((t: LLMToolDef) => t.name).sort()
 
-      // custom_tool is runtime-added but disallowedTools still blocks it
       expect(toolNames).toEqual([
         'file_edit',
         'file_read',
@@ -226,14 +237,26 @@ describe('Tool filtering', () => {
       ])
     })
 
-    it('empty denylist returns all tools', () => {
+    it('a denylist alone is not a grant — built-ins stay denied', () => {
+      // Default-deny: with no preset / allowlist, a denylist cannot resurrect
+      // built-in tools. Only the runtime custom tool survives.
+      const runner = new AgentRunner(mockAdapter, registry, executor, {
+        model: 'test-model',
+        disallowedTools: ['bash'],
+      })
+
+      const tools = (runner as any).resolveTools() as LLMToolDef[]
+      expect(tools.map((t) => t.name)).toEqual(['custom_tool'])
+    })
+
+    it('empty denylist is still not a grant', () => {
       const runner = new AgentRunner(mockAdapter, registry, executor, {
         model: 'test-model',
         disallowedTools: [],
       })
 
-      const tools = (runner as any).resolveTools()
-      expect(tools).toHaveLength(7) // All registered tools
+      const tools = (runner as any).resolveTools() as LLMToolDef[]
+      expect(tools.map((t) => t.name)).toEqual(['custom_tool'])
     })
   })
 

@@ -63,6 +63,8 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// 内置工具默认拒绝（default-deny）：每个 agent 只拿到自己在 `tools`（或 `toolPreset`）
+// 里列出的工具；两者都不写就一个都不给。
 const agents: AgentConfig[] = [
   { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
   { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
@@ -144,7 +146,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，把目标拆成任务 DAG，并行执行独立任务，合成最终结果。未分配的任务自动调度——`dependency-first`（默认）、`round-robin`、`least-busy` 或 `capability-match`。 |
 | **同队混用 provider** | 12 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。把 tool call 当纯文本输出的本地 server 会由 fallback 解析器兜底。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **扩展思考 / 推理** | 一份 `thinking` 配置映射到 Anthropic thinking、Gemini `thinkingConfig` 和 OpenAI `reasoning_effort`；推理以事件流式输出，并可选在切换 provider 时保留。([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
-| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
+| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），全部**默认拒绝**（default-deny——用 `tools` / `toolPreset` 授予），外加 `delegate_to_agent` handoff（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出（团队运行时通过 `onAgentStream` 拿到每个 agent 的流）；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）卡点，或用 `planOnly` 先预览。 |
 | **固定并重放计划** | 用 `createPlanArtifact` 把 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
@@ -375,6 +377,7 @@ await oma.runAgent(
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | 脱敏密钥 | 自动——API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
+| 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写就一个都没有。`bash` 一旦授予仍是无沙箱的，且每次工具结果都会发给你的模型 provider——所以读取/执行权限要刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
 ## 文档

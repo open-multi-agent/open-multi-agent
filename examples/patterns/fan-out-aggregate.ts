@@ -90,7 +90,7 @@ Keep the final report to 300-400 words.`,
 
 function buildAgent(config: AgentConfig): Agent {
   const registry = new ToolRegistry()
-  registerBuiltInTools(registry) // not needed here, but safe if tools are added later
+  registerBuiltInTools(registry) // available to grant, but these agents grant none (tools are opt-in) — pure reasoning
   const executor = new ToolExecutor(registry)
   return new Agent(config, registry, executor)
 }
