@@ -21,6 +21,8 @@ the contributor. Current:
 
 - `with-engram/`: Engram memory backend. Contributed by
   [@Agentscreator](https://github.com/Agentscreator) via #160.
+- `with-tencentdb-memory/`: TencentDB-Agent-Memory long-term memory (L0→L3
+  pipeline) via its Hermes Gateway sidecar.
 
 ## Submitting a reference integration
 
