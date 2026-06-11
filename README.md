@@ -63,6 +63,8 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// Built-in tools are opt-in (default-deny): each agent gets only the tools it
+// lists in `tools` (or a `toolPreset`). List neither and the agent gets none.
 const agents: AgentConfig[] = [
   { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
   { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
@@ -122,11 +124,22 @@ Local models via Ollama need no API key, see [`providers/ollama`](examples/provi
 | Auto-orchestrated team | `runTeam()` | Give a goal, let the coordinator plan and execute | [`basics/team-collaboration`](examples/basics/team-collaboration.ts) |
 | Explicit pipeline | `runTasks()` | You define the task graph and assignments | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
-Preview the coordinator's task DAG without executing agents:
+For answers that need scrutiny, `runConsensus()` runs a proposer→judge verification loop (with an opt-in per-task `verify` hook). See [Consensus](./docs/consensus.md).
+
+Preview the coordinator's task DAG without executing it, or pin that plan and replay the same graph later without another coordinator call:
 
 ```ts
-const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+// Decompose once and review the plan
+const preview = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+// Turn it into a diffable, version-controllable artifact (plain JSON)
+const plan = orchestrator.createPlanArtifact(preview)
+
+// Later: replay the exact graph (same task ids, deps, assignees), no coordinator
+const result = await orchestrator.runFromPlan(team, plan)
 ```
+
+Route orchestration phases to different models with an opt-in `modelRouting` policy: a flagship model plans, a cheap model runs the leaf tasks. Match by phase, agent, task role/priority, or leaf status; first match wins, and omitting it leaves model selection unchanged. See [Model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md).
 
 ## Features
 
@@ -135,9 +148,10 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **Goal-driven coordinator** | One `runTeam(team, goal)` call decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. Unassigned tasks are auto-scheduled — `dependency-first` (default), `round-robin`, `least-busy`, or `capability-match`. |
 | **Mix providers in one team** | 12 built-in providers plus any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, Groq), mixed freely in one team. Local servers that emit tool calls as plain text are recovered by a fallback parser. ([full list](#supported-providers) · [setup](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **Extended thinking / reasoning** | One `thinking` config maps to Anthropic thinking, Gemini `thinkingConfig`, and OpenAI `reasoning_effort`; reasoning is streamed as events, with opt-in preservation across a provider switch. ([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
-| **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), opt-in `delegate_to_agent` (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
+| **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), all **opt-in** (default-deny — grant via `tools` / `toolPreset`), plus `delegate_to_agent` handoff (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **Streaming + structured output** | Token-by-token streaming on every adapter (per-agent during team runs via `onAgentStream`); Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
 | **Human-in-the-loop** | Gate execution with `onPlanReady` (approve the plan before any agent runs) and `onApproval` (approve between task rounds), or inspect first with `planOnly`. |
+| **Pin and replay plans** | Serialize a `planOnly` decomposition with `createPlanArtifact`, then `runFromPlan` replays the exact task graph without re-invoking the coordinator. ([`patterns/plan-replay`](examples/patterns/plan-replay.ts)) |
 | **Lifecycle hooks + cancellation** | `beforeRun` rewrites the prompt, `afterRun` post-processes or rejects the result; pass an `AbortSignal` to cancel a run in flight. |
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
@@ -206,7 +220,7 @@ Built an integration? See the [integration guide](examples/integrations/README.m
 
 Limited-time provider offers for `open-multi-agent` users. Listings are not paid endorsements.
 
-- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M2.7 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md).
+- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M3 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md).
 
 ### Featured partner
 
@@ -236,6 +250,7 @@ End-to-end scenarios you can run today. Each one is a complete, opinionated work
 - [`patterns/cost-tiered-pipeline`](examples/patterns/cost-tiered-pipeline.ts): assign a different model per stage and estimate per-model USD cost from `onTrace` token counts.
 - [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts): MapReduce-style fan-out via `AgentPool.runParallel()`.
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts): synchronous sub-agent delegation via `delegate_to_agent`.
+- [`patterns/plan-replay`](examples/patterns/plan-replay.ts): decompose a goal once with `planOnly`, serialize it with `createPlanArtifact`, then replay the same DAG via `runFromPlan` without re-running the coordinator.
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app combining OMA `runTeam()` with AI SDK `useChat` streaming.
@@ -364,6 +379,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
+| Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
 
 ## Documentation
@@ -374,6 +390,8 @@ Before going live, wire up the controls that protect token spend, recover from f
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — the JSON-first `oma` binary for shell and CI.
+- [Consensus](./docs/consensus.md) — the `runConsensus` proposer→judge primitive, the per-task `verify` hook, and the budget invariant.
+- [Model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — the opt-in `modelRouting` policy: match by phase / agent / role / priority / leaf, first match wins.
 
 ## Contributing
 

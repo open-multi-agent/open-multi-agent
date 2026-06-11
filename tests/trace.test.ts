@@ -230,6 +230,7 @@ describe('AgentRunner trace events', () => {
     const runner = new AgentRunner(adapter, registry, executor, {
       model: 'test-model',
       agentName: 'tooler',
+      allowedTools: ['echo'],
     })
 
     await runner.run(
@@ -306,6 +307,7 @@ describe('AgentRunner trace events', () => {
     const runner = new AgentRunner(adapter, registry, executor, {
       model: 'test-model',
       agentName: 'err-agent',
+      allowedTools: ['boom'],
     })
 
     await runner.run(
@@ -347,6 +349,7 @@ describe('AgentRunner trace events', () => {
     const runner = new AgentRunner(adapter, registry, executor, {
       model: 'test-model',
       agentName: 'tooler',
+      allowedTools: ['big_output'],
     })
 
     await runner.run(

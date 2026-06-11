@@ -113,7 +113,7 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
-export { TokenBudgetExceededError } from './errors.js'
+export { TokenBudgetExceededError, InvalidMessageError } from './errors.js'
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -167,6 +167,18 @@ export type {
   TeamConfig,
   TeamRunResult,
   RunTeamOptions,
+  RunTasksOptions,
+  ModelRouteConfig,
+  ModelRoutingMatch,
+  ModelRoutingRule,
+  ModelRoutingPolicy,
+  PlanArtifact,
+  PlanTaskArtifact,
+
+  // Consensus
+  ConsensusOptions,
+  ConsensusVerifyOptions,
+  ConsensusResult,
 
   // Dashboard (static HTML)
   TaskExecutionMetrics,
@@ -191,10 +203,14 @@ export type {
   AgentTrace,
   PlanReadyTrace,
   AgentStreamTrace,
+  ConsensusTrace,
 
   // Memory
   MemoryEntry,
   MemoryStore,
+  SharedMemoryEntry,
+  SharedMemoryValue,
+  SharedMemoryWriteOptions,
 } from './types.js'
 
 export { generateRunId } from './utils/trace.js'

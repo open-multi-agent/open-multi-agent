@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { z } from 'zod'
 import { SharedMemory } from '../src/memory/shared.js'
 import { Team } from '../src/team/team.js'
 import type { MemoryEntry, MemoryStore } from '../src/types.js'
@@ -74,6 +75,74 @@ describe('SharedMemory', () => {
 
     const entry = await mem.read('agent/key')
     expect(entry!.metadata).toMatchObject({ priority: 'high', agent: 'agent' })
+  })
+
+  // -------------------------------------------------------------------------
+  // Structured values
+  // -------------------------------------------------------------------------
+
+  it('roundtrips JSON object values while preserving string compatibility', async () => {
+    const mem = new SharedMemory()
+    const value = { status: 'done', count: 2, nested: { ok: true } } as const
+
+    await mem.write('agent', 'structured', value)
+
+    const entry = await mem.read('agent/structured')
+    expect(entry!.value).toEqual(value)
+  })
+
+  it('roundtrips JSON array values through read and list', async () => {
+    const mem = new SharedMemory()
+    const value = ['task-a', { ready: true }, null] as const
+
+    await mem.write('agent', 'handoff', value)
+
+    expect((await mem.read('agent/handoff'))!.value).toEqual(value)
+    expect((await mem.listAll())[0].value).toEqual(value)
+    expect((await mem.listByAgent('agent'))[0].value).toEqual(value)
+  })
+
+  it('validates structured writes against an optional Zod schema', async () => {
+    const mem = new SharedMemory()
+    const schema = z.object({ answer: z.number() })
+
+    await expect(
+      mem.write('agent', 'bad', { answer: 'nope' }, undefined, { schema }),
+    ).rejects.toThrow(/schema validation/)
+    expect(await mem.read('agent/bad')).toBeNull()
+  })
+
+  it('keeps the underlying MemoryStore boundary string-only for structured values', async () => {
+    const mem = new SharedMemory()
+    const store = mem.getStore()
+
+    await mem.write('agent', 'structured', { ready: true })
+
+    const raw = await store.get('agent/structured')
+    expect(raw!.value).toBe('{"ready":true}')
+    expect(typeof raw!.value).toBe('string')
+  })
+
+  it('keeps legacy plain string store entries as strings even when JSON-looking', async () => {
+    const data = new Map<string, MemoryEntry>()
+    const store: MemoryStore = {
+      async get(key) { return data.get(key) ?? null },
+      async set(key, value, metadata) {
+        data.set(key, { key, value, metadata, createdAt: new Date() })
+      },
+      async list() { return Array.from(data.values()) },
+      async delete(key) { data.delete(key) },
+      async clear() { data.clear() },
+    }
+    data.set('legacy/json-looking', {
+      key: 'legacy/json-looking',
+      value: '{"ready":true}',
+      createdAt: new Date(),
+    })
+    const mem = new SharedMemory(store)
+
+    const entry = await mem.read('legacy/json-looking')
+    expect(entry!.value).toBe('{"ready":true}')
   })
 
   // -------------------------------------------------------------------------

@@ -31,7 +31,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/bedrock`](providers/bedrock.ts) | AWS Bedrock (Claude via Converse API) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
 | [`providers/grok`](providers/grok.ts) | xAI Grok | `XAI_API_KEY` |
 | [`providers/gemini`](providers/gemini.ts) | Google Gemini | `GEMINI_API_KEY` |
-| [`providers/minimax`](providers/minimax.ts) | MiniMax M2.7 | `MINIMAX_API_KEY` |
+| [`providers/minimax`](providers/minimax.ts) | MiniMax M3 | `MINIMAX_API_KEY` |
 | [`providers/mimo`](providers/mimo.ts) | MiMo V2.5 Pro | `MIMO_API_KEY` |
 | [`providers/hunyuan`](providers/hunyuan.ts) | Tencent Hunyuan (MaaS, hy3) | `HUNYUAN_API_KEY` |
 | [`providers/deepseek`](providers/deepseek.ts) | DeepSeek Chat | `DEEPSEEK_API_KEY` |
@@ -57,6 +57,8 @@ Reusable shapes for common multi-agent problems.
 | [`patterns/research-aggregation`](patterns/research-aggregation.ts) | Multi-source research collated by a synthesis agent. |
 | [`patterns/cost-tiered-pipeline`](patterns/cost-tiered-pipeline.ts) | Run the same four-stage pipeline twice to compare flagship vs tiered model cost. |
 | [`patterns/agent-handoff`](patterns/agent-handoff.ts) | Synchronous sub-agent delegation via `delegate_to_agent`. |
+| [`patterns/plan-replay`](patterns/plan-replay.ts) | Pin a coordinator plan with `createPlanArtifact`, then replay it with `runFromPlan`, no coordinator re-run. |
+
 ## cookbook — use-case recipes
 
 End-to-end examples framed around a concrete problem (meeting summarization, translation QA, competitive monitoring, etc.) rather than a single orchestration primitive. Lighter bar than `production/`: no tests or pinned model versions required. Good entry point if you want to see how the patterns compose on a real task.

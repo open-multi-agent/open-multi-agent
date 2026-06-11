@@ -8,3 +8,4 @@ oma-dashboards/
 .github/brand/frames/
 .claude/
 .npmrc
+.env

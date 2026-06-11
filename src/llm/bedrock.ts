@@ -58,6 +58,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
+import { assertValidMessages } from './validate.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -260,6 +261,7 @@ export class BedrockAdapter implements LLMAdapter {
   // -------------------------------------------------------------------------
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const bedrockMessages = toBedrockMessages(messages, options)
     const system = options.systemPrompt ? [{ text: options.systemPrompt }] : undefined
 
@@ -304,6 +306,7 @@ export class BedrockAdapter implements LLMAdapter {
   // -------------------------------------------------------------------------
 
   async *stream(messages: LLMMessage[], options: LLMStreamOptions): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const bedrockMessages = toBedrockMessages(messages, options)
     const system = options.systemPrompt ? [{ text: options.systemPrompt }] : undefined
 

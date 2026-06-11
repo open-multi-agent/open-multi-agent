@@ -694,12 +694,62 @@ export interface TeamConfig {
   readonly maxConcurrency?: number
 }
 
+/** Model/provider/API-key override selected by a model routing rule. */
+export interface ModelRouteConfig {
+  /** Model selected for the matched run. */
+  readonly model: string
+  /** Provider selected for the matched run. Defaults to the agent's provider/default provider when omitted. */
+  readonly provider?: SupportedProvider
+  /** Custom base URL for OpenAI-compatible or self-hosted endpoints. */
+  readonly baseURL?: string
+  /** API key selected for the matched run. */
+  readonly apiKey?: string
+  /** AWS region selected for Bedrock routes. */
+  readonly region?: string
+}
+
+/** Deterministic, predicate-free route selector for a model routing rule. */
+export interface ModelRoutingMatch {
+  /** Orchestration phase to match. */
+  readonly phase?: 'coordinator' | 'synthesis' | 'short-circuit' | 'worker' | 'delegated'
+  /** Agent name to match. */
+  readonly agent?: string
+  /** Task role to match, supplied by explicit tasks or coordinator JSON. */
+  readonly taskRole?: string
+  /** Task priority to match, supplied by explicit tasks or coordinator JSON. */
+  readonly taskPriority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Match tasks that have no dependents in the current execution graph. */
+  readonly leaf?: boolean
+  /** Match tasks that depend on one or more prior tasks. */
+  readonly hasDependencies?: boolean
+}
+
+/** A single deterministic model routing rule. Rules are evaluated in array order; first match wins. */
+export interface ModelRoutingRule {
+  readonly match: ModelRoutingMatch
+  readonly route: ModelRouteConfig
+}
+
+/** Opt-in, deterministic model routing policy for team orchestration calls. */
+export interface ModelRoutingPolicy {
+  readonly rules: readonly ModelRoutingRule[]
+}
+
+/** Per-call options for {@link OpenMultiAgent.runTasks}. */
+export interface RunTasksOptions {
+  readonly abortSignal?: AbortSignal
+  /**
+   * Opt-in deterministic model routing. When omitted, existing agent and
+   * coordinator model selection is unchanged.
+   */
+  readonly modelRouting?: ModelRoutingPolicy
+}
+
 /**
  * Per-call options for {@link OpenMultiAgent.runTeam}. Differs from
  * {@link OrchestratorConfig} by being scoped to a single invocation.
  */
-export interface RunTeamOptions {
-  readonly abortSignal?: AbortSignal
+export interface RunTeamOptions extends RunTasksOptions {
   readonly coordinator?: CoordinatorConfig
   /**
    * When true, the coordinator decomposes the goal but no task agents run.
@@ -726,6 +776,11 @@ export interface RunTeamOptions {
    * single-agent path (no coordinator) ignore this option.
    */
   readonly revealCoordinator?: boolean
+  /**
+   * Opt-in deterministic model routing. When omitted, existing agent and
+   * coordinator model selection is unchanged.
+   */
+  readonly modelRouting?: ModelRoutingPolicy
 }
 
 /** Aggregated result for a full team run. */
@@ -742,6 +797,74 @@ export interface TeamRunResult {
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage
+}
+
+/** A single serializable task in a deterministic replay plan. */
+export interface PlanTaskArtifact {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly assignee?: string
+  readonly dependsOn?: readonly string[]
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
+}
+
+/**
+ * Serializable plan artifact that can be persisted and later replayed without
+ * invoking the coordinator again.
+ */
+export interface PlanArtifact {
+  readonly version: 1
+  readonly goal?: string
+  readonly tasks: readonly PlanTaskArtifact[]
+}
+
+// ---------------------------------------------------------------------------
+// Consensus (proposer + judge verification)
+// ---------------------------------------------------------------------------
+
+/**
+ * Judge roster and refutation-loop options shared by
+ * {@link OpenMultiAgent.runConsensus} and the per-task `verify` hook. The
+ * proposer is supplied separately (an agent for `runConsensus`, the task's own
+ * result for the `verify` hook).
+ */
+export interface ConsensusVerifyOptions {
+  /** Verifier roster. Judges run sequentially so quorum/budget can stop the rest. */
+  readonly judges: readonly AgentConfig[]
+  /** `'refute'` (default): identical skeptic framing. `'lens'`: distinct angle per judge. */
+  readonly mode?: 'refute' | 'lens'
+  /** Accepting judges required for consensus. Default `ceil(judges.length / 2)`. */
+  readonly quorum?: number
+  /** Maximum proposer↔judge rounds. Default `2`. */
+  readonly maxRounds?: number
+  /** Zod schema validated against each judge verdict; a failure counts as dissent. */
+  readonly verdictSchema?: ZodSchema
+  /** Action when a round misses quorum. Default `'revise'`. */
+  readonly onDissent?: 'revise' | 'reject' | 'keep'
+  /** Override the default verifier prompt; a function gives per-judge framing. */
+  readonly judgePrompt?: string | ((judge: string) => string)
+}
+
+/** Options for {@link OpenMultiAgent.runConsensus}. */
+export interface ConsensusOptions extends ConsensusVerifyOptions {
+  /** Proposer agent(s). An array runs all (N-best); usage counts against the parent budget. */
+  readonly proposer: AgentConfig | readonly AgentConfig[]
+}
+
+/** Result of a consensus run (or per-task `verify` hook). */
+export interface ConsensusResult {
+  readonly answer: string
+  /** `accepted` when quorum was reached (or `onDissent: 'keep'`); else `rejected`. */
+  readonly verdict: 'accepted' | 'rejected'
+  /** Dissenting critiques across all rounds, prefixed with the judge name. */
+  readonly dissent: string[]
+  readonly rounds: number
+  /** Usage attributable to consensus (proposer + judges + revisions). */
+  readonly tokenUsage: TokenUsage
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +893,16 @@ export interface TaskExecutionRecord {
   readonly assignee?: string
   readonly status: TaskStatus
   readonly dependsOn: readonly string[]
+  readonly description?: string
+  /**
+   * Execution config, carried so a `planOnly` snapshot can be serialized into a
+   * lossless replay artifact (see {@link PlanTaskArtifact}). Populated from the
+   * task; `undefined` when the task did not set them.
+   */
+  readonly memoryScope?: 'dependencies' | 'all'
+  readonly maxRetries?: number
+  readonly retryDelayMs?: number
+  readonly retryBackoff?: number
   readonly metrics?: TaskExecutionMetrics
 }
 
@@ -789,6 +922,10 @@ export interface Task {
    * - `all`: full shared-memory summary
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  /** Caller-defined task role used by model routing rules. */
+  readonly role?: string
+  /** Caller-defined task priority used by model routing rules. */
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
   result?: string
   readonly createdAt: Date
   updatedAt: Date
@@ -798,6 +935,12 @@ export interface Task {
   readonly retryDelayMs?: number
   /** Exponential backoff multiplier (default: 2). */
   readonly retryBackoff?: number
+  /**
+   * Opt-in consensus verification of this task's result. When set, judges try
+   * to refute the completed task's output; their usage counts against the same
+   * parent `maxTokenBudget`. Tasks without `verify` run unchanged.
+   */
+  readonly verify?: ConsensusVerifyOptions
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +983,18 @@ export interface OrchestratorConfig {
   readonly defaultProvider?: SupportedProvider
   readonly defaultBaseURL?: string
   readonly defaultApiKey?: string
+  /**
+   * Fallback tool grant for agents that declare neither {@link AgentConfig.tools}
+   * nor {@link AgentConfig.toolPreset}. Built-in tools are opt-in (default-deny):
+   * an agent with no grant resolves to zero built-in tools. Set this (e.g.
+   * `'full'`) to restore the pre-default-deny convenience of granting every
+   * built-in tool — including the unsandboxed `bash` — to such agents in one
+   * line. Per-agent `tools` / `toolPreset` always override it; it never widens
+   * an agent that already declares a grant. It is not applied to the internal
+   * coordinator, the final-synthesis pass, or consensus (proposer / judge)
+   * agents, which run from their own configs; grant those per agent.
+   */
+  readonly defaultToolPreset?: 'readonly' | 'readwrite' | 'full'
   /**
    * Default root directory for built-in filesystem tools when an agent does
    * not set its own {@link AgentConfig.cwd}. Defaults to
@@ -973,6 +1128,7 @@ export type TraceEventType =
   | 'agent'
   | 'plan_ready'
   | 'agent_stream'
+  | 'consensus'
 
 /** Shared fields present on every trace event. */
 export interface TraceEventBase {
@@ -1045,6 +1201,15 @@ export interface AgentStreamTrace extends TraceEventBase {
   readonly streamType: StreamEvent['type']
 }
 
+/** Emitted for each judge verdict during a consensus run. `agent` is the judge name. */
+export interface ConsensusTrace extends TraceEventBase {
+  readonly type: 'consensus'
+  readonly round: number
+  readonly accepted: boolean
+  /** The judge's critique when it dissented. */
+  readonly dissent?: string
+}
+
 /** Discriminated union of all trace event types. */
 export type TraceEvent =
   | LLMCallTrace
@@ -1053,11 +1218,30 @@ export type TraceEvent =
   | AgentTrace
   | PlanReadyTrace
   | AgentStreamTrace
+  | ConsensusTrace
 
 // ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
+/** JSON-serializable value accepted by {@link SharedMemory}. */
+export type SharedMemoryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly SharedMemoryValue[]
+  | { readonly [key: string]: SharedMemoryValue }
+
+/** Parsed entry returned by {@link SharedMemory}; the raw {@link MemoryStore} remains string-only. */
+export interface SharedMemoryEntry extends Omit<MemoryEntry, 'value'> {
+  readonly value: SharedMemoryValue
+}
+
+/** Optional write-time validation for shared memory values. */
+export interface SharedMemoryWriteOptions {
+  readonly schema?: ZodSchema<SharedMemoryValue>
+}
 /** A single key-value record stored in a {@link MemoryStore}. */
 export interface MemoryEntry {
   readonly key: string

@@ -63,6 +63,8 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// 内置工具默认拒绝（default-deny）：每个 agent 只拿到自己在 `tools`（或 `toolPreset`）
+// 里列出的工具；两者都不写就一个都不给。
 const agents: AgentConfig[] = [
   { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
   { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
@@ -122,11 +124,20 @@ Tokens: 12847 output tokens
 | 自动编排团队 | `runTeam()` | 给一个目标，框架自动规划和执行 | [`basics/team-collaboration`](examples/basics/team-collaboration.ts) |
 | 显式任务管线 | `runTasks()` | 你自己定义任务图和分配 | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
-不执行 agent，只预览协调者拆出的任务 DAG：
+不执行 agent，只预览协调者拆出的任务 DAG；也可以把这份计划固定下来，之后无需再次调用协调者就重放同一张图：
 
 ```ts
-const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
+// 先拆解一次，审阅计划
+const preview = await orchestrator.runTeam(team, goal, { planOnly: true })
+
+// 转成可 diff、可纳入版本控制的产物（纯 JSON）
+const plan = orchestrator.createPlanArtifact(preview)
+
+// 之后：重放完全相同的图（task id、依赖、assignee 都不变），不经过协调者
+const result = await orchestrator.runFromPlan(team, plan)
 ```
+
+用一份可选的 `modelRouting` 策略，把不同编排阶段路由到不同模型：旗舰模型负责规划，便宜模型跑叶子任务。可按 phase、agent、任务 role/priority 或 leaf 状态匹配；first match wins，不设置则模型选择保持不变。见 [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)。
 
 ## 功能一览
 
@@ -135,9 +146,10 @@ const plan = await orchestrator.runTeam(team, goal, { planOnly: true })
 | **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，把目标拆成任务 DAG，并行执行独立任务，合成最终结果。未分配的任务自动调度——`dependency-first`（默认）、`round-robin`、`least-busy` 或 `capability-match`。 |
 | **同队混用 provider** | 12 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。把 tool call 当纯文本输出的本地 server 会由 fallback 解析器兜底。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **扩展思考 / 推理** | 一份 `thinking` 配置映射到 Anthropic thinking、Gemini `thinkingConfig` 和 OpenAI `reasoning_effort`；推理以事件流式输出，并可选在切换 provider 时保留。([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
-| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），可选启用 `delegate_to_agent`（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
+| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），全部**默认拒绝**（default-deny——用 `tools` / `toolPreset` 授予），外加 `delegate_to_agent` handoff（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出（团队运行时通过 `onAgentStream` 拿到每个 agent 的流）；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
 | **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）卡点，或用 `planOnly` 先预览。 |
+| **固定并重放计划** | 用 `createPlanArtifact` 把 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
@@ -206,7 +218,7 @@ await orchestrator.runTeam(team, goal, {
 
 面向 `open-multi-agent` 用户的限时 provider 优惠。该列表不代表付费背书或唯一官方推荐。
 
-- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M2.7。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md)。
+- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M3。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md)。
 
 ### Featured partner
 
@@ -236,6 +248,7 @@ await orchestrator.runTeam(team, goal, {
 - [`patterns/cost-tiered-pipeline`](examples/patterns/cost-tiered-pipeline.ts)：每个阶段分配不同 model，用 `onTrace` 的 token 计数估算各 model 的 USD 成本。
 - [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)：`AgentPool.runParallel()` 做 MapReduce 风格 fan-out。
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts)：`delegate_to_agent` 同步子智能体委派。
+- [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 把目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不重跑协调者。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，给 LLM 调用、工具、任务发结构化 span。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：用 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用，OMA `runTeam()` 配合 AI SDK `useChat` 流式输出。
@@ -364,6 +377,7 @@ await oma.runAgent(
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | 脱敏密钥 | 自动——API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
+| 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写就一个都没有。`bash` 一旦授予仍是无沙箱的，且每次工具结果都会发给你的模型 provider——所以读取/执行权限要刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
 ## 文档
@@ -374,6 +388,7 @@ await oma.runAgent(
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
+- [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — 可选的 `modelRouting` 策略：按 phase / agent / role / priority / leaf 匹配，first match wins。
 
 ## 参与贡献
 

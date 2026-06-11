@@ -58,6 +58,7 @@ import {
   getOpenAIReasoningText,
   repairToolArgs,
 } from './openai-common.js'
+import { assertValidMessages } from './validate.js'
 import type { ReasoningOutboundOptions } from './reasoning-fallback.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 
@@ -140,6 +141,7 @@ export class OpenAIAdapter implements LLMAdapter {
    * handle these (e.g. rate limits, context length exceeded).
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions(options))
 
     const completion = await this.#client.chat.completions.create(
@@ -192,6 +194,7 @@ export class OpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options: LLMStreamOptions,
   ): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const openAIMessages = buildOpenAIMessageList(messages, options.systemPrompt, this.buildMessageOptions(options))
 
     // We request usage in the final chunk so we can include it in the `done` event.

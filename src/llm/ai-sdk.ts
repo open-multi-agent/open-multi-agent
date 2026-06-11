@@ -22,6 +22,7 @@ import type {
   ToolUseBlock,
 } from '../types.js'
 import { normalizeFinishReason } from './openai-common.js'
+import { assertValidMessages } from './validate.js'
 import {
   reasoningBlockToInlineText,
   resolveReasoningOutboundMaxChars,
@@ -245,6 +246,7 @@ export class AISdkAdapter implements LLMAdapter {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
+    assertValidMessages(messages)
     const { generateText, tool, jsonSchema } = await import('ai')
     const aiMessages = llmMessagesToAiSdkModelMessages(messages, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 
@@ -285,6 +287,7 @@ export class AISdkAdapter implements LLMAdapter {
   }
 
   async *stream(messages: LLMMessage[], options: LLMStreamOptions): AsyncIterable<StreamEvent> {
+    assertValidMessages(messages)
     const { streamText, tool, jsonSchema } = await import('ai')
     const aiMessages = llmMessagesToAiSdkModelMessages(messages, { preserveReasoningAsText: options.preserveReasoningAsText, compressReasoningText: options.compressReasoningText })
 

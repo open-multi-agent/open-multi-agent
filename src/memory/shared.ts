@@ -7,7 +7,13 @@
  * suitable for injecting into an agent's context window.
  */
 
-import type { MemoryEntry, MemoryStore } from '../types.js'
+import type {
+  MemoryEntry,
+  MemoryStore,
+  SharedMemoryEntry,
+  SharedMemoryValue,
+  SharedMemoryWriteOptions,
+} from '../types.js'
 import { InMemoryStore } from './store.js'
 
 // ---------------------------------------------------------------------------
@@ -15,6 +21,9 @@ import { InMemoryStore } from './store.js'
 // ---------------------------------------------------------------------------
 
 const STORE_METHODS = ['get', 'set', 'list', 'delete', 'clear'] as const
+const STRUCTURED_VALUE_ENCODING = 'json'
+const STRUCTURED_VALUE_METADATA_KEY = 'sharedMemoryValueEncoding'
+
 
 /**
  * Returns true when `v` structurally implements {@link MemoryStore}.
@@ -118,18 +127,22 @@ export class SharedMemory {
    *
    * @param agentName - The writing agent's name (used as a namespace prefix).
    * @param key       - Logical key within the agent's namespace.
-   * @param value     - String value to store (serialise objects before writing).
+   * @param value     - JSON-serializable value to store.
    * @param metadata  - Optional extra metadata stored alongside the entry.
+   * @param options   - Optional write-time validation.
    */
-  async write(
+  async write<TValue extends SharedMemoryValue>(
     agentName: string,
     key: string,
-    value: string,
+    value: TValue,
     metadata?: Record<string, unknown>,
+    options?: SharedMemoryWriteOptions,
   ): Promise<void> {
+    const serialized = SharedMemory.serializeValue(value, options)
     const namespacedKey = SharedMemory.namespaceKey(agentName, key)
-    await this.store.set(namespacedKey, value, {
-      ...metadata,
+    await this.store.set(namespacedKey, serialized.value, {
+      ...SharedMemory.cleanMetadata(metadata),
+      ...serialized.metadata,
       agent: agentName,
     })
   }
@@ -162,9 +175,10 @@ export class SharedMemory {
   async writeExpiring(
     agentName: string,
     key: string,
-    value: string,
+    value: SharedMemoryValue,
     ttlTurns: number,
     metadata?: Record<string, unknown>,
+    options?: SharedMemoryWriteOptions,
   ): Promise<void> {
     if (!Number.isInteger(ttlTurns) || ttlTurns < 1) {
       throw new RangeError(
@@ -172,14 +186,15 @@ export class SharedMemory {
           'Use write() for entries that should never expire.',
       )
     }
+    const serialized = SharedMemory.serializeValue(value, options)
     const namespacedKey = SharedMemory.namespaceKey(agentName, key)
-    const fullMetadata = { ...metadata, agent: agentName }
+    const fullMetadata = { ...SharedMemory.cleanMetadata(metadata), ...serialized.metadata, agent: agentName }
     if (typeof this.store.setWithExpiry === 'function') {
       const expiresAtTurn = this.turnCount + ttlTurns
-      await this.store.setWithExpiry(namespacedKey, value, expiresAtTurn, fullMetadata)
+      await this.store.setWithExpiry(namespacedKey, serialized.value, expiresAtTurn, fullMetadata)
     } else {
       // Custom store doesn't support TTL — degrade to plain set.
-      await this.store.set(namespacedKey, value, fullMetadata)
+      await this.store.set(namespacedKey, serialized.value, fullMetadata)
     }
   }
 
@@ -197,11 +212,11 @@ export class SharedMemory {
    * cron, etc.). Reading is therefore safe to call from concurrent processes
    * without the risk of stomping on a fresh write to the same key.
    */
-  async read(key: string): Promise<MemoryEntry | null> {
+  async read(key: string): Promise<SharedMemoryEntry | null> {
     const entry = await this.store.get(key)
     if (entry === null) return null
     if (this.isExpired(entry)) return null
-    return entry
+    return SharedMemory.parseEntry(entry)
   }
 
   // ---------------------------------------------------------------------------
@@ -209,19 +224,19 @@ export class SharedMemory {
   // ---------------------------------------------------------------------------
 
   /** Returns every non-expired entry in the shared store, regardless of agent. */
-  async listAll(): Promise<MemoryEntry[]> {
-    return this.filterExpired(await this.store.list())
+  async listAll(): Promise<SharedMemoryEntry[]> {
+    return this.filterExpired(await this.store.list()).map(SharedMemory.parseEntry)
   }
 
   /**
    * Returns all non-expired entries written by `agentName` (i.e. those whose
    * key starts with `<agentName>/`).
    */
-  async listByAgent(agentName: string): Promise<MemoryEntry[]> {
+  async listByAgent(agentName: string): Promise<SharedMemoryEntry[]> {
     const prefix = SharedMemory.namespaceKey(agentName, '')
     const all = await this.store.list()
     const live = this.filterExpired(all)
-    return live.filter((entry) => entry.key.startsWith(prefix))
+    return live.filter((entry) => entry.key.startsWith(prefix)).map(SharedMemory.parseEntry)
   }
 
   // ---------------------------------------------------------------------------
@@ -264,7 +279,7 @@ export class SharedMemory {
     if (all.length === 0) return ''
 
     // Group entries by agent name.
-    const byAgent = new Map<string, Array<{ localKey: string; value: string }>>()
+    const byAgent = new Map<string, Array<{ localKey: string; value: SharedMemoryValue }>>()
     for (const entry of all) {
       const slashIdx = entry.key.indexOf('/')
       const agent = slashIdx === -1 ? '_unknown' : entry.key.slice(0, slashIdx)
@@ -275,7 +290,7 @@ export class SharedMemory {
         group = []
         byAgent.set(agent, group)
       }
-      group.push({ localKey, value: entry.value })
+      group.push({ localKey, value: SharedMemory.parseEntry(entry).value })
     }
 
     const lines: string[] = ['## Shared Team Memory', '']
@@ -283,9 +298,10 @@ export class SharedMemory {
       lines.push(`### ${agent}`)
       for (const { localKey, value } of entries) {
         // Truncate long values so the summary stays readable in a context window.
-        const displayValue =
-          value.length > 200 ? `${value.slice(0, 197)}…` : value
-        lines.push(`- ${localKey}: ${displayValue}`)
+        const displayValue = SharedMemory.formatValueForSummary(value)
+        const truncated =
+          displayValue.length > 200 ? `${displayValue.slice(0, 197)}…` : displayValue
+        lines.push(`- ${localKey}: ${truncated}`)
       }
       lines.push('')
     }
@@ -312,6 +328,101 @@ export class SharedMemory {
 
   private static namespaceKey(agentName: string, key: string): string {
     return `${agentName}/${key}`
+  }
+
+  private static serializeValue<TValue extends SharedMemoryValue>(
+    value: TValue,
+    options?: SharedMemoryWriteOptions,
+  ): { value: string; metadata?: Record<string, unknown> } {
+    if (options?.schema) {
+      const result = options.schema.safeParse(value)
+      if (!result.success) {
+        const issues = result.error.issues
+          .map((issue) => `  • ${issue.path.join('.') || '<root>'}: ${issue.message}`)
+          .join('\n')
+        throw new TypeError(`SharedMemory.write: value failed schema validation:\n${issues}`)
+      }
+      value = result.data as TValue
+    }
+
+    SharedMemory.assertJsonSerializable(value)
+    if (typeof value === 'string') return { value }
+    return {
+      value: JSON.stringify(value),
+      metadata: { [STRUCTURED_VALUE_METADATA_KEY]: STRUCTURED_VALUE_ENCODING },
+    }
+  }
+
+  private static cleanMetadata(
+    metadata: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (metadata === undefined || !(STRUCTURED_VALUE_METADATA_KEY in metadata)) {
+      return metadata
+    }
+
+    const { [STRUCTURED_VALUE_METADATA_KEY]: _reserved, ...cleaned } = metadata
+    return cleaned
+  }
+
+  private static parseEntry(entry: MemoryEntry): SharedMemoryEntry {
+    const metadata = entry.metadata
+    if (metadata?.[STRUCTURED_VALUE_METADATA_KEY] !== STRUCTURED_VALUE_ENCODING) {
+      return entry
+    }
+
+    try {
+      return { ...entry, value: JSON.parse(entry.value) as SharedMemoryValue }
+    } catch {
+      return entry
+    }
+  }
+
+  private static formatValueForSummary(value: SharedMemoryValue): string {
+    return typeof value === 'string' ? value : JSON.stringify(value)
+  }
+
+  private static assertJsonSerializable(value: SharedMemoryValue): void {
+    SharedMemory.assertJsonSerializableValue(value, new WeakSet<object>(), '<root>')
+  }
+
+  private static assertJsonSerializableValue(
+    value: SharedMemoryValue,
+    seen: WeakSet<object>,
+    path: string,
+  ): void {
+    if (value === null) return
+
+    const type = typeof value
+    if (type === 'string' || type === 'boolean') return
+    if (type === 'number') {
+      if (!Number.isFinite(value)) {
+        throw new TypeError(`SharedMemory.write: value at ${path} must be a finite number.`)
+      }
+      return
+    }
+
+    if (type !== 'object') {
+      throw new TypeError(`SharedMemory.write: value at ${path} is not JSON-serializable.`)
+    }
+
+    const objectValue = value as object
+    if (seen.has(objectValue)) {
+      throw new TypeError(`SharedMemory.write: value at ${path} contains a circular reference.`)
+    }
+    seen.add(objectValue)
+
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        SharedMemory.assertJsonSerializableValue(value[i], seen, `${path}[${i}]`)
+      }
+      seen.delete(objectValue)
+      return
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      SharedMemory.assertJsonSerializableValue(child, seen, `${path}.${key}`)
+    }
+    seen.delete(objectValue)
   }
 
   /** True when `entry.expiresAtTurn` is set and has been reached. */

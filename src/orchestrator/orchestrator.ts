@@ -44,10 +44,19 @@
 import type {
   AgentConfig,
   AgentRunResult,
+  ConsensusOptions,
+  ConsensusResult,
+  ConsensusVerifyOptions,
   CoordinatorConfig,
-  RunTeamOptions,
+  ModelRouteConfig,
+  ModelRoutingPolicy,
+  PlanArtifact,
+  PlanTaskArtifact,
   OrchestratorConfig,
   OrchestratorEvent,
+  RunTasksOptions,
+  RunTeamOptions,
+  StreamEvent,
   Task,
   TaskExecutionMetrics,
   TaskExecutionRecord,
@@ -57,6 +66,7 @@ import type {
   TeamRunResult,
   TokenUsage,
 } from '../types.js'
+import type { ZodSchema } from 'zod'
 import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
@@ -67,7 +77,8 @@ import { registerBuiltInTools } from '../tool/built-in/index.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
-import { createTask } from '../task/task.js'
+import { createTask, validateTaskDependencies } from '../task/task.js'
+import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
 import { TokenBudgetExceededError } from '../errors.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
@@ -234,6 +245,29 @@ function buildAgent(
   return new Agent(config, registry, executor)
 }
 
+/**
+ * Apply the orchestrator's {@link OrchestratorConfig.defaultToolPreset} as a
+ * fallback grant for an agent that declares neither `tools` nor `toolPreset`.
+ *
+ * Built-in tools are opt-in (default-deny): an agent with no grant resolves to
+ * zero built-in tools. This fills that gap when the orchestrator opts in to a
+ * default. Per-agent grants always win — the default never widens an agent that
+ * already declares `tools` or `toolPreset`.
+ */
+function applyDefaultToolPreset(
+  config: AgentConfig,
+  defaultToolPreset: OrchestratorConfig['defaultToolPreset'],
+): AgentConfig {
+  if (
+    defaultToolPreset === undefined
+    || config.tools !== undefined
+    || config.toolPreset !== undefined
+  ) {
+    return config
+  }
+  return { ...config, toolPreset: defaultToolPreset }
+}
+
 /** Promise-based delay. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -346,6 +380,9 @@ interface ParsedTaskSpec {
   maxRetries?: number
   retryDelayMs?: number
   retryBackoff?: number
+  role?: string
+  priority?: 'low' | 'normal' | 'high' | 'critical'
+  verify?: ConsensusVerifyOptions
 }
 
 /**
@@ -388,6 +425,10 @@ function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
         maxRetries: typeof obj['maxRetries'] === 'number' ? obj['maxRetries'] : undefined,
         retryDelayMs: typeof obj['retryDelayMs'] === 'number' ? obj['retryDelayMs'] : undefined,
         retryBackoff: typeof obj['retryBackoff'] === 'number' ? obj['retryBackoff'] : undefined,
+        role: typeof obj['role'] === 'string' ? obj['role'] : undefined,
+        priority: obj['priority'] === 'low' || obj['priority'] === 'normal' || obj['priority'] === 'high' || obj['priority'] === 'critical'
+          ? obj['priority']
+          : undefined,
       })
     }
 
@@ -395,6 +436,51 @@ function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
   } catch {
     return null
   }
+}
+
+interface ModelRoutingSelection {
+  readonly phase: 'coordinator' | 'synthesis' | 'short-circuit' | 'worker' | 'delegated'
+  readonly agent: string
+  readonly task?: Task
+  readonly leaf?: boolean
+}
+
+function routeMatches(
+  policy: ModelRoutingPolicy | undefined,
+  selection: ModelRoutingSelection,
+): ModelRouteConfig | undefined {
+  if (!policy) return undefined
+  const task = selection.task
+  for (const rule of policy.rules) {
+    const match = rule.match
+    if (match.phase !== undefined && match.phase !== selection.phase) continue
+    if (match.agent !== undefined && match.agent !== selection.agent) continue
+    if (match.taskRole !== undefined && match.taskRole !== task?.role) continue
+    if (match.taskPriority !== undefined && match.taskPriority !== task?.priority) continue
+    if (match.leaf !== undefined && match.leaf !== selection.leaf) continue
+    if (match.hasDependencies !== undefined && match.hasDependencies !== ((task?.dependsOn?.length ?? 0) > 0)) continue
+    return rule.route
+  }
+  return undefined
+}
+
+function withModelRoute(config: AgentConfig, route: ModelRouteConfig | undefined): AgentConfig {
+  if (!route) return config
+  return {
+    ...config,
+    model: route.model,
+    provider: route.provider ?? config.provider,
+    baseURL: route.baseURL ?? config.baseURL,
+    apiKey: route.apiKey ?? config.apiKey,
+    region: route.region ?? config.region,
+  }
+}
+
+function isLeafTask(task: Task, tasks: readonly Task[]): boolean {
+  for (const candidate of tasks) {
+    if (candidate.dependsOn?.includes(task.id)) return false
+  }
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +543,9 @@ interface RunContext {
    * `runTasks` omits this entirely (no goal concept).
    */
   readonly revealCoordinatorContext?: RevealCoordinatorContext
+  readonly modelRouting?: ModelRoutingPolicy
+  readonly taskById: ReadonlyMap<string, Task>
+  readonly taskLeafById: ReadonlyMap<string, boolean>
 }
 
 /**
@@ -508,13 +597,19 @@ function buildTaskAgentTeamInfo(
 
     // Apply orchestrator-level defaults just like buildPool, then construct a
     // one-shot Agent for this delegation only.
-    const effective: AgentConfig = {
+    const route = routeMatches(ctx.modelRouting, {
+      phase: 'delegated',
+      agent: targetAgent,
+      task: ctx.taskById.get(taskId),
+      leaf: ctx.taskLeafById.get(taskId),
+    })
+    const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
       ...targetConfig,
       provider: targetConfig.provider ?? ctx.config.defaultProvider,
       baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
       apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
       cwd: targetConfig.cwd === undefined ? ctx.config.defaultCwd : targetConfig.cwd,
-    }
+    }, ctx.config.defaultToolPreset), route)
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
     const nestedTeam = buildTaskAgentTeamInfo(
@@ -617,6 +712,19 @@ async function executeQueue(
         return
       }
 
+      const agentConfig = team.getAgent(assignee)
+      if (!agentConfig) {
+        const msg = `Agent "${assignee}" not found in team for task "${task.title}".`
+        queue.fail(task.id, msg)
+        config.onProgress?.({
+          type: 'error',
+          task: task.id,
+          agent: assignee,
+          data: msg,
+        } satisfies OrchestratorEvent)
+        return
+      }
+
       const agent = pool.get(assignee)
       if (!agent) {
         const msg = `Agent "${assignee}" not found in pool for task "${task.title}".`
@@ -663,34 +771,57 @@ async function executeQueue(
         ...traceBase,
         team: buildTaskAgentTeamInfo(ctx, task.id, traceBase, 0, [assignee]),
       }
+      const workerRoute = routeMatches(ctx.modelRouting, {
+        phase: 'worker',
+        agent: assignee,
+        task,
+        leaf: ctx.taskLeafById.get(task.id),
+      })
+      const routedAgent = workerRoute
+        ? buildAgent(withModelRoute(applyDefaultToolPreset({
+            ...agentConfig,
+            provider: agentConfig.provider ?? config.defaultProvider,
+            baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
+            apiKey: agentConfig.apiKey ?? config.defaultApiKey,
+            cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
+          }, config.defaultToolPreset), workerRoute), { includeDelegateTool: true })
+        : undefined
+      const streamCallback = config.onAgentStream
+        ? (event: StreamEvent) => {
+            if (config.onTrace) {
+              const streamMs = Date.now()
+              emitTrace(config.onTrace, {
+                type: 'agent_stream',
+                runId: ctx.runId ?? '',
+                taskId: task.id,
+                agent: assignee,
+                streamType: event.type,
+                startMs: streamMs,
+                endMs: streamMs,
+                durationMs: 0,
+              })
+            }
+            config.onAgentStream!(assignee, event)
+          }
+        : undefined
 
       const taskStartMs = Date.now()
       let retryCount = 0
 
       const result = await executeWithRetry(
-        () => pool.run(
-          assignee,
-          prompt,
-          runOptions,
-          config.onAgentStream
-            ? (event) => {
-                if (config.onTrace) {
-                  const streamMs = Date.now()
-                  emitTrace(config.onTrace, {
-                    type: 'agent_stream',
-                    runId: ctx.runId ?? '',
-                    taskId: task.id,
-                    agent: assignee,
-                    streamType: event.type,
-                    startMs: streamMs,
-                    endMs: streamMs,
-                    durationMs: 0,
-                  })
-                }
-                config.onAgentStream!(assignee, event)
-              }
-            : undefined,
-        ),
+        () => routedAgent
+          ? pool.runEphemeral(
+              routedAgent,
+              prompt,
+              runOptions,
+              streamCallback,
+            )
+          : pool.run(
+              assignee,
+              prompt,
+              runOptions,
+              streamCallback,
+            ),
         task,
         (retryData) => {
           retryCount++
@@ -749,30 +880,43 @@ async function executeQueue(
       }
 
       if (result.success) {
-        // Persist result into shared memory so other agents can read it
         const sharedMem = team.getSharedMemoryInstance()
+
+        // Opt-in consensus verification runs *before* the task is finalised so the
+        // verified outcome (accepted → revised, rejected → original) flows into the
+        // queue, shared memory, progress events, and agentResults as one consistent
+        // result. Judge usage is charged to the same parent budget as the rest of the run.
+        let effective = result
+        if (task.verify && !ctx.budgetExceededTriggered) {
+          effective = await runTaskVerify(task, assignee, result, sharedMem, ctx)
+        }
+
+        // Reflect the verified result in the per-task record the caller receives.
+        ctx.agentResults.set(`${assignee}:${task.id}`, effective)
+
+        // Persist result into shared memory so other agents can read it
         if (sharedMem) {
-          await sharedMem.write(assignee, `task:${task.id}:result`, result.output)
+          await sharedMem.write(assignee, `task:${task.id}:result`, effective.output)
           // Advance the turn counter so any TTL-tagged entries written during
           // this task can be expired by subsequent reads.
           sharedMem.advanceTurn()
         }
 
-        const completedTask = queue.complete(task.id, result.output)
+        const completedTask = queue.complete(task.id, effective.output)
         completedThisRound.push(completedTask)
 
         config.onProgress?.({
           type: 'task_complete',
           task: task.id,
           agent: assignee,
-          data: result,
+          data: effective,
         } satisfies OrchestratorEvent)
 
         config.onProgress?.({
           type: 'agent_complete',
           agent: assignee,
           task: task.id,
-          data: result,
+          data: effective,
         } satisfies OrchestratorEvent)
       } else {
         queue.fail(task.id, result.output)
@@ -890,6 +1034,330 @@ async function buildTaskPrompt(
 }
 
 // ---------------------------------------------------------------------------
+// Consensus (proposer + judge verification)
+// ---------------------------------------------------------------------------
+
+/** Orchestrator-level defaults applied to ephemeral consensus agents. */
+interface ConsensusAgentDefaults {
+  readonly defaultProvider: OrchestratorConfig['defaultProvider']
+  readonly defaultBaseURL: OrchestratorConfig['defaultBaseURL']
+  readonly defaultApiKey: OrchestratorConfig['defaultApiKey']
+  readonly defaultCwd: OrchestratorConfig['defaultCwd']
+  readonly maxConcurrency: number
+}
+
+/** Skeptic framing applied to every judge (refute mode and lens-mode base). */
+const DEFAULT_VERIFIER_INSTRUCTION =
+  'You are a rigorous skeptic reviewing a proposed answer to the question shown below. ' +
+  'Judge the answer against what that question actually asks: hunt for errors, unsupported ' +
+  'claims, gaps, and faulty reasoning, then decide whether it withstands scrutiny.'
+
+/** Per-judge review angles used in `lens` mode (assigned round-robin by index). */
+const CONSENSUS_LENSES = [
+  'factual correctness and logical soundness',
+  'completeness and coverage of the question',
+  'edge cases, failure modes, and counterexamples',
+  'clarity, precision, and freedom from ambiguity',
+  'hidden assumptions and unstated premises',
+  'evidence, citations, and verifiability',
+] as const
+
+/** Verdict contract appended to every judge prompt. */
+const VERDICT_INSTRUCTION =
+  'Respond ONLY with a JSON object {"accept": <true|false>, "critique": "<concise reason>"}. ' +
+  'Set "accept" to true only if the answer withstands scrutiny; otherwise set it false ' +
+  'and explain the problem in "critique".'
+
+/** Apply orchestrator defaults to a consensus agent config, mirroring buildPool. */
+function applyConsensusDefaults(config: AgentConfig, defaults: ConsensusAgentDefaults): AgentConfig {
+  return {
+    ...config,
+    provider: config.provider ?? defaults.defaultProvider,
+    baseURL: config.baseURL ?? defaults.defaultBaseURL,
+    apiKey: config.apiKey ?? defaults.defaultApiKey,
+    cwd: config.cwd === undefined ? defaults.defaultCwd : config.cwd,
+  }
+}
+
+/** Build the user prompt sent to a single judge, always including the original question. */
+function buildJudgePrompt(p: {
+  judge: string
+  answer: string
+  prompt: string
+  mode: 'refute' | 'lens'
+  judgeIndex: number
+  judgePrompt?: string | ((judge: string) => string)
+}): string {
+  let instruction: string
+  if (p.judgePrompt !== undefined) {
+    instruction = typeof p.judgePrompt === 'function' ? p.judgePrompt(p.judge) : p.judgePrompt
+  } else if (p.mode === 'lens') {
+    const lens = CONSENSUS_LENSES[p.judgeIndex % CONSENSUS_LENSES.length]!
+    instruction = `${DEFAULT_VERIFIER_INSTRUCTION}\nFocus specifically on: ${lens}. ` +
+      'If that angle is irrelevant to this question, accept the answer rather than inventing objections.'
+  } else {
+    instruction = DEFAULT_VERIFIER_INSTRUCTION
+  }
+  return [
+    instruction,
+    '',
+    '## Question',
+    p.prompt,
+    '',
+    '## Proposed answer',
+    p.answer,
+    '',
+    '## Your verdict',
+    VERDICT_INSTRUCTION,
+  ].join('\n')
+}
+
+/** Build the proposer prompt for a revision round, feeding back the prior answer and the dissent. */
+function buildRevisePrompt(prompt: string, answer: string, dissent: readonly string[]): string {
+  return [
+    prompt,
+    '',
+    '## Your previous answer',
+    answer,
+    '',
+    '## Reviewer critiques to address',
+    ...dissent.map((d) => `- ${d}`),
+    '',
+    'Revise the previous answer to address every critique above. Respond with the improved answer only.',
+  ].join('\n')
+}
+
+/** Parse a judge's raw output into an accept/critique decision. */
+function parseJudgeVerdict(
+  output: string,
+  verdictSchema?: ZodSchema,
+): { accept: boolean; critique: string } {
+  let parsed: unknown
+  try {
+    parsed = extractJSON(output)
+  } catch {
+    return { accept: false, critique: 'Judge output was not valid JSON.' }
+  }
+  if (verdictSchema) {
+    try {
+      validateOutput(verdictSchema, parsed)
+    } catch (err) {
+      return { accept: false, critique: `Verdict failed schema validation: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  }
+  const obj = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+  const accept = typeof obj['accept'] === 'boolean' ? obj['accept'] : false
+  const critique = typeof obj['critique'] === 'string' && obj['critique']
+    ? obj['critique']
+    : accept ? '' : 'No critique provided.'
+  return { accept, critique }
+}
+
+/** Inputs to {@link runConsensusCore} — the judge loop shared by `runConsensus` and the `verify` hook. */
+interface ConsensusCoreParams {
+  readonly team: Team
+  readonly prompt: string
+  /** Proposed answer to scrutinise (proposer output, or the task result). */
+  readonly initialAnswer: string
+  /** Usage attributable so far that should be reported back (proposer usage, or zero for the verify hook). */
+  readonly initialUsage: TokenUsage
+  /** Tokens already spent that count toward the budget but are not re-reported (e.g. prior task usage). */
+  readonly budgetBaseTokens: number
+  readonly judges: readonly AgentConfig[]
+  readonly mode: 'refute' | 'lens'
+  readonly quorum: number
+  readonly maxRounds: number
+  readonly verdictSchema?: ZodSchema
+  readonly onDissent: 'revise' | 'reject' | 'keep'
+  readonly judgePrompt?: string | ((judge: string) => string)
+  readonly budget?: number
+  /** Re-run on a revision round (the proposer, or the task assignee). */
+  readonly reviseProposer?: AgentConfig
+  readonly defaults: ConsensusAgentDefaults
+  readonly onTrace?: OrchestratorConfig['onTrace']
+  readonly runId?: string
+  /** Existing pool to reuse; a fresh one is created when omitted. */
+  readonly pool?: AgentPool
+}
+
+/**
+ * Run the judge/refutation loop over a proposed answer: judges run sequentially
+ * (so quorum and budget can stop the rest), dissent is recorded to shared memory
+ * and trace, and `onDissent` decides whether to revise, reject, or keep.
+ */
+async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusResult> {
+  const {
+    team, prompt, judges, mode, quorum, maxRounds, verdictSchema, onDissent,
+    judgePrompt, budget, budgetBaseTokens, reviseProposer, defaults, onTrace, runId,
+  } = params
+
+  const pool = params.pool ?? new AgentPool(Math.max(1, defaults.maxConcurrency))
+  const sharedMem = team.getSharedMemoryInstance()
+
+  let answer = params.initialAnswer
+  let usage = params.initialUsage
+  const dissent: string[] = []
+  let rounds = 0
+  let accepted = false
+
+  const overBudget = (): boolean =>
+    budget !== undefined && budgetBaseTokens + usage.input_tokens + usage.output_tokens > budget
+
+  const runEphemeral = (config: AgentConfig, text: string): Promise<AgentRunResult> =>
+    pool.runEphemeral(buildAgent(applyConsensusDefaults(config, defaults)), text)
+
+  // Proposer usage was already accumulated by the caller; bail before judging if it blew the budget.
+  if (overBudget()) {
+    return { answer, verdict: 'rejected', dissent, rounds, tokenUsage: usage }
+  }
+
+  let budgetHit = false
+  for (let round = 1; round <= maxRounds; round++) {
+    rounds = round
+    let acceptCount = 0
+    const roundDissent: string[] = []
+
+    for (let j = 0; j < judges.length; j++) {
+      const judge = judges[j]!
+      const judgeText = buildJudgePrompt({ judge: judge.name, answer, prompt, mode, judgeIndex: j, judgePrompt })
+      const r = await runEphemeral(judge, judgeText)
+      usage = addUsage(usage, r.tokenUsage)
+      if (overBudget()) { budgetHit = true; break }
+
+      const verdict = parseJudgeVerdict(r.output, verdictSchema)
+
+      // Trace every verdict (accept or dissent); shared memory records dissent only.
+      if (onTrace) {
+        const now = Date.now()
+        emitTrace(onTrace, {
+          type: 'consensus',
+          runId: runId ?? '',
+          agent: judge.name,
+          round,
+          accepted: verdict.accept,
+          ...(verdict.accept ? {} : { dissent: verdict.critique }),
+          startMs: now,
+          endMs: now,
+          durationMs: 0,
+        })
+      }
+
+      if (verdict.accept) {
+        acceptCount++
+        if (acceptCount >= quorum) { accepted = true; break }
+      } else {
+        const labelled = `${judge.name}: ${verdict.critique}`
+        roundDissent.push(labelled)
+        dissent.push(labelled)
+        if (sharedMem) {
+          await sharedMem.write(judge.name, `consensus:round:${round}:dissent`, verdict.critique)
+        }
+      }
+    }
+
+    if (budgetHit || accepted) break
+
+    // Round missed quorum. Revise (if rounds remain) or stop.
+    if (onDissent === 'revise' && round < maxRounds && reviseProposer) {
+      const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, answer, roundDissent))
+      usage = addUsage(usage, r.tokenUsage)
+      if (r.success && r.output) answer = r.output
+      if (overBudget()) { budgetHit = true; break }
+      continue
+    }
+    break
+  }
+
+  const verdict: 'accepted' | 'rejected' =
+    accepted || (!budgetHit && onDissent === 'keep') ? 'accepted' : 'rejected'
+  return { answer, verdict, dissent, rounds, tokenUsage: usage }
+}
+
+/**
+ * Run the per-task `verify` hook before a task is finalised: feed the task
+ * result into the consensus loop, fold judge usage into the run's cumulative
+ * budget, surface the verdict, and return the effective result — the accepted
+ * revision when judges revise it, otherwise the original. The caller uses this
+ * to finalise the task so the queue, shared memory, events, and agentResults
+ * all agree on the verified outcome.
+ */
+async function runTaskVerify(
+  task: Task,
+  assignee: string,
+  result: AgentRunResult,
+  sharedMem: ReturnType<Team['getSharedMemoryInstance']>,
+  ctx: RunContext,
+): Promise<AgentRunResult> {
+  const verify = task.verify!
+  const { team, config } = ctx
+  const assigneeConfig = team.getAgents().find((a) => a.name === assignee)
+
+  const consensus = await runConsensusCore({
+    team,
+    prompt: task.description,
+    initialAnswer: result.output,
+    initialUsage: ZERO_USAGE,
+    budgetBaseTokens: ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens,
+    judges: verify.judges,
+    mode: verify.mode ?? 'refute',
+    quorum: Math.min(
+      verify.judges.length,
+      Math.max(1, verify.quorum ?? Math.ceil(verify.judges.length / 2)),
+    ),
+    maxRounds: Math.max(1, verify.maxRounds ?? 2),
+    verdictSchema: verify.verdictSchema,
+    onDissent: verify.onDissent ?? 'revise',
+    judgePrompt: verify.judgePrompt,
+    budget: ctx.maxTokenBudget,
+    reviseProposer: assigneeConfig,
+    defaults: {
+      defaultProvider: config.defaultProvider,
+      defaultBaseURL: config.defaultBaseURL,
+      defaultApiKey: config.defaultApiKey,
+      defaultCwd: config.defaultCwd,
+      maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
+    },
+    onTrace: config.onTrace,
+    ...(ctx.runId ? { runId: ctx.runId } : {}),
+  })
+
+  ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, consensus.tokenUsage)
+
+  // Surface the verdict as a task-level outcome so downstream agents and the
+  // final synthesis can see whether the result survived scrutiny.
+  if (sharedMem) {
+    const summary = consensus.verdict === 'accepted'
+      ? 'accepted'
+      : `rejected${consensus.dissent.length ? `: ${consensus.dissent.join('; ')}` : ''}`
+    await sharedMem.write(assignee, `task:${task.id}:verdict`, summary)
+  }
+
+  const total = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
+  if (!ctx.budgetExceededTriggered && ctx.maxTokenBudget !== undefined && total > ctx.maxTokenBudget) {
+    ctx.budgetExceededTriggered = true
+    const err = new TokenBudgetExceededError('orchestrator', total, ctx.maxTokenBudget)
+    ctx.budgetExceededReason = err.message
+    config.onProgress?.({
+      type: 'budget_exceeded',
+      agent: assignee,
+      task: task.id,
+      data: err,
+    } satisfies OrchestratorEvent)
+  }
+
+  // Only an *accepted* revision supersedes the task result; a rejected revision is
+  // recorded as dissent but the caller finalises with the original output. Judge
+  // usage rolls into the per-task usage (mirrors how delegation usage rolls in).
+  const useRevision =
+    consensus.verdict === 'accepted' && consensus.answer && consensus.answer !== result.output
+  return {
+    ...result,
+    output: useRevision ? consensus.answer : result.output,
+    tokenUsage: addUsage(result.tokenUsage, consensus.tokenUsage),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // OpenMultiAgent
 // ---------------------------------------------------------------------------
 
@@ -901,8 +1369,8 @@ async function buildTaskPrompt(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset'>
 
   private readonly teams: Map<string, Team> = new Map()
   private completedTaskCount = 0
@@ -929,6 +1397,7 @@ export class OpenMultiAgent {
       // disable the filesystem sandbox; a string sets a custom sandbox root.
       defaultCwd: config.defaultCwd === undefined ? defaultWorkspaceDir() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
+      defaultToolPreset: config.defaultToolPreset,
       onApproval: config.onApproval,
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
@@ -983,14 +1452,14 @@ export class OpenMultiAgent {
     options?: { abortSignal?: AbortSignal },
   ): Promise<AgentRunResult> {
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
-    const effective: AgentConfig = {
+    const effective: AgentConfig = applyDefaultToolPreset({
       ...config,
       provider: config.provider ?? this.config.defaultProvider,
       baseURL: config.baseURL ?? this.config.defaultBaseURL,
       apiKey: config.apiKey ?? this.config.defaultApiKey,
       cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       maxTokenBudget: effectiveBudget,
-    }
+    }, this.config.defaultToolPreset)
     const agent = buildAgent(effective)
     this.config.onProgress?.({
       type: 'agent_start',
@@ -1090,14 +1559,14 @@ export class OpenMultiAgent {
       // to avoid duplicate progress events and double completedTaskCount.
       // Events are emitted here; counting is handled by buildTeamRunResult().
       const effectiveBudget = resolveTokenBudget(bestAgent.maxTokenBudget, this.config.maxTokenBudget)
-      const effective: AgentConfig = {
+      const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
         ...bestAgent,
         provider: bestAgent.provider ?? this.config.defaultProvider,
         baseURL: bestAgent.baseURL ?? this.config.defaultBaseURL,
         apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
         cwd: bestAgent.cwd === undefined ? this.config.defaultCwd : bestAgent.cwd,
         maxTokenBudget: effectiveBudget,
-      }
+      }, this.config.defaultToolPreset), routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
       const agent = buildAgent(effective)
 
       this.config.onProgress?.({
@@ -1161,7 +1630,7 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 1: Coordinator decomposes goal into tasks
     // ------------------------------------------------------------------
-    const coordinatorConfig: AgentConfig = {
+    const coordinatorBaseConfig: AgentConfig = {
       name: 'coordinator',
       model: coordinatorOverrides?.model ?? this.config.defaultModel,
       ...(coordinatorOverrides?.adapter !== undefined ? { adapter: coordinatorOverrides.adapter } : {}),
@@ -1188,6 +1657,10 @@ export class OpenMultiAgent {
       loopDetection: coordinatorOverrides?.loopDetection,
       timeoutMs: coordinatorOverrides?.timeoutMs,
     }
+    const coordinatorConfig = withModelRoute(
+      coordinatorBaseConfig,
+      routeMatches(options?.modelRouting, { phase: 'coordinator', agent: 'coordinator' }),
+    )
 
     const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
@@ -1280,6 +1753,9 @@ export class OpenMultiAgent {
             },
           }
         : {}),
+      modelRouting: options?.modelRouting,
+      taskById: new Map(queue.list().map((task) => [task.id, task])),
+      taskLeafById: new Map(queue.list().map((task) => [task.id, isLeafTask(task, queue.list())])),
     }
 
     const planTasks = queue.list()
@@ -1316,6 +1792,11 @@ export class OpenMultiAgent {
         assignee: task.assignee,
         status: task.status,
         dependsOn: task.dependsOn ?? [],
+        description: task.description,
+        memoryScope: task.memoryScope,
+        maxRetries: task.maxRetries,
+        retryDelayMs: task.retryDelayMs,
+        retryBackoff: task.retryBackoff,
         metrics: undefined,
       }))
       this.config.onProgress?.({
@@ -1337,6 +1818,11 @@ export class OpenMultiAgent {
       assignee: task.assignee,
       status: task.status,
       dependsOn: task.dependsOn ?? [],
+      description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
       metrics: taskMetrics.get(task.id),
     }))
 
@@ -1353,10 +1839,14 @@ export class OpenMultiAgent {
       return this.buildTeamRunResult(agentResults, goal, taskRecords)
     }
     const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
+    const synthesisAgent = buildAgent(withModelRoute(
+      coordinatorBaseConfig,
+      routeMatches(options?.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
+    ))
     const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
       ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
       : undefined
-    const synthesisResult = await coordinatorAgent.run(synthesisPrompt, synthTraceOptions)
+    const synthesisResult = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
     agentResults.set('coordinator', synthesisResult)
     cumulativeUsage = addUsage(cumulativeUsage, synthesisResult.tokenUsage)
     if (
@@ -1388,8 +1878,70 @@ export class OpenMultiAgent {
   }
 
   // -------------------------------------------------------------------------
-  // Explicit-task team run
+  // Explicit-task and plan replay team runs
   // -------------------------------------------------------------------------
+
+  /**
+   * Convert a plan-only {@link TeamRunResult} into a serializable plan artifact.
+   *
+   * The input must come from `runTeam(team, goal, { planOnly: true })` on a
+   * version that records task descriptions. Executed run results are rejected
+   * because their task records are not a replay contract.
+   */
+  createPlanArtifact(result: TeamRunResult): PlanArtifact {
+    if (result.planOnly !== true || !result.tasks) {
+      throw new Error('createPlanArtifact requires a plan-only TeamRunResult.')
+    }
+
+    return {
+      version: 1,
+      ...(result.goal !== undefined ? { goal: result.goal } : {}),
+      tasks: result.tasks.map((task): PlanTaskArtifact => {
+        if (!task.description) {
+          throw new Error(`Plan task "${task.id}" is missing a description and cannot be replayed.`)
+        }
+        return {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+          ...(task.dependsOn.length > 0 ? { dependsOn: task.dependsOn } : {}),
+          ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+          ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+          ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+          ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+        }
+      }),
+    }
+  }
+
+  /**
+   * Replay a persisted plan artifact without invoking the coordinator.
+   *
+   * Task IDs, dependencies, assignees, titles, and descriptions are used exactly
+   * as stored in the artifact. This is intentionally execution-only; it does not
+   * synthesize a coordinator final answer and it does not implement durable
+   * checkpoints.
+   */
+  async runFromPlan(
+    team: Team,
+    plan: PlanArtifact,
+    options?: { abortSignal?: AbortSignal },
+  ): Promise<TeamRunResult> {
+    if (plan.version !== 1) {
+      throw new Error(`Unsupported plan artifact version: ${String(plan.version)}`)
+    }
+
+    const queue = new TaskQueue()
+    const tasks = this.tasksFromPlan(plan)
+    const validation = validateTaskDependencies(tasks)
+    if (!validation.valid) {
+      throw new Error(`Invalid plan artifact: ${validation.errors.join(' ')}`)
+    }
+    queue.addBatch(tasks)
+
+    return this.executeExplicitTaskQueue(team, queue, options, plan.goal)
+  }
 
   /**
    * Run a team with an explicitly provided task list.
@@ -1412,12 +1964,14 @@ export class OpenMultiAgent {
       maxRetries?: number
       retryDelayMs?: number
       retryBackoff?: number
+      role?: string
+      priority?: 'low' | 'normal' | 'high' | 'critical'
+      verify?: ConsensusVerifyOptions
     }>,
-    options?: { abortSignal?: AbortSignal },
+    options?: RunTasksOptions,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const queue = new TaskQueue()
-    const scheduler = new Scheduler('dependency-first')
 
     this.loadSpecsIntoQueue(
       tasks.map((t) => ({
@@ -1429,42 +1983,116 @@ export class OpenMultiAgent {
         maxRetries: t.maxRetries,
         retryDelayMs: t.retryDelayMs,
         retryBackoff: t.retryBackoff,
+        role: t.role,
+        priority: t.priority,
+        verify: t.verify,
       })),
       agentConfigs,
       queue,
     )
 
-    scheduler.autoAssign(queue, agentConfigs)
+    return this.executeExplicitTaskQueue(team, queue, options)
+  }
 
-    const pool = this.buildPool(agentConfigs)
-    const agentResults = new Map<string, AgentRunResult>()
-    const ctx: RunContext = {
-      team,
-      pool,
-      scheduler,
-      agentResults,
-      config: this.config,
-      runId: this.config.onTrace ? generateRunId() : undefined,
-      abortSignal: options?.abortSignal,
-      cumulativeUsage: ZERO_USAGE,
-      maxTokenBudget: this.config.maxTokenBudget,
-      budgetExceededTriggered: false,
-      budgetExceededReason: undefined,
-      taskMetrics: new Map<string, TaskExecutionMetrics>(),
+  // -------------------------------------------------------------------------
+  // Consensus
+  // -------------------------------------------------------------------------
+
+  /**
+   * Run a proposer→judge consensus over a single prompt.
+   *
+   * The proposer emits an answer; judges try to refute it over up to
+   * `maxRounds`, exiting early once `quorum` accept. Proposer and judge token
+   * usage all count against the orchestrator's `maxTokenBudget` — crossing it
+   * stops issuing further judge calls, exactly like delegation and `runTasks`.
+   */
+  async runConsensus(
+    team: Team,
+    prompt: string,
+    options: ConsensusOptions,
+  ): Promise<ConsensusResult> {
+    const proposers = Array.isArray(options.proposer) ? options.proposer : [options.proposer]
+    if (proposers.length === 0) {
+      throw new Error('runConsensus: at least one proposer is required.')
+    }
+    if (options.judges.length === 0) {
+      throw new Error('runConsensus: at least one judge is required.')
     }
 
-    await executeQueue(queue, ctx)
+    const mode = options.mode ?? 'refute'
+    const maxRounds = Math.max(1, options.maxRounds ?? 2)
+    const quorum = Math.min(
+      options.judges.length,
+      Math.max(1, options.quorum ?? Math.ceil(options.judges.length / 2)),
+    )
+    const onDissent = options.onDissent ?? 'revise'
+    const budget = this.config.maxTokenBudget
+    const defaults: ConsensusAgentDefaults = {
+      defaultProvider: this.config.defaultProvider,
+      defaultBaseURL: this.config.defaultBaseURL,
+      defaultApiKey: this.config.defaultApiKey,
+      defaultCwd: this.config.defaultCwd,
+      maxConcurrency: this.config.maxConcurrency,
+    }
 
-    const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
-      id: task.id,
-      title: task.title,
-      assignee: task.assignee,
-      status: task.status,
-      dependsOn: task.dependsOn ?? [],
-      metrics: ctx.taskMetrics.get(task.id),
-    }))
+    const pool = new AgentPool(Math.max(1, this.config.maxConcurrency))
+    let usage: TokenUsage = ZERO_USAGE
 
-    return this.buildTeamRunResult(agentResults, undefined, taskRecords)
+    // Step 2: run proposer(s); accumulate usage and honour the budget before judging.
+    const candidates: string[] = []
+    for (const proposerConfig of proposers) {
+      const r = await pool.runEphemeral(
+        buildAgent(applyConsensusDefaults(proposerConfig, defaults)),
+        prompt,
+      )
+      usage = addUsage(usage, r.tokenUsage)
+      if (r.success && r.output) candidates.push(r.output)
+      if (budget !== undefined && usage.input_tokens + usage.output_tokens > budget) {
+        this.config.onProgress?.({
+          type: 'budget_exceeded',
+          agent: proposerConfig.name,
+          data: new TokenBudgetExceededError(
+            proposerConfig.name,
+            usage.input_tokens + usage.output_tokens,
+            budget,
+          ),
+        })
+        return {
+          answer: candidates.join('\n\n---\n\n'),
+          verdict: 'rejected',
+          dissent: [],
+          rounds: 0,
+          tokenUsage: usage,
+        }
+      }
+    }
+
+    // Every proposer failed or returned empty output: there is nothing to judge.
+    // Bail with a rejected verdict so an empty answer can never come back accepted.
+    if (candidates.length === 0) {
+      return { answer: '', verdict: 'rejected', dissent: [], rounds: 0, tokenUsage: usage }
+    }
+
+    return runConsensusCore({
+      team,
+      prompt,
+      initialAnswer: candidates.join('\n\n---\n\n'),
+      initialUsage: usage,
+      budgetBaseTokens: 0,
+      judges: options.judges,
+      mode,
+      quorum,
+      maxRounds,
+      verdictSchema: options.verdictSchema,
+      onDissent,
+      judgePrompt: options.judgePrompt,
+      budget,
+      reviseProposer: proposers[0],
+      defaults,
+      onTrace: this.config.onTrace,
+      runId: this.config.onTrace ? generateRunId() : undefined,
+      pool,
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -1656,6 +2284,74 @@ export class OpenMultiAgent {
     ].join('\n')
   }
 
+  private tasksFromPlan(plan: PlanArtifact): Task[] {
+    const now = new Date()
+    return plan.tasks.map((task): Task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: 'pending' as TaskStatus,
+      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+      ...(task.dependsOn && task.dependsOn.length > 0 ? { dependsOn: [...task.dependsOn] } : {}),
+      ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      result: undefined,
+      createdAt: now,
+      updatedAt: now,
+      ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
+      ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
+      ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+    }))
+  }
+
+  private async executeExplicitTaskQueue(
+    team: Team,
+    queue: TaskQueue,
+    options?: RunTasksOptions,
+    goal?: string,
+  ): Promise<TeamRunResult> {
+    const agentConfigs = team.getAgents()
+    const scheduler = new Scheduler('dependency-first')
+    scheduler.autoAssign(queue, agentConfigs)
+
+    const pool = this.buildPool(agentConfigs)
+    const agentResults = new Map<string, AgentRunResult>()
+    const ctx: RunContext = {
+      team,
+      pool,
+      scheduler,
+      agentResults,
+      config: this.config,
+      runId: this.config.onTrace ? generateRunId() : undefined,
+      abortSignal: options?.abortSignal,
+      cumulativeUsage: ZERO_USAGE,
+      maxTokenBudget: this.config.maxTokenBudget,
+      budgetExceededTriggered: false,
+      budgetExceededReason: undefined,
+      taskMetrics: new Map<string, TaskExecutionMetrics>(),
+      modelRouting: options?.modelRouting,
+      taskById: new Map(queue.list().map((task) => [task.id, task])),
+      taskLeafById: new Map(queue.list().map((task) => [task.id, isLeafTask(task, queue.list())])),
+    }
+
+    await executeQueue(queue, ctx)
+
+    const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
+      id: task.id,
+      title: task.title,
+      assignee: task.assignee,
+      status: task.status,
+      dependsOn: task.dependsOn ?? [],
+      description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
+      metrics: ctx.taskMetrics.get(task.id),
+    }))
+
+    return this.buildTeamRunResult(agentResults, goal, taskRecords)
+  }
+
   /**
    * Load a list of task specs into a queue.
    *
@@ -1668,6 +2364,8 @@ export class OpenMultiAgent {
       maxRetries?: number
       retryDelayMs?: number
       retryBackoff?: number
+      role?: string
+      priority?: 'low' | 'normal' | 'high' | 'critical'
     }>,
     agentConfigs: AgentConfig[],
     queue: TaskQueue,
@@ -1695,6 +2393,9 @@ export class OpenMultiAgent {
         maxRetries: spec.maxRetries,
         retryDelayMs: spec.retryDelayMs,
         retryBackoff: spec.retryBackoff,
+        role: spec.role,
+        priority: spec.priority,
+        verify: spec.verify,
       })
       const titleKey = normalizeTitle(spec.title)
       if ((titleCounts.get(titleKey) ?? 0) === 1) {
@@ -1747,14 +2448,14 @@ export class OpenMultiAgent {
   private buildPool(agentConfigs: AgentConfig[]): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
-      const effective: AgentConfig = {
+      const effective: AgentConfig = applyDefaultToolPreset({
         ...config,
         model: config.model,
         provider: config.provider ?? this.config.defaultProvider,
         baseURL: config.baseURL ?? this.config.defaultBaseURL,
         apiKey: config.apiKey ?? this.config.defaultApiKey,
         cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
-      }
+      }, this.config.defaultToolPreset)
       pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }
     return pool

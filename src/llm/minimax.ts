@@ -8,13 +8,13 @@
 import { OpenAIAdapter } from './openai.js'
 
 /**
- * LLM adapter for MiniMax models (MiniMax-M2.7 series and future models).
+ * LLM adapter for MiniMax models (MiniMax-M3, M2.7 series, and future models).
  *
  * Thread-safe. Can be shared across agents.
  *
  * Usage:
  *   provider: 'minimax'
- *   model: 'MiniMax-M2.7' (or any current MiniMax model name)
+ *   model: 'MiniMax-M3' (or any current MiniMax model name)
  */
 export class MiniMaxAdapter extends OpenAIAdapter {
   readonly name = 'minimax'
