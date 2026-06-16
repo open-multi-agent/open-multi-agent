@@ -79,13 +79,12 @@ function base64ToUint8Array(b64: string): Uint8Array {
  * Convert a single framework {@link ContentBlock} into a Bedrock
  * {@link BedrockContentBlock} for the messages array.
  *
- * Reasoning blocks are converted via the shared cross-provider fallback
- * (see #223): dropped silently by default; emitted as a standalone text
- * block wrapped in `<thinking>...</thinking>` when
- * {@link LLMChatOptions.preserveReasoningAsText} is `true`. Native echo
- * (which would require writing the signature into Bedrock's
- * `reasoningContent.reasoningText.signature` shape) is still pending —
- * see {@link BedrockAdapter.capabilities} for the gating rationale.
+ * Reasoning blocks with Bedrock provenance and a signature are echoed
+ * natively via `reasoningContent.reasoningText.{text,signature}`. Redacted
+ * blocks with Bedrock provenance are echoed via `reasoningContent.redactedContent`.
+ * All other reasoning blocks (foreign provenance, no signature) fall back to
+ * the cross-provider `<thinking>` text path when `preserveReasoningAsText` is
+ * set, or are dropped silently.
  */
 function toBedrockContentBlock(
   block: ContentBlock,
@@ -124,9 +123,18 @@ function toBedrockContentBlock(
     }
 
     case 'reasoning': {
-      // Capability is `'never'` (see BedrockAdapter.capabilities) — all
-      // reasoning falls back to text when the user opts in, regardless of
-      // provenance. When opt-in is off, drop silently (today's default).
+      if (block.provenance === 'bedrock') {
+        if (block.redactedData !== undefined) {
+          return {
+            reasoningContent: { redactedContent: base64ToUint8Array(block.redactedData) },
+          } as unknown as BedrockContentBlock
+        }
+        if (block.signature !== undefined) {
+          return {
+            reasoningContent: { reasoningText: { text: block.text, signature: block.signature } },
+          } as unknown as BedrockContentBlock
+        }
+      }
       if (outboundOptions?.preserveReasoningAsText !== true) return null
       const maxChars = resolveReasoningOutboundMaxChars(outboundOptions)
       const text = maxChars === undefined
@@ -204,10 +212,20 @@ function fromBedrockContentBlock(block: BedrockContentBlock): ContentBlock | nul
     return toolUse
   }
   if (block.reasoningContent !== undefined) {
-    const r = block.reasoningContent as { reasoningText?: { text?: string } }
+    const r = block.reasoningContent as { reasoningText?: { text?: string; signature?: string }; redactedContent?: Uint8Array }
+    if (r.redactedContent !== undefined) {
+      const reasoning: ReasoningBlock = {
+        type: 'reasoning',
+        text: '',
+        redactedData: Buffer.from(r.redactedContent).toString('base64'),
+        provenance: 'bedrock',
+      }
+      return reasoning
+    }
     const reasoning: ReasoningBlock = {
       type: 'reasoning',
       text: r.reasoningText?.text ?? '',
+      ...(r.reasoningText?.signature !== undefined ? { signature: r.reasoningText.signature } : {}),
       provenance: 'bedrock',
     }
     return reasoning
@@ -236,17 +254,7 @@ export class BedrockAdapter implements LLMAdapter {
   readonly name = 'bedrock'
 
   readonly capabilities = {
-    // Held at 'never' until BOTH legs of the round-trip carry Bedrock's
-    // `reasoningContent.reasoningText.signature`:
-    //   1. inbound (toBedrockContentBlock 'reasoning' case): does not
-    //      extract the signature into the IR today, so even after the
-    //      outbound TODO lands there'd be no signature to send back.
-    //   2. outbound (toBedrockContentBlock 'reasoning' case TODO): does
-    //      not write the signature onto the wire format.
-    // Upgrading this field to 'own-issued' requires both follow-ups; doing
-    // only one would still silently break Bedrock's multi-turn extended
-    // thinking protocol.
-    echoesReasoning: 'never' as const,
+    echoesReasoning: 'own-issued' as const,
   }
 
   readonly #client: BedrockRuntimeClient
@@ -327,10 +335,10 @@ export class BedrockAdapter implements LLMAdapter {
 
     // Accumulate tool-use input JSON deltas; keyed by content block index.
     const toolBuffers = new Map<number, { toolUseId: string; name: string; json: string }>()
-    // Accumulate reasoning text deltas; keyed by content block index. Each
-    // index becomes one ReasoningBlock in the final `done` payload, matching
-    // what `chat()` produces for the same response shape.
-    const reasoningBuffers = new Map<number, { text: string }>()
+    // Accumulate reasoning text and signature deltas; keyed by content block
+    // index. Each index becomes one ReasoningBlock in the final `done` payload,
+    // matching what `chat()` produces for the same response shape.
+    const reasoningBuffers = new Map<number, { text: string; signature?: string }>()
     // Accumulated content blocks for the done event.
     const accumulatedContent: ContentBlock[] = []
     let stopReason = 'end_turn'
@@ -368,6 +376,11 @@ export class BedrockAdapter implements LLMAdapter {
             const buf = reasoningBuffers.get(index) ?? { text: '' }
             buf.text += text
             reasoningBuffers.set(index, buf)
+          } else if ((delta as { reasoningContent?: { signature?: string } }).reasoningContent?.signature !== undefined) {
+            const sig = (delta as { reasoningContent: { signature: string } }).reasoningContent.signature
+            const buf = reasoningBuffers.get(index) ?? { text: '' }
+            buf.signature = sig
+            reasoningBuffers.set(index, buf)
           }
         }
 
@@ -378,6 +391,7 @@ export class BedrockAdapter implements LLMAdapter {
             const reasoningBlock: ReasoningBlock = {
               type: 'reasoning',
               text: reasoningBuf.text,
+              ...(reasoningBuf.signature !== undefined ? { signature: reasoningBuf.signature } : {}),
               provenance: 'bedrock',
             }
             accumulatedContent.push(reasoningBlock)
@@ -421,7 +435,12 @@ export class BedrockAdapter implements LLMAdapter {
       // block, flush whatever we buffered so the done payload still matches
       // what chat() would have returned for the same response.
       for (const [, buf] of reasoningBuffers) {
-        accumulatedContent.push({ type: 'reasoning', text: buf.text, provenance: 'bedrock' })
+        accumulatedContent.push({
+          type: 'reasoning',
+          text: buf.text,
+          ...(buf.signature !== undefined ? { signature: buf.signature } : {}),
+          provenance: 'bedrock',
+        })
       }
       reasoningBuffers.clear()
 
