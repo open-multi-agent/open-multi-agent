@@ -781,6 +781,21 @@ export interface RunTeamOptions extends RunTasksOptions {
    * coordinator model selection is unchanged.
    */
   readonly modelRouting?: ModelRoutingPolicy
+  /**
+   * Judge roster for coordinator-generated task verification.
+   *
+   * When set, the coordinator can opt individual tasks into the `verify` hook
+   * by emitting `"verify": true` (or a partial config with `mode`, `quorum`,
+   * `maxRounds`, or `onDissent`) in the task JSON. The judges provided here
+   * are merged in to form the full {@link ConsensusVerifyOptions}.
+   *
+   * Without this field, coordinator-generated tasks cannot use the verify hook
+   * even if the coordinator emits a `verify` key — the field is ignored.
+   *
+   * Not applicable to `runTasks()` (which accepts full
+   * {@link ConsensusVerifyOptions} with judges per task).
+   */
+  readonly verifyJudges?: readonly AgentConfig[]
 }
 
 /** Aggregated result for a full team run. */
@@ -903,6 +918,8 @@ export interface TaskExecutionRecord {
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
+  /** Verify config attached to this task, if any. Populated in `planOnly` results for inspection and replay. */
+  readonly verify?: ConsensusVerifyOptions
   readonly metrics?: TaskExecutionMetrics
 }
 
