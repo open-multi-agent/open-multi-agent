@@ -58,6 +58,7 @@ Reusable shapes for common multi-agent problems.
 | [`patterns/cost-tiered-pipeline`](patterns/cost-tiered-pipeline.ts) | Run the same four-stage pipeline twice to compare flagship vs tiered model cost. |
 | [`patterns/agent-handoff`](patterns/agent-handoff.ts) | Synchronous sub-agent delegation via `delegate_to_agent`. |
 | [`patterns/plan-replay`](patterns/plan-replay.ts) | Pin a coordinator plan with `createPlanArtifact`, then replay it with `runFromPlan`, no coordinator re-run. |
+| [`patterns/consensus`](patterns/consensus.ts) | Proposer→judge refutation loop via `runConsensus()`: default judge prompt and per-judge `judgePrompt` function. |
 
 ## cookbook — use-case recipes
 
