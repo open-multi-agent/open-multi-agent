@@ -335,10 +335,11 @@ export class BedrockAdapter implements LLMAdapter {
 
     // Accumulate tool-use input JSON deltas; keyed by content block index.
     const toolBuffers = new Map<number, { toolUseId: string; name: string; json: string }>()
-    // Accumulate reasoning text and signature deltas; keyed by content block
-    // index. Each index becomes one ReasoningBlock in the final `done` payload,
-    // matching what `chat()` produces for the same response shape.
-    const reasoningBuffers = new Map<number, { text: string; signature?: string }>()
+    // Accumulate reasoning text, signature, and redactedContent deltas; keyed
+    // by content block index. Each index becomes one ReasoningBlock in the
+    // final `done` payload, matching what `chat()` produces for the same
+    // response shape.
+    const reasoningBuffers = new Map<number, { text: string; signature?: string; redactedContent?: Uint8Array }>()
     // Accumulated content blocks for the done event.
     const accumulatedContent: ContentBlock[] = []
     let stopReason = 'end_turn'
@@ -381,6 +382,11 @@ export class BedrockAdapter implements LLMAdapter {
             const buf = reasoningBuffers.get(index) ?? { text: '' }
             buf.signature = sig
             reasoningBuffers.set(index, buf)
+          } else if ((delta as { reasoningContent?: { redactedContent?: Uint8Array } }).reasoningContent?.redactedContent !== undefined) {
+            const redactedContent = (delta as { reasoningContent: { redactedContent: Uint8Array } }).reasoningContent.redactedContent
+            const buf = reasoningBuffers.get(index) ?? { text: '' }
+            buf.redactedContent = redactedContent
+            reasoningBuffers.set(index, buf)
           }
         }
 
@@ -392,6 +398,9 @@ export class BedrockAdapter implements LLMAdapter {
               type: 'reasoning',
               text: reasoningBuf.text,
               ...(reasoningBuf.signature !== undefined ? { signature: reasoningBuf.signature } : {}),
+              ...(reasoningBuf.redactedContent !== undefined
+                ? { redactedData: Buffer.from(reasoningBuf.redactedContent).toString('base64') }
+                : {}),
               provenance: 'bedrock',
             }
             accumulatedContent.push(reasoningBlock)
@@ -439,6 +448,9 @@ export class BedrockAdapter implements LLMAdapter {
           type: 'reasoning',
           text: buf.text,
           ...(buf.signature !== undefined ? { signature: buf.signature } : {}),
+          ...(buf.redactedContent !== undefined
+            ? { redactedData: Buffer.from(buf.redactedContent).toString('base64') }
+            : {}),
           provenance: 'bedrock',
         })
       }

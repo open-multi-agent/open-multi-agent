@@ -637,6 +637,28 @@ describe('BedrockAdapter', () => {
       }])
     })
 
+    it('stream(): accumulates redactedContent delta into ReasoningBlock.redactedData (base64) in done payload', async () => {
+      const redactedBytes = Buffer.from('encrypted-opaque')
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { redactedContent: redactedBytes } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'answer' } } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 5, outputTokens: 3 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const response = events.find(e => e.type === 'done')?.data as LLMResponse
+      const reasoningBlocks = response.content.filter(b => b.type === 'reasoning')
+
+      expect(reasoningBlocks).toEqual([{
+        type: 'reasoning',
+        text: '',
+        redactedData: redactedBytes.toString('base64'),
+        provenance: 'bedrock',
+      }])
+    })
+
     it('stream(): reasoning block without signature delta has no signature field', async () => {
       mockSend.mockResolvedValue(makeStreamResponse([
         { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'thought' } } } },
