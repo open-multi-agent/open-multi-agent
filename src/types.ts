@@ -918,7 +918,7 @@ export interface TaskExecutionRecord {
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
-  /** Verify config attached to this task, if any. Populated in `planOnly` results for inspection and replay. */
+  /** Verify config attached to this task, if any. Populated in `planOnly` results for inspection. */
   readonly verify?: ConsensusVerifyOptions
   readonly metrics?: TaskExecutionMetrics
 }
