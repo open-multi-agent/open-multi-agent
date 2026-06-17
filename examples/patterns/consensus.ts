@@ -129,7 +129,6 @@ Reply with JSON: { "accept": true/false, "critique": "..." }`,
 const result2 = await orchestrator.runConsensus(team, PROMPT, {
   proposer,
   judges: [judgeA, judgeB],
-  mode: 'refute',
   quorum: 1,
   maxRounds: 1,
   onDissent: 'keep',

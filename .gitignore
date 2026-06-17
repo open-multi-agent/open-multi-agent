@@ -9,5 +9,3 @@ oma-dashboards/
 .claude/
 .npmrc
 .env
-analyze-*.md
-tracking.md
