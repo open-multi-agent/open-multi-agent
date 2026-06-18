@@ -63,23 +63,28 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// Works with any OpenAI-compatible provider. Set OPENAI_API_KEY for OpenAI, or
+// set OPENAI_BASE_URL + OMA_MODEL for Groq, DeepSeek, Ollama, etc.
+const model = process.env.OMA_MODEL ?? 'gpt-5.4'
+
 // Built-in tools are opt-in (default-deny): each agent gets only the tools it
 // lists in `tools` (or a `toolPreset`). List neither and the agent gets none.
 const agents: AgentConfig[] = [
-  { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
-  { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
-  { name: 'reviewer', model: 'claude-sonnet-4-6', systemPrompt: 'Review correctness and security.', tools: ['file_read', 'grep'] },
+  { name: 'architect', model, systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
+  { name: 'developer', model, systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
+  { name: 'reviewer', model, systemPrompt: 'Review correctness and security.', tools: ['file_read', 'grep'] },
 ]
 
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
+  defaultProvider: 'openai',
+  defaultModel: model,
+  defaultBaseURL: process.env.OPENAI_BASE_URL, // unset = OpenAI
   onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
 })
 
 const team = orchestrator.createTeam('api-team', { name: 'api-team', agents, sharedMemory: true })
 
 // Built-in filesystem tools default to a `<cwd>/.agent-workspace` sandbox.
-// Point the agent at an absolute path inside that root.
 const result = await orchestrator.runTeam(
   team,
   `Create a REST API for a todo list in ${process.cwd()}/.agent-workspace/todo-api/`,
@@ -93,7 +98,7 @@ console.log(result.success, result.totalTokenUsage.output_tokens)
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
-export ANTHROPIC_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
 npx tsx examples/basics/team-collaboration.ts
 ```
 

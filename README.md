@@ -61,7 +61,7 @@ Prefer to run something first? Clone and run an example:
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
-export ANTHROPIC_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
 npx tsx packages/core/examples/basics/team-collaboration.ts
 ```
 

@@ -9,12 +9,17 @@
  *   npx tsx examples/basics/team-collaboration.ts
  *
  * Prerequisites:
- *   ANTHROPIC_API_KEY env var must be set.
+ *   OPENAI_API_KEY env var must be set. Works with any OpenAI-compatible
+ *   provider: set OPENAI_BASE_URL + OMA_MODEL for Groq, DeepSeek, Ollama, etc.
  */
 
 import { join } from 'node:path'
 import { OpenMultiAgent } from '../../src/index.js'
 import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
+
+// Works with any OpenAI-compatible provider. Set OPENAI_API_KEY for OpenAI, or
+// OPENAI_BASE_URL + OMA_MODEL for Groq, DeepSeek, Ollama, etc.
+const model = process.env.OMA_MODEL ?? 'gpt-5.4'
 
 // Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by
 // default; the generated API lives under that root so the demo runs
@@ -27,8 +32,7 @@ const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'express-api')
 
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model,
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
 Output concise plans in markdown — no unnecessary prose.`,
@@ -39,8 +43,7 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model,
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
@@ -50,8 +53,7 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'claude-sonnet-4-6',
-  provider: 'anthropic',
+  model,
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
 Read files using the tools before reviewing.`,
@@ -107,7 +109,9 @@ function handleProgress(event: OrchestratorEvent): void {
 // ---------------------------------------------------------------------------
 
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
+  defaultProvider: 'openai',
+  defaultModel: model,
+  defaultBaseURL: process.env.OPENAI_BASE_URL, // unset = OpenAI
   maxConcurrency: 1, // run agents sequentially so output is readable
   onProgress: handleProgress,
 })

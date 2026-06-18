@@ -63,23 +63,28 @@ npm install @open-multi-agent/core
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
 
+// 适配任意 OpenAI 兼容 provider：用 OpenAI 就设 OPENAI_API_KEY；
+// 用 Groq / DeepSeek / Ollama 等就设 OPENAI_BASE_URL + OMA_MODEL。
+const model = process.env.OMA_MODEL ?? 'gpt-5.4'
+
 // 内置工具默认拒绝（default-deny）：每个 agent 只拿到自己在 `tools`（或 `toolPreset`）
 // 里列出的工具；两者都不写就一个都不给。
 const agents: AgentConfig[] = [
-  { name: 'architect', model: 'claude-sonnet-4-6', systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
-  { name: 'developer', model: 'claude-sonnet-4-6', systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
-  { name: 'reviewer', model: 'claude-sonnet-4-6', systemPrompt: 'Review correctness and security.', tools: ['file_read', 'grep'] },
+  { name: 'architect', model, systemPrompt: 'Design clean API contracts.', tools: ['file_write'] },
+  { name: 'developer', model, systemPrompt: 'Implement runnable TypeScript.', tools: ['bash', 'file_read', 'file_write', 'file_edit'] },
+  { name: 'reviewer', model, systemPrompt: 'Review correctness and security.', tools: ['file_read', 'grep'] },
 ]
 
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'claude-sonnet-4-6',
+  defaultProvider: 'openai',
+  defaultModel: model,
+  defaultBaseURL: process.env.OPENAI_BASE_URL, // 不设 = OpenAI
   onProgress: (event) => console.log(event.type, event.task ?? event.agent ?? ''),
 })
 
 const team = orchestrator.createTeam('api-team', { name: 'api-team', agents, sharedMemory: true })
 
-// 内置文件系统工具默认沙箱根目录为 `<cwd>/.agent-workspace`，
-// 给 agent 的 prompt 里需要使用该目录内的绝对路径。
+// 内置文件系统工具默认沙箱根目录为 `<cwd>/.agent-workspace`。
 const result = await orchestrator.runTeam(
   team,
   `Create a REST API for a todo list in ${process.cwd()}/.agent-workspace/todo-api/`,
@@ -93,7 +98,7 @@ console.log(result.success, result.totalTokenUsage.output_tokens)
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
-export ANTHROPIC_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
 npx tsx examples/basics/team-collaboration.ts
 ```
 
