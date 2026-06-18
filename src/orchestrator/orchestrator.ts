@@ -663,29 +663,44 @@ async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<voi
   const active = ctx.checkpoint
   if (!active) return
 
-  const sharedMem = ctx.team.getSharedMemoryInstance()
-  const completedTaskResults = queue.getByStatus('completed').map((task) => ({
-    taskId: task.id,
-    ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
-    ...(task.result !== undefined ? { result: task.result } : {}),
-  }))
+  // Best-effort: a checkpoint write must never take down the run it protects.
+  // Both snapshot construction and the store write are guarded, so a failing
+  // store (e.g. a transient Redis/SQLite error) is surfaced via `onProgress`
+  // and the run continues — the next completed task retries the write.
+  const save = async (): Promise<void> => {
+    const sharedMem = ctx.team.getSharedMemoryInstance()
+    const completedTaskResults = queue.getByStatus('completed').map((task) => ({
+      taskId: task.id,
+      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+      ...(task.result !== undefined ? { result: task.result } : {}),
+    }))
 
-  const snapshot: CheckpointSnapshot = {
-    version: 1,
-    mode: active.mode,
-    createdAt: new Date().toISOString(),
-    ...(active.runId !== undefined ? { runId: active.runId } : {}),
-    ...(active.goal !== undefined ? { goal: active.goal } : {}),
-    queue: queue.snapshot(),
-    ...(sharedMem ? { sharedMemory: await sharedMem.snapshot() } : {}),
-    completedTaskResults,
+    const snapshot: CheckpointSnapshot = {
+      version: 1,
+      mode: active.mode,
+      createdAt: new Date().toISOString(),
+      ...(active.runId !== undefined ? { runId: active.runId } : {}),
+      ...(active.goal !== undefined ? { goal: active.goal } : {}),
+      queue: queue.snapshot(),
+      ...(sharedMem ? { sharedMemory: await sharedMem.snapshot() } : {}),
+      completedTaskResults,
+    }
+
+    await active.manager.save(snapshot)
   }
 
-  const nextSave = active.saveChain
-    .catch(() => undefined)
-    .then(() => active.manager.save(snapshot))
-  active.saveChain = nextSave
-  await nextSave
+  const nextSave = active.saveChain.catch(() => undefined).then(save)
+  // Keep the stored chain non-rejecting so a failed save never leaves an
+  // unhandled rejection or blocks the next checkpoint in the chain.
+  active.saveChain = nextSave.catch(() => undefined)
+  try {
+    await nextSave
+  } catch (error) {
+    ctx.config.onProgress?.({
+      type: 'error',
+      data: { kind: 'checkpoint_save_failed', error },
+    } satisfies OrchestratorEvent)
+  }
 }
 
 /**
@@ -1997,6 +2012,19 @@ export class OpenMultiAgent {
     return this.executeExplicitTaskQueue(team, queue, options, plan.goal)
   }
 
+  /**
+   * Resume a checkpointed run, or start a fresh one when no checkpoint exists.
+   *
+   * Loads the latest checkpoint from the configured {@link MemoryStore}, rebuilds
+   * the task queue and shared memory, skips already-completed tasks, and runs the
+   * remainder. When no checkpoint is found the call falls back to a normal run of
+   * the provided tasks/plan (or a no-op when neither is given).
+   *
+   * Execution always flows through the explicit-task-queue path, so — like
+   * {@link OpenMultiAgent.runFromPlan} — a restored `runTeam` run returns the raw
+   * per-task outputs in `tasks`, not a coordinator-synthesized final answer. Pass
+   * the original tasks/plan to resume a `runTasks`/`runFromPlan` run unchanged.
+   */
   async restore(
     team: Team,
     tasks: ReadonlyArray<RunTaskSpec>,
@@ -2526,7 +2554,19 @@ export class OpenMultiAgent {
     const options = config === true ? {} : config
     if (options.enabled === false) return undefined
 
-    const store = options.store ?? team.getSharedMemory() ?? this.fallbackCheckpointStore
+    // The instance-level fallback store is shared across every run on this
+    // orchestrator, so concurrent runs would overwrite each other at the
+    // default checkpoint key. Require a `runId` (or an explicit `key`/`store`)
+    // before falling back, so each run resolves to a distinct, resumable key.
+    const explicitStore = options.store ?? team.getSharedMemory()
+    if (!explicitStore && options.runId === undefined && options.key === undefined) {
+      throw new Error(
+        'Checkpoint requires a `runId` (or an explicit `store`/`key`) when the team has no ' +
+          'shared-memory store. Without one, concurrent runs would share the fallback store and ' +
+          "overwrite each other's checkpoint at the default key.",
+      )
+    }
+    const store = explicitStore ?? this.fallbackCheckpointStore
     return {
       manager: new Checkpoint(store, options),
       mode,

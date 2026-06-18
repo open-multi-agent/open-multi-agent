@@ -14,6 +14,7 @@ import type {
   LLMResponse,
   MemoryEntry,
   MemoryStore,
+  OrchestratorEvent,
   RunTaskSpec,
 } from '../src/types.js'
 
@@ -320,6 +321,110 @@ describe('OpenMultiAgent checkpoint/restore', () => {
       sharedMemoryStore: store,
     })
     const result = await orchestrator.restore(resumedTeam, { checkpoint: { store } })
+
+    expect(scripted.calls()).toBe(2)
+    expect(result.tasks?.map((record) => record.status)).toEqual(['completed', 'completed'])
+  })
+})
+
+/** A store whose writes always reject, to exercise best-effort checkpointing. */
+class FailingSetStore implements MemoryStore {
+  setCalls = 0
+
+  async get(): Promise<MemoryEntry | null> {
+    return null
+  }
+
+  async set(): Promise<void> {
+    this.setCalls++
+    throw new Error('checkpoint store offline')
+  }
+
+  async list(): Promise<MemoryEntry[]> {
+    return []
+  }
+
+  async delete(): Promise<void> {}
+
+  async clear(): Promise<void> {}
+}
+
+describe('checkpoint resilience and key safety', () => {
+  const tasks: RunTaskSpec[] = [
+    { title: 'first', description: 'do first', assignee: 'worker' },
+    { title: 'second', description: 'do second', assignee: 'worker', dependsOn: ['first'] },
+  ]
+
+  it('keeps the run alive when checkpoint writes fail, surfacing them via onProgress', async () => {
+    const store = new InMemoryStore()
+    const checkpointStore = new FailingSetStore()
+    const scripted = scriptedAdapter(['first output', 'second output'])
+    const events: OrchestratorEvent[] = []
+    const orchestrator = new OpenMultiAgent({
+      onProgress(event) {
+        events.push(event)
+      },
+    })
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+      sharedMemoryStore: store,
+    })
+
+    const result = await orchestrator.runTasks(team, tasks, {
+      checkpoint: { store: checkpointStore },
+    })
+
+    // Both tasks ran to completion even though every checkpoint write rejected.
+    expect(scripted.calls()).toBe(2)
+    expect(result.tasks?.map((record) => record.status)).toEqual(['completed', 'completed'])
+    expect(checkpointStore.setCalls).toBeGreaterThan(0)
+
+    // The failure is reported through onProgress, not swallowed.
+    const failures = events.filter(
+      (event) =>
+        event.type === 'error' &&
+        (event.data as { kind?: string } | undefined)?.kind === 'checkpoint_save_failed',
+    )
+    expect(failures.length).toBeGreaterThan(0)
+  })
+
+  it('requires a runId or explicit store when the team has no shared-memory store', async () => {
+    const scripted = scriptedAdapter(['only output'])
+    const team = new Team({ name: 'team', agents: [worker('worker', scripted.adapter)] })
+    const orchestrator = new OpenMultiAgent()
+
+    await expect(
+      orchestrator.runTasks(
+        team,
+        [{ title: 'only', description: 'do it', assignee: 'worker' }],
+        { checkpoint: true },
+      ),
+    ).rejects.toThrow(/runId/)
+    // Rejected before any agent work happened.
+    expect(scripted.calls()).toBe(0)
+  })
+
+  it('accepts a runId without an explicit store and resumes from the fallback store', async () => {
+    const scripted = scriptedAdapter(['first output', 'second output'])
+    const abort = new AbortController()
+    const orchestrator = new OpenMultiAgent({
+      onProgress(event) {
+        if (event.type === 'task_complete') abort.abort()
+      },
+    })
+    const team = new Team({ name: 'team', agents: [worker('worker', scripted.adapter)] })
+
+    await orchestrator.runTasks(team, tasks, {
+      abortSignal: abort.signal,
+      checkpoint: { runId: 'run-1' },
+    })
+    expect(scripted.calls()).toBe(1)
+
+    // Same orchestrator instance, so the in-memory fallback store survives; the
+    // runId-derived key lets the second run find the first run's checkpoint.
+    const resumedTeam = new Team({ name: 'team', agents: [worker('worker', scripted.adapter)] })
+    const result = await orchestrator.restore(resumedTeam, { checkpoint: { runId: 'run-1' } })
 
     expect(scripted.calls()).toBe(2)
     expect(result.tasks?.map((record) => record.status)).toEqual(['completed', 'completed'])
