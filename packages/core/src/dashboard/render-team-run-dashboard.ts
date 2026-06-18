@@ -222,7 +222,11 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
             #detailsPanel { border-left: 0; border-top: 1px solid rgba(64, 72, 93, 0.4); }
         }
         @media (min-width: 1024px) {
-            main { flex-direction: row; }
+            /* A class selector (.flex-col, specificity 0,1,0) outranks a bare main
+               type selector (0,0,1), so this row override must also be class-level
+               or it never wins and the details panel stays stacked below the canvas
+               on desktop instead of becoming the right-hand sidebar. */
+            main.flex-col { flex-direction: row; }
         }
     </style>
 </head>
