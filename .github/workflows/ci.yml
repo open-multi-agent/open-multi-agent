@@ -48,6 +48,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Assert the create-oma template pins the current core version
+        run: |
+          core_version=$(jq -r .version packages/core/package.json)
+          pinned=$(jq -r '.dependencies["@open-multi-agent/core"]' packages/create-oma/template/package.json)
+          if [ "$pinned" != "$core_version" ]; then
+            echo "create-oma template pins @open-multi-agent/core@$pinned but this repo's core is $core_version."
+            echo "Bump the pin in packages/create-oma/template/package.json to match before release."
+            exit 1
+          fi
+      - name: Typecheck the create-oma template against core
+        run: npm run typecheck:template -w create-oma
       - name: Assert the npm tarball ships exactly the expected files
         working-directory: packages/core
         run: |

@@ -14,6 +14,8 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { OpenMultiAgent, renderTeamRunDashboard } from '@open-multi-agent/core'
 import type { AgentConfig, OrchestratorEvent } from '@open-multi-agent/core'
 
@@ -105,14 +107,21 @@ function onProgress(event: OrchestratorEvent): void {
 
 /** Best-effort open in the default browser; prints the path if it can't. */
 function openInBrowser(file: string): void {
-  const url = `file://${process.cwd()}/${file}`
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'
+  // pathToFileURL handles drive letters, slashes, and spaces on every OS —
+  // a hand-built `file://` string breaks on Windows paths.
+  const url = pathToFileURL(resolve(file)).href
+  const fallback = (): void => console.log(`  Open it manually: ${url}`)
   try {
-    const child = spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' })
-    child.on('error', () => console.log(`  Open it manually: ${url}`))
+    // On Windows the opener is cmd's `start`, whose first quoted arg is the
+    // window title — pass an empty title ("") so the URL isn't swallowed.
+    const child =
+      process.platform === 'win32'
+        ? spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true })
+        : spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { stdio: 'ignore', detached: true })
+    child.on('error', fallback)
     child.unref()
   } catch {
-    console.log(`  Open it manually: ${url}`)
+    fallback()
   }
 }
 

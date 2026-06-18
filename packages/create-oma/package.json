@@ -18,6 +18,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "tsc --noEmit",
+    "typecheck:template": "tsc -p template/tsconfig.json",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
