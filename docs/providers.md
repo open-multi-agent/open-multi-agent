@@ -52,6 +52,7 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 | Zhipu GLM | `provider: 'openai'` + `baseURL: 'https://open.bigmodel.cn/api/paas/v4'` | `ZHIPU_API_KEY` | `glm-4-plus` | See [`providers/zhipu`](../examples/providers/zhipu.ts). |
 | Qwen (DashScope) | `provider: 'openai'` + `baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1'` | `DASHSCOPE_API_KEY` | `qwen-plus` | See [`providers/qwen`](../examples/providers/qwen.ts). |
 | Moonshot AI (Kimi) | `provider: 'openai'` + `baseURL: 'https://api.moonshot.ai/v1'` | `MOONSHOT_API_KEY` | `kimi-k2.5` | See [`providers/moonshot`](../examples/providers/moonshot.ts). |
+| LiteLLM (proxy) | `provider: 'openai'` + `baseURL: 'http://localhost:4000/v1'` + `apiKey` | `LITELLM_API_KEY` (if proxy auth enabled) | any model on your proxy | [LiteLLM](https://github.com/BerriAI/litellm) unifies 100+ providers (OpenAI, Anthropic, Azure, Bedrock, Vertex, etc.) behind one OpenAI-compatible endpoint. Run `litellm --config config.yaml` and point `baseURL` at the proxy. |
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
 

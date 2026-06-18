@@ -463,4 +463,224 @@ describe('BedrockAdapter', () => {
       ])
     })
   })
+
+  // =========================================================================
+  // Phase 3 of #223 — native Bedrock reasoning round-trip (signature echo)
+  // =========================================================================
+
+  describe('reasoning round-trip (#223 Phase 3)', () => {
+    function lastSentMessages(): Array<Record<string, unknown>> {
+      const cmd = mockSend.mock.calls[0][0]
+      return (cmd.input.messages ?? []) as Array<Record<string, unknown>>
+    }
+
+    // -----------------------------------------------------------------------
+    // inbound: chat()
+    // -----------------------------------------------------------------------
+
+    it('chat(): extracts signature from reasoningText into ReasoningBlock', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse({
+        output: {
+          message: {
+            role: 'assistant',
+            content: [
+              { reasoningContent: { reasoningText: { text: 'step 1', signature: 'sig-abc' } } },
+              { text: 'Answer.' },
+            ],
+          },
+        },
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: 'step 1',
+        signature: 'sig-abc',
+        provenance: 'bedrock',
+      })
+    })
+
+    it('chat(): extracts redactedContent into ReasoningBlock.redactedData (base64)', async () => {
+      const redactedBytes = Buffer.from('encrypted-opaque')
+      mockSend.mockResolvedValue(makeConverseResponse({
+        output: {
+          message: {
+            role: 'assistant',
+            content: [
+              { reasoningContent: { redactedContent: redactedBytes } },
+              { text: 'Answer.' },
+            ],
+          },
+        },
+      }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.content[0]).toEqual({
+        type: 'reasoning',
+        text: '',
+        redactedData: redactedBytes.toString('base64'),
+        provenance: 'bedrock',
+      })
+    })
+
+    // -----------------------------------------------------------------------
+    // outbound: toBedrockContentBlock
+    // -----------------------------------------------------------------------
+
+    it('outbound: bedrock-provenance block with signature echoes natively (no <thinking>)', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'plan', signature: 'sig-xyz', provenance: 'bedrock' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sentContent = lastSentMessages()[0]?.content as Array<Record<string, unknown>>
+      expect(sentContent).toHaveLength(2)
+      expect(sentContent[0]).toEqual({
+        reasoningContent: { reasoningText: { text: 'plan', signature: 'sig-xyz' } },
+      })
+      expect(sentContent[1]).toEqual({ text: 'reply' })
+    })
+
+    it('outbound: bedrock-provenance block with signature echoes natively even when preserveReasoningAsText is off', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'plan', signature: 'sig-xyz', provenance: 'bedrock' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: false }))
+
+      const sentContent = lastSentMessages()[0]?.content as Array<Record<string, unknown>>
+      expect(sentContent[0]).toEqual({
+        reasoningContent: { reasoningText: { text: 'plan', signature: 'sig-xyz' } },
+      })
+    })
+
+    it('outbound: bedrock-provenance block without signature falls back to text (preserveReasoningAsText=true)', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'plan', provenance: 'bedrock' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts({ preserveReasoningAsText: true }))
+
+      const sentContent = lastSentMessages()[0]?.content as Array<Record<string, unknown>>
+      expect(sentContent[0]).toEqual({ text: '<thinking>plan</thinking>' })
+    })
+
+    it('outbound: bedrock-provenance redacted block echoes natively via redactedContent', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse())
+      const b64 = Buffer.from('encrypted').toString('base64')
+      const messages: LLMMessage[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: '', redactedData: b64, provenance: 'bedrock' },
+            { type: 'text', text: 'reply' },
+          ],
+        },
+      ]
+
+      await adapter.chat(messages, chatOpts())
+
+      const sentContent = lastSentMessages()[0]?.content as Array<Record<string, unknown>>
+      expect(sentContent[0]).toMatchObject({
+        reasoningContent: { redactedContent: Buffer.from('encrypted') },
+      })
+    })
+
+    // -----------------------------------------------------------------------
+    // inbound: stream()
+    // -----------------------------------------------------------------------
+
+    it('stream(): accumulates signature delta into ReasoningBlock in done payload', async () => {
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'plan ' } } } },
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'step' } } } },
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { signature: 'sig-stream' } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'answer' } } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 5, outputTokens: 3 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const response = events.find(e => e.type === 'done')?.data as LLMResponse
+      const reasoningBlocks = response.content.filter(b => b.type === 'reasoning')
+
+      expect(reasoningBlocks).toEqual([{
+        type: 'reasoning',
+        text: 'plan step',
+        signature: 'sig-stream',
+        provenance: 'bedrock',
+      }])
+    })
+
+    it('stream(): accumulates redactedContent delta into ReasoningBlock.redactedData (base64) in done payload', async () => {
+      const redactedBytes = Buffer.from('encrypted-opaque')
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { redactedContent: redactedBytes } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'answer' } } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 5, outputTokens: 3 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const response = events.find(e => e.type === 'done')?.data as LLMResponse
+      const reasoningBlocks = response.content.filter(b => b.type === 'reasoning')
+
+      expect(reasoningBlocks).toEqual([{
+        type: 'reasoning',
+        text: '',
+        redactedData: redactedBytes.toString('base64'),
+        provenance: 'bedrock',
+      }])
+    })
+
+    it('stream(): reasoning block without signature delta has no signature field', async () => {
+      mockSend.mockResolvedValue(makeStreamResponse([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'thought' } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 2, outputTokens: 1 } } },
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const response = events.find(e => e.type === 'done')?.data as LLMResponse
+      const block = response.content.find(b => b.type === 'reasoning')
+
+      expect(block).toEqual({ type: 'reasoning', text: 'thought', provenance: 'bedrock' })
+      expect((block as { signature?: string }).signature).toBeUndefined()
+    })
+
+    // -----------------------------------------------------------------------
+    // capabilities
+    // -----------------------------------------------------------------------
+
+    it('capabilities.echoesReasoning is "own-issued"', () => {
+      expect(adapter.capabilities.echoesReasoning).toBe('own-issued')
+    })
+  })
 })

@@ -66,7 +66,7 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     ['minimax', () => new MiniMaxAdapter('dummy-key'), 'never' as const],
     ['mimo', () => new MiMoAdapter('dummy-key'), 'tool-use-only' as const],
     ['hunyuan', () => new HunyuanAdapter('dummy-key'), 'tool-use-only' as const],
-    ['bedrock', () => new BedrockAdapter('us-east-1'), 'never' as const],
+    ['bedrock', () => new BedrockAdapter('us-east-1'), 'own-issued' as const],
   ])('%s declares the documented name and capabilities', (expectedName, factory, expectedEcho) => {
     const adapter = factory()
     expect(adapter.name).toBe(expectedName)

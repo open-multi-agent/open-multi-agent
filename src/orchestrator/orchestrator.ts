@@ -377,6 +377,19 @@ export async function executeWithRetry(
 // Parsed task spec (result of coordinator decomposition)
 // ---------------------------------------------------------------------------
 
+/**
+ * Partial verify config that the coordinator can emit in task JSON.
+ * Contains only fields that are safe to include in LLM output — `judges`
+ * (full AgentConfig objects) are always supplied by the caller via
+ * {@link RunTeamOptions.verifyJudges} and are never in coordinator JSON.
+ */
+interface CoordinatorVerifySpec {
+  readonly mode?: 'refute' | 'lens'
+  readonly quorum?: number
+  readonly maxRounds?: number
+  readonly onDissent?: 'revise' | 'reject' | 'keep'
+}
+
 interface ParsedTaskSpec {
   title: string
   description: string
@@ -388,7 +401,59 @@ interface ParsedTaskSpec {
   retryBackoff?: number
   role?: string
   priority?: 'low' | 'normal' | 'high' | 'critical'
-  verify?: ConsensusVerifyOptions
+  /**
+   * Full verify options (used by explicit `runTasks` specs that already
+   * include judges) OR a coordinator-emitted partial spec / boolean `true`
+   * (resolved into full options by `loadSpecsIntoQueue` when
+   * `verifyJudges` is available).
+   */
+  verify?: ConsensusVerifyOptions | CoordinatorVerifySpec | true
+}
+
+/**
+ * Resolve a parsed task spec's `verify` field into a full
+ * {@link ConsensusVerifyOptions} (or `undefined` when no verify should run).
+ *
+ * - Full `ConsensusVerifyOptions` (already has `judges`): used as-is.
+ * - `true` or `CoordinatorVerifySpec` (no `judges`): merged with
+ *   `verifyJudges` when provided; ignored when `verifyJudges` is absent.
+ * - `undefined`: no verify.
+ */
+function resolveVerify(
+  spec: ConsensusVerifyOptions | CoordinatorVerifySpec | true | undefined,
+  verifyJudges?: readonly AgentConfig[],
+): ConsensusVerifyOptions | undefined {
+  if (spec === undefined) return undefined
+  if (spec !== true && 'judges' in spec) return spec as ConsensusVerifyOptions
+  if (!verifyJudges || verifyJudges.length === 0) return undefined
+  const partial: CoordinatorVerifySpec = spec === true ? {} : spec
+  return {
+    judges: verifyJudges,
+    ...(partial.mode !== undefined ? { mode: partial.mode } : {}),
+    ...(partial.quorum !== undefined ? { quorum: partial.quorum } : {}),
+    ...(partial.maxRounds !== undefined ? { maxRounds: partial.maxRounds } : {}),
+    ...(partial.onDissent !== undefined ? { onDissent: partial.onDissent } : {}),
+  }
+}
+
+/**
+ * Parse the coordinator-emitted `verify` field on a task JSON object.
+ * Accepts `true` (use all defaults) or a partial object with `mode`,
+ * `quorum`, `maxRounds`, and/or `onDissent`. Returns `undefined` for any
+ * other value so missing / null / unrecognised values are ignored safely.
+ */
+function parseCoordinatorVerify(raw: unknown): CoordinatorVerifySpec | true | undefined {
+  if (raw === true) return true
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const obj = raw as Record<string, unknown>
+  const mode = obj['mode'] === 'refute' || obj['mode'] === 'lens' ? obj['mode'] : undefined
+  const quorum = typeof obj['quorum'] === 'number' && obj['quorum'] >= 1 ? Math.floor(obj['quorum']) : undefined
+  const maxRounds = typeof obj['maxRounds'] === 'number' && obj['maxRounds'] >= 1 ? Math.floor(obj['maxRounds']) : undefined
+  const onDissent = obj['onDissent'] === 'revise' || obj['onDissent'] === 'reject' || obj['onDissent'] === 'keep'
+    ? obj['onDissent']
+    : undefined
+  if (mode === undefined && quorum === undefined && maxRounds === undefined && onDissent === undefined) return true
+  return { mode, quorum, maxRounds, onDissent }
 }
 
 /**
@@ -435,6 +500,7 @@ function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
         priority: obj['priority'] === 'low' || obj['priority'] === 'normal' || obj['priority'] === 'high' || obj['priority'] === 'critical'
           ? obj['priority']
           : undefined,
+        verify: parseCoordinatorVerify(obj['verify']),
       })
     }
 
@@ -1699,7 +1765,7 @@ export class OpenMultiAgent {
       provider: coordinatorOverrides?.provider ?? this.config.defaultProvider,
       baseURL: coordinatorOverrides?.baseURL ?? this.config.defaultBaseURL,
       apiKey: coordinatorOverrides?.apiKey ?? this.config.defaultApiKey,
-      systemPrompt: this.buildCoordinatorPrompt(agentConfigs, coordinatorOverrides),
+      systemPrompt: this.buildCoordinatorPrompt(agentConfigs, coordinatorOverrides, (options?.verifyJudges?.length ?? 0) > 0),
       maxTurns: coordinatorOverrides?.maxTurns ?? 3,
       maxTokens: coordinatorOverrides?.maxTokens,
       temperature: coordinatorOverrides?.temperature,
@@ -1771,7 +1837,7 @@ export class OpenMultiAgent {
     if (taskSpecs && taskSpecs.length > 0) {
       // Map title-based dependsOn references to real task IDs so we can
       // build the dependency graph before adding tasks to the queue.
-      this.loadSpecsIntoQueue(taskSpecs, agentConfigs, queue)
+      this.loadSpecsIntoQueue(taskSpecs, agentConfigs, queue, options?.verifyJudges)
     } else {
       // Coordinator failed to produce structured output — fall back to
       // one task per agent using the goal as the description.
@@ -1866,6 +1932,7 @@ export class OpenMultiAgent {
         maxRetries: task.maxRetries,
         retryDelayMs: task.retryDelayMs,
         retryBackoff: task.retryBackoff,
+        verify: task.verify,
         metrics: undefined,
       }))
       this.config.onProgress?.({
@@ -1892,6 +1959,7 @@ export class OpenMultiAgent {
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
+      verify: task.verify,
       metrics: taskMetrics.get(task.id),
     }))
 
@@ -2321,34 +2389,34 @@ export class OpenMultiAgent {
   // -------------------------------------------------------------------------
 
   /** Build the system prompt given to the coordinator agent. */
-  private buildCoordinatorSystemPrompt(agents: AgentConfig[]): string {
+  private buildCoordinatorSystemPrompt(agents: AgentConfig[], hasVerifyJudges?: boolean): string {
     return [
       'You are a task coordinator responsible for decomposing high-level goals',
       'into concrete, actionable tasks and assigning them to the right team members.',
       '',
       this.buildCoordinatorRosterSection(agents),
       '',
-      this.buildCoordinatorOutputFormatSection(),
+      this.buildCoordinatorOutputFormatSection(hasVerifyJudges),
       '',
       this.buildCoordinatorSynthesisSection(),
     ].join('\n')
   }
 
   /** Build coordinator system prompt with optional caller overrides. */
-  private buildCoordinatorPrompt(agents: AgentConfig[], config?: CoordinatorConfig): string {
+  private buildCoordinatorPrompt(agents: AgentConfig[], config?: CoordinatorConfig, hasVerifyJudges?: boolean): string {
     if (config?.systemPrompt) {
       return [
         config.systemPrompt,
         '',
         this.buildCoordinatorRosterSection(agents),
         '',
-        this.buildCoordinatorOutputFormatSection(),
+        this.buildCoordinatorOutputFormatSection(hasVerifyJudges),
         '',
         this.buildCoordinatorSynthesisSection(),
       ].join('\n')
     }
 
-    const base = this.buildCoordinatorSystemPrompt(agents)
+    const base = this.buildCoordinatorSystemPrompt(agents, hasVerifyJudges)
     if (!config?.instructions) {
       return base
     }
@@ -2377,8 +2445,8 @@ export class OpenMultiAgent {
   }
 
   /** Build the coordinator JSON output-format section. */
-  private buildCoordinatorOutputFormatSection(): string {
-    return [
+  private buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): string {
+    const lines = [
       '## Output Format',
       'When asked to decompose a goal, respond ONLY with a JSON array of task objects.',
       'Each task must have:',
@@ -2386,6 +2454,16 @@ export class OpenMultiAgent {
       '  - "description": Full task description with context and expected output (string)',
       '  - "assignee":    One of the agent names listed in the roster (string)',
       '  - "dependsOn":   Array of titles of tasks this task depends on (string[], may be empty).',
+    ]
+    if (hasVerifyJudges) {
+      lines.push(
+        '  - "verify":      (optional) Set to true to apply consensus judge verification on this task\'s result.',
+        '                   Or set to an object with any of: "mode" ("refute"|"lens"), "quorum" (number),',
+        '                   "maxRounds" (number), "onDissent" ("revise"|"reject"|"keep").',
+        '                   Omit for tasks where a single agent\'s answer is sufficient.',
+      )
+    }
+    lines.push(
       '',
       '## Dependency Guidance',
       'Prefer the minimum set of upstream tasks each assignee needs. When deciding dependsOn for agent X:',
@@ -2396,7 +2474,8 @@ export class OpenMultiAgent {
       '',
       'Wrap the JSON in a ```json code fence.',
       'Do not include any text outside the code fence.',
-    ].join('\n')
+    )
+    return lines.join('\n')
   }
 
   /** Build the coordinator synthesis guidance section. */
@@ -2538,6 +2617,7 @@ export class OpenMultiAgent {
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
+      verify: task.verify,
       metrics: ctx.taskMetrics.get(task.id),
     }))
 
@@ -2622,6 +2702,7 @@ export class OpenMultiAgent {
     }>,
     agentConfigs: AgentConfig[],
     queue: TaskQueue,
+    verifyJudges?: readonly AgentConfig[],
   ): void {
     const agentNames = new Set(agentConfigs.map((a) => a.name))
     const normalizeTitle = (title: string): string => title.toLowerCase().trim()
@@ -2648,7 +2729,7 @@ export class OpenMultiAgent {
         retryBackoff: spec.retryBackoff,
         role: spec.role,
         priority: spec.priority,
-        verify: spec.verify,
+        verify: resolveVerify(spec.verify, verifyJudges),
       })
       const titleKey = normalizeTitle(spec.title)
       if ((titleCounts.get(titleKey) ?? 0) === 1) {

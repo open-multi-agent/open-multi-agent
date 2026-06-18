@@ -92,7 +92,8 @@ When the fallback fires:
 | Matches target (`'deepseek'` → DeepSeek) in a tool-calling conversation | `'tool-use-only'` | Native `reasoning_content` echo (per DeepSeek V4 spec, see #251) |
 | Matches target but no `tool_use` anywhere in history | `'tool-use-only'` | Dropped (DeepSeek spec ignores non-tool reasoning) |
 | Foreign (e.g. `'openai'` → DeepSeek) | `'tool-use-only'` | Text fallback |
-| Any | `'never'` (OpenAI, Azure, Copilot, Bedrock, AI SDK, etc.) | Text fallback |
+| Matches target (`'bedrock'` → Bedrock) and has signature or is redacted | `'own-issued'` | Native echo via `reasoningContent.{reasoningText,redactedContent}` (see #223) |
+| Any | `'never'` (OpenAI, Azure, Copilot, AI SDK, etc.) | Text fallback |
 
 Redacted reasoning (Anthropic safety-filtered) emits the placeholder `<thinking>[redacted]</thinking>` to signal that reasoning occurred without leaking the opaque payload.
 
@@ -100,6 +101,6 @@ Redacted reasoning (Anthropic safety-filtered) emits the placeholder `<thinking>
 - Disabled by default to avoid silently inflating prompt tokens.
 - Default-on truncation (`compressReasoningText`) is mandatory for safety on long chain-of-thought; disable only when debugging.
 - Some local OpenAI-compatible models may echo `<thinking>` text back into their assistant response, which can trip the loop detector. See `examples/patterns/cross-provider-reasoning.ts` for the failure mode and mitigations.
-- Bedrock currently has `capabilities.echoesReasoning === 'never'` until a follow-up restores its signature round-trip on both inbound extraction and outbound serialization; until then, opt-in always falls back to text for Bedrock targets.
+- Bedrock has `capabilities.echoesReasoning === 'own-issued'`: signed reasoning blocks (`reasoningContent.reasoningText.signature`) and redacted blocks (`reasoningContent.redactedContent`) round-trip natively on both `chat()` and `stream()`, in both inbound extraction and outbound serialization (see #223).
 - `'tool-use-only'` (DeepSeek V4) is the only capability where same-provider echo works **without** the user opting into `preserveReasoningAsText` — it's forced on internally because the DeepSeek API requires it.
 
