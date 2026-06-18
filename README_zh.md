@@ -48,6 +48,14 @@
 
 ## 快速开始
 
+最快看到它跑起来 —— 一条命令脚手架出一个项目并启动多 agent DAG：
+
+```bash
+npm create oma-app@latest
+```
+
+回答一个提示；第一次运行就能看到 coordinator 把一个 goal 拆成多 agent DAG，并打开本次运行的 dashboard（OpenAI 或任意 OpenAI 兼容 provider）。若只想把库装进自己的项目：
+
 ```bash
 npm install @open-multi-agent/core
 ```
@@ -56,7 +64,7 @@ npm install @open-multi-agent/core
 
 **→ [`packages/core/README_zh.md`](packages/core/README_zh.md)**
 
-想先跑起来看看？克隆仓库跑个示例：
+想跑仓库里的示例？克隆下来跑一个：
 
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent

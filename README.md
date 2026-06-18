@@ -48,6 +48,14 @@ Graph-first frameworks make you enumerate every node and edge up front. `open-mu
 
 ## Get started
 
+The fastest way to see it run — one command scaffolds a project and starts a multi-agent DAG:
+
+```bash
+npm create oma-app@latest
+```
+
+Answer one prompt; the first run shows the coordinator turn one goal into a multi-agent DAG and opens a dashboard of the run (OpenAI or any OpenAI-compatible provider). To add the library to your own project:
+
 ```bash
 npm install @open-multi-agent/core
 ```
@@ -56,7 +64,7 @@ The full quickstart, the three ways to run, provider setup, the production check
 
 **→ [`packages/core/README.md`](packages/core/README.md)**
 
-Prefer to run something first? Clone and run an example:
+Prefer to run an example from the repo? Clone and run one:
 
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent

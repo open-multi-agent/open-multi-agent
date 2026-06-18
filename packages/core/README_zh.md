@@ -54,6 +54,14 @@
 
 要求 Node.js >= 18。
 
+最快看到多 agent 跑起来 —— 一条命令脚手架出一个项目并启动：
+
+```bash
+npm create oma-app@latest
+```
+
+第一次运行就能看到 coordinator 把一个 goal 拆成多 agent DAG，并打开本次运行的 dashboard。若只想把库装进已有项目：
+
 ```bash
 npm install @open-multi-agent/core
 ```

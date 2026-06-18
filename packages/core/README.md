@@ -54,6 +54,14 @@ Graph-first frameworks make you enumerate every node and edge up front. `open-mu
 
 Requires Node.js >= 18.
 
+The fastest way to see a multi-agent run — scaffold a project and start it in one command:
+
+```bash
+npm create oma-app@latest
+```
+
+The first run shows the coordinator decompose one goal into a multi-agent DAG, then opens a dashboard of the run. To add the library to an existing project instead:
+
 ```bash
 npm install @open-multi-agent/core
 ```
