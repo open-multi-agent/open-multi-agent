@@ -1,0 +1,22 @@
+# Set ONE provider. The demo uses an OpenAI-compatible client.
+
+# --- OpenAI (default) -------------------------------------------------------
+OPENAI_API_KEY=sk-...
+
+# --- Or any OpenAI-compatible endpoint --------------------------------------
+# Set OPENAI_BASE_URL at the provider and OMA_MODEL to one of its models.
+#
+# DeepSeek:
+#   OPENAI_API_KEY=sk-...
+#   OPENAI_BASE_URL=https://api.deepseek.com
+#   OMA_MODEL=deepseek-chat
+#
+# Groq:
+#   OPENAI_API_KEY=gsk_...
+#   OPENAI_BASE_URL=https://api.groq.com/openai/v1
+#   OMA_MODEL=llama-3.3-70b-versatile
+#
+# Ollama (local, no cloud key — any non-empty value works):
+#   OPENAI_API_KEY=ollama
+#   OPENAI_BASE_URL=http://localhost:11434/v1
+#   OMA_MODEL=llama3.2

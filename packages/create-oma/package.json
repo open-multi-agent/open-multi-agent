@@ -1,0 +1,56 @@
+{
+  "name": "create-oma",
+  "version": "0.1.0",
+  "description": "Scaffold a runnable multi-agent demo on @open-multi-agent/core — one command from zero to a live agent DAG.",
+  "type": "module",
+  "bin": {
+    "create-oma": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "template",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "typecheck:template": "tsc -p template/tsconfig.json",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "open-multi-agent",
+    "multi-agent",
+    "scaffold",
+    "create",
+    "starter",
+    "ai",
+    "agent"
+  ],
+  "author": {
+    "name": "open-multi-agent",
+    "url": "https://github.com/open-multi-agent"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/open-multi-agent/open-multi-agent.git",
+    "directory": "packages/create-oma"
+  },
+  "homepage": "https://github.com/open-multi-agent/open-multi-agent/tree/main/packages/create-oma#readme",
+  "bugs": {
+    "url": "https://github.com/open-multi-agent/open-multi-agent/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

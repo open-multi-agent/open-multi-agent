@@ -1,0 +1,15 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@open-multi-agent/core": "1.7.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}
