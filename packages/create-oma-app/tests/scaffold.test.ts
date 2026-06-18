@@ -7,7 +7,7 @@ import { isNonEmptyDir, scaffold, TEMPLATE_DIR, toPackageName } from '../src/sca
 let tmp: string
 
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), 'create-oma-'))
+  tmp = mkdtempSync(join(tmpdir(), 'create-oma-app-'))
 })
 
 afterEach(() => {

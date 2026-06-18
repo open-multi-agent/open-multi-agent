@@ -1,5 +1,5 @@
 /**
- * create-oma scaffold core — copy the bundled template into a target directory,
+ * create-oma-app scaffold core — copy the bundled template into a target directory,
  * restore the shipped dotfiles, and stamp the project name. No console output,
  * no prompts: the CLI in index.ts handles interaction so this stays testable.
  */

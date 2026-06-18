@@ -141,7 +141,7 @@ const team = orchestrator.createTeam('demo-team', {
 // --- The goal: multi-step, so the coordinator MUST decompose it -------------
 // Kept well over 200 characters so it never hits the single-agent
 // short-circuit — that is what guarantees you see a multi-agent DAG, not one
-// agent. (create-oma's tests assert this length.)
+// agent. (create-oma-app's tests assert this length.)
 const goal = `Design a 30-day onboarding plan for a software engineer joining a fast-moving startup.
 Step 1: identify the 4 outcomes the new hire should reach by day 30.
 Step 2: turn those outcomes into concrete weekly milestones for weeks 1 through 4.

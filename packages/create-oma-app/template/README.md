@@ -1,6 +1,6 @@
 # Multi-agent demo
 
-Built on [`@open-multi-agent/core`](https://www.npmjs.com/package/@open-multi-agent/core), scaffolded with `npm create oma`.
+Built on [`@open-multi-agent/core`](https://www.npmjs.com/package/@open-multi-agent/core), scaffolded with `npm create oma-app`.
 
 ## Run
 

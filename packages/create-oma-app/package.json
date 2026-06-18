@@ -1,10 +1,10 @@
 {
-  "name": "create-oma",
+  "name": "create-oma-app",
   "version": "0.1.0",
   "description": "Scaffold a runnable multi-agent demo on @open-multi-agent/core — one command from zero to a live agent DAG.",
   "type": "module",
   "bin": {
-    "create-oma": "dist/index.js"
+    "create-oma-app": "dist/index.js"
   },
   "files": [
     "dist",
@@ -39,9 +39,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/open-multi-agent/open-multi-agent.git",
-    "directory": "packages/create-oma"
+    "directory": "packages/create-oma-app"
   },
-  "homepage": "https://github.com/open-multi-agent/open-multi-agent/tree/main/packages/create-oma#readme",
+  "homepage": "https://github.com/open-multi-agent/open-multi-agent/tree/main/packages/create-oma-app#readme",
   "bugs": {
     "url": "https://github.com/open-multi-agent/open-multi-agent/issues"
   },

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * create-oma — scaffold a runnable multi-agent demo on @open-multi-agent/core.
+ * create-oma-app — scaffold a runnable multi-agent demo on @open-multi-agent/core.
  *
  * Usage:
- *   npm create oma@latest [project-name]
+ *   npm create oma-app@latest [project-name]
  *
  * One command from zero to a live coordinator-driven agent DAG. The copy logic
  * lives in scaffold.ts; this file is the interactive CLI. Zero runtime
- * dependencies — Node.js built-ins only, so `npm create oma` stays a fast,
+ * dependencies — Node.js built-ins only, so `npm create oma-app` stays a fast,
  * clean one-shot whose own deps never reach the generated project or core.
  */
 import { basename, resolve } from 'node:path'
@@ -41,7 +41,7 @@ function prompt(question: string): Promise<string> {
 
 async function main(): Promise<void> {
   console.log()
-  console.log(`  ${bold('create-oma')}${dim(' — scaffold a multi-agent demo')}`)
+  console.log(`  ${bold('create-oma-app')}${dim(' — scaffold a multi-agent demo')}`)
   console.log()
 
   // 1. Resolve the project directory name (argv, else one prompt).

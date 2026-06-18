@@ -1,9 +1,9 @@
-# create-oma
+# create-oma-app
 
 Scaffold a runnable multi-agent demo on [`@open-multi-agent/core`](https://www.npmjs.com/package/@open-multi-agent/core) — one command from zero to a live agent DAG.
 
 ```bash
-npm create oma@latest
+npm create oma-app@latest
 ```
 
 Answer one prompt (the project name) and you get a small project that, on its first run, shows a **coordinator breaking a single goal into a multi-agent DAG** — agents running in parallel and in dependency order — then opens a dashboard of the run in your browser.
@@ -26,7 +26,7 @@ my-demo/
 ## Run it
 
 ```bash
-npm create oma@latest my-demo
+npm create oma-app@latest my-demo
 cd my-demo
 npm install
 cp .env.example .env   # add your key
