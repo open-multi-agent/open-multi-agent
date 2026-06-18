@@ -166,7 +166,7 @@ Long tool outputs can blow up conversation size and cost. Two controls work toge
 > **Note — two different `outputSchema` fields.** The one on `defineTool()` /
 > `ToolDefinition` (shown below) validates a single **tool's** `ToolResult.data`
 > — it is always a `ZodSchema<string>` because tool output is serialised as
-> text. The `outputSchema` on [`AgentConfig`](../examples/patterns/structured-output.ts)
+> text. The `outputSchema` on [`AgentConfig`](../packages/core/examples/patterns/structured-output.ts)
 > is different: it validates the **agent's final answer** as parsed JSON
 > against an arbitrary Zod schema (see _Structured output_ in `examples/`).
 > Different types, different scopes — TypeScript won't warn you if you mix
@@ -243,4 +243,4 @@ Notes:
 - MCP input validation is delegated to the MCP server (`inputSchema` is `z.any()`).
 - Prefer locally installed or pinned MCP server binaries and pass only the environment variables that server needs. Avoid spreading `process.env` into MCP subprocesses.
 
-See [`integrations/mcp-github`](../examples/integrations/mcp-github.ts) for a full runnable setup.
+See [`integrations/mcp-github`](../packages/core/examples/integrations/mcp-github.ts) for a full runnable setup.

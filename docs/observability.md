@@ -28,7 +28,7 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
-Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own run database only after deciding what data is safe for that sink. See [`integrations/trace-observability`](../examples/integrations/trace-observability.ts) for a runnable example.
+Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own run database only after deciding what data is safe for that sink. See [`integrations/trace-observability`](../packages/core/examples/integrations/trace-observability.ts) for a runnable example.
 
 ## Post-Run Dashboard
 

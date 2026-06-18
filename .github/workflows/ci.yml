@@ -35,7 +35,7 @@ jobs:
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info
+          files: ./packages/core/coverage/lcov.info
           fail_ci_if_error: false
 
   package:
@@ -49,6 +49,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Assert the npm tarball ships exactly the expected files
+        working-directory: packages/core
         run: |
           paths=$(npm pack --dry-run --json | jq -r '.[0].files[].path')
           unexpected=$(echo "$paths" | grep -vE '^(dist/|README\.md$|LICENSE$|package\.json$)' || true)

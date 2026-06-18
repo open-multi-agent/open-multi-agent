@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-This file is the working map for editing this repository: the conventions, the layer layout, the non-obvious invariants, and pointers into `docs/`. It stays lean because it loads into every Claude Code session. Conceptual architecture, the provider table, and the production checklist live in [README.md](README.md); detailed subsystem behavior lives in [`docs/`](docs/) and is linked inline below rather than duplicated here.
+This file is the working map for editing this repository: the conventions, the layer layout, the non-obvious invariants, and pointers into `docs/`. It stays lean because it loads into every Claude Code session. Conceptual architecture, the provider table, and the production checklist live in the package page [packages/core/README.md](packages/core/README.md); detailed subsystem behavior lives in [`docs/`](docs/) and is linked inline below rather than duplicated here.
+
+**Monorepo layout.** The published package `@open-multi-agent/core` lives in [`packages/core/`](packages/core/) — its source, tests, examples, and the npm package README. The repo root is a private npm-workspaces manager (`package.json` `"private": true`) that delegates `build` / `lint` / `test` / `dev` to the package, so the commands below run from the root. Unprefixed code paths in this doc (`src/…`, `tests/…`, `cli/oma.ts`, the layer map below) are relative to `packages/core/`; `docs/` and the GitHub-facade `README.md` live at the repo root.
 
 ## Commands
 
@@ -12,7 +14,7 @@ npm test               # Run all tests (vitest run)
 npm run test:watch     # Vitest watch mode
 npm run test:coverage  # Vitest with v8 coverage
 npm run test:e2e       # E2E suite (requires RUN_E2E=1, real API keys)
-node dist/cli/oma.js help   # After build: shell/CI CLI (`oma` when installed via npm bin)
+node packages/core/dist/cli/oma.js help   # After build: shell/CI CLI (`oma` when installed via npm bin)
 ```
 
 Tests live in `tests/` (vitest), E2E under `tests/e2e/`. Standalone `examples/` need real API keys and are grouped by intent (`basics/`, `cookbook/`, `patterns/`, `providers/`, `integrations/`, `production/`).
