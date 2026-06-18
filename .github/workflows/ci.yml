@@ -68,3 +68,24 @@ jobs:
             echo "Either the build did not run or an entry was dropped from package.json \"files\"."
             exit 1
           fi
+
+      - name: Assert the create-oma tarball ships dist + template
+        working-directory: packages/create-oma
+        run: |
+          paths=$(npm pack --dry-run --json | jq -r '.[0].files[].path')
+          unexpected=$(echo "$paths" | grep -vE '^(dist/|template/|README\.md$|LICENSE$|package\.json$)' || true)
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected files staged for the create-oma tarball:"
+            echo "$unexpected"
+            echo "Only dist/, template/, README.md, LICENSE, package.json may ship."
+            exit 1
+          fi
+          missing=""
+          for f in dist/index.js dist/scaffold.js template/package.json template/src/index.ts template/_env.example template/_gitignore; do
+            echo "$paths" | grep -qxF "$f" || missing="$missing $f"
+          done
+          if [ -n "$missing" ]; then
+            echo "Required files missing from the create-oma tarball:$missing"
+            echo "The scaffolder needs its template/ to function once published."
+            exit 1
+          fi

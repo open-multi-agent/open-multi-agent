@@ -7,13 +7,13 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @open-multi-agent/core",
+    "build": "npm run build --workspaces --if-present",
     "dev": "npm run dev -w @open-multi-agent/core",
-    "test": "npm run test -w @open-multi-agent/core",
+    "test": "npm run test --workspaces --if-present",
     "test:watch": "npm run test:watch -w @open-multi-agent/core",
     "test:coverage": "npm run test:coverage -w @open-multi-agent/core",
     "test:e2e": "npm run test:e2e -w @open-multi-agent/core",
-    "lint": "npm run lint -w @open-multi-agent/core"
+    "lint": "npm run lint --workspaces --if-present"
   },
   "license": "MIT",
   "repository": {
