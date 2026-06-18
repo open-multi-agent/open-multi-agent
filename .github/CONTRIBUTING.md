@@ -15,7 +15,7 @@ Requires Node.js >= 18.
 ## Development Commands
 
 ```bash
-npm run build        # Compile TypeScript (src/ → dist/)
+npm run build        # Compile TypeScript (packages/core/src/ → packages/core/dist/)
 npm run dev          # Watch mode compilation
 npm run lint         # Type-check (tsc --noEmit)
 npm test             # Run all tests (vitest)
@@ -24,7 +24,7 @@ npm run test:watch   # Vitest watch mode
 
 ## Running Tests
 
-All tests live in `tests/` and run without API keys or network access — adapter tests mock the provider SDKs, and the rest cover core modules (TaskQueue, SharedMemory, ToolExecutor, Semaphore, and more).
+All tests live in `packages/core/tests/` and run without API keys or network access — adapter tests mock the provider SDKs, and the rest cover core modules (TaskQueue, SharedMemory, ToolExecutor, Semaphore, and more).
 
 ```bash
 npm test
@@ -55,13 +55,13 @@ Every PR must pass `npm run lint && npm test`. CI runs both automatically on Nod
 
 ## Architecture Overview
 
-See the [README](../README.md#architecture) for an architecture diagram. Key entry points:
+See the [README](../packages/core/README.md#architecture) for an architecture diagram. Key entry points:
 
-- **Orchestrator**: `src/orchestrator/orchestrator.ts` — top-level API
-- **Task system**: `src/task/queue.ts`, `src/task/task.ts` — dependency DAG
-- **Agent**: `src/agent/runner.ts` — conversation loop
-- **Tools**: `src/tool/framework.ts`, `src/tool/executor.ts` — tool registry and execution
-- **LLM adapters**: `src/llm/` — 12 built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
+- **Orchestrator**: `packages/core/src/orchestrator/orchestrator.ts` — top-level API
+- **Task system**: `packages/core/src/task/queue.ts`, `packages/core/src/task/task.ts` — dependency DAG
+- **Agent**: `packages/core/src/agent/runner.ts` — conversation loop
+- **Tools**: `packages/core/src/tool/framework.ts`, `packages/core/src/tool/executor.ts` — tool registry and execution
+- **LLM adapters**: `packages/core/src/llm/` — 12 built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
 
 ## Where to Contribute
 

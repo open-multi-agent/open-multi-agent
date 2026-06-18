@@ -17,10 +17,10 @@ From a clone of the repository you need a build first:
 
 ```bash
 npm run build
-node dist/cli/oma.js help
+node packages/core/dist/cli/oma.js help
 ```
 
-Set the usual provider API keys in the environment (see [README](../README.md#quick-start)); the CLI does not read secrets from flags. MiniMax additionally reads `MINIMAX_BASE_URL` to select the global (`https://api.minimax.io/v1`) or China (`https://api.minimaxi.com/v1`) endpoint. MiMo additionally reads `MIMO_BASE_URL` for Token Plan cluster endpoints such as `https://token-plan-cn.xiaomimimo.com/v1`.
+Set the usual provider API keys in the environment (see [README](../packages/core/README.md#quick-start)); the CLI does not read secrets from flags. MiniMax additionally reads `MINIMAX_BASE_URL` to select the global (`https://api.minimax.io/v1`) or China (`https://api.minimaxi.com/v1`) endpoint. MiMo additionally reads `MIMO_BASE_URL` for Token Plan cluster endpoints such as `https://token-plan-cn.xiaomimimo.com/v1`.
 
 OpenRouter works through the OpenAI-compatible adapter: set `provider` to `openai`, `baseURL` to `https://openrouter.ai/api/v1`, and pass `OPENROUTER_API_KEY` as the agent or orchestrator `apiKey`.
 
@@ -32,7 +32,7 @@ OpenRouter works through the OpenAI-compatible adapter: set `provider` to `opena
 
 Runs **`OpenMultiAgent.runTeam(team, goal)`**: coordinator decomposition, task queue, optional synthesis.
 
-When invoked with `--dashboard`, the **`oma` CLI** writes a static post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html` under the current working directory (the library does not write files itself; if you want this outside the CLI, call `renderTeamRunDashboard(result)` in application code — see `src/dashboard/render-team-run-dashboard.ts`).
+When invoked with `--dashboard`, the **`oma` CLI** writes a static post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html` under the current working directory (the library does not write files itself; if you want this outside the CLI, call `renderTeamRunDashboard(result)` in application code — see `packages/core/src/dashboard/render-team-run-dashboard.ts`).
 
 The dashboard page is self-contained: it does not load remote scripts, stylesheets, or fonts, and sensitive-looking values in the embedded run payload are redacted before rendering.
 

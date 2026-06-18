@@ -2,7 +2,7 @@
   "name": "with-vercel-ai-sdk",
   "private": true,
   "scripts": {
-    "predev": "cd ../.. && npm run build",
+    "predev": "cd ../../.. && npm run build",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
@@ -10,7 +10,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",
     "@ai-sdk/react": "^3.0.0",
-    "@open-multi-agent/core": "file:../../",
+    "@open-multi-agent/core": "file:../../..",
     "ai": "^6.0.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
