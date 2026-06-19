@@ -1,6 +1,6 @@
 {
   "name": "create-oma-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scaffold a runnable multi-agent demo on @open-multi-agent/core — one command from zero to a live agent DAG.",
   "type": "module",
   "bin": {
