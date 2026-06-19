@@ -107,7 +107,7 @@ console.log(result.success, result.totalTokenUsage.output_tokens)
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
 export OPENAI_API_KEY=sk-...
-npx tsx examples/basics/team-collaboration.ts
+npx tsx packages/core/examples/basics/team-collaboration.ts
 ```
 
 三个 agent（architect、developer、reviewer）协作产出 REST API，`onProgress` 实时输出协调者的任务 DAG：
@@ -157,7 +157,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 | 能力 | 说明 |
 |------|------|
 | **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，把目标拆成任务 DAG，并行执行独立任务，合成最终结果。未分配的任务自动调度——`dependency-first`（默认）、`round-robin`、`least-busy` 或 `capability-match`。 |
-| **同队混用 provider** | 12 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。把 tool call 当纯文本输出的本地 server 会由 fallback 解析器兜底。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
+| **同队混用 provider** | 13 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。把 tool call 当纯文本输出的本地 server 会由 fallback 解析器兜底。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **扩展思考 / 推理** | 一份 `thinking` 配置映射到 Anthropic thinking、Gemini `thinkingConfig` 和 OpenAI `reasoning_effort`；推理以事件流式输出，并可选在切换 provider 时保留。([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
 | **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），全部**默认拒绝**（default-deny——用 `tools` / `toolPreset` 授予），外加 `delegate_to_agent` handoff（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出（团队运行时通过 `onAgentStream` 拿到每个 agent 的流）；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
@@ -275,7 +275,7 @@ await orchestrator.runTeam(team, goal, {
 - [`integrations/express-customer-support`](examples/integrations/express-customer-support/)：Express REST API。`runTasks()` 驱动 `POST /tickets`，每个 agent 用 Zod schema，provider 通过环境变量可切换，并做了 HTTP 错误码映射。一个 DeepSeek key 即可跑通（`npm install && npm start`）。
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用。OMA `runTeam()` 配合 AI SDK `useChat` 流式输出（`npm install && npm run dev`）。
 
-运行任意脚本：`npx tsx examples/<path>.ts`；上面的完整应用用各自的 `npm` 脚本运行。
+运行任意脚本：`npx tsx packages/core/examples/<path>.ts`；上面的完整应用用各自的 `npm` 脚本运行。
 
 ## 与其他框架对比
 
@@ -326,7 +326,7 @@ await orchestrator.runTeam(team, goal, {
 │  Agent            │
 │  - run()          │    ┌────────────────────────┐
 │  - prompt()       │───►│  LLMAdapter            │
-│  - stream()       │    │  - 12 built-in         │
+│  - stream()       │    │  - 13 built-in         │
 └────────┬──────────┘    │    providers           │
          │               │  - OpenAI-compatible   │
          │               │  - AI SDK bridge       │
@@ -424,7 +424,7 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 ## 贡献者
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100" />
 </a>
 
 <details>
@@ -439,12 +439,14 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@Xin-Mai](https://github.com/Xin-Mai)（output schema 验证）
 - [@JasonOA888](https://github.com/JasonOA888)（AbortSignal 支持）
 - [@EchoOfZion](https://github.com/EchoOfZion)（简单目标跳过 Coordinator）
-- [@voidborne-d](https://github.com/voidborne-d)（OpenAI 混合内容修复）
+- voidborne-d（OpenAI 混合内容修复、text-tool-extractor 深度修复）
 - [@NamelessNATM](https://github.com/NamelessNATM)（agent 委派基础实现）
 - [@MyPrototypeWhat](https://github.com/MyPrototypeWhat)（reasoning blocks、reasoning_effort、采样参数对齐、trace 输入输出）
 - [@SiMinus](https://github.com/SiMinus)（流式 reasoning 事件）
 - [@matthewYang08](https://github.com/matthewYang08)（OpenAI reasoning 转文本回退）
 - [@dvirarad](https://github.com/dvirarad)（OpenAI 系列 adapter 健壮性）
+- [@cat0825](https://github.com/cat0825)（model routing 策略、plan 重放、结构化共享记忆 handoff）
+- [@mvanhorn](https://github.com/mvanhorn)（checkpoint & resume）
 
 **Provider 集成**
 
@@ -456,6 +458,8 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@JackChiang233](https://github.com/JackChiang233)（Qiniu）
 - [@CodingBangboo](https://github.com/CodingBangboo)（AWS Bedrock）
 - [@kidoom](https://github.com/kidoom)（MiMo、Doubao）
+- [@KaitlynFeng](https://github.com/KaitlynFeng)（Hunyuan）
+- [@octo-patch](https://github.com/octo-patch)（MiniMax-M3 模型升级）
 
 **示例与 Cookbook**
 
@@ -484,6 +488,8 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@jadegold55](https://github.com/jadegold55)（LLM adapter 测试覆盖）
 - [@btroops](https://github.com/btroops)（DeepSeek 工具调用测试）
 - [@nuthalapativarun](https://github.com/nuthalapativarun)（上下文管理文档）
+- [@Oxygen56](https://github.com/Oxygen56)（errors.ts 测试、Grok/DeepSeek/Doubao provider 文档）
+- [@RheagalFire](https://github.com/RheagalFire)（LiteLLM 网关文档）
 
 </details>
 

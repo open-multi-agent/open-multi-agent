@@ -162,7 +162,7 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 ## 贡献者
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100" />
 </a>
 
 按领域展开的完整致谢见[包页](packages/core/README_zh.md#贡献者)。

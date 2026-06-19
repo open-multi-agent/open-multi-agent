@@ -107,7 +107,7 @@ console.log(result.success, result.totalTokenUsage.output_tokens)
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
 npm install
 export OPENAI_API_KEY=sk-...
-npx tsx examples/basics/team-collaboration.ts
+npx tsx packages/core/examples/basics/team-collaboration.ts
 ```
 
 Three agents collaborate on a REST API while `onProgress` streams the coordinator's task DAG:
@@ -159,7 +159,7 @@ Route orchestration phases to different models with an opt-in `modelRouting` pol
 | Capability | What you get |
 |------------|--------------|
 | **Goal-driven coordinator** | One `runTeam(team, goal)` call decomposes the goal into a task DAG, parallelizes independents, and synthesizes the result. Unassigned tasks are auto-scheduled — `dependency-first` (default), `round-robin`, `least-busy`, or `capability-match`. |
-| **Mix providers in one team** | 12 built-in providers plus any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, Groq), mixed freely in one team. Local servers that emit tool calls as plain text are recovered by a fallback parser. ([full list](#supported-providers) · [setup](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
+| **Mix providers in one team** | 13 built-in providers plus any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, Groq), mixed freely in one team. Local servers that emit tool calls as plain text are recovered by a fallback parser. ([full list](#supported-providers) · [setup](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **Extended thinking / reasoning** | One `thinking` config maps to Anthropic thinking, Gemini `thinkingConfig`, and OpenAI `reasoning_effort`; reasoning is streamed as events, with opt-in preservation across a provider switch. ([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
 | **Tools + MCP** | 6 built-in (`bash`, `file_*`, `grep`, `glob`), all **opt-in** (default-deny — grant via `tools` / `toolPreset`), plus `delegate_to_agent` handoff (cycle + depth guards), custom tools via `defineTool()` + Zod, stdio MCP servers via `connectMCPTools()`. ([tool config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **Streaming + structured output** | Token-by-token streaming on every adapter (per-agent during team runs via `onAgentStream`); Zod-validated final answer with auto-retry on parse failure. ([`structured-output`](examples/patterns/structured-output.ts)) |
@@ -277,7 +277,7 @@ Clone-and-run apps with their own `package.json`, not `npx tsx` scripts. Each em
 - [`integrations/express-customer-support`](examples/integrations/express-customer-support/): Express REST API. `runTasks()` behind `POST /tickets` with per-agent Zod schemas, swappable provider env vars, and HTTP error mapping. Runs on one DeepSeek key (`npm install && npm start`).
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/): Next.js app. OMA `runTeam()` plus AI SDK `useChat` streaming (`npm install && npm run dev`).
 
-Run any script with `npx tsx examples/<path>.ts`; the full applications above use their own `npm` scripts.
+Run any script with `npx tsx packages/core/examples/<path>.ts`; the full applications above use their own `npm` scripts.
 
 ## How is this different from X?
 
@@ -328,7 +328,7 @@ A quick router. Mechanism breakdown follows.
 │  Agent            │
 │  - run()          │    ┌────────────────────────┐
 │  - prompt()       │───►│  LLMAdapter            │
-│  - stream()       │    │  - 12 built-in         │
+│  - stream()       │    │  - 13 built-in         │
 └────────┬──────────┘    │    providers           │
          │               │  - OpenAI-compatible   │
          │               │  - AI SDK bridge       │
@@ -427,7 +427,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100" />
 </a>
 
 <details>
@@ -442,12 +442,14 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@Xin-Mai](https://github.com/Xin-Mai) (output schema validation)
 - [@JasonOA888](https://github.com/JasonOA888) (AbortSignal support)
 - [@EchoOfZion](https://github.com/EchoOfZion) (coordinator skip for simple goals)
-- [@voidborne-d](https://github.com/voidborne-d) (OpenAI mixed content fix)
+- voidborne-d (OpenAI mixed-content fix, text-tool-extractor depth fix)
 - [@NamelessNATM](https://github.com/NamelessNATM) (agent delegation base implementation)
 - [@MyPrototypeWhat](https://github.com/MyPrototypeWhat) (reasoning blocks, reasoning_effort, sampling parity, trace input/output)
 - [@SiMinus](https://github.com/SiMinus) (streaming reasoning events)
 - [@matthewYang08](https://github.com/matthewYang08) (OpenAI reasoning-to-text fallback)
 - [@dvirarad](https://github.com/dvirarad) (OpenAI-family adapter hardening)
+- [@cat0825](https://github.com/cat0825) (model routing policy, plan replay, structured shared-memory handoff)
+- [@mvanhorn](https://github.com/mvanhorn) (checkpoint & resume)
 
 **Provider integrations**
 
@@ -459,6 +461,8 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@JackChiang233](https://github.com/JackChiang233) (Qiniu)
 - [@CodingBangboo](https://github.com/CodingBangboo) (AWS Bedrock)
 - [@kidoom](https://github.com/kidoom) (MiMo, Doubao)
+- [@KaitlynFeng](https://github.com/KaitlynFeng) (Hunyuan)
+- [@octo-patch](https://github.com/octo-patch) (MiniMax-M3 model upgrade)
 
 **Examples & cookbook**
 
@@ -487,6 +491,8 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@jadegold55](https://github.com/jadegold55) (LLM adapter test coverage)
 - [@btroops](https://github.com/btroops) (DeepSeek tool-calling tests)
 - [@nuthalapativarun](https://github.com/nuthalapativarun) (context-management docs)
+- [@Oxygen56](https://github.com/Oxygen56) (errors.ts tests, provider docs for Grok/DeepSeek/Doubao)
+- [@RheagalFire](https://github.com/RheagalFire) (LiteLLM gateway docs)
 
 </details>
 
