@@ -20,6 +20,7 @@
     "lint": "tsc --noEmit",
     "typecheck:template": "tsc -p template/tsconfig.json",
     "test": "vitest run",
+    "test:scaffold": "node scripts/test-scaffold.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
