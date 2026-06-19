@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong>From a goal to a task DAG, automatically.</strong><br/>
-  TypeScript-native multi-agent orchestration. Three runtime dependencies.
+  TypeScript-native multi-agent orchestration.
 </p>
 
 <p align="center">
@@ -23,7 +23,6 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
   <a href="https://codecov.io/gh/open-multi-agent/open-multi-agent"><img src="https://codecov.io/gh/open-multi-agent/open-multi-agent/graph/badge.svg" alt="codecov"></a>
-  <a href="https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/core/package.json"><img src="https://img.shields.io/badge/runtime_deps-3-brightgreen" alt="runtime deps"></a>
   <a href="https://github.com/open-multi-agent/open-multi-agent/stargazers"><img src="https://img.shields.io/github/stars/open-multi-agent/open-multi-agent" alt="GitHub stars"></a>
   <a href="https://github.com/open-multi-agent/open-multi-agent/network/members"><img src="https://img.shields.io/github/forks/open-multi-agent/open-multi-agent" alt="GitHub forks"></a>
 </p>
@@ -40,7 +39,7 @@
 
 <br />
 
-`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Three runtime dependencies, drops into any Node.js backend.
+`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Drops into any Node.js backend.
 
 > **Your engineers describe the goal, not the graph.**
 

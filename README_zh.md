@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong>给一个目标，自动得到任务 DAG。</strong><br/>
-  原生 TypeScript 多智能体编排，3 个运行时依赖。
+  原生 TypeScript 多智能体编排。
 </p>
 
 <p align="center">
@@ -23,7 +23,6 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-blue" alt="TypeScript"></a>
   <a href="https://codecov.io/gh/open-multi-agent/open-multi-agent"><img src="https://codecov.io/gh/open-multi-agent/open-multi-agent/graph/badge.svg" alt="codecov"></a>
-  <a href="https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/core/package.json"><img src="https://img.shields.io/badge/runtime_deps-3-brightgreen" alt="runtime deps"></a>
   <a href="https://github.com/open-multi-agent/open-multi-agent/stargazers"><img src="https://img.shields.io/github/stars/open-multi-agent/open-multi-agent" alt="GitHub stars"></a>
   <a href="https://github.com/open-multi-agent/open-multi-agent/network/members"><img src="https://img.shields.io/github/forks/open-multi-agent/open-multi-agent" alt="GitHub forks"></a>
 </p>
@@ -40,7 +39,7 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。仅 3 个运行时依赖，可直接嵌入任意现有 Node.js 后端。
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。可直接嵌入任意现有 Node.js 后端。
 
 > **工程师只描述目标，不画任务图。**
 
@@ -149,6 +148,7 @@ npm test               # 跑测试套件
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 可选的按运行快照/恢复，跑在任意 `MemoryStore` 上；崩溃、重启后可续跑。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
+- [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) — `runConsensus` proposer→judge 原语、按任务的 `verify` 钩子，以及预算不变量。
 - [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — 可选的 `modelRouting` 策略：按 phase / agent / role / priority / leaf 匹配，first match wins。
 
 ## 参与贡献
