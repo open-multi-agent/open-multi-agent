@@ -75,6 +75,8 @@ npx tsx packages/core/examples/basics/team-collaboration.ts
 
 三个 agent 协作产出 REST API，`onProgress` 实时输出协调者的任务 DAG——无依赖的任务并行执行，依赖项在输入就绪后自动解锁，协调者最终合成结果。通过 Ollama 运行本地模型不需要 API key，见 [provider 指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)。
 
+想要一个完整应用而不是脚本？两个克隆即跑的应用把 OMA 嵌进了真实后端：一个 [Express REST API](packages/core/examples/integrations/express-customer-support/) 和一个 [Next.js 应用](packages/core/examples/integrations/with-vercel-ai-sdk/)。
+
 ## 与其他框架对比
 
 按需求快速选型。以下逐一分析差异。
