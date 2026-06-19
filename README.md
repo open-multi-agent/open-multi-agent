@@ -75,6 +75,8 @@ npx tsx packages/core/examples/basics/team-collaboration.ts
 
 Three agents collaborate on a REST API while `onProgress` streams the coordinator's task DAG — independent tasks run in parallel, dependents unblock as their inputs land, and the coordinator synthesizes the final result. Local models via Ollama need no API key; see the [providers guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md).
 
+Want a full application instead of a script? Two clone-and-run apps embed OMA in a real backend: an [Express REST API](packages/core/examples/integrations/express-customer-support/) and a [Next.js app](packages/core/examples/integrations/with-vercel-ai-sdk/).
+
 ## How is this different from X?
 
 A quick router. Mechanism breakdown follows.
