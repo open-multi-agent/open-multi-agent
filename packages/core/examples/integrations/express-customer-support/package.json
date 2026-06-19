@@ -5,9 +5,11 @@
   "scripts": {
     "prestart": "cd ../../.. && npm run build",
     "start":    "tsx index.ts",
+    "presmoke": "cd ../../.. && npm run build",
     "smoke":   "tsx smoke.ts"
   },
   "dependencies": {
+    "@open-multi-agent/core": "file:../../..",
     "zod": "^3.23.0"
   },
   "devDependencies": {

@@ -17,8 +17,8 @@
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { z } from 'zod'
-import { OpenMultiAgent } from '../../../src/index.js'
-import type { AgentConfig, SupportedProvider } from '../../../src/index.js'
+import { OpenMultiAgent } from '@open-multi-agent/core'
+import type { AgentConfig, SupportedProvider } from '@open-multi-agent/core'
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -74,9 +74,9 @@ function pickAgent(envPrefix: string, defaultProvider: SupportedProvider, defaul
   return { provider, model }
 }
 
-const classifierCfg = pickAgent('CLASSIFIER', 'anthropic', 'claude-haiku-4-5-20251001')
-const drafterCfg    = pickAgent('DRAFTER',    'anthropic', 'claude-sonnet-4-6')
-const qaCfg         = pickAgent('QA',         'anthropic', 'claude-opus-4-7')
+const classifierCfg = pickAgent('CLASSIFIER', 'deepseek', 'deepseek-v4-flash')
+const drafterCfg    = pickAgent('DRAFTER',    'deepseek', 'deepseek-v4-pro')
+const qaCfg         = pickAgent('QA',         'deepseek', 'deepseek-v4-pro')
 
 // ---------------------------------------------------------------------------
 // Agents
@@ -109,9 +109,7 @@ const qaReviewer: AgentConfig = {
   systemPrompt: 'You are a QA reviewer for customer support. Your task prompt will contain a "Context from prerequisite tasks" section with the classifier\'s category/urgency and the drafter\'s reply. Review the draft reply for tone, empathy, and accuracy against the original ticket. Provide concise QA notes. Respond ONLY with valid JSON.',
   outputSchema: QAOutput,
   maxTurns: 3,
-  // Note: omitting `temperature` — `claude-opus-4-7` (the default QA model)
-  // rejects this parameter. If you override QA_MODEL to a model that supports
-  // it, you can add `temperature: 0.2` back here.
+  temperature: 0.2,
 }
 
 // ---------------------------------------------------------------------------

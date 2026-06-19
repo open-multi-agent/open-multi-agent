@@ -34,8 +34,8 @@ npm install
 cd packages/core/examples/integrations/with-vercel-ai-sdk
 npm install
 
-# 3. Set your API key
-export ANTHROPIC_API_KEY=sk-ant-...
+# 3. Set your DeepSeek API key (the demo runs the team on DeepSeek)
+export DEEPSEEK_API_KEY=sk-...
 
 # 4. Run
 npm run dev
@@ -48,7 +48,7 @@ Open [http://localhost:3000](http://localhost:3000), type a topic, and watch the
 ## Prerequisites
 
 - Node.js >= 18
-- `ANTHROPIC_API_KEY` environment variable (used by both OMA and AI SDK)
+- `DEEPSEEK_API_KEY` environment variable (used by both OMA and AI SDK)
 
 ## Key files
 

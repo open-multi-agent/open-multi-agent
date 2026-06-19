@@ -265,10 +265,16 @@ await orchestrator.runTeam(team, goal, {
 - [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 把目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不重跑协调者。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，给 LLM 调用、工具、任务发结构化 span。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：用 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
-- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用，OMA `runTeam()` 配合 AI SDK `useChat` 流式输出。
 - **Provider 示例**：[`examples/providers/`](examples/providers/) 下的脚本，覆盖托管 provider、OpenAI 兼容端点和本地模型。
 
-运行任意脚本：`npx tsx examples/<path>.ts`。
+### 完整应用
+
+带有独立 `package.json` 的克隆即跑应用，不是 `npx tsx` 脚本。每个都把 OMA 嵌进了真实后端。
+
+- [`integrations/express-customer-support`](examples/integrations/express-customer-support/)：Express REST API。`runTasks()` 驱动 `POST /tickets`，每个 agent 用 Zod schema，provider 通过环境变量可切换，并做了 HTTP 错误码映射。一个 DeepSeek key 即可跑通（`npm install && npm start`）。
+- [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用。OMA `runTeam()` 配合 AI SDK `useChat` 流式输出（`npm install && npm run dev`）。
+
+运行任意脚本：`npx tsx examples/<path>.ts`；上面的完整应用用各自的 `npm` 脚本运行。
 
 ## 与其他框架对比
 

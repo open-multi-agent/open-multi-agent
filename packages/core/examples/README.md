@@ -2,7 +2,7 @@
 
 Runnable scripts demonstrating `open-multi-agent`. Organized by category — pick one that matches what you're trying to do.
 
-All scripts run with `npx tsx examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment.
+All scripts run with `npx tsx examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment. The full applications (see the apps section below) are the exception: they have their own `package.json` and start scripts.
 
 ---
 
@@ -83,8 +83,14 @@ Hooking the framework up to outside-the-box tooling.
 | [`integrations/trace-observability`](integrations/trace-observability.ts) | `onTrace` spans for LLM calls, tools, and tasks. |
 | [`integrations/mcp-github`](integrations/mcp-github.ts) | An MCP server's tools exposed to an agent via `connectMCPTools()`. |
 | [`integrations/mcp-bilig-workpaper`](integrations/mcp-bilig-workpaper.ts) | Bilig WorkPaper MCP tools for formula readback, recalculation, and persisted workbook JSON. |
-| [`integrations/with-vercel-ai-sdk/`](integrations/with-vercel-ai-sdk/) | Next.js app — OMA `runTeam()` + AI SDK `useChat` streaming. |
-| [`integrations/express-customer-support/`](integrations/express-customer-support/) | Express REST API — `runTasks()` behind POST /tickets with per-agent Zod output schemas, mix-and-match provider env vars, and HTTP error mapping (400/502/504). |
+## apps — full applications
+
+Complete, clone-and-run applications with their own `package.json` and dependencies. These embed OMA in a real backend, so they use `npm install` plus their own start script rather than `npx tsx`.
+
+| Example | Stack | Run |
+|---------|-------|-----|
+| [`integrations/express-customer-support/`](integrations/express-customer-support/) | Express REST API: `runTasks()` behind `POST /tickets`, per-agent Zod schemas, swappable provider env vars, HTTP error mapping (400/502/504) | `npm install && npm start` |
+| [`integrations/with-vercel-ai-sdk/`](integrations/with-vercel-ai-sdk/) | Next.js: OMA `runTeam()` plus AI SDK `useChat` streaming | `npm install && npm run dev` |
 
 ## production — real-world use cases
 
@@ -106,6 +112,6 @@ Conventions:
 
 - **No numeric prefixes.** Folders signal category; reading order is set by this README.
 - **File header docstring** with one-line title, `Run:` block, and prerequisites.
-- **Imports** should resolve as `from '../../src/index.js'` (one level deeper than the old flat layout).
+- **Imports** should resolve as `from '../../src/index.js'` for scripts (one level deeper than the old flat layout); full applications with their own `package.json` import the published `@open-multi-agent/core` package name instead.
 - **Match the provider template** when adding a provider: three-agent team (architect / developer / reviewer) building a small REST API. Keeps comparisons honest.
 - **Add a row** to the table in this file for the corresponding category.
