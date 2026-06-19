@@ -6,9 +6,29 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         node-version: [18, 20, 22]
@@ -19,11 +39,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npm run lint
       - run: npm test
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,6 +60,7 @@ jobs:
 
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +69,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Smoke-test that the built entry points import and the CLI runs
+        working-directory: packages/core
+        run: |
+          node -e "Promise.all([import('./dist/index.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
+          node dist/cli/oma.js help > /dev/null
+          echo "CLI help runs OK"
       - name: Assert the create-oma-app template pins the current core version
         run: |
           core_version=$(jq -r .version packages/core/package.json)
