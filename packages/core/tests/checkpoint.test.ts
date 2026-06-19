@@ -211,7 +211,11 @@ describe('OpenMultiAgent checkpoint/restore', () => {
   })
 
   it('restores after an aborted run, skips completed tasks, and rehydrates shared memory', async () => {
+    // Separate checkpoint store: the embedded shared-memory snapshot is what
+    // rehydrates `store` after it is wiped (simulating a non-durable shared
+    // store across a restart). The reused-store path is covered separately.
     const store = new InMemoryStore()
+    const checkpointStore = new InMemoryStore()
     const scripted = scriptedAdapter(['first output', 'second output'])
     const abort = new AbortController()
     const orchestrator = new OpenMultiAgent({
@@ -230,7 +234,7 @@ describe('OpenMultiAgent checkpoint/restore', () => {
 
     await orchestrator.runTasks(team, tasks, {
       abortSignal: abort.signal,
-      checkpoint: { store },
+      checkpoint: { store: checkpointStore },
     })
     expect(scripted.calls()).toBe(1)
 
@@ -241,7 +245,7 @@ describe('OpenMultiAgent checkpoint/restore', () => {
       agents: [worker('worker', scripted.adapter)],
       sharedMemoryStore: store,
     })
-    const restored = await orchestrator.restore(resumedTeam, { checkpoint: { store } })
+    const restored = await orchestrator.restore(resumedTeam, { checkpoint: { store: checkpointStore } })
 
     expect(scripted.calls()).toBe(2)
     expect(scripted.prompts[1]).toContain('first output')
@@ -324,6 +328,69 @@ describe('OpenMultiAgent checkpoint/restore', () => {
 
     expect(scripted.calls()).toBe(2)
     expect(result.tasks?.map((record) => record.status)).toEqual(['completed', 'completed'])
+  })
+
+  it('reused store omits the shared-memory snapshot but persists the turn counter', async () => {
+    const store = new InMemoryStore()
+    const scripted = scriptedAdapter(['first output', 'second output'])
+    const abort = new AbortController()
+    const orchestrator = new OpenMultiAgent({
+      onProgress(event) {
+        if (event.type === 'task_complete') abort.abort()
+      },
+    })
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+      sharedMemoryStore: store,
+    })
+    await team.getSharedMemoryInstance()!.writeExpiring('seed', 'ttl', 'short', 5)
+
+    await orchestrator.runTasks(team, tasks, { abortSignal: abort.signal, checkpoint: { store } })
+
+    // Checkpoint store === shared-memory store: the entries are already durable
+    // in the store, so the snapshot omits them and records only the turn count.
+    const persisted = await new Checkpoint(store, {}).loadLatest()
+    expect(persisted?.sharedMemory).toBeUndefined()
+    expect(persisted?.turnCount).toBe(1)
+
+    // Resume restores the turn counter so TTL expiry continues correctly.
+    const resumedTeam = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+      sharedMemoryStore: store,
+    })
+    await orchestrator.restore(resumedTeam, { checkpoint: { store } })
+    expect(resumedTeam.getSharedMemoryInstance()!.getTurnCount()).toBe(2)
+    expect((await resumedTeam.getSharedMemoryInstance()!.read('seed/ttl'))?.value).toBe('short')
+  })
+
+  it('separate checkpoint store still embeds the shared-memory snapshot', async () => {
+    const sharedStore = new InMemoryStore()
+    const checkpointStore = new InMemoryStore()
+    const scripted = scriptedAdapter(['first output', 'second output'])
+    const abort = new AbortController()
+    const orchestrator = new OpenMultiAgent({
+      onProgress(event) {
+        if (event.type === 'task_complete') abort.abort()
+      },
+    })
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+      sharedMemoryStore: sharedStore,
+    })
+    await team.getSharedMemoryInstance()!.write('seed', 'note', { keep: true })
+
+    await orchestrator.runTasks(team, tasks, {
+      abortSignal: abort.signal,
+      checkpoint: { store: checkpointStore },
+    })
+
+    // Checkpoint store differs from the shared-memory store, so the snapshot must
+    // embed the entries — the checkpoint store holds no other copy.
+    const persisted = await new Checkpoint(checkpointStore, {}).loadLatest()
+    expect(persisted?.sharedMemory?.entries.some((entry) => entry.key === 'seed/note')).toBe(true)
   })
 })
 
@@ -428,5 +495,83 @@ describe('checkpoint resilience and key safety', () => {
 
     expect(scripted.calls()).toBe(2)
     expect(result.tasks?.map((record) => record.status)).toEqual(['completed', 'completed'])
+  })
+})
+
+describe('runTeam restore synthesis', () => {
+  /** Persist a runTeam-mode checkpoint with `first` completed and `second` pending. */
+  function saveRunTeamCheckpoint(store: MemoryStore, goal = 'achieve the goal') {
+    const queue = new TaskQueue()
+    queue.add(task('first', { assignee: 'worker' }))
+    queue.add(task('second', { assignee: 'worker', dependsOn: ['first'] }))
+    queue.complete('first', 'first output')
+    return new Checkpoint(store, {}).save({
+      version: 1,
+      mode: 'runTeam',
+      createdAt: new Date().toISOString(),
+      goal,
+      queue: queue.snapshot(),
+      completedTaskResults: [{ taskId: 'first', assignee: 'worker', result: 'first output' }],
+    })
+  }
+
+  it('re-runs the coordinator synthesis and returns the synthesized answer', async () => {
+    const store = new InMemoryStore()
+    const workerAdapter = scriptedAdapter(['second output'])
+    const coordinator = scriptedAdapter(['SYNTHESIZED ANSWER'])
+    const orchestrator = new OpenMultiAgent()
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', workerAdapter.adapter)],
+      sharedMemoryStore: store,
+    })
+    await saveRunTeamCheckpoint(store)
+
+    const restored = await orchestrator.restore(team, {
+      checkpoint: { store },
+      coordinator: { model: 'mock-model', adapter: coordinator.adapter },
+    })
+
+    expect(workerAdapter.calls()).toBe(1) // only the pending 'second' task ran
+    expect(coordinator.calls()).toBe(1) // synthesis ran; restore does not re-decompose
+    expect(restored.agentResults.get('coordinator')?.output).toBe('SYNTHESIZED ANSWER')
+    expect(restored.tasks?.every((record) => record.status === 'completed')).toBe(true)
+  })
+
+  it('is best-effort when synthesis fails: raw outputs plus a synthesis_failed event', async () => {
+    const store = new InMemoryStore()
+    const workerAdapter = scriptedAdapter(['second output'])
+    const throwingCoordinator: LLMAdapter = {
+      name: 'throwing-coordinator',
+      async chat() {
+        throw new Error('synthesis boom')
+      },
+      async *stream() {
+        yield { type: 'done' as const, data: textResponse('unused', 'mock-model') }
+      },
+    }
+    const events: OrchestratorEvent[] = []
+    const orchestrator = new OpenMultiAgent({ onProgress: (event) => events.push(event) })
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', workerAdapter.adapter)],
+      sharedMemoryStore: store,
+    })
+    await saveRunTeamCheckpoint(store)
+
+    const restored = await orchestrator.restore(team, {
+      checkpoint: { store },
+      coordinator: { model: 'mock-model', adapter: throwingCoordinator },
+    })
+
+    expect(restored.agentResults.has('coordinator')).toBe(false) // synthesis skipped
+    expect(restored.tasks?.every((record) => record.status === 'completed')).toBe(true) // work preserved
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'error' &&
+          (event.data as { kind?: string } | undefined)?.kind === 'synthesis_failed',
+      ),
+    ).toBe(true)
   })
 })

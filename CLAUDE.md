@@ -79,6 +79,7 @@ Detailed behavior is documented in `docs/` — the single source of truth, so up
 | Tool presets, custom tools, sandbox, delegation, MCP | `tool/` | [tool-configuration.md](docs/tool-configuration.md) |
 | Providers, env vars, local servers, AI SDK bridge | `llm/` | [providers.md](docs/providers.md) |
 | Shared memory + custom backends | `memory/` | [shared-memory.md](docs/shared-memory.md) |
+| Checkpoint/resume over `MemoryStore` | `memory/checkpoint.ts`, `orchestrator/orchestrator.ts` | [checkpoint.md](docs/checkpoint.md) |
 | Tracing, progress events, dashboard | `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md) |
 | CLI usage + JSON schemas | `cli/oma.ts` | [cli.md](docs/cli.md) |
 

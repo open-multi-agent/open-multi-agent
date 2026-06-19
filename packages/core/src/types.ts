@@ -1118,6 +1118,15 @@ export interface CheckpointOptions {
 export interface RestoreOptions extends RunTasksOptions {
   /** Optional goal attached to the restored result when no checkpoint goal exists. */
   readonly goal?: string
+  /**
+   * Coordinator config used to re-run synthesis when resuming a `runTeam` run.
+   * Re-supply the same config passed to the original `runTeam` call — the
+   * checkpoint cannot persist a live {@link CoordinatorConfig.adapter}. When
+   * synthesis cannot run (no usable config/credentials) or the LLM call fails,
+   * restore falls back to raw per-task outputs and emits an `onProgress`
+   * `synthesis_failed` event.
+   */
+  readonly coordinator?: CoordinatorConfig
 }
 
 /** Serializable form of a {@link MemoryEntry}. */
@@ -1183,6 +1192,12 @@ export interface CheckpointSnapshot {
   readonly goal?: string
   readonly queue: TaskQueueSnapshot
   readonly sharedMemory?: SharedMemorySnapshot
+  /**
+   * Shared-memory turn counter at checkpoint time. Persisted separately from
+   * {@link sharedMemory} so TTL/expiry stays correct on resume even when the
+   * full entry snapshot is omitted (checkpoint store === shared-memory store).
+   */
+  readonly turnCount?: number
   readonly completedTaskResults: readonly CompletedTaskCheckpoint[]
 }
 

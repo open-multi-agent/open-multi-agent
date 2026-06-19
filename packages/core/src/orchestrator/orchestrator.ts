@@ -626,6 +626,13 @@ interface ActiveCheckpoint {
   readonly mode: CheckpointSnapshot['mode']
   readonly goal?: string
   readonly runId?: string
+  /**
+   * True when the checkpoint store is the same object as the team's
+   * shared-memory store. In that case the memory entries are already durable
+   * in the store, so the checkpoint omits the full shared-memory snapshot
+   * (avoids ~O(N^2) write volume) and persists only the turn counter.
+   */
+  readonly reusesSharedMemoryStore: boolean
   saveChain: Promise<void>
 }
 
@@ -748,7 +755,14 @@ async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<voi
       ...(active.runId !== undefined ? { runId: active.runId } : {}),
       ...(active.goal !== undefined ? { goal: active.goal } : {}),
       queue: queue.snapshot(),
-      ...(sharedMem ? { sharedMemory: await sharedMem.snapshot() } : {}),
+      // When the checkpoint store IS the shared-memory store, the entries are
+      // already durable there — embedding a full snapshot on every task would
+      // be ~O(N^2) write volume. Persist only the turn counter (cheap) so TTL
+      // expiry stays correct; restore reads the entries straight from the store.
+      ...(sharedMem && !active.reusesSharedMemoryStore
+        ? { sharedMemory: await sharedMem.snapshot() }
+        : {}),
+      ...(sharedMem ? { turnCount: sharedMem.getTurnCount() } : {}),
       completedTaskResults,
     }
 
@@ -1758,33 +1772,11 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 1: Coordinator decomposes goal into tasks
     // ------------------------------------------------------------------
-    const coordinatorBaseConfig: AgentConfig = {
-      name: 'coordinator',
-      model: coordinatorOverrides?.model ?? this.config.defaultModel,
-      ...(coordinatorOverrides?.adapter !== undefined ? { adapter: coordinatorOverrides.adapter } : {}),
-      provider: coordinatorOverrides?.provider ?? this.config.defaultProvider,
-      baseURL: coordinatorOverrides?.baseURL ?? this.config.defaultBaseURL,
-      apiKey: coordinatorOverrides?.apiKey ?? this.config.defaultApiKey,
-      systemPrompt: this.buildCoordinatorPrompt(agentConfigs, coordinatorOverrides, (options?.verifyJudges?.length ?? 0) > 0),
-      maxTurns: coordinatorOverrides?.maxTurns ?? 3,
-      maxTokens: coordinatorOverrides?.maxTokens,
-      temperature: coordinatorOverrides?.temperature,
-      topP: coordinatorOverrides?.topP,
-      topK: coordinatorOverrides?.topK,
-      minP: coordinatorOverrides?.minP,
-      parallelToolCalls: coordinatorOverrides?.parallelToolCalls,
-      frequencyPenalty: coordinatorOverrides?.frequencyPenalty,
-      presencePenalty: coordinatorOverrides?.presencePenalty,
-      extraBody: coordinatorOverrides?.extraBody,
-      toolPreset: coordinatorOverrides?.toolPreset,
-      tools: coordinatorOverrides?.tools,
-      disallowedTools: coordinatorOverrides?.disallowedTools,
-      cwd: coordinatorOverrides?.cwd === undefined
-        ? this.config.defaultCwd
-        : coordinatorOverrides.cwd,
-      loopDetection: coordinatorOverrides?.loopDetection,
-      timeoutMs: coordinatorOverrides?.timeoutMs,
-    }
+    const coordinatorBaseConfig = this.buildCoordinatorBaseConfig(
+      coordinatorOverrides,
+      agentConfigs,
+      (options?.verifyJudges?.length ?? 0) > 0,
+    )
     const coordinatorConfig = withModelRoute(
       coordinatorBaseConfig,
       routeMatches(options?.modelRouting, { phase: 'coordinator', agent: 'coordinator' }),
@@ -1966,46 +1958,19 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
-    if (options?.abortSignal?.aborted) {
-      return this.buildTeamRunResult(agentResults, goal, taskRecords)
-    }
-    if (
-      maxTokenBudget !== undefined
-      && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > maxTokenBudget
-    ) {
-      return this.buildTeamRunResult(agentResults, goal, taskRecords)
-    }
-    const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
-    const synthesisAgent = buildAgent(withModelRoute(
-      coordinatorBaseConfig,
-      routeMatches(options?.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
-    ))
-    const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
-      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator' }
-      : undefined
-    const synthesisResult = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
-    agentResults.set('coordinator', synthesisResult)
-    cumulativeUsage = addUsage(cumulativeUsage, synthesisResult.tokenUsage)
-    if (
-      maxTokenBudget !== undefined
-      && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > maxTokenBudget
-    ) {
-      this.config.onProgress?.({
-        type: 'budget_exceeded',
-        agent: 'coordinator',
-        data: new TokenBudgetExceededError(
-          'coordinator',
-          cumulativeUsage.input_tokens + cumulativeUsage.output_tokens,
-          maxTokenBudget,
-        ),
-      })
-    }
-
-    this.config.onProgress?.({
-      type: 'agent_complete',
-      agent: 'coordinator',
-      data: synthesisResult,
+    const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+      modelRouting: options?.modelRouting,
+      runId,
+      abortSignal: options?.abortSignal,
+      cumulativeUsage,
+      maxTokenBudget,
     })
+    if (synthesis === null) {
+      // Aborted or already over budget — return raw task outputs, no synthesis.
+      return this.buildTeamRunResult(agentResults, goal, taskRecords)
+    }
+    agentResults.set('coordinator', synthesis.result)
+    cumulativeUsage = synthesis.cumulativeUsage
 
     // Note: coordinator decompose and synthesis are internal meta-steps.
     // Only actual user tasks (non-coordinator keys) are counted in
@@ -2088,10 +2053,14 @@ export class OpenMultiAgent {
    * remainder. When no checkpoint is found the call falls back to a normal run of
    * the provided tasks/plan (or a no-op when neither is given).
    *
-   * Execution always flows through the explicit-task-queue path, so — like
-   * {@link OpenMultiAgent.runFromPlan} — a restored `runTeam` run returns the raw
-   * per-task outputs in `tasks`, not a coordinator-synthesized final answer. Pass
-   * the original tasks/plan to resume a `runTasks`/`runFromPlan` run unchanged.
+   * A resumed `runTeam` run re-runs the coordinator synthesis so the result
+   * matches a fresh `runTeam` (a synthesized final answer under the
+   * `'coordinator'` key in `agentResults`, not just raw per-task outputs).
+   * Re-supply the coordinator via `options.coordinator` — the checkpoint cannot
+   * persist a live adapter. If no usable coordinator config is available or the
+   * synthesis call fails, restore falls back to raw outputs and emits an
+   * `onProgress` `synthesis_failed` event. A restored `runTasks`/`runFromPlan`
+   * run never synthesizes; pass the original tasks/plan to resume it unchanged.
    */
   async restore(
     team: Team,
@@ -2183,6 +2152,10 @@ export class OpenMultiAgent {
     const sharedMem = team.getSharedMemoryInstance()
     if (sharedMem && snapshot.sharedMemory) {
       await sharedMem.restore(snapshot.sharedMemory)
+    } else if (sharedMem && snapshot.turnCount !== undefined) {
+      // Reused-store checkpoint: entries are already in the store; only the
+      // turn counter needs restoring so TTL expiry resumes correctly.
+      sharedMem.setTurnCount(snapshot.turnCount)
     }
 
     const queue = TaskQueue.fromSnapshot(snapshot.queue, { resetInProgress: true })
@@ -2203,6 +2176,7 @@ export class OpenMultiAgent {
       snapshot.goal ?? options?.goal,
       agentResults,
       checkpointForResume,
+      options?.coordinator,
     )
   }
 
@@ -2500,6 +2474,109 @@ export class OpenMultiAgent {
     ].join('\n')
   }
 
+  /**
+   * Build the base coordinator {@link AgentConfig} shared by the decomposition
+   * and synthesis passes. Falls back to orchestrator defaults for any field the
+   * caller's {@link CoordinatorConfig} leaves unset.
+   */
+  private buildCoordinatorBaseConfig(
+    coordinatorOverrides: CoordinatorConfig | undefined,
+    agentConfigs: AgentConfig[],
+    hasVerifyJudges: boolean,
+  ): AgentConfig {
+    return {
+      name: 'coordinator',
+      model: coordinatorOverrides?.model ?? this.config.defaultModel,
+      ...(coordinatorOverrides?.adapter !== undefined ? { adapter: coordinatorOverrides.adapter } : {}),
+      provider: coordinatorOverrides?.provider ?? this.config.defaultProvider,
+      baseURL: coordinatorOverrides?.baseURL ?? this.config.defaultBaseURL,
+      apiKey: coordinatorOverrides?.apiKey ?? this.config.defaultApiKey,
+      systemPrompt: this.buildCoordinatorPrompt(agentConfigs, coordinatorOverrides, hasVerifyJudges),
+      maxTurns: coordinatorOverrides?.maxTurns ?? 3,
+      maxTokens: coordinatorOverrides?.maxTokens,
+      temperature: coordinatorOverrides?.temperature,
+      topP: coordinatorOverrides?.topP,
+      topK: coordinatorOverrides?.topK,
+      minP: coordinatorOverrides?.minP,
+      parallelToolCalls: coordinatorOverrides?.parallelToolCalls,
+      frequencyPenalty: coordinatorOverrides?.frequencyPenalty,
+      presencePenalty: coordinatorOverrides?.presencePenalty,
+      extraBody: coordinatorOverrides?.extraBody,
+      toolPreset: coordinatorOverrides?.toolPreset,
+      tools: coordinatorOverrides?.tools,
+      disallowedTools: coordinatorOverrides?.disallowedTools,
+      cwd: coordinatorOverrides?.cwd === undefined
+        ? this.config.defaultCwd
+        : coordinatorOverrides.cwd,
+      loopDetection: coordinatorOverrides?.loopDetection,
+      timeoutMs: coordinatorOverrides?.timeoutMs,
+    }
+  }
+
+  /**
+   * Run the coordinator synthesis pass over completed task results. Returns the
+   * synthesis result plus updated cumulative usage, or `null` when synthesis is
+   * skipped (run aborted, or the token budget was already exhausted before the
+   * pass). Emits `budget_exceeded` (when synthesis tips over budget) and
+   * `agent_complete`, mirroring the inline `runTeam` path. Does not mutate
+   * `agentResults` — the caller records the `'coordinator'` entry.
+   */
+  private async runCoordinatorSynthesis(
+    team: Team,
+    queue: TaskQueue,
+    goal: string,
+    coordinatorBaseConfig: AgentConfig,
+    opts: {
+      readonly modelRouting?: ModelRoutingPolicy
+      readonly runId?: string
+      readonly abortSignal?: AbortSignal
+      readonly cumulativeUsage: TokenUsage
+      readonly maxTokenBudget?: number
+    },
+  ): Promise<{ readonly result: AgentRunResult; readonly cumulativeUsage: TokenUsage } | null> {
+    if (opts.abortSignal?.aborted) return null
+    if (
+      opts.maxTokenBudget !== undefined
+      && opts.cumulativeUsage.input_tokens + opts.cumulativeUsage.output_tokens > opts.maxTokenBudget
+    ) {
+      return null
+    }
+
+    const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
+    const synthesisAgent = buildAgent(withModelRoute(
+      coordinatorBaseConfig,
+      routeMatches(opts.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
+    ))
+    const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
+      ? { onTrace: this.config.onTrace, runId: opts.runId ?? '', traceAgent: 'coordinator' }
+      : undefined
+    const result = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
+    const cumulativeUsage = addUsage(opts.cumulativeUsage, result.tokenUsage)
+
+    if (
+      opts.maxTokenBudget !== undefined
+      && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > opts.maxTokenBudget
+    ) {
+      this.config.onProgress?.({
+        type: 'budget_exceeded',
+        agent: 'coordinator',
+        data: new TokenBudgetExceededError(
+          'coordinator',
+          cumulativeUsage.input_tokens + cumulativeUsage.output_tokens,
+          opts.maxTokenBudget,
+        ),
+      })
+    }
+
+    this.config.onProgress?.({
+      type: 'agent_complete',
+      agent: 'coordinator',
+      data: result,
+    })
+
+    return { result, cumulativeUsage }
+  }
+
   /** Build the synthesis prompt shown to the coordinator after all tasks complete. */
   private async buildSynthesisPrompt(
     goal: string,
@@ -2572,6 +2649,7 @@ export class OpenMultiAgent {
     goal?: string,
     initialAgentResults?: Map<string, AgentRunResult>,
     activeCheckpoint?: ActiveCheckpoint,
+    coordinatorForSynthesis?: CoordinatorConfig,
   ): Promise<TeamRunResult> {
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler('dependency-first')
@@ -2606,6 +2684,44 @@ export class OpenMultiAgent {
 
     await executeQueue(queue, ctx)
 
+    // A resumed `runTeam` re-runs the coordinator synthesis so the restored
+    // result matches a fresh `runTeam` (a synthesized final answer, not raw
+    // per-task outputs). Best-effort: a missing/unusable coordinator config or
+    // a failing synthesis call must not discard the recovered work — on failure
+    // we surface `synthesis_failed` and fall back to raw outputs.
+    if (checkpoint?.mode === 'runTeam' && goal !== undefined) {
+      try {
+        const coordinatorBaseConfig = this.buildCoordinatorBaseConfig(coordinatorForSynthesis, agentConfigs, false)
+        const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+          modelRouting: options?.modelRouting,
+          runId: ctx.runId,
+          abortSignal: options?.abortSignal,
+          cumulativeUsage: ctx.cumulativeUsage,
+          maxTokenBudget: ctx.maxTokenBudget,
+        })
+        if (synthesis !== null && synthesis.result.success) {
+          agentResults.set('coordinator', synthesis.result)
+          ctx.cumulativeUsage = synthesis.cumulativeUsage
+        } else if (synthesis !== null) {
+          // Synthesis ran but the coordinator agent failed (e.g. the LLM call
+          // errored). Keep the recovered task outputs and surface the failure
+          // rather than attaching a failed answer under `'coordinator'`.
+          this.config.onProgress?.({
+            type: 'error',
+            data: {
+              kind: 'synthesis_failed',
+              error: new Error(synthesis.result.output || 'coordinator synthesis failed'),
+            },
+          })
+        }
+      } catch (error) {
+        this.config.onProgress?.({
+          type: 'error',
+          data: { kind: 'synthesis_failed', error },
+        })
+      }
+    }
+
     const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
       id: task.id,
       title: task.title,
@@ -2638,7 +2754,8 @@ export class OpenMultiAgent {
     // orchestrator, so concurrent runs would overwrite each other at the
     // default checkpoint key. Require a `runId` (or an explicit `key`/`store`)
     // before falling back, so each run resolves to a distinct, resumable key.
-    const explicitStore = options.store ?? team.getSharedMemory()
+    const sharedStore = team.getSharedMemory()
+    const explicitStore = options.store ?? sharedStore
     if (!explicitStore && options.runId === undefined && options.key === undefined) {
       throw new Error(
         'Checkpoint requires a `runId` (or an explicit `store`/`key`) when the team has no ' +
@@ -2652,6 +2769,7 @@ export class OpenMultiAgent {
       mode,
       ...(goal !== undefined ? { goal } : {}),
       ...(options.runId !== undefined ? { runId: options.runId } : {}),
+      reusesSharedMemoryStore: sharedStore !== undefined && store === sharedStore,
       saveChain: Promise.resolve(),
     }
   }

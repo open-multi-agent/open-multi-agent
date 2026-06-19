@@ -118,6 +118,16 @@ export class SharedMemory {
     return this.turnCount
   }
 
+  /**
+   * Restore the turn counter without rehydrating entries. Used on checkpoint
+   * resume when the shared-memory store is reused: the entries are already
+   * durable in the store, so only the counter needs restoring to keep TTL
+   * expiry correct.
+   */
+  setTurnCount(turnCount: number): void {
+    this.turnCount = turnCount
+  }
+
   // ---------------------------------------------------------------------------
   // Snapshot / restore
   // ---------------------------------------------------------------------------
