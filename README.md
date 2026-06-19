@@ -163,7 +163,7 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 ## Contributors
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100&v=20260529" />
+  <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100" />
 </a>
 
 Full credits by area are on the [package page](packages/core/README.md#contributors).
