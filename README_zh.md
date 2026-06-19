@@ -83,14 +83,14 @@ npx tsx packages/core/examples/basics/team-collaboration.ts
 | 你的需求 | 选 |
 |----------|----|
 | 固定的生产拓扑 + 成熟的 checkpoint | LangGraph JS |
-| 显式 Supervisor + 手写 workflow | Mastra |
+| 全栈平台，workflow 手工连 | Mastra |
 | Python 栈 + 成熟多智能体生态 | CrewAI |
 | AI 应用工具集，广泛 provider 支持 | Vercel AI SDK |
 | **TypeScript + 一句话从目标到结果，自动拆任务** | **open-multi-agent** |
 
 **对比 LangGraph JS。** LangGraph 把声明式图（节点、边、条件路由）编译成可调用对象。`open-multi-agent` 是 Coordinator 在运行时把目标拆成任务 DAG，再自动并行无依赖项。终点一样（编排执行），方向相反：LangGraph 图优先，OMA 目标优先。
 
-**对比 Mastra。** 两者都是原生 TypeScript。Mastra 的 Supervisor 模式要你手接 agent 和 workflow；OMA 的 Coordinator 在运行时从目标字符串自动接好。如果流程已经明确，Mastra 的显式控制更有优势；如果不想每一步都自己写，OMA 一个 `runTeam(team, goal)` 调用即可。
+**对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG，让编排随目标自适应，而不是跑一张你一步步连好的图。`runTeam(team, goal)` 一行搞定。
 
 **对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 面向 TypeScript 后端，3 个运行时依赖，直接嵌入 Node.js。编排能力大致持平，按语言栈选。
 
