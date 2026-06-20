@@ -284,13 +284,13 @@ await orchestrator.runTeam(team, goal, {
 
 | 你的需求 | 选 |
 |----------|----|
-| 固定的生产拓扑 + 成熟的 checkpoint | LangGraph JS |
+| 固定的生产拓扑 + 成熟的持久化与 time-travel 生态 | LangGraph JS |
 | 全栈平台，workflow 手工连 | Mastra |
 | Python 栈 + 成熟多智能体生态 | CrewAI |
 | AI 应用工具集，广泛 provider 支持 | Vercel AI SDK |
 | **TypeScript + 一句话从目标到结果，自动拆任务** | **open-multi-agent** |
 
-**对比 LangGraph JS。** LangGraph 把声明式图（节点、边、条件路由）编译成可调用对象。`open-multi-agent` 是 Coordinator 在运行时把目标拆成任务 DAG，再自动并行无依赖项。终点一样（编排执行），方向相反：LangGraph 图优先，OMA 目标优先。
+**对比 LangGraph JS。** LangGraph 把声明式图（节点、边、条件路由）编译成可调用对象。`open-multi-agent` 是 Coordinator 在运行时把目标拆成任务 DAG，再自动并行无依赖项。终点一样（编排执行），方向相反：LangGraph 图优先，OMA 目标优先。两者都做 checkpoint 和 resume：OMA 每完成一个任务就快照到任意 `MemoryStore`（内存 / Redis / SQLite），崩溃后用 `restore()` 续跑，跳过已完成的部分。LangGraph 的持久化生态更深：如果你要的是基于持久状态历史的 time-travel，它在这一项上更强；但仅仅是崩溃后续跑，不值得为此离开 OMA。
 
 **对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG，让编排随目标自适应，而不是跑一张你一步步连好的图。`runTeam(team, goal)` 一行搞定。
 
