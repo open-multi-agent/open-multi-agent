@@ -280,23 +280,15 @@ await orchestrator.runTeam(team, goal, {
 
 ## 与其他框架对比
 
-按需求快速选型。以下逐一分析差异。
+大多数 TypeScript 团队在选多智能体编排层时，真正是在 OMA、LangGraph JS、Mastra 之间做选择。区别在机制。
 
-| 你的需求 | 选 |
-|----------|----|
-| 固定的生产拓扑 + 成熟的持久化与 time-travel 生态 | LangGraph JS |
-| 全栈平台，workflow 手工连 | Mastra |
-| Python 栈 + 成熟多智能体生态 | CrewAI |
-| AI 应用工具集，广泛 provider 支持 | Vercel AI SDK |
-| **TypeScript + 一句话从目标到结果，自动拆任务** | **open-multi-agent** |
+**对比 LangGraph JS。** LangGraph 要你先把声明式图（节点、边、条件路由）设计好，再编译成可调用对象；OMA 的 Coordinator 在运行时把目标拆成任务 DAG，自动并行无依赖项。两者都能 checkpoint、resume，只是 LangGraph 的持久化生态更深。需要让编排随目标自适应、而不是提前把图连好时，选 OMA。
 
-**对比 LangGraph JS。** LangGraph 把声明式图（节点、边、条件路由）编译成可调用对象。`open-multi-agent` 是 Coordinator 在运行时把目标拆成任务 DAG，再自动并行无依赖项。终点一样（编排执行），方向相反：LangGraph 图优先，OMA 目标优先。两者都做 checkpoint 和 resume：OMA 每完成一个任务就快照到任意 `MemoryStore`，崩溃后用 `restore()` 续跑；LangGraph 的持久化生态更深，支持基于持久状态历史的 time-travel。
+**对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行搞定。
 
-**对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG，让编排随目标自适应，而不是跑一张你一步步连好的图。`runTeam(team, goal)` 一行搞定。
+**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，3 个运行时依赖、直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
 
-**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 面向 TypeScript 后端，3 个运行时依赖，直接嵌入 Node.js。编排能力大致持平，按语言栈选。
-
-**对比 Vercel AI SDK。** AI SDK 是应用和 LLM 调用层（provider 抽象、流式、tool call、结构化输出）。它不做多智能体编排。两者互补：单 agent 调用使用 AI SDK，需要多 agent 协作时引入 OMA。
+**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），不是多智能体编排器。单 agent 调用用它就够；一旦需要协同的团队，就用 OMA。OMA 还提供一个可选的 AI SDK bridge。
 
 ## 架构
 

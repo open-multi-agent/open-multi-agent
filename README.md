@@ -78,23 +78,15 @@ Want a full application instead of a script? Two clone-and-run apps embed OMA in
 
 ## How is this different from X?
 
-A quick router. Mechanism breakdown follows.
+Most TypeScript teams picking a multi-agent layer are really choosing between OMA, LangGraph JS, and Mastra. The mechanism is what differs.
 
-| If you need | Pick |
-|-------------|------|
-| Fixed production topology with a mature persistence + time-travel ecosystem | LangGraph JS |
-| Full-stack platform, workflows wired by hand | Mastra |
-| Python stack with mature multi-agent ecosystem | CrewAI |
-| AI app toolkit with broad model-provider support | Vercel AI SDK |
-| **TypeScript, goal to result with auto task decomposition** | **open-multi-agent** |
+**vs. LangGraph JS.** LangGraph has you design a declarative graph (nodes, edges, conditional routing) up front, then compiles it into an invokable; OMA's Coordinator decomposes the goal into a task DAG at runtime and auto-parallelizes independents. Both checkpoint and resume, though LangGraph's persistence ecosystem runs deeper. Reach for OMA when the plan should adapt to the goal instead of being wired ahead of time.
 
-**vs. LangGraph JS.** LangGraph compiles a declarative graph (nodes, edges, conditional routing) into an invokable. `open-multi-agent` runs a Coordinator that decomposes the goal into a task DAG at runtime, then auto-parallelizes independents. Same end (orchestrated execution), opposite directions: LangGraph is graph-first, OMA is goal-first. Both checkpoint and resume: OMA snapshots each completed task over any `MemoryStore` and resumes with `restore()` after a crash; LangGraph's persistence ecosystem just runs deeper, with time-travel over durable state history.
+**vs. Mastra.** Both are TypeScript-native; the difference is who drives orchestration. Mastra has you wire the workflow by hand. OMA is goal-driven: hand its Coordinator a goal and it builds the task DAG at runtime. `runTeam(team, goal)` in one call.
 
-**vs. Mastra.** Both are TypeScript-native; the difference is who drives the orchestration. With Mastra you wire the workflow by hand. OMA is goal-driven: give its Coordinator a goal and it builds the task DAG at runtime, adapting the plan to the goal instead of running a graph you wired step by step. `runTeam(team, goal)` in one call.
+**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with three runtime dependencies and direct Node.js embedding, with no separate Python service to stand up alongside your stack.
 
-**vs. CrewAI.** CrewAI is the mature multi-agent option in Python. OMA targets TypeScript backends with three runtime dependencies and direct Node.js embedding. Roughly comparable orchestration surface; the choice is the language stack.
-
-**vs. Vercel AI SDK.** AI SDK provides the LLM-call layer — provider abstraction, streaming, tool calls, and structured outputs. It does not orchestrate goal-driven multi-agent teams. The two are complementary: AI SDK for app surfaces and single-agent calls, OMA when you need a team.
+**vs. Vercel AI SDK.** AI SDK is the LLM-call layer (provider abstraction, streaming, tool calls, and structured outputs), not a multi-agent orchestrator. Use it alone for single-agent calls; reach for OMA the moment you need a coordinated team. OMA even ships an optional AI SDK bridge.
 
 ## Ecosystem
 
