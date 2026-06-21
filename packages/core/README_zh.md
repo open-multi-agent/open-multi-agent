@@ -45,6 +45,8 @@
 
 图优先的框架要求你预先列出每个节点和每条边。`open-multi-agent` 是目标优先：你描述想要的结果，协调者在运行时构建任务 DAG，编排随目标自适应，而不必为某一个流程硬接线。
 
+`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 都是可选 peer 依赖，用到才装。
+
 ## 目录
 
 [快速开始](#快速开始) · [三种运行模式](#三种运行模式) · [功能一览](#功能一览) · [编排控制](#编排控制) · [生态](#生态) · [示例](#示例) · [与其他框架对比](#与其他框架对比) · [架构](#架构) · [支持的 Provider](#支持的-provider) · [生产级检查清单](#生产级检查清单) · [文档](#文档) · [参与贡献](#参与贡献)
@@ -286,7 +288,7 @@ await orchestrator.runTeam(team, goal, {
 
 **对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行搞定。
 
-**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，3 个运行时依赖、直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
+**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，运行时精简（三个核心依赖，外加用到才装的可选 peer），直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
 
 **对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），不是多智能体编排器。单 agent 调用用它就够；一旦需要协同的团队，就用 OMA。OMA 还提供一个可选的 AI SDK bridge。
 
@@ -348,15 +350,29 @@ const agent: AgentConfig = {
 
 | 类型 | 配置方式 | 服务 |
 |------|--------|------|
-| 内置快捷方式 | 设 `provider` 为 `anthropic`、`gemini`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`doubao`、`hunyuan`、`minimax`、`mimo`、`qiniu`、`bedrock`；框架自带 endpoint。 | Anthropic、Gemini、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、Doubao（火山引擎）、Hunyuan（腾讯混元 MaaS）、MiniMax、MiMo、Qiniu、AWS Bedrock |
-| OpenAI 兼容端点 | 设 `provider: 'openai'` + `baseURL`，必要时加 `apiKey`。 | Ollama、vLLM、LM Studio、llama.cpp server、OpenRouter、Groq、Mistral、Moonshot（Kimi）、Qwen、Zhipu（智谱） |
+| 内置，无需额外安装 | 设 `provider` 为 `anthropic`、`openai`、`azure-openai`、`copilot`、`grok`、`deepseek`、`doubao`、`hunyuan`、`minimax`、`mimo`、`qiniu`；由自带的 `@anthropic-ai/sdk` / `openai` SDK 提供 endpoint。 | Anthropic、OpenAI、Azure OpenAI、GitHub Copilot、xAI Grok、DeepSeek、Doubao（火山引擎）、Hunyuan（腾讯混元 MaaS）、MiniMax、MiMo、Qiniu |
+| 内置，需装 peer | `npm i @google/genai` 后设 `provider: 'gemini'`；`npm i @aws-sdk/client-bedrock-runtime` 后设 `provider: 'bedrock'`。 | Google Gemini、AWS Bedrock |
+| OpenAI 兼容端点 | 设 `provider: 'openai'` + `baseURL`，必要时加 `apiKey`。无需额外安装。 | Ollama、vLLM、LM Studio、llama.cpp server、OpenRouter、Groq、Mistral、Moonshot（Kimi）、Qwen、Zhipu（智谱） |
 | Vercel AI SDK | 从 `@open-multi-agent/core/ai-sdk` 导入 `AISdkAdapter`；安装可选 peer `ai` 加一个 `@ai-sdk/*` provider。 | [任意 AI SDK provider](https://ai-sdk.dev/providers)（60+ 模型与平台） |
 
 详见 [docs/providers.md](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)，含环境变量、模型示例、本地模型工具调用、超时设置、常见问题。
 
+### 依赖
+
+安装 `@open-multi-agent/core` 会带入三个运行时依赖：`@anthropic-ai/sdk`、`openai`、`zod`。内核就这些：Anthropic、OpenAI 及所有 OpenAI 兼容端点只靠这三个就能跑。
+
+其余都是可选 peer 依赖，用到哪个才装哪个。每个都是懒加载，没用到的项目根本不会安装。
+
+| 能力 | 安装 | 触发 |
+|------|------|------|
+| Gemini provider | `npm i @google/genai` | `provider: 'gemini'` |
+| Bedrock provider | `npm i @aws-sdk/client-bedrock-runtime` | `provider: 'bedrock'` |
+| MCP 工具 | `npm i @modelcontextprotocol/sdk` | `connectMCPTools()` |
+| Vercel AI SDK bridge | `npm i ai @ai-sdk/<provider>` | `new AISdkAdapter(...)` |
+
 ### Vercel AI SDK（可选）
 
-安装可选 peer [`ai`](https://www.npmjs.com/package/ai) 以及你需要的任意 [`@ai-sdk` provider](https://ai-sdk.dev/providers)（例如 [`@ai-sdk/openai`](https://www.npmjs.com/package/@ai-sdk/openai)）。在 `AgentConfig` 上传入 `adapter: new AISdkAdapter(model)`，即可让该 agent 走 AI SDK，而不是内置的 `provider` 工厂。设置了 `adapter` 时，`provider`、`apiKey`、`baseURL`、`region` 都会被忽略。混合团队照常工作：只有带 `adapter` 的 agent 才走 AI SDK。
+装好 bridge 的 peer 后（见上方表格），在 `AgentConfig` 上传入 `adapter: new AISdkAdapter(model)`，即可让该 agent 走 AI SDK，而不是内置的 `provider` 工厂。设置了 `adapter` 时，`provider`、`apiKey`、`baseURL`、`region` 都会被忽略。混合团队照常工作：只有带 `adapter` 的 agent 才走 AI SDK。
 
 ```typescript
 import { openai } from '@ai-sdk/openai'

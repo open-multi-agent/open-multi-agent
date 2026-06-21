@@ -45,6 +45,8 @@
 
 图优先的框架要求你预先列出每个节点和每条边。`open-multi-agent` 是目标优先：你描述想要的结果，协调者在运行时构建任务 DAG，编排随目标自适应，而不必为某一个流程硬接线。
 
+`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 都是可选 peer 依赖，用到才装。
+
 ## 快速开始
 
 最快看到它跑起来 —— 一条命令脚手架出一个项目并启动多 agent DAG：
@@ -84,7 +86,7 @@ npx tsx packages/core/examples/basics/team-collaboration.ts
 
 **对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行搞定。
 
-**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，3 个运行时依赖、直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
+**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，运行时精简（三个核心依赖，外加用到才装的可选 peer），直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
 
 **对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），不是多智能体编排器。单 agent 调用用它就够；一旦需要协同的团队，就用 OMA。OMA 还提供一个可选的 AI SDK bridge。
 
