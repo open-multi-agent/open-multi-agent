@@ -43,13 +43,13 @@
 
 > **Your engineers describe the goal, not the graph.**
 
-Graph-first frameworks make you enumerate every node and edge up front. `open-multi-agent` is goal-first: you describe the outcome and the coordinator builds the task DAG at runtime, so the orchestration adapts to the goal instead of being hand-wired for one.
+Graph-first frameworks make you enumerate every node and edge up front. Here the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one.
 
 `@open-multi-agent/core` keeps a lightweight core. The orchestration engine plus the mainstream model providers (Anthropic, OpenAI, and any OpenAI-compatible endpoint) work out of the box; additional providers (Gemini, Bedrock), MCP, and the Vercel AI SDK bridge are opt-in peer dependencies you install only when you use them.
 
 ## Get started
 
-The fastest way to see it run — one command scaffolds a project and starts a multi-agent DAG:
+One command scaffolds a project and starts a multi-agent DAG:
 
 ```bash
 npm create oma-app@latest
@@ -65,18 +65,7 @@ The full quickstart, the three ways to run, provider setup, the production check
 
 **→ [`packages/core/README.md`](packages/core/README.md)**
 
-Prefer to run an example from the repo? Clone and run one:
-
-```bash
-git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
-npm install
-export OPENAI_API_KEY=sk-...
-npx tsx packages/core/examples/basics/team-collaboration.ts
-```
-
-Three agents collaborate on a REST API while `onProgress` streams the coordinator's task DAG — independent tasks run in parallel, dependents unblock as their inputs land, and the coordinator synthesizes the final result. Local models via Ollama need no API key; see the [providers guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md).
-
-Want a full application instead of a script? Two clone-and-run apps embed OMA in a real backend: an [Express REST API](packages/core/examples/integrations/express-customer-support/) and a [Next.js app](packages/core/examples/integrations/with-vercel-ai-sdk/). Or skip the local setup: the [Next.js deploy starter](https://github.com/open-multi-agent/oma-nextjs-starter) goes live on Vercel in one click.
+Other ways to run: clone the repo and run any [example](packages/core/examples/) with `npx tsx packages/core/examples/basics/team-collaboration.ts`, or embed OMA in a real backend with the [Express](packages/core/examples/integrations/express-customer-support/) and [Next.js](packages/core/examples/integrations/with-vercel-ai-sdk/) apps. To skip local setup, the [Next.js starter](https://github.com/open-multi-agent/oma-nextjs-starter) deploys to Vercel in one click; local models via [Ollama](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) need no API key.
 
 ## How is this different from X?
 
