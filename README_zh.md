@@ -43,52 +43,41 @@
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求你预先列出每个节点和每条边。`open-multi-agent` 是目标优先：你描述想要的结果，协调者在运行时构建任务 DAG，编排随目标自适应，而不必为某一个流程硬接线。
+图优先的框架要求预先列出每个节点与每条边；任务 DAG 则在运行时生成，随目标自适应，而非针对单一流程预先固化。
 
-`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 都是可选 peer 依赖，用到才装。
+`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
 
 ## 快速开始
 
-最快看到它跑起来 —— 一条命令脚手架出一个项目并启动多 agent DAG：
+一条命令即可初始化项目并启动多 agent DAG：
 
 ```bash
 npm create oma-app@latest
 ```
 
-回答一个提示；第一次运行就能看到 coordinator 把一个 goal 拆成多 agent DAG，并打开本次运行的 dashboard（OpenAI 或任意 OpenAI 兼容 provider）。若只想把库装进自己的项目：
+回答一个提示，首次运行便会展示协调者将目标拆解为多 agent DAG，并打开本次运行的 dashboard（OpenAI 或任意 OpenAI 兼容 provider）。若要将库集成到现有项目：
 
 ```bash
 npm install @open-multi-agent/core
 ```
 
-完整的 quickstart、三种运行模式、provider 接入、生产级检查清单和完整 API 参考都在包页：
+完整的 quickstart、三种运行模式、provider 接入、生产级检查清单与完整 API 参考详见包页：
 
 **→ [`packages/core/README_zh.md`](packages/core/README_zh.md)**
 
-想跑仓库里的示例？克隆下来跑一个：
-
-```bash
-git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
-npm install
-export OPENAI_API_KEY=sk-...
-npx tsx packages/core/examples/basics/team-collaboration.ts
-```
-
-三个 agent 协作产出 REST API，`onProgress` 实时输出协调者的任务 DAG——无依赖的任务并行执行，依赖项在输入就绪后自动解锁，协调者最终合成结果。通过 Ollama 运行本地模型不需要 API key，见 [provider 指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)。
-
-想要一个完整应用而不是脚本？两个克隆即跑的应用把 OMA 嵌进了真实后端：一个 [Express REST API](packages/core/examples/integrations/express-customer-support/) 和一个 [Next.js 应用](packages/core/examples/integrations/with-vercel-ai-sdk/)。或者跳过本地搭建：[Next.js 部署模板](https://github.com/open-multi-agent/oma-nextjs-starter) 一键部署到 Vercel。
+其他运行方式：克隆仓库，以 `npx tsx packages/core/examples/basics/team-collaboration.ts` 运行任意[示例](packages/core/examples/)；或借助 [Express](packages/core/examples/integrations/express-customer-support/)、[Next.js](packages/core/examples/integrations/with-vercel-ai-sdk/) 应用将 OMA 嵌入真实后端。如需免去本地搭建，[Next.js 部署模板](https://github.com/open-multi-agent/oma-nextjs-starter)可一键部署至 Vercel；通过 [Ollama](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) 运行本地模型则无需 API key。
 
 ## 与其他框架对比
 
-大多数 TypeScript 团队在选多智能体编排层时，真正是在 OMA、LangGraph JS、Mastra 之间做选择。区别在机制。
+大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制。
 
-**对比 LangGraph JS。** LangGraph 要你先把声明式图（节点、边、条件路由）设计好，再编译成可调用对象；OMA 的 Coordinator 在运行时把目标拆成任务 DAG，自动并行无依赖项。两者都能 checkpoint、resume，只是 LangGraph 的持久化生态更深。需要让编排随目标自适应、而不是提前把图连好时，选 OMA。
+**对比 LangGraph JS。** LangGraph 需先设计好声明式图（节点、边、条件路由），再编译为可调用对象；OMA 的 Coordinator 则在运行时将目标拆解为任务 DAG，并自动并行其中的无依赖项。两者均支持 checkpoint 与 resume，只是 LangGraph 的持久化生态更为完善。若需让编排随目标自适应、而非预先固定图结构，OMA 更为合适。
 
-**对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行搞定。
+**对比 Mastra。** 两者均为原生 TypeScript，差异在于由谁驱动编排。Mastra 需手工连接工作流；OMA 则是目标驱动：将目标交给 Coordinator，即可在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行调用即可。
 
-**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，运行时精简（三个核心依赖，外加用到才装的可选 peer），直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
+**对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，运行时精简（三个核心依赖，外加按需安装的可选 peer），直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。
 
-**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），不是多智能体编排器。单 agent 调用用它就够；一旦需要协同的团队，就用 OMA。OMA 还提供一个可选的 AI SDK bridge。
+**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），而非多智能体编排器。单 agent 调用单独用它即可；一旦需要协同的团队，则选用 OMA。OMA 亦提供可选的 AI SDK bridge。
 
 ## 生态
 
@@ -112,15 +101,15 @@ npx tsx packages/core/examples/basics/team-collaboration.ts
 
 ## 仓库结构
 
-这是一个 monorepo。发布出去的包是 **`@open-multi-agent/core`**，位于 [`packages/core/`](packages/core/)——库本体、测试、示例和 npm 包页的单一事实源。
+这是一个 monorepo。发布的包为 **`@open-multi-agent/core`**，位于 [`packages/core/`](packages/core/)，即库本体、测试、示例与 npm 包页的单一事实源。
 
 ```
 open-multi-agent/
 ├── packages/
-│   └── core/          # @open-multi-agent/core —— 发布的库
+│   └── core/          # @open-multi-agent/core（发布的库）
 │       ├── src/       # 框架源码
 │       ├── tests/     # vitest 测试套件
-│       └── examples/  # 可直接跑的示例（npx tsx packages/core/examples/<path>.ts）
+│       └── examples/  # 可直接运行的示例（npx tsx packages/core/examples/<path>.ts）
 └── docs/              # 子系统文档
 ```
 
@@ -130,7 +119,7 @@ build / lint / test 都从仓库根目录跨 workspace 编排：
 npm install            # 安装所有 workspace
 npm run build          # 编译 packages/core
 npm run lint           # 类型检查
-npm test               # 跑测试套件
+npm test               # 运行测试套件
 ```
 
 ## 文档
@@ -149,9 +138,9 @@ npm test               # 跑测试套件
 
 Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 
-- **生产级示例。** 端到端跑通的真实场景工作流。收录条件和提交格式见 [`packages/core/examples/production/README.md`](packages/core/examples/production/README.md)。
+- **生产级示例。** 端到端可运行的真实场景工作流。收录条件与提交格式见 [`packages/core/examples/production/README.md`](packages/core/examples/production/README.md)。
 - **文档。** 指南、教程、API 文档。
-- **翻译。** 把文档翻译成其他语言。[提个 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
+- **翻译。** 将文档翻译为其他语言。[提交 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
 
 ## 贡献者
 

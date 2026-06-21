@@ -43,7 +43,7 @@
 
 > **Your engineers describe the goal, not the graph.**
 
-Graph-first frameworks make you enumerate every node and edge up front. `open-multi-agent` is goal-first: you describe the outcome and the coordinator builds the task DAG at runtime, so the orchestration adapts to the goal instead of being hand-wired for one.
+Graph-first frameworks make you enumerate every node and edge up front. Here the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one.
 
 `@open-multi-agent/core` keeps a lightweight core. The orchestration engine plus the mainstream model providers (Anthropic, OpenAI, and any OpenAI-compatible endpoint) work out of the box; additional providers (Gemini, Bedrock), MCP, and the Vercel AI SDK bridge are opt-in peer dependencies you install only when you use them.
 

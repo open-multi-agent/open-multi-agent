@@ -43,9 +43,9 @@
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求你预先列出每个节点和每条边。`open-multi-agent` 是目标优先：你描述想要的结果，协调者在运行时构建任务 DAG，编排随目标自适应，而不必为某一个流程硬接线。
+图优先的框架要求预先列出每个节点与每条边；任务 DAG 则在运行时生成，随目标自适应，而非针对单一流程预先固化。
 
-`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 都是可选 peer 依赖，用到才装。
+`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
 
 ## 目录
 
@@ -55,19 +55,19 @@
 
 要求 Node.js >= 18。
 
-最快看到多 agent 跑起来 —— 一条命令脚手架出一个项目并启动：
+一条命令即可初始化项目并启动多 agent 运行：
 
 ```bash
 npm create oma-app@latest
 ```
 
-第一次运行就能看到 coordinator 把一个 goal 拆成多 agent DAG，并打开本次运行的 dashboard。若只想把库装进已有项目：
+首次运行便会展示协调者将目标拆解为多 agent DAG，并打开本次运行的 dashboard。若要将库集成到现有项目：
 
 ```bash
 npm install @open-multi-agent/core
 ```
 
-*正在从 `@jackchen_me/open-multi-agent` 迁移？该包已弃用，请改用 `@open-multi-agent/core`。*
+*若正从 `@jackchen_me/open-multi-agent` 迁移：该包已弃用，请改用 `@open-multi-agent/core`。*
 
 ```typescript
 import { OpenMultiAgent, type AgentConfig } from '@open-multi-agent/core'
@@ -102,7 +102,7 @@ const result = await orchestrator.runTeam(
 console.log(result.success, result.totalTokenUsage.output_tokens)
 ```
 
-### 本地试跑
+### 本地运行示例
 
 ```bash
 git clone https://github.com/open-multi-agent/open-multi-agent && cd open-multi-agent
@@ -138,9 +138,9 @@ Tokens: 12847 output tokens
 | 自动编排团队 | `runTeam()` | 给一个目标，框架自动规划和执行 | [`basics/team-collaboration`](examples/basics/team-collaboration.ts) |
 | 显式任务管线 | `runTasks()` | 你自己定义任务图和分配 | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
-对需要严格把关的回答，`runConsensus()` 跑一个 proposer→judge 校验循环（可选的按任务 `verify` 钩子）。见 [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md)。
+对需要严格把关的回答，`runConsensus()` 运行一个 proposer→judge 校验循环（可选的按任务 `verify` 钩子）。见 [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md)。
 
-不执行 agent，只预览协调者拆出的任务 DAG；也可以把这份计划固定下来，之后无需再次调用协调者就重放同一张图：
+不执行 agent，只预览协调者拆解出的任务 DAG；也可将这份计划固定下来，之后无需再次调用协调者即可重放同一张图：
 
 ```ts
 // 先拆解一次，审阅计划
@@ -153,24 +153,24 @@ const plan = orchestrator.createPlanArtifact(preview)
 const result = await orchestrator.runFromPlan(team, plan)
 ```
 
-用一份可选的 `modelRouting` 策略，把不同编排阶段路由到不同模型：旗舰模型负责规划，便宜模型跑叶子任务。可按 phase、agent、任务 role/priority 或 leaf 状态匹配；first match wins，不设置则模型选择保持不变。见 [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)。
+用一份可选的 `modelRouting` 策略，将不同编排阶段路由到不同模型：旗舰模型负责规划，廉价模型运行叶子任务。可按 phase、agent、任务 role/priority 或 leaf 状态匹配；first match wins，不设置则模型选择保持不变。见 [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)。
 
 ## 功能一览
 
 | 能力 | 说明 |
 |------|------|
-| **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，把目标拆成任务 DAG，并行执行独立任务，合成最终结果。未分配的任务自动调度——`dependency-first`（默认）、`round-robin`、`least-busy` 或 `capability-match`。 |
-| **同队混用 provider** | 13 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。把 tool call 当纯文本输出的本地 server 会由 fallback 解析器兜底。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
+| **目标驱动协调者** | 一个 `runTeam(team, goal)` 调用，将目标拆解为任务 DAG，并行执行独立任务，合成最终结果。未分配的任务自动调度：`dependency-first`（默认）、`round-robin`、`least-busy` 或 `capability-match`。 |
+| **同队混用 provider** | 13 家内置 provider，外加任意 OpenAI 兼容端点（Ollama、vLLM、LM Studio、OpenRouter、Groq），同队可自由混用。将 tool call 作为纯文本输出的本地 server，由 fallback 解析器解析。([完整清单](#支持的-provider) · [配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)) |
 | **扩展思考 / 推理** | 一份 `thinking` 配置映射到 Anthropic thinking、Gemini `thinkingConfig` 和 OpenAI `reasoning_effort`；推理以事件流式输出，并可选在切换 provider 时保留。([`cross-provider-reasoning`](examples/patterns/cross-provider-reasoning.ts)) |
-| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），全部**默认拒绝**（default-deny——用 `tools` / `toolPreset` 授予），外加 `delegate_to_agent` handoff（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
+| **工具 + MCP** | 6 个内置（`bash`、`file_*`、`grep`、`glob`），全部**默认拒绝**（default-deny，用 `tools` / `toolPreset` 授予），外加 `delegate_to_agent` handoff（带 cycle + depth 护栏），用 `defineTool()` + Zod 自定义，任意 MCP server 通过 `connectMCPTools()` 接入。([工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 | **流式 + 结构化输出** | 每个 adapter 都支持 token 级流式输出（团队运行时通过 `onAgentStream` 拿到每个 agent 的流）；用 Zod schema 校验最终答复，解析失败自动重试。([`structured-output`](examples/patterns/structured-output.ts)) |
-| **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）卡点，或用 `planOnly` 先预览。 |
-| **固定并重放计划** | 用 `createPlanArtifact` 把 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
+| **人工介入（Human-in-the-loop）** | 用 `onPlanReady`（任何 agent 执行前审批整个计划）和 `onApproval`（每轮任务之间审批）把关，或用 `planOnly` 先行预览。 |
+| **固定并重放计划** | 用 `createPlanArtifact` 将 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
-| **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自家后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
-| **Checkpoint & resume** | 可选的按运行 checkpoint，跑在任意 `MemoryStore` 上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后续跑。存盘 best-effort，不会拖垮运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
+| **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自有后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
+| **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 
 生产级控制（[上下文策略](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md)、任务重试退避、循环检测、工具输出截断/压缩）见 [生产级检查清单](#生产级检查清单)。
@@ -179,7 +179,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 
 对一次 `runTeam` 运行的精细控制。全部可选；默认行为不变。
 
-**注入团队上下文。** 把目标、roster、当前 worker 的角色注入每个 worker 的 prompt——帮助 worker 与整体目标保持一致，也让多步运行更易调试。默认关闭；省略时 worker prompt 保持逐字节不变。
+**注入团队上下文。** 将目标、roster、当前 worker 的角色注入每个 worker 的 prompt：帮助 worker 与整体目标保持一致，也让多步运行更易调试。默认关闭；省略时 worker prompt 保持逐字节不变。
 
 ```ts
 await orchestrator.runTeam(team, goal, { revealCoordinator: true })
@@ -210,7 +210,7 @@ await orchestrator.runTeam(team, goal, {
 })
 ```
 
-**无依赖 fan-out。** 要 MapReduce 风格的并行，直接用 `AgentPool.runParallel()`。见 [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)。
+**无依赖 fan-out。** 需要 MapReduce 风格的并行时，直接用 `AgentPool.runParallel()`。见 [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)。
 
 **Shell 和 CI。** 使用 JSON-first 的 `oma` 命令行工具。详见 [docs/cli.md](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md)。
 
@@ -244,11 +244,11 @@ await orchestrator.runTeam(team, goal, {
 
 ## 示例
 
-[`examples/`](./examples/) 按类别分为 basics、cookbook、patterns、providers、integrations。完整索引见 [`examples/README.md`](./examples/README.md)。（[`production/`](./examples/production/README.md) 正在征集贡献——见收录标准。）
+[`examples/`](./examples/) 按类别分为 basics、cookbook、patterns、providers、integrations。完整索引见 [`examples/README.md`](./examples/README.md)。（[`production/`](./examples/production/README.md) 正在征集贡献，见收录标准。）
 
 ### 真实业务流程（[`cookbook/`](./examples/cookbook/)）
 
-端到端可直接跑的场景，每个都是完整、开箱即用的工作流。
+端到端可直接运行的场景，每个都是完整、开箱即用的工作流。
 
 - [`contract-review-dag`](examples/cookbook/contract-review-dag.ts)：四任务 DAG 做合同审阅，分支并行 + 出错按步骤重试。
 - [`meeting-summarizer`](examples/cookbook/meeting-summarizer.ts)：三个专精 agent 并行处理会议转录稿，聚合 agent 合成含行动项和情绪分析的 Markdown 报告。
@@ -266,31 +266,31 @@ await orchestrator.runTeam(team, goal, {
 - [`patterns/cost-tiered-pipeline`](examples/patterns/cost-tiered-pipeline.ts)：每个阶段分配不同 model，用 `onTrace` 的 token 计数估算各 model 的 USD 成本。
 - [`patterns/fan-out-aggregate`](examples/patterns/fan-out-aggregate.ts)：`AgentPool.runParallel()` 做 MapReduce 风格 fan-out。
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts)：`delegate_to_agent` 同步子智能体委派。
-- [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 把目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不重跑协调者。
+- [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 将目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不再调用协调者。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，给 LLM 调用、工具、任务发结构化 span。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：用 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
 - **Provider 示例**：[`examples/providers/`](examples/providers/) 下的脚本，覆盖托管 provider、OpenAI 兼容端点和本地模型。
 
 ### 完整应用
 
-带有独立 `package.json` 的克隆即跑应用，不是 `npx tsx` 脚本。每个都把 OMA 嵌进了真实后端。
+带有独立 `package.json` 的克隆即可运行的应用，而非 `npx tsx` 脚本。每个都将 OMA 嵌入了真实后端。
 
-- [`integrations/express-customer-support`](examples/integrations/express-customer-support/)：Express REST API。`runTasks()` 驱动 `POST /tickets`，每个 agent 用 Zod schema，provider 通过环境变量可切换，并做了 HTTP 错误码映射。一个 DeepSeek key 即可跑通（`npm install && npm start`）。
+- [`integrations/express-customer-support`](examples/integrations/express-customer-support/)：Express REST API。`runTasks()` 驱动 `POST /tickets`，每个 agent 用 Zod schema，provider 通过环境变量可切换，并提供 HTTP 错误码映射。一个 DeepSeek key 即可运行（`npm install && npm start`）。
 - [`integrations/with-vercel-ai-sdk`](examples/integrations/with-vercel-ai-sdk/)：Next.js 应用。OMA `runTeam()` 配合 AI SDK `useChat` 流式输出（`npm install && npm run dev`）。
 
 运行任意脚本：`npx tsx packages/core/examples/<path>.ts`；上面的完整应用用各自的 `npm` 脚本运行。
 
 ## 与其他框架对比
 
-大多数 TypeScript 团队在选多智能体编排层时，真正是在 OMA、LangGraph JS、Mastra 之间做选择。区别在机制。
+大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制。
 
-**对比 LangGraph JS。** LangGraph 要你先把声明式图（节点、边、条件路由）设计好，再编译成可调用对象；OMA 的 Coordinator 在运行时把目标拆成任务 DAG，自动并行无依赖项。两者都能 checkpoint、resume，只是 LangGraph 的持久化生态更深。需要让编排随目标自适应、而不是提前把图连好时，选 OMA。
+**对比 LangGraph JS。** LangGraph 需先设计好声明式图（节点、边、条件路由），再编译为可调用对象；OMA 的 Coordinator 则在运行时将目标拆解为任务 DAG，并自动并行其中的无依赖项。两者均支持 checkpoint 与 resume，只是 LangGraph 的持久化生态更为完善。若需让编排随目标自适应、而非预先固定图结构，OMA 更为合适。
 
-**对比 Mastra。** 两者都是原生 TypeScript，区别在谁来驱动编排。Mastra 要你手工连图；OMA 是目标驱动的：把目标交给 Coordinator，它在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行搞定。
+**对比 Mastra。** 两者均为原生 TypeScript，差异在于由谁驱动编排。Mastra 需手工连接工作流；OMA 则是目标驱动：将目标交给 Coordinator，即可在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行调用即可。
 
-**对比 CrewAI。** CrewAI 是 Python 阵营成熟的多智能体方案。OMA 把目标驱动的任务拆解带到 TypeScript 后端，运行时精简（三个核心依赖，外加用到才装的可选 peer），直接嵌入 Node.js，不必在你的技术栈旁边再起一个独立的 Python 服务。
+**对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，运行时精简（三个核心依赖，外加按需安装的可选 peer），直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。
 
-**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），不是多智能体编排器。单 agent 调用用它就够；一旦需要协同的团队，就用 OMA。OMA 还提供一个可选的 AI SDK bridge。
+**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），而非多智能体编排器。单 agent 调用单独用它即可；一旦需要协同的团队，则选用 OMA。OMA 亦提供可选的 AI SDK bridge。
 
 ## 架构
 
@@ -337,7 +337,7 @@ await orchestrator.runTeam(team, goal, {
 
 ## 支持的 Provider
 
-改 `provider`、`model`，设好对应的环境变量。agent 配置结构不变。
+修改 `provider`、`model`，并设置对应的环境变量。agent 配置结构不变。
 
 ```typescript
 const agent: AgentConfig = {
@@ -359,9 +359,9 @@ const agent: AgentConfig = {
 
 ### 依赖
 
-安装 `@open-multi-agent/core` 会带入三个运行时依赖：`@anthropic-ai/sdk`、`openai`、`zod`。内核就这些：Anthropic、OpenAI 及所有 OpenAI 兼容端点只靠这三个就能跑。
+安装 `@open-multi-agent/core` 会引入三个运行时依赖：`@anthropic-ai/sdk`、`openai`、`zod`。内核仅此而已：Anthropic、OpenAI 及所有 OpenAI 兼容端点仅凭这三个依赖即可运行。
 
-其余都是可选 peer 依赖，用到哪个才装哪个。每个都是懒加载，没用到的项目根本不会安装。
+其余均为可选 peer 依赖，按需安装；每个都是懒加载，未用到的项目不会引入。
 
 | 能力 | 安装 | 触发 |
 |------|------|------|
@@ -372,7 +372,7 @@ const agent: AgentConfig = {
 
 ### Vercel AI SDK（可选）
 
-装好 bridge 的 peer 后（见上方表格），在 `AgentConfig` 上传入 `adapter: new AISdkAdapter(model)`，即可让该 agent 走 AI SDK，而不是内置的 `provider` 工厂。设置了 `adapter` 时，`provider`、`apiKey`、`baseURL`、`region` 都会被忽略。混合团队照常工作：只有带 `adapter` 的 agent 才走 AI SDK。
+安装好 bridge 的 peer 后（见上方表格），在 `AgentConfig` 上传入 `adapter: new AISdkAdapter(model)`，即可让该 agent 改用 AI SDK，而非内置的 `provider` 工厂。设置 `adapter` 后，`provider`、`apiKey`、`baseURL`、`region` 均被忽略。混合团队照常工作：只有带 `adapter` 的 agent 才使用 AI SDK。
 
 ```typescript
 import { openai } from '@ai-sdk/openai'
@@ -395,7 +395,7 @@ await oma.runAgent(
 
 ## 生产级检查清单
 
-上线前逐一配置以下项目：控制 token 开销、能从失败中恢复、出了问题能排查。
+上线前逐一配置以下项目：控制 token 开销、从失败中恢复、问题可排查。
 
 | 关注点 | 配置项 | 作用域 |
 |--------|--------|--------|
@@ -403,12 +403,12 @@ await oma.runAgent(
 | 控制运行时长 | `timeoutMs`（每个 agent，运行挂起时中止；本地模型常见） | `AgentConfig` |
 | 限制工具输出 | `maxToolOutputChars`（或单工具 `maxOutputChars`）+ `compressToolResults: true` | `AgentConfig` 和 `defineTool()` |
 | 失败重试 | 任务级 `maxRetries`、`retryDelayMs`、`retryBackoff`（指数退避倍率） | 通过 `runTasks()` 用的任务配置 |
-| 崩溃/重启后续跑 | `checkpoint`（给 `runId` 或持久化 `MemoryStore`）+ `restore()` 续跑，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |
+| 崩溃/重启后恢复 | `checkpoint`（给 `runId` 或持久化 `MemoryStore`）+ `restore()` 恢复运行，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |
 | 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
-| 脱敏密钥 | 自动——API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
-| 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写就一个都没有。`bash` 一旦授予仍是无沙箱的，且每次工具结果都会发给你的模型 provider——所以读取/执行权限要刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
+| 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
+| 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写则一个都没有。`bash` 一旦授予仍无沙箱，且每次工具结果都会发给你的模型 provider，因此读取/执行权限需刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
 ## 文档
@@ -427,9 +427,9 @@ await oma.runAgent(
 
 Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 
-- **生产级示例。** 端到端跑通的真实场景工作流。收录条件和提交格式见 [`examples/production/README.md`](./examples/production/README.md)。
+- **生产级示例。** 端到端可运行的真实场景工作流。收录条件与提交格式见 [`examples/production/README.md`](./examples/production/README.md)。
 - **文档。** 指南、教程、API 文档。
-- **翻译。** 把这份 README 翻译成其他语言。[提个 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
+- **翻译。** 将这份 README 翻译为其他语言。[提交 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
 
 ## 贡献者
 
