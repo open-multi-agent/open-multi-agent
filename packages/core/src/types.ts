@@ -376,7 +376,16 @@ export interface BeforeRunHookContext {
 /** Static configuration for a single agent. */
 export interface AgentConfig {
   readonly name: string
-  readonly model: string
+  /**
+   * Model identifier (e.g. `'claude-opus-4-6'`).
+   *
+   * Optional in an orchestrated run: under `runTeam` / `runTasks` / `runAgent`
+   * an unset model inherits {@link OrchestratorConfig.defaultModel} (mirroring
+   * how `provider` / `baseURL` / `apiKey` inherit their `default*` siblings).
+   * A standalone `new Agent(...)` has no orchestrator to inherit from, so it
+   * must set this explicitly — the constructor throws when it is absent.
+   */
+  readonly model?: string
   /**
    * Optional custom {@link LLMAdapter}. When set, the agent uses this adapter
    * directly and skips {@link createAdapter} — `provider`, `apiKey`, `baseURL`,
@@ -1021,6 +1030,13 @@ export interface OrchestratorConfig {
   readonly maxDelegationDepth?: number
   /** Maximum cumulative tokens (input + output) allowed per orchestrator run. */
   readonly maxTokenBudget?: number
+  /**
+   * Default model inherited by every agent that does not set its own
+   * {@link AgentConfig.model} — workers, the coordinator, and consensus agents
+   * alike (mirroring how {@link defaultProvider} is inherited). Defaults to
+   * `'claude-opus-4-6'`. Has no effect on a standalone `new Agent(...)`, which
+   * has no orchestrator to inherit from and must set `model` itself.
+   */
   readonly defaultModel?: string
   readonly defaultProvider?: SupportedProvider
   readonly defaultBaseURL?: string

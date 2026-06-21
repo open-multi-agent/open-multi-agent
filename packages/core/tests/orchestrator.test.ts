@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
+import { Agent } from '../src/agent/agent.js'
+import { ToolRegistry } from '../src/tool/framework.js'
+import { ToolExecutor } from '../src/tool/executor.js'
 import type {
   AgentConfig,
   AgentRunResult,
@@ -424,6 +427,37 @@ describe('OpenMultiAgent', () => {
 
       expect(capturedChatOptions[0]?.model).toBe('default-worker-model')
       expect(capturedChatOptions[1]?.model).toBe('premium-review-model')
+    })
+  })
+
+  describe('defaultModel inheritance', () => {
+    it('worker without its own model inherits OrchestratorConfig.defaultModel', async () => {
+      mockAdapterResponses = ['worker output']
+
+      const oma = new OpenMultiAgent({ defaultModel: 'inherited-default-model' })
+      // Agent declares no model: it should inherit defaultModel, mirroring how
+      // provider/baseURL/apiKey inherit their default* siblings.
+      const team = oma.createTeam('t', teamCfg([
+        { name: 'worker-a', provider: 'openai', systemPrompt: 'You are worker-a.' },
+      ]))
+
+      await oma.runTasks(team, [
+        { title: 'Leaf', description: 'Do leaf work', assignee: 'worker-a' },
+      ])
+
+      expect(capturedChatOptions[0]?.model).toBe('inherited-default-model')
+    })
+
+    it('standalone Agent without a model throws at construction', () => {
+      // No orchestrator to inherit defaultModel from, so model is mandatory.
+      expect(
+        () =>
+          new Agent(
+            { name: 'orphan', provider: 'openai', systemPrompt: 'x' },
+            new ToolRegistry(),
+            new ToolExecutor(new ToolRegistry()),
+          ),
+      ).toThrow(/has no model/)
     })
   })
 

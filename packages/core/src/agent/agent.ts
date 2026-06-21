@@ -116,6 +116,15 @@ export class Agent {
     toolExecutor: ToolExecutor,
   ) {
     this.name = config.name
+    // `model` is optional on AgentConfig so orchestrated agents can inherit
+    // `OrchestratorConfig.defaultModel`. A standalone Agent has no orchestrator
+    // to inherit from, so it must declare a model explicitly.
+    if (config.model === undefined) {
+      throw new Error(
+        `Agent "${config.name}" has no model. Set 'model' in its config, or run it ` +
+          `through OpenMultiAgent to inherit 'defaultModel'.`,
+      )
+    }
     this.config = config
     this._toolRegistry = toolRegistry
     this._toolExecutor = toolExecutor
@@ -157,7 +166,9 @@ export class Agent {
     }
 
     const runnerOptions: RunnerOptions = {
-      model: this.config.model,
+      // Non-null: the constructor rejects a missing model, so by the time a
+      // runner is built `model` is guaranteed present.
+      model: this.config.model!,
       systemPrompt: effectiveSystemPrompt,
       maxTurns: this.config.maxTurns,
       maxTokens: this.config.maxTokens,
@@ -665,7 +676,7 @@ export class Agent {
       agent: {
         name: this.name,
         role: this.config.systemPrompt?.slice(0, 60) ?? 'assistant',
-        model: this.config.model,
+        model: this.config.model!,
       },
       abortSignal,
       cwd: this.config.cwd === undefined ? defaultWorkspaceDir() : this.config.cwd,

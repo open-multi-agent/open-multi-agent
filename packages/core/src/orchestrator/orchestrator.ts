@@ -693,6 +693,7 @@ function buildTaskAgentTeamInfo(
     })
     const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
       ...targetConfig,
+      model: targetConfig.model ?? ctx.config.defaultModel,
       provider: targetConfig.provider ?? ctx.config.defaultProvider,
       baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
       apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
@@ -1179,6 +1180,7 @@ async function buildTaskPrompt(
 
 /** Orchestrator-level defaults applied to ephemeral consensus agents. */
 interface ConsensusAgentDefaults {
+  readonly defaultModel: OrchestratorConfig['defaultModel']
   readonly defaultProvider: OrchestratorConfig['defaultProvider']
   readonly defaultBaseURL: OrchestratorConfig['defaultBaseURL']
   readonly defaultApiKey: OrchestratorConfig['defaultApiKey']
@@ -1212,6 +1214,7 @@ const VERDICT_INSTRUCTION =
 function applyConsensusDefaults(config: AgentConfig, defaults: ConsensusAgentDefaults): AgentConfig {
   return {
     ...config,
+    model: config.model ?? defaults.defaultModel,
     provider: config.provider ?? defaults.defaultProvider,
     baseURL: config.baseURL ?? defaults.defaultBaseURL,
     apiKey: config.apiKey ?? defaults.defaultApiKey,
@@ -1451,6 +1454,7 @@ async function runTaskVerify(
     budget: ctx.maxTokenBudget,
     reviseProposer: assigneeConfig,
     defaults: {
+      defaultModel: config.defaultModel,
       defaultProvider: config.defaultProvider,
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
@@ -1596,6 +1600,7 @@ export class OpenMultiAgent {
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
     const effective: AgentConfig = applyDefaultToolPreset({
       ...config,
+      model: config.model ?? this.config.defaultModel,
       provider: config.provider ?? this.config.defaultProvider,
       baseURL: config.baseURL ?? this.config.defaultBaseURL,
       apiKey: config.apiKey ?? this.config.defaultApiKey,
@@ -1703,6 +1708,7 @@ export class OpenMultiAgent {
       const effectiveBudget = resolveTokenBudget(bestAgent.maxTokenBudget, this.config.maxTokenBudget)
       const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
         ...bestAgent,
+        model: bestAgent.model ?? this.config.defaultModel,
         provider: bestAgent.provider ?? this.config.defaultProvider,
         baseURL: bestAgent.baseURL ?? this.config.defaultBaseURL,
         apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
@@ -2253,6 +2259,7 @@ export class OpenMultiAgent {
     const onDissent = options.onDissent ?? 'revise'
     const budget = this.config.maxTokenBudget
     const defaults: ConsensusAgentDefaults = {
+      defaultModel: this.config.defaultModel,
       defaultProvider: this.config.defaultProvider,
       defaultBaseURL: this.config.defaultBaseURL,
       defaultApiKey: this.config.defaultApiKey,
@@ -2902,7 +2909,7 @@ export class OpenMultiAgent {
     for (const config of agentConfigs) {
       const effective: AgentConfig = applyDefaultToolPreset({
         ...config,
-        model: config.model,
+        model: config.model ?? this.config.defaultModel,
         provider: config.provider ?? this.config.defaultProvider,
         baseURL: config.baseURL ?? this.config.defaultBaseURL,
         apiKey: config.apiKey ?? this.config.defaultApiKey,
