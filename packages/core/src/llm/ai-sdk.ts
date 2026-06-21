@@ -365,7 +365,10 @@ export class AISdkAdapter implements LLMAdapter {
       responseId = meta.id ?? ''
       responseModel = meta.modelId ?? ''
 
-      const totalUsage = await result.totalUsage.catch(() => undefined)
+      // AI SDK v6 types `result.totalUsage` as a `PromiseLike` (no `.catch`),
+      // where v5 exposed a full `Promise`. `Promise.resolve()` normalizes both
+      // into a real Promise so the rejection guard compiles against either major.
+      const totalUsage = await Promise.resolve(result.totalUsage).catch(() => undefined)
       if (totalUsage !== undefined) {
         usage = usageToOma(totalUsage)
       }
