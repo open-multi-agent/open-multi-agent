@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses DeepSeek's flagship model.
  *
  * Run:
- *   npx tsx examples/providers/deepseek.ts
+ *   npx tsx packages/core/examples/providers/deepseek.ts
  *
  * Prerequisites:
  *   DEEPSEEK_API_KEY environment variable must be set.

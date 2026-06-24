@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses MiMo's OpenAI-compatible API.
  *
  * Run:
- *   npx tsx examples/providers/mimo.ts
+ *   npx tsx packages/core/examples/providers/mimo.ts
  *
  * Prerequisites:
  *   MIMO_API_KEY environment variable must be set.

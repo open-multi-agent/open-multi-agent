@@ -14,7 +14,7 @@
  *   [technical-analyst, market-analyst, community-analyst] (parallel) → synthesizer
  *
  * Run:
- *   npx tsx examples/patterns/research-aggregation.ts "<topic>"
+ *   npx tsx packages/core/examples/patterns/research-aggregation.ts "<topic>"
  *
  * Provider selection (env):
  *   - LLM_PROVIDER=anthropic   (default)  → requires ANTHROPIC_API_KEY

@@ -16,7 +16,7 @@
  * - Zod-validated structured output and simple runtime assertions
  *
  * Run:
- *   npx tsx examples/cookbook/rare-disease-information-triage.ts
+ *   npx tsx packages/core/examples/cookbook/rare-disease-information-triage.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

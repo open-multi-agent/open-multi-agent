@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses Grok's coding-optimized model.
  *
  * Run:
- *   npx tsx examples/providers/grok.ts
+ *   npx tsx packages/core/examples/providers/grok.ts
  *
  * Prerequisites:
  *   XAI_API_KEY environment variable must be set.

@@ -6,7 +6,7 @@
  * OpenAI-compatible AI inference endpoint (https://api.qnaigc.com/v1).
  *
  * Run:
- *   npx tsx examples/providers/qiniu.ts
+ *   npx tsx packages/core/examples/providers/qiniu.ts
  *
  * Prerequisites:
  *   QINIU_API_KEY environment variable must be set.

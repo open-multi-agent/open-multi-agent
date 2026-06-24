@@ -12,7 +12,7 @@
  *      evaluates from a different angle (security vs. maintainability).
  *
  * Run:
- *   npx tsx examples/patterns/consensus.ts
+ *   npx tsx packages/core/examples/patterns/consensus.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

@@ -6,7 +6,7 @@
  * endpoint, mixing GPT-4o (architect/reviewer) and Claude Sonnet (developer) in one team.
  *
  * Run:
- *   npx tsx examples/providers/copilot.ts
+ *   npx tsx packages/core/examples/providers/copilot.ts
  *
  * Authentication (one of):
  *   GITHUB_COPILOT_TOKEN env var (preferred)

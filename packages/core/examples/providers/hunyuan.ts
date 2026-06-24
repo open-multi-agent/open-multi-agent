@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses the built-in Hunyuan provider shortcut.
  *
  * Run:
- *   npx tsx examples/providers/hunyuan.ts
+ *   npx tsx packages/core/examples/providers/hunyuan.ts
  *
  * Prerequisites:
  *   HUNYUAN_API_KEY environment variable must be set.

@@ -6,7 +6,7 @@
  * via the official `@google/genai` SDK.
  *
  * Run:
- *   npx tsx examples/providers/gemini.ts
+ *   npx tsx packages/core/examples/providers/gemini.ts
  *
  * Prerequisites:
  *   GEMINI_API_KEY environment variable must be set.

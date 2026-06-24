@@ -6,7 +6,7 @@
  * DashScope's OpenAI-compatible endpoint.
  *
  * Run:
- *   npx tsx examples/providers/qwen.ts
+ *   npx tsx packages/core/examples/providers/qwen.ts
  *
  * Prerequisites:
  *   DASHSCOPE_API_KEY environment variable must be set.

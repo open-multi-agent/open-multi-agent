@@ -8,7 +8,7 @@
  * - Structured output with Zod schemas
  *
  * Run:
- *   npx tsx examples/cookbook/translation-backtranslation.ts
+ *   npx tsx packages/core/examples/cookbook/translation-backtranslation.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY must be set

@@ -6,7 +6,7 @@
  * framework's OpenAI-compatible adapter.
  *
  * Run:
- *   npx tsx examples/providers/openrouter.ts
+ *   npx tsx packages/core/examples/providers/openrouter.ts
  *
  * Prerequisites:
  *   OPENROUTER_API_KEY environment variable must be set.

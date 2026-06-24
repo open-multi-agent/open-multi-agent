@@ -25,15 +25,15 @@
  * Defaults to anthropic / claude-sonnet-4-6 when unset.
  *
  * Run:
- *   npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+ *   npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
  *
  * Examples:
  *   # Anthropic (default)
- *   ANTHROPIC_API_KEY=sk-... npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+ *   ANTHROPIC_API_KEY=sk-... npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
  *
  *   # Fully local: agents on Ollama, Gateway extraction also on Ollama
  *   AGENT_PROVIDER=openai AGENT_MODEL=qwen3 AGENT_BASE_URL=http://localhost:11434/v1 \
- *     npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+ *     npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
  *
  * Prerequisites:
  *   - TDAM Hermes Gateway running at http://127.0.0.1:8420 (see README.md)

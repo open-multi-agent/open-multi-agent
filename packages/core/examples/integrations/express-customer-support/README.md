@@ -13,7 +13,7 @@ Each agent uses a Zod `outputSchema`; the endpoint assembles the three structure
 ## Setup
 
 ```bash
-cd examples/integrations/express-customer-support
+cd packages/core/examples/integrations/express-customer-support
 npm install
 export DEEPSEEK_API_KEY=sk-...    # default — all three agents use DeepSeek
 ```

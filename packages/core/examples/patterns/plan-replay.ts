@@ -12,7 +12,7 @@
  * plan to disk, then rebuild it from the saved file and replay it.
  *
  * Run:
- *   npx tsx examples/patterns/plan-replay.ts
+ *   npx tsx packages/core/examples/patterns/plan-replay.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

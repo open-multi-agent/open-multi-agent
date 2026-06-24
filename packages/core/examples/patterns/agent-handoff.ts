@@ -9,7 +9,7 @@
  * standalone `runAgent()` does not register this tool by default.
  *
  * Run:
- *   npx tsx examples/patterns/agent-handoff.ts
+ *   npx tsx packages/core/examples/patterns/agent-handoff.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY

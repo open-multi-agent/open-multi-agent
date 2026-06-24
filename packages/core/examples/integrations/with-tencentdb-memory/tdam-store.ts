@@ -26,7 +26,7 @@
  * distilled TDAM memories are what persist.
  *
  * Run:
- *   npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+ *   npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
  *
  * Prerequisites:
  *   - TDAM Hermes Gateway running at http://127.0.0.1:8420 (see README.md)

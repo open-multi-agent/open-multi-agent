@@ -16,7 +16,7 @@
  * has full context of what was previously considered. See #223 for design.
  *
  * Run:
- *   npx tsx examples/patterns/cross-provider-reasoning.ts
+ *   npx tsx packages/core/examples/patterns/cross-provider-reasoning.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY

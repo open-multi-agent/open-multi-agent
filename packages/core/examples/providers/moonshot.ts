@@ -6,7 +6,7 @@
  * OpenAI-compatible endpoint.
  *
  * Run:
- *   npx tsx examples/providers/moonshot.ts
+ *   npx tsx packages/core/examples/providers/moonshot.ts
  *
  * Prerequisites:
  *   MOONSHOT_API_KEY environment variable must be set.

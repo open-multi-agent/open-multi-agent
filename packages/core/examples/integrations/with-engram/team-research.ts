@@ -20,7 +20,7 @@
  * Defaults to anthropic / claude-sonnet-4-6 when unset.
  *
  * Run:
- *   npx tsx examples/integrations/with-engram/team-research.ts
+ *   npx tsx packages/core/examples/integrations/with-engram/team-research.ts
  *
  * Prerequisites:
  *   - API key env var for your chosen provider

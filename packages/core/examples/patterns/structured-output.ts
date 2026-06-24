@@ -8,7 +8,7 @@
  * The validated result is available via `result.structured`.
  *
  * Run:
- *   npx tsx examples/patterns/structured-output.ts
+ *   npx tsx packages/core/examples/patterns/structured-output.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

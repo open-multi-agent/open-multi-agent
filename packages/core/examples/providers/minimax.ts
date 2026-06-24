@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses MiniMax's flagship model.
  *
  * Run:
- *   npx tsx examples/providers/minimax.ts
+ *   npx tsx packages/core/examples/providers/minimax.ts
  *
  * Prerequisites:
  *   MINIMAX_API_KEY environment variable must be set.

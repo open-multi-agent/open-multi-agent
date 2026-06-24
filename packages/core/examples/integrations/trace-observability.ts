@@ -11,7 +11,7 @@
  * dashboard.
  *
  * Run:
- *   npx tsx examples/integrations/trace-observability.ts
+ *   npx tsx packages/core/examples/integrations/trace-observability.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

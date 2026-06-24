@@ -17,23 +17,23 @@
  * Defaults to anthropic / claude-sonnet-4-6 when unset.
  *
  * Run:
- *   npx tsx examples/integrations/with-engram/research-team.ts
+ *   npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  * Examples:
  *   # Anthropic (default)
- *   ANTHROPIC_API_KEY=sk-... ENGRAM_INVITE_KEY=ek_live_... npx tsx examples/integrations/with-engram/research-team.ts
+ *   ANTHROPIC_API_KEY=sk-... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  *   # OpenAI
- *   AGENT_PROVIDER=openai AGENT_MODEL=gpt-4o OPENAI_API_KEY=sk-... ENGRAM_INVITE_KEY=ek_live_... npx tsx examples/integrations/with-engram/research-team.ts
+ *   AGENT_PROVIDER=openai AGENT_MODEL=gpt-4o OPENAI_API_KEY=sk-... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  *   # Gemini
- *   AGENT_PROVIDER=gemini AGENT_MODEL=gemini-2.5-flash GEMINI_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx examples/integrations/with-engram/research-team.ts
+ *   AGENT_PROVIDER=gemini AGENT_MODEL=gemini-2.5-flash GEMINI_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  *   # Grok
- *   AGENT_PROVIDER=grok AGENT_MODEL=grok-3 XAI_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx examples/integrations/with-engram/research-team.ts
+ *   AGENT_PROVIDER=grok AGENT_MODEL=grok-3 XAI_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  *   # DeepSeek
- *   AGENT_PROVIDER=deepseek AGENT_MODEL=deepseek-v4-flash DEEPSEEK_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx examples/integrations/with-engram/research-team.ts
+ *   AGENT_PROVIDER=deepseek AGENT_MODEL=deepseek-v4-flash DEEPSEEK_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  * Prerequisites:
  *   - API key env var for your chosen provider

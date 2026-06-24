@@ -5,7 +5,7 @@
  * standard open-multi-agent tools.
  *
  * Run:
- *   npx tsx examples/integrations/mcp-github.ts
+ *   npx tsx packages/core/examples/integrations/mcp-github.ts
  *
  * Prerequisites:
  *   - GEMINI_API_KEY

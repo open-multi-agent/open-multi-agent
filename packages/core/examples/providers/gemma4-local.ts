@@ -13,7 +13,7 @@
  * Gemma 4 e2b (5.1B params) handles both reliably.
  *
  * Run:
- *   no_proxy=localhost npx tsx examples/providers/gemma4-local.ts
+ *   no_proxy=localhost npx tsx packages/core/examples/providers/gemma4-local.ts
  *
  * Prerequisites:
  *   1. Ollama >= 0.20.0 installed and running: https://ollama.com

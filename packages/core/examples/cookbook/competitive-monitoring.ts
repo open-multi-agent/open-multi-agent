@@ -9,7 +9,7 @@
  * - Timing validation: parallel execution must be <70% of serial sum
  *
  * Run:
- *   npx tsx examples/cookbook/competitive-monitoring.ts
+ *   npx tsx packages/core/examples/cookbook/competitive-monitoring.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

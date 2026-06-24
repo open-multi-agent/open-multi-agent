@@ -15,7 +15,7 @@
  *   models. This is a local-quantized concern.
  *
  * Run:
- *   no_proxy=localhost npx tsx examples/providers/local-quantized.ts
+ *   no_proxy=localhost npx tsx packages/core/examples/providers/local-quantized.ts
  *
  * Prerequisites — pick one OpenAI-compatible local server:
  *   • vLLM:        `vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ --port 8000`

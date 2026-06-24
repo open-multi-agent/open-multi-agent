@@ -8,7 +8,7 @@
  * - Aggregator merges into a single Markdown report
  *
  * Run:
- *   npx tsx examples/cookbook/meeting-summarizer.ts
+ *   npx tsx packages/core/examples/cookbook/meeting-summarizer.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

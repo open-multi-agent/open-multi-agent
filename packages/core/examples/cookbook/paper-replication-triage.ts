@@ -9,11 +9,11 @@
  * - Mocked source snapshots are flagged; SOURCE_MODE=live uses Asta + GitHub
  *
  * Run:
- *   npx tsx examples/cookbook/paper-replication-triage.ts
- *   npx tsx examples/cookbook/paper-replication-triage.ts "paper title or arXiv id"
+ *   npx tsx packages/core/examples/cookbook/paper-replication-triage.ts
+ *   npx tsx packages/core/examples/cookbook/paper-replication-triage.ts "paper title or arXiv id"
  *
  * Optional:
- *   SOURCE_MODE=live npx tsx examples/cookbook/paper-replication-triage.ts "ARXIV:1706.03762"
+ *   SOURCE_MODE=live npx tsx packages/core/examples/cookbook/paper-replication-triage.ts "ARXIV:1706.03762"
  *
  * Prerequisites:
  *   LLM_PROVIDER=anthropic (default) requires ANTHROPIC_API_KEY.

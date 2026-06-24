@@ -9,7 +9,7 @@
  * - Structured debrief via Zod at the end of the interview loop
  *
  * Run:
- *   npx tsx examples/cookbook/personalized-interview-simulator.ts
+ *   npx tsx packages/core/examples/cookbook/personalized-interview-simulator.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

@@ -5,7 +5,7 @@
  * open-multi-agent Agent the workbook tools for formula readback.
  *
  * Run:
- *   npx tsx examples/integrations/mcp-bilig-workpaper.ts
+ *   npx tsx packages/core/examples/integrations/mcp-bilig-workpaper.ts
  *
  * Prerequisites:
  *   - GEMINI_API_KEY or GOOGLE_API_KEY

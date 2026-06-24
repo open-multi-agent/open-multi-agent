@@ -8,7 +8,7 @@
  * description plus direct dependency results (not unrelated team outputs).
  *
  * Run:
- *   npx tsx examples/basics/task-pipeline.ts
+ *   npx tsx packages/core/examples/basics/task-pipeline.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

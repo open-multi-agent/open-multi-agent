@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses Mistral via the OpenAI-compatible adapter.
  *
  * Run:
- *   npx tsx examples/providers/mistral.ts
+ *   npx tsx packages/core/examples/providers/mistral.ts
  *
  * Prerequisites:
  *   MISTRAL_API_KEY environment variable must be set.

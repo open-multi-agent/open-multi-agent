@@ -6,7 +6,7 @@
  * agent are visible to all others in the workspace.
  *
  * Run:
- *   npx tsx examples/integrations/with-engram/research-team.ts
+ *   npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  * Prerequisites:
  *   - Engram server running at http://localhost:7474 (or custom baseUrl)

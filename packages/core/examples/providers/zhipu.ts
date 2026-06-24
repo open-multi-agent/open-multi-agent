@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses Zhipu GLM via the OpenAI-compatible adapter.
  *
  * Run:
- *   npx tsx examples/providers/zhipu.ts
+ *   npx tsx packages/core/examples/providers/zhipu.ts
  *
  * Prerequisites:
  *   ZHIPU_API_KEY environment variable must be set.

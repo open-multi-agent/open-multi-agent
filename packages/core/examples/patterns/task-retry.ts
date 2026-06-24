@@ -10,7 +10,7 @@
  * to retry on failure, and the second task (analysis) depends on it.
  *
  * Run:
- *   npx tsx examples/patterns/task-retry.ts
+ *   npx tsx packages/core/examples/patterns/task-retry.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

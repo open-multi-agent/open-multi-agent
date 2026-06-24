@@ -8,7 +8,7 @@
  * - Running a team goal that uses the custom tools
  *
  * Run:
- *   npx tsx examples/basics/multi-model-team.ts
+ *   npx tsx packages/core/examples/basics/multi-model-team.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY and OPENAI_API_KEY env vars must be set.

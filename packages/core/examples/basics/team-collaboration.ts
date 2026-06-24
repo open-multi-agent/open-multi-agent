@@ -6,7 +6,7 @@
  * them to the right agents, and collects the results.
  *
  * Run:
- *   npx tsx examples/basics/team-collaboration.ts
+ *   npx tsx packages/core/examples/basics/team-collaboration.ts
  *
  * Prerequisites:
  *   OPENAI_API_KEY env var must be set. Works with any OpenAI-compatible

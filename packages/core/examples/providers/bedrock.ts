@@ -7,7 +7,7 @@
  * work the same way regardless of which underlying model family you target.
  *
  * Run:
- *   npx tsx examples/providers/bedrock.ts
+ *   npx tsx packages/core/examples/providers/bedrock.ts
  *
  * Prerequisites:
  *   `@aws-sdk/client-bedrock-runtime` is an optional peer dependency — install it first:

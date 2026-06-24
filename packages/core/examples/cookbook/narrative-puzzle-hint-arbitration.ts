@@ -19,7 +19,7 @@
  * - Zod-validated structured output and simple runtime assertions
  *
  * Run:
- *   npx tsx examples/cookbook/narrative-puzzle-hint-arbitration.ts
+ *   npx tsx packages/core/examples/cookbook/narrative-puzzle-hint-arbitration.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

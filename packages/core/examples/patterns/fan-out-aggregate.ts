@@ -9,7 +9,7 @@
  * - No tools needed — pure LLM reasoning to keep the focus on the pattern
  *
  * Run:
- *   npx tsx examples/patterns/fan-out-aggregate.ts
+ *   npx tsx packages/core/examples/patterns/fan-out-aggregate.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

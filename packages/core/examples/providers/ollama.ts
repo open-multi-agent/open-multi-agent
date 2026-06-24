@@ -14,7 +14,7 @@
  * Just change the baseURL and model name below.
  *
  * Run:
- *   npx tsx examples/providers/ollama.ts
+ *   npx tsx packages/core/examples/providers/ollama.ts
  *
  * Prerequisites:
  *   1. Ollama installed and running: https://ollama.com

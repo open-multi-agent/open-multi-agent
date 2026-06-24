@@ -6,7 +6,7 @@
  * auto-resolutions.
  *
  * Run:
- *   npx tsx examples/integrations/with-engram/research-team.ts
+ *   npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  * Prerequisites:
  *   - Engram server running at http://localhost:7474 (or custom baseUrl)

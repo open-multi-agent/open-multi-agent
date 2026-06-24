@@ -5,7 +5,7 @@
  * a coding task. Then shows streaming output using the Agent class directly.
  *
  * Run:
- *   npx tsx examples/basics/single-agent.ts
+ *   npx tsx packages/core/examples/basics/single-agent.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

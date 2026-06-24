@@ -161,11 +161,11 @@ set.
 
 ```bash
 # Hosted provider (default: anthropic / claude-sonnet-4-6)
-ANTHROPIC_API_KEY=sk-... npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+ANTHROPIC_API_KEY=sk-... npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
 
 # Fully local (agents + Gateway extraction all on Ollama)
 AGENT_PROVIDER=openai AGENT_MODEL=qwen3.5:9b-mlx AGENT_BASE_URL=http://localhost:11434/v1 \
-  npx tsx examples/integrations/with-tencentdb-memory/team-with-memory.ts
+  npx tsx packages/core/examples/integrations/with-tencentdb-memory/team-with-memory.ts
 ```
 
 | Env var | Default | Purpose |

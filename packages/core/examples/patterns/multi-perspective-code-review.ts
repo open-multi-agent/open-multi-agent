@@ -12,7 +12,7 @@
  *   generator → [security-reviewer, performance-reviewer, style-reviewer] (parallel) → synthesizer
  *
  * Run:
- *   npx tsx examples/patterns/multi-perspective-code-review.ts
+ *   npx tsx packages/core/examples/patterns/multi-perspective-code-review.ts
  *
  * Prerequisites:
  *   If LLM_PROVIDER is unset, this example auto-selects the first available key

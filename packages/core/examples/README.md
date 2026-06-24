@@ -2,7 +2,7 @@
 
 Runnable scripts demonstrating `open-multi-agent`. Organized by category — pick one that matches what you're trying to do.
 
-All scripts run with `npx tsx examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment. The full applications (see the apps section below) are the exception: they have their own `package.json` and start scripts.
+All scripts run with `npx tsx packages/core/examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment. The full applications (see the apps section below) are the exception: they have their own `package.json` and start scripts.
 
 ---
 

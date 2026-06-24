@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses Groq via the OpenAI-compatible adapter.
  *
  * Run:
- *   npx tsx examples/providers/groq.ts
+ *   npx tsx packages/core/examples/providers/groq.ts
  *
  * Prerequisites:
  *   GROQ_API_KEY environment variable must be set.

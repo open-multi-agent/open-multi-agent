@@ -8,7 +8,7 @@
  * - Estimating USD cost from provider-specific model pricing
  *
  * Run:
- *   npx tsx examples/patterns/cost-tiered-pipeline.ts
+ *   npx tsx packages/core/examples/patterns/cost-tiered-pipeline.ts
  *
  * Prerequisites:
  *   Set one of:

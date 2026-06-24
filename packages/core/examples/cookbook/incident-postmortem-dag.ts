@@ -16,7 +16,7 @@
  *   - Token cost on claude-sonnet-4-6 is printed alongside token totals.
  *
  * Run:
- *   npx tsx examples/cookbook/incident-postmortem-dag.ts
+ *   npx tsx packages/core/examples/cookbook/incident-postmortem-dag.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

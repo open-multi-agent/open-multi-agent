@@ -15,8 +15,8 @@
  * - FORCE_FAIL=task2 env var triggers Task 2 failure on first attempt
  *
  * Run:
- *   npx tsx examples/cookbook/contract-review-dag.ts
- *   FORCE_FAIL=task2 npx tsx examples/cookbook/contract-review-dag.ts
+ *   npx tsx packages/core/examples/cookbook/contract-review-dag.ts
+ *   FORCE_FAIL=task2 npx tsx packages/core/examples/cookbook/contract-review-dag.ts
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY env var must be set.

@@ -5,7 +5,7 @@
  * to build a minimal Express.js REST API. Every agent uses Azure-hosted OpenAI models.
  *
  * Run:
- *   npx tsx examples/providers/azure-openai.ts
+ *   npx tsx packages/core/examples/providers/azure-openai.ts
  *
  * Prerequisites:
  *   AZURE_OPENAI_API_KEY      — Your Azure OpenAI API key (required)
