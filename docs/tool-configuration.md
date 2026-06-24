@@ -168,7 +168,7 @@ Long tool outputs can blow up conversation size and cost. Two controls work toge
 > — it is always a `ZodSchema<string>` because tool output is serialised as
 > text. The `outputSchema` on [`AgentConfig`](../packages/core/examples/patterns/structured-output.ts)
 > is different: it validates the **agent's final answer** as parsed JSON
-> against an arbitrary Zod schema (see _Structured output_ in `examples/`).
+> against an arbitrary Zod schema (see _Structured output_ in `packages/core/examples/`).
 > Different types, different scopes — TypeScript won't warn you if you mix
 > them up, so pick the one that matches the layer you're working at.
 
