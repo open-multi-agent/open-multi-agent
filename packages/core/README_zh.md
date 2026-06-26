@@ -43,7 +43,7 @@
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求预先列出每个节点与每条边；任务 DAG 则在运行时生成，随目标自适应，而非针对单一流程预先固化。
+图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。
 
 `@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
 
