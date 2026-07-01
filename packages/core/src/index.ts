@@ -120,6 +120,7 @@ export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError } fr
 // ---------------------------------------------------------------------------
 
 export { InMemoryStore } from './memory/store.js'
+export { FileStore } from './memory/file-store.js'
 export { SharedMemory } from './memory/shared.js'
 export {
   Checkpoint,
