@@ -8,10 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^2.0.41",
-    "@ai-sdk/react": "^3.0.0",
+    "@ai-sdk/openai-compatible": "^3.0.0",
+    "@ai-sdk/react": "^4.0.0",
     "@open-multi-agent/core": "file:../../..",
-    "ai": "^6.0.0",
+    "ai": "^7.0.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

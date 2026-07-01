@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, type UIMessage } from 'ai'
+import { streamText, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream, type UIMessage } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { OpenMultiAgent } from '@open-multi-agent/core'
 import type { AgentConfig } from '@open-multi-agent/core'
@@ -87,5 +87,5 @@ ${teamOutput}`,
     messages: await convertToModelMessages(messages),
   })
 
-  return result.toUIMessageStreamResponse()
+  return createUIMessageStreamResponse({ stream: toUIMessageStream({ stream: result.fullStream }) })
 }

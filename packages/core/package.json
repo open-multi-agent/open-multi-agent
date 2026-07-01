@@ -79,7 +79,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
     "@google/genai": "^1.48.0",
     "@modelcontextprotocol/sdk": "^1.18.0",
-    "ai": "^5.0.0 || ^6.0.0"
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0"
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-bedrock-runtime": {
@@ -96,14 +96,14 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/provider": "^3.0.0",
+    "@ai-sdk/openai": "^4.0.0",
+    "@ai-sdk/provider": "^4.0.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1040.0",
     "@google/genai": "^1.48.0",
     "@modelcontextprotocol/sdk": "^1.18.0",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^2.1.9",
-    "ai": "^6.0.0",
+    "ai": "^7.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

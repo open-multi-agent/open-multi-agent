@@ -53,7 +53,7 @@
 
 ## 快速开始
 
-要求 Node.js >= 18。
+要求 Node.js >= 18（可选的 Vercel AI SDK 7 桥接需要 Node.js >= 22）。
 
 一条命令即可初始化项目并启动多 agent 运行：
 

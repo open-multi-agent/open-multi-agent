@@ -53,7 +53,7 @@ Graph-first frameworks make you enumerate every node and edge up front. OMA runs
 
 ## Quick Start
 
-Requires Node.js >= 18.
+Requires Node.js >= 18 (the optional Vercel AI SDK 7 bridge needs Node.js >= 22).
 
 The fastest way to see a multi-agent run — scaffold a project and start it in one command:
 
