@@ -123,6 +123,7 @@ describe('executeWithRetry', () => {
       task,
       (data) => retryEvents.push(data),
       noDelay,
+      { rng: () => 1 },
     )
 
     expect(result.success).toBe(true)
@@ -212,6 +213,7 @@ describe('executeWithRetry', () => {
       task,
       (data) => retryEvents.push(data),
       noDelay,
+      { rng: () => 1 },
     )
 
     expect(retryEvents).toHaveLength(3)
@@ -251,10 +253,10 @@ describe('executeWithRetry', () => {
     })
 
     const mockDelay = vi.fn().mockResolvedValue(undefined)
-    await executeWithRetry(run, task, undefined, mockDelay)
+    await executeWithRetry(run, task, undefined, mockDelay, { rng: () => 1 })
 
     expect(mockDelay).toHaveBeenCalledTimes(1)
-    expect(mockDelay).toHaveBeenCalledWith(250)  // 250 * 3^0
+    expect(mockDelay).toHaveBeenCalledWith(250, undefined)  // 250 * 3^0, jitter pinned to nominal
   })
 
   it('caps delay at 30 seconds', async () => {
@@ -271,9 +273,9 @@ describe('executeWithRetry', () => {
     })
 
     const mockDelay = vi.fn().mockResolvedValue(undefined)
-    await executeWithRetry(run, task, undefined, mockDelay)
+    await executeWithRetry(run, task, undefined, mockDelay, { rng: () => 1 })
 
-    expect(mockDelay).toHaveBeenCalledWith(30_000)  // capped
+    expect(mockDelay).toHaveBeenCalledWith(30_000, undefined)  // capped
   })
 
   it('accumulates token usage across retry attempts', async () => {
@@ -360,9 +362,241 @@ describe('executeWithRetry', () => {
     ;(task as any).retryBackoff = -2
 
     const mockDelay = vi.fn().mockResolvedValue(undefined)
-    await executeWithRetry(run, task, undefined, mockDelay)
+    await executeWithRetry(run, task, undefined, mockDelay, { rng: () => 1 })
 
     // backoff clamped to 1, so delay = 100 * 1^0 = 100
-    expect(mockDelay).toHaveBeenCalledWith(100)
+    expect(mockDelay).toHaveBeenCalledWith(100, undefined)
+  })
+
+  // -------------------------------------------------------------------------
+  // Error-aware retry: classify terminal vs retryable
+  // -------------------------------------------------------------------------
+
+  it('skips retries on a terminal thrown error (401)', async () => {
+    const run = vi.fn().mockRejectedValue(
+      Object.assign(new Error('unauthorized'), { status: 401 }),
+    )
+    const task = createTask({
+      title: 'Terminal',
+      description: 'test',
+      maxRetries: 3,
+      retryDelayMs: 10,
+    })
+
+    const retryEvents: unknown[] = []
+    const result = await executeWithRetry(
+      run,
+      task,
+      (data) => retryEvents.push(data),
+      noDelay,
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.output).toBe('unauthorized')
+    expect(run).toHaveBeenCalledTimes(1)  // no retries on a 401
+    expect(retryEvents).toHaveLength(0)
+  })
+
+  it('retries a retryable thrown error (429) then succeeds', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('rate limited'), { status: 429 }))
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'Retryable',
+      description: 'test',
+      maxRetries: 3,
+      retryDelayMs: 10,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(true)
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips retries on a terminal success:false result error (non-streaming 401)', async () => {
+    const run = vi.fn().mockResolvedValue({
+      ...FAILURE_RESULT,
+      error: Object.assign(new Error('unauthorized'), { status: 401 }),
+    })
+    const task = createTask({
+      title: 'Terminal result',
+      description: 'test',
+      maxRetries: 3,
+      retryDelayMs: 10,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(false)
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a retryable success:false result error (503) then succeeds', async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce({ ...FAILURE_RESULT, error: { status: 503 } })
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'Retryable result',
+      description: 'test',
+      maxRetries: 3,
+      retryDelayMs: 10,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(true)
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a success:false result with no structured error (app-level)', async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce(FAILURE_RESULT)  // no `error` field
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'App failure',
+      description: 'test',
+      maxRetries: 1,
+      retryDelayMs: 10,
+    })
+
+    const result = await executeWithRetry(run, task, undefined, noDelay)
+
+    expect(result.success).toBe(true)
+    expect(run).toHaveBeenCalledTimes(2)  // app-level failures still retry
+  })
+
+  // -------------------------------------------------------------------------
+  // Jitter — equal jitter over [nominal/2, nominal]
+  // -------------------------------------------------------------------------
+
+  it('applies the equal-jitter floor with rng=0', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new Error('error'))
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'Jitter floor',
+      description: 'test',
+      maxRetries: 1,
+      retryDelayMs: 100,
+      retryBackoff: 2,
+    })
+
+    const mockDelay = vi.fn().mockResolvedValue(undefined)
+    const retryEvents: Array<{ nextDelayMs: number }> = []
+    await executeWithRetry(
+      run,
+      task,
+      (data) => retryEvents.push(data),
+      mockDelay,
+      { rng: () => 0 },
+    )
+
+    // nominal 100 → floor = 100/2 = 50
+    expect(retryEvents[0]!.nextDelayMs).toBe(50)
+    expect(mockDelay).toHaveBeenCalledWith(50, undefined)
+  })
+
+  it('applies the equal-jitter midpoint with rng=0.5', async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new Error('error'))
+      .mockResolvedValueOnce(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'Jitter mid',
+      description: 'test',
+      maxRetries: 1,
+      retryDelayMs: 100,
+      retryBackoff: 2,
+    })
+
+    const retryEvents: Array<{ nextDelayMs: number }> = []
+    await executeWithRetry(
+      run,
+      task,
+      (data) => retryEvents.push(data),
+      noDelay,
+      { rng: () => 0.5 },
+    )
+
+    // nominal 100 → 100/2 + 0.5*(100/2) = 50 + 25 = 75
+    expect(retryEvents[0]!.nextDelayMs).toBe(75)
+  })
+
+  it('reports the same jittered delay to onRetry and delayFn', async () => {
+    const run = vi.fn().mockRejectedValue(new Error('error'))
+    const task = createTask({
+      title: 'Jitter parity',
+      description: 'test',
+      maxRetries: 2,
+      retryDelayMs: 200,
+      retryBackoff: 2,
+    })
+
+    const delays: number[] = []
+    const retryEvents: Array<{ nextDelayMs: number }> = []
+    await executeWithRetry(
+      run,
+      task,
+      (data) => retryEvents.push(data),
+      (ms) => { delays.push(ms); return Promise.resolve() },
+      { rng: () => 0.37 },
+    )
+
+    expect(delays).toEqual(retryEvents.map((e) => e.nextDelayMs))
+    expect(delays).toHaveLength(2)
+  })
+
+  // -------------------------------------------------------------------------
+  // Abort honored between attempts
+  // -------------------------------------------------------------------------
+
+  it('does not run when the abort signal is already aborted', async () => {
+    const run = vi.fn().mockResolvedValue(SUCCESS_RESULT)
+    const task = createTask({
+      title: 'Pre-aborted',
+      description: 'test',
+      maxRetries: 2,
+    })
+    const controller = new AbortController()
+    controller.abort()
+
+    const result = await executeWithRetry(
+      run,
+      task,
+      undefined,
+      noDelay,
+      { abortSignal: controller.signal },
+    )
+
+    expect(run).toHaveBeenCalledTimes(0)
+    expect(result.success).toBe(false)
+    expect(result.output).toBe('Run aborted')
+  })
+
+  it('stops retrying when abort fires during the backoff sleep', async () => {
+    const run = vi.fn().mockRejectedValue(new Error('transient'))
+    const task = createTask({
+      title: 'Abort mid-sleep',
+      description: 'test',
+      maxRetries: 3,
+      retryDelayMs: 10,
+    })
+    const controller = new AbortController()
+    // A delay that aborts the run the moment the first backoff begins.
+    const abortingDelay = () => {
+      controller.abort()
+      return Promise.resolve()
+    }
+
+    const result = await executeWithRetry(
+      run,
+      task,
+      undefined,
+      abortingDelay,
+      { abortSignal: controller.signal },
+    )
+
+    expect(run).toHaveBeenCalledTimes(1)  // no further attempt after abort
+    expect(result.success).toBe(false)
   })
 })

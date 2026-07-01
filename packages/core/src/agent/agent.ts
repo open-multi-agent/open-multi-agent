@@ -406,6 +406,10 @@ export class Agent {
         tokenUsage: ZERO_USAGE,
         toolCalls: [],
         structured: undefined,
+        // Preserve the structured error (e.g. a provider APIError with `.status`)
+        // so retry logic can classify it — the non-streaming path is the only
+        // place this error object survives before it is stringified.
+        error,
       }
       this.emitAgentTrace(callerOptions, agentStartMs, errorResult)
       return errorResult

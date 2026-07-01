@@ -86,7 +86,8 @@ import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
 import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
-import { TokenBudgetExceededError } from '../errors.js'
+import { TokenBudgetExceededError, isRetryableError } from '../errors.js'
+import { abortableDelay } from '../utils/abort.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
 
 // ---------------------------------------------------------------------------
@@ -274,11 +275,6 @@ function applyDefaultToolPreset(
   return { ...config, toolPreset: defaultToolPreset }
 }
 
-/** Promise-based delay. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 /** Maximum delay cap to prevent runaway exponential backoff (30 seconds). */
 const MAX_RETRY_DELAY_MS = 30_000
 
@@ -298,18 +294,30 @@ export function computeRetryDelay(
  *
  * Exported for testability — called internally by {@link executeQueue}.
  *
+ * Retry is off by default (`maxRetries: 0`). When enabled it is error-aware:
+ * provably-terminal failures (auth/validation errors, aborted calls, 4xx client
+ * errors other than 408/409/429) skip retries instead of wasting attempts;
+ * backoff is jittered to avoid lockstep re-collision against a rate-limited
+ * provider; and `abortSignal` is honored between attempts so a cancelled run
+ * neither sleeps a full backoff nor fires one more attempt.
+ *
  * @param run      - The function that executes the task (typically `pool.run`).
  * @param task     - The task to execute (retry config read from its fields).
- * @param onRetry  - Called before each retry sleep with event data.
- * @param delayFn  - Injectable delay function (defaults to real `sleep`).
+ * @param onRetry  - Called before each retry sleep with the (post-jitter) delay.
+ * @param delayFn  - Injectable delay function (defaults to `abortableDelay`).
+ * @param opts     - Optional `abortSignal` (checked between attempts) and `rng`
+ *                   (injectable `Math.random` for deterministic jitter in tests).
  * @returns The final {@link AgentRunResult} from the last attempt.
  */
 export async function executeWithRetry(
   run: () => Promise<AgentRunResult>,
   task: Task,
   onRetry?: (data: { attempt: number; maxAttempts: number; error: string; nextDelayMs: number }) => void,
-  delayFn: (ms: number) => Promise<void> = sleep,
+  delayFn: (ms: number, signal?: AbortSignal) => Promise<void> = abortableDelay,
+  opts?: { abortSignal?: AbortSignal; rng?: () => number },
 ): Promise<AgentRunResult> {
+  const abortSignal = opts?.abortSignal
+  const rng = opts?.rng ?? Math.random
   const rawRetries = Number.isFinite(task.maxRetries) ? task.maxRetries! : 0
   const maxAttempts = Math.max(0, rawRetries) + 1
   const baseDelay = Math.max(0, Number.isFinite(task.retryDelayMs) ? task.retryDelayMs! : 1000)
@@ -320,7 +328,32 @@ export async function executeWithRetry(
   // reflects the true cost of retries.
   let totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 }
 
+  const failure = (output: string): AgentRunResult => ({
+    success: false,
+    output,
+    messages: [],
+    tokenUsage: totalUsage,
+    toolCalls: [],
+  })
+
+  // Compute the jittered backoff, report it, and sleep. Equal jitter over
+  // [nominal/2, nominal] decorrelates tasks retrying in lockstep while keeping a
+  // floor so a rate-limited provider isn't hammered instantly. Applied to the
+  // already-capped nominal, so the sleep never exceeds MAX_RETRY_DELAY_MS.
+  const backoffSleep = async (attempt: number): Promise<void> => {
+    const nominal = computeRetryDelay(baseDelay, backoff, attempt)
+    const jittered = Math.round(nominal / 2 + rng() * (nominal / 2))
+    onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: jittered })
+    await delayFn(jittered, abortSignal)
+  }
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Honor abort before every attempt — this turns an abort that landed during
+    // a prior backoff sleep into an early return instead of one more attempt.
+    if (abortSignal?.aborted) {
+      return failure(lastError || 'Run aborted')
+    }
+
     try {
       const result = await run()
       totalUsage = {
@@ -333,11 +366,11 @@ export async function executeWithRetry(
       }
       lastError = result.output
 
-      // Failure — retry or give up
-      if (attempt < maxAttempts) {
-        const delay = computeRetryDelay(baseDelay, backoff, attempt)
-        onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: delay })
-        await delayFn(delay)
+      // Non-streaming path carries the structured error on the result; a
+      // provably-terminal one (e.g. a 401) is not worth retrying.
+      const terminal = result.error !== undefined && !isRetryableError(result.error)
+      if (!terminal && attempt < maxAttempts && !abortSignal?.aborted) {
+        await backoffSleep(attempt)
         continue
       }
 
@@ -345,32 +378,21 @@ export async function executeWithRetry(
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err)
 
-      if (attempt < maxAttempts) {
-        const delay = computeRetryDelay(baseDelay, backoff, attempt)
-        onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: delay })
-        await delayFn(delay)
+      // Streaming path: the structured error is in scope here. Skip retries on
+      // terminal errors (auth/validation/abort) so they don't waste attempts.
+      const terminal = !isRetryableError(err)
+      if (!terminal && attempt < maxAttempts && !abortSignal?.aborted) {
+        await backoffSleep(attempt)
         continue
       }
 
-      // All retries exhausted — return a failure result
-      return {
-        success: false,
-        output: lastError,
-        messages: [],
-        tokenUsage: totalUsage,
-        toolCalls: [],
-      }
+      // Terminal, aborted, or retries exhausted — return a failure result.
+      return failure(lastError)
     }
   }
 
-  // Should not be reached, but TypeScript needs a return
-  return {
-    success: false,
-    output: lastError,
-    messages: [],
-    tokenUsage: totalUsage,
-    toolCalls: [],
-  }
+  // Should not be reached, but TypeScript needs a return.
+  return failure(lastError)
 }
 
 // ---------------------------------------------------------------------------
@@ -972,6 +994,8 @@ async function executeQueue(
             data: retryData,
           } satisfies OrchestratorEvent)
         },
+        undefined,
+        { abortSignal: ctx.abortSignal },
       )
 
       const taskEndMs = Date.now()
