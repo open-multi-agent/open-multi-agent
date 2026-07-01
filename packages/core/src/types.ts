@@ -508,6 +508,22 @@ export interface AgentConfig {
    */
   readonly timeoutMs?: number
   /**
+   * Maximum wall-clock time (in milliseconds) for a **single** LLM call
+   * (one `adapter.chat()` request), re-armed fresh for every model call the
+   * agent makes. Unset (the default) leaves each call bound only by the vendor
+   * SDK's own request timeout, which is inconsistent across providers and
+   * absent for some (a stalled provider can then hang the whole run).
+   *
+   * When set, OMA merges an `AbortSignal.timeout()` into each call so the bound
+   * is uniform across every adapter and composes with {@link timeoutMs} (the
+   * whole-run bound) — whichever fires first wins. A per-call timeout surfaces
+   * as an {@link LLMCallTimeoutError}, distinct from a caller `abortSignal`
+   * cancellation. Because OMA calls the model non-streaming internally, this is
+   * a wall-clock deadline over the entire response, so keep it generous for
+   * slow local models or large reasoning outputs.
+   */
+  readonly callTimeoutMs?: number
+  /**
    * Loop detection configuration. When set, the agent tracks repeated tool
    * calls and text outputs to detect stuck loops before `maxTurns` is reached.
    */
@@ -1283,6 +1299,8 @@ export interface CoordinatorConfig {
   readonly cwd?: string | null
   readonly loopDetection?: LoopDetectionConfig
   readonly timeoutMs?: number
+  /** See {@link AgentConfig.callTimeoutMs}. Bounds each coordinator LLM call. */
+  readonly callTimeoutMs?: number
 }
 
 // ---------------------------------------------------------------------------

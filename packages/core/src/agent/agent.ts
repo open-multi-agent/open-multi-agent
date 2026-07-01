@@ -47,6 +47,7 @@ import type {
   ToolUseContext,
 } from '../types.js'
 import { emitTrace, generateRunId } from '../utils/trace.js'
+import { mergeAbortSignals } from '../utils/abort.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
@@ -63,19 +64,6 @@ import {
 // ---------------------------------------------------------------------------
 
 const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 }
-
-/**
- * Combine two {@link AbortSignal}s so that aborting either one cancels the
- * returned signal.  Works on Node 18+ (no `AbortSignal.any` required).
- */
-function mergeAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
-  const controller = new AbortController()
-  if (a.aborted || b.aborted) { controller.abort(); return controller.signal }
-  const abort = () => controller.abort()
-  a.addEventListener('abort', abort, { once: true })
-  b.addEventListener('abort', abort, { once: true })
-  return controller.signal
-}
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
@@ -187,6 +175,7 @@ export class Agent {
       cwd: this.config.cwd,
       agentName: this.name,
       agentRole: this.config.systemPrompt?.slice(0, 50) ?? 'assistant',
+      callTimeoutMs: this.config.callTimeoutMs,
       loopDetection: this.config.loopDetection,
       maxTokenBudget: this.config.maxTokenBudget,
       contextStrategy: this.config.contextStrategy,

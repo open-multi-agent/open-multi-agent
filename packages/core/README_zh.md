@@ -404,6 +404,7 @@ await oma.runAgent(
 |--------|--------|--------|
 | 控制对话长度 | `maxTurns`（每个 agent）+ `contextStrategy`（`sliding-window` / `summarize` / `compact` / `custom`） | `AgentConfig` |
 | 控制运行时长 | `timeoutMs`（每个 agent，运行挂起时中止；本地模型常见） | `AgentConfig` |
+| 控制单次调用 | `callTimeoutMs`（每个 agent，单次 `adapter.chat()` 卡住时中止；跨 provider 统一） | `AgentConfig` |
 | 限制工具输出 | `maxToolOutputChars`（或单工具 `maxOutputChars`）+ `compressToolResults: true` | `AgentConfig` 和 `defineTool()` |
 | 失败重试 | 任务级 `maxRetries`、`retryDelayMs`、`retryBackoff`（指数退避倍率） | 通过 `runTasks()` 用的任务配置 |
 | 崩溃/重启后恢复 | `checkpoint`（给 `runId` 或持久化 `MemoryStore`）+ `restore()` 恢复运行，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |

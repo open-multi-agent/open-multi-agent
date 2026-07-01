@@ -404,6 +404,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 |---------|------|----------------|
 | Bound the conversation | `maxTurns` per agent + `contextStrategy` (`sliding-window` / `summarize` / `compact` / `custom`) | `AgentConfig` |
 | Bound wall-clock time | `timeoutMs` per agent (aborts a run that hangs, common with local models) | `AgentConfig` |
+| Bound a single LLM call | `callTimeoutMs` per agent (aborts one stalled `adapter.chat()`, uniform across providers) | `AgentConfig` |
 | Cap tool output | `maxToolOutputChars` (or per-tool `maxOutputChars`) + `compressToolResults: true` | `AgentConfig` and `defineTool()` |
 | Recover from failure | Per-task `maxRetries`, `retryDelayMs`, `retryBackoff` (exponential multiplier) | Task config used via `runTasks()` |
 | Survive a crash or restart | `checkpoint` (pass a `runId` or a durable `MemoryStore`) + `restore()` to resume, skipping completed tasks | `OrchestratorConfig` / run options |

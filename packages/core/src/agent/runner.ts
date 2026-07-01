@@ -26,6 +26,7 @@ import type {
   TeamInfo,
   LLMAdapter,
   LLMChatOptions,
+  LLMResponse,
   TraceEvent,
   LoopDetectionConfig,
   LoopDetectionInfo,
@@ -33,9 +34,10 @@ import type {
   ContextStrategy,
   ThinkingConfig,
 } from '../types.js'
-import { TokenBudgetExceededError } from '../errors.js'
+import { LLMCallTimeoutError, TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
 import { emitTrace } from '../utils/trace.js'
+import { mergeAbortSignals } from '../utils/abort.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { redactSensitiveObject, redactSensitiveText } from '../utils/redaction.js'
 import type { ToolRegistry } from '../tool/framework.js'
@@ -117,6 +119,8 @@ export interface RunnerOptions {
   readonly thinking?: ThinkingConfig
   /** AbortSignal that cancels any in-flight adapter call and stops the loop. */
   readonly abortSignal?: AbortSignal
+  /** See {@link AgentConfig.callTimeoutMs}. Per single `adapter.chat()` call. */
+  readonly callTimeoutMs?: number
   /**
    * Tool access control configuration.
    * - `toolPreset`: Predefined tool sets for common use cases
@@ -439,6 +443,46 @@ export class AgentRunner {
     return result
   }
 
+  /**
+   * Send one `adapter.chat()` request bounded by an OMA-owned per-call timeout.
+   *
+   * When {@link RunnerOptions.callTimeoutMs} is set, a fresh
+   * `AbortSignal.timeout()` is minted for THIS call and merged with any signal
+   * already on `options`, so the per-call bound and the whole-run bound
+   * ({@link RunnerOptions.abortSignal}) compose — whichever fires first wins.
+   * A fresh signal per call is essential: baking one `AbortSignal.timeout()`
+   * into the shared chat options would degrade it into a whole-run deadline.
+   *
+   * If our per-call deadline fires (and the caller's own signal did not), the
+   * provider's abort rejection is translated into an {@link LLMCallTimeoutError}
+   * so a stalled provider is observable and distinguishable from a deliberate
+   * cancellation. Applied uniformly to every model call the runner owns (the
+   * main agentic loop and summarize-based context compaction), so behavior no
+   * longer depends on each vendor SDK's default request timeout.
+   */
+  private async chatWithCallTimeout(
+    messages: LLMMessage[],
+    options: LLMChatOptions,
+  ): Promise<LLMResponse> {
+    const timeoutMs = this.options.callTimeoutMs
+    if (timeoutMs === undefined || timeoutMs <= 0) {
+      return this.adapter.chat(messages, options)
+    }
+    const timeoutSignal = AbortSignal.timeout(timeoutMs)
+    const base = options.abortSignal
+    const abortSignal = base ? mergeAbortSignals(base, timeoutSignal) : timeoutSignal
+    try {
+      return await this.adapter.chat(messages, { ...options, abortSignal })
+    } catch (err) {
+      // Only claim a per-call timeout when our deadline fired and the caller's
+      // own signal did not — otherwise surface the original abort/error as-is.
+      if (timeoutSignal.aborted && base?.aborted !== true) {
+        throw new LLMCallTimeoutError(timeoutMs, this.options.agentName)
+      }
+      throw err
+    }
+  }
+
   private async summarizeMessages(
     messages: LLMMessage[],
     maxTokens: number,
@@ -510,7 +554,7 @@ export class AgentRunner {
     }
 
     const summaryStartMs = Date.now()
-    const summaryResponse = await this.adapter.chat(summaryInput, summaryOptions)
+    const summaryResponse = await this.chatWithCallTimeout(summaryInput, summaryOptions)
     if (options.onTrace) {
       const summaryEndMs = Date.now()
       emitTrace(options.onTrace, {
@@ -812,7 +856,7 @@ export class AgentRunner {
         // Step 1: Call the LLM and collect the full response for this turn.
         // ------------------------------------------------------------------
         const llmStartMs = Date.now()
-        const response = await this.adapter.chat(conversationMessages, baseChatOptions)
+        const response = await this.chatWithCallTimeout(conversationMessages, baseChatOptions)
         if (options.onTrace) {
           const llmEndMs = Date.now()
           emitTrace(options.onTrace, {

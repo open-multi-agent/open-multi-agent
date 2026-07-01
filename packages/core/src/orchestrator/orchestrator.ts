@@ -2517,6 +2517,7 @@ export class OpenMultiAgent {
         : coordinatorOverrides.cwd,
       loopDetection: coordinatorOverrides?.loopDetection,
       timeoutMs: coordinatorOverrides?.timeoutMs,
+      callTimeoutMs: coordinatorOverrides?.callTimeoutMs,
     }
   }
 

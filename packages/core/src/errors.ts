@@ -19,6 +19,33 @@ export class TokenBudgetExceededError extends Error {
 }
 
 /**
+ * Raised when a single LLM call (one `adapter.chat()` request) exceeds the
+ * per-call deadline configured via {@link AgentConfig.callTimeoutMs}.
+ *
+ * Distinct from a whole-run timeout ({@link AgentConfig.timeoutMs}) and from a
+ * caller-supplied `abortSignal` cancellation: the runner only raises this when
+ * its own per-call deadline fired and the caller's signal did not, so a stalled
+ * provider is observable and tellable apart from a deliberate abort.
+ */
+export class LLMCallTimeoutError extends Error {
+  readonly code = 'LLM_CALL_TIMEOUT'
+
+  constructor(
+    /** The per-call deadline, in milliseconds, that was exceeded. */
+    readonly timeoutMs: number,
+    /** Name of the agent whose call timed out, when known. */
+    readonly agent?: string,
+  ) {
+    super(
+      agent !== undefined
+        ? `Agent "${agent}" LLM call exceeded per-call timeout of ${timeoutMs}ms`
+        : `LLM call exceeded per-call timeout of ${timeoutMs}ms`,
+    )
+    this.name = 'LLMCallTimeoutError'
+  }
+}
+
+/**
  * Raised when a message list passed to an adapter violates the
  * {@link LLMMessage}[] contract (e.g. a `content` that isn't a `ContentBlock[]`).
  * Surfaced at the adapter entry so the violation fails loudly instead of

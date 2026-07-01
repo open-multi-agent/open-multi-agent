@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TokenBudgetExceededError, InvalidMessageError } from '../src/errors.js'
+import { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError } from '../src/errors.js'
 
 describe('TokenBudgetExceededError', () => {
   it('sets .name to TokenBudgetExceededError', () => {
@@ -58,6 +58,41 @@ describe('InvalidMessageError', () => {
 
   it('is an instance of Error (extends built-in Error)', () => {
     const err = new InvalidMessageError('test')
+    expect(err).toBeInstanceOf(Error)
+  })
+})
+
+describe('LLMCallTimeoutError', () => {
+  it('sets .name to LLMCallTimeoutError', () => {
+    const err = new LLMCallTimeoutError(30_000, 'agent-1')
+    expect(err.name).toBe('LLMCallTimeoutError')
+  })
+
+  it('sets .code to LLM_CALL_TIMEOUT', () => {
+    const err = new LLMCallTimeoutError(30_000, 'agent-1')
+    expect(err.code).toBe('LLM_CALL_TIMEOUT')
+  })
+
+  it('stores timeoutMs and agent as readonly properties', () => {
+    const err = new LLMCallTimeoutError(15_000, 'worker-a')
+    expect(err.timeoutMs).toBe(15_000)
+    expect(err.agent).toBe('worker-a')
+  })
+
+  it('formats the message with agent name and timeout', () => {
+    const err = new LLMCallTimeoutError(20_000, 'analyst')
+    expect(err.message).toBe('Agent "analyst" LLM call exceeded per-call timeout of 20000ms')
+  })
+
+  it('omits the agent name from the message when unknown', () => {
+    const err = new LLMCallTimeoutError(20_000)
+    expect(err.agent).toBeUndefined()
+    expect(err.message).toBe('LLM call exceeded per-call timeout of 20000ms')
+  })
+
+  it('is an instance of LLMCallTimeoutError and Error', () => {
+    const err = new LLMCallTimeoutError(1000, 'b')
+    expect(err).toBeInstanceOf(LLMCallTimeoutError)
     expect(err).toBeInstanceOf(Error)
   })
 })
