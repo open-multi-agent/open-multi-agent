@@ -426,6 +426,7 @@ await oma.runAgent(
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
 - [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) — `runConsensus` proposer→judge 原语、按任务的 `verify` 钩子，以及预算不变量。
 - [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — 可选的 `modelRouting` 策略：按 phase / agent / role / priority / leaf 匹配，first match wins。
+- [计划预览与回放](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/plan-replay.md) — 用 `planOnly` 预览协调者拆解的任务 DAG，`createPlanArtifact` 将其固化，之后 `runFromPlan` 不再调用协调者即可回放同一张图。
 
 ## 参与贡献
 
