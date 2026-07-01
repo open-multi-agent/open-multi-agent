@@ -166,6 +166,19 @@ describe('FileStore — load edge cases', () => {
     const store = new FileStore(filePath)
     await expect(store.list()).rejects.toThrow(/malformed entry/)
   })
+
+  it('throws on non-object metadata rather than silently corrupting it', async () => {
+    const createdAt = new Date().toISOString()
+    const bads: unknown[] = [null, 'a string', [1, 2]]
+    for (const bad of bads) {
+      await writeFile(
+        filePath,
+        JSON.stringify({ version: 1, entries: [{ key: 'a', value: 'v', createdAt, metadata: bad }] }),
+        'utf8',
+      )
+      await expect(new FileStore(filePath).list()).rejects.toThrow(/non-object metadata/)
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

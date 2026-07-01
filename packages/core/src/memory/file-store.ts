@@ -245,11 +245,26 @@ export class FileStore implements MemoryStore {
     if (Number.isNaN(createdAt.getTime())) {
       throw new Error(`FileStore: entry "${r['key']}" in "${path}" has an invalid createdAt.`)
     }
+    // metadata, if present, must be a plain object. A non-object value (null,
+    // array, or primitive) would be silently shredded by `{ ...metadata }` on
+    // the next flush, so reject it loudly to honor the fail-on-corruption
+    // contract. FileStore's own writes never produce non-object metadata, so
+    // this only guards hand-edited or foreign files.
+    let metadata: Record<string, unknown> | undefined
+    if (r['metadata'] !== undefined) {
+      const raw = r['metadata']
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw new Error(`FileStore: entry "${r['key']}" in "${path}" has non-object metadata.`)
+      }
+      metadata = raw as Record<string, unknown>
+    }
     return {
       key: r['key'],
       value: r['value'],
-      ...(r['metadata'] !== undefined ? { metadata: r['metadata'] as Record<string, unknown> } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
       createdAt,
+      // Unlike metadata, a malformed expiresAtTurn cannot corrupt into garbage:
+      // the numeric guard safely degrades it to "no expiry", so no throw needed.
       ...(typeof r['expiresAtTurn'] === 'number' ? { expiresAtTurn: r['expiresAtTurn'] } : {}),
     }
   }
