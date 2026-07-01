@@ -170,7 +170,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自有后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
-| **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
+| **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。内置的零依赖 `FileStore` 让 checkpoint 无需额外后端即可持久化；存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 
 生产级控制（[上下文策略](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md)、任务重试退避、循环检测、工具输出截断/压缩）见 [生产级检查清单](#生产级检查清单)。
@@ -407,7 +407,7 @@ await oma.runAgent(
 | 控制单次调用 | `callTimeoutMs`（每个 agent，单次 `adapter.chat()` 卡住时中止；跨 provider 统一） | `AgentConfig` |
 | 限制工具输出 | `maxToolOutputChars`（或单工具 `maxOutputChars`）+ `compressToolResults: true` | `AgentConfig` 和 `defineTool()` |
 | 失败重试 | 任务级 `maxRetries`、`retryDelayMs`、`retryBackoff`（指数退避倍率） | 通过 `runTasks()` 用的任务配置 |
-| 崩溃/重启后恢复 | `checkpoint`（给 `runId` 或持久化 `MemoryStore`）+ `restore()` 恢复运行，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |
+| 崩溃/重启后恢复 | `checkpoint`（给 `runId`，或内置 `FileStore` 等持久化 `MemoryStore`）+ `restore()` 恢复运行，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |
 | 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |

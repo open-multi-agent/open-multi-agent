@@ -696,6 +696,14 @@ export interface AgentRunResult {
   readonly loopDetected?: boolean
   /** True when the run stopped because token budget was exceeded. */
   readonly budgetExceeded?: boolean
+  /**
+   * The underlying thrown error when `success` is false due to an exception
+   * (e.g. a provider `APIError` carrying `.status`), preserved so retry logic
+   * can classify it as retryable vs terminal. `undefined` for app-level
+   * failures. In-process only — collapses to `{}` if the result is
+   * JSON-serialized.
+   */
+  readonly error?: unknown
 }
 
 // ---------------------------------------------------------------------------

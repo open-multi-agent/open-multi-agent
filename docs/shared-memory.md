@@ -10,7 +10,7 @@ const team = orchestrator.createTeam('research-team', {
 })
 ```
 
-For durable or cross-process backends (Redis, Postgres, Engram, etc.), implement the `MemoryStore` interface and pass it via `sharedMemoryStore`. Keys are still namespaced as `<agentName>/<key>` before reaching the store:
+For durable persistence without writing any storage code, pass the bundled **`FileStore`** — a zero-dependency, filesystem-backed `MemoryStore` with atomic writes (see [Checkpoint & resume](checkpoint.md#durable-persistence-filestore)). For cross-process or infrastructure backends (Redis, Postgres, Engram, etc.), implement the `MemoryStore` interface yourself and pass it via `sharedMemoryStore`. Keys are still namespaced as `<agentName>/<key>` before reaching the store:
 
 ```typescript
 import type { MemoryStore } from '@open-multi-agent/core'

@@ -170,7 +170,7 @@ Route orchestration phases to different models with an opt-in `modelRouting` pol
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
 | **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
-| **Checkpoint & resume** | Opt-in per-run checkpointing over any `MemoryStore`: snapshot on each completed task, then `restore()` skips finished tasks to continue after a crash or restart. Best-effort saves never take the run down. ([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
+| **Checkpoint & resume** | Opt-in per-run checkpointing over any `MemoryStore`: snapshot on each completed task, then `restore()` skips finished tasks to continue after a crash or restart. The bundled zero-dependency `FileStore` makes checkpoints durable out of the box; best-effort saves never take the run down. ([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **Sandboxed filesystem workspace** | Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by default; agents sharing the default configuration share this root. For per-agent isolation, set `AgentConfig.cwd`; for a different shared root, set `OrchestratorConfig.defaultCwd`; pass `null` to disable. ([sandbox config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 
 Production controls ([context strategies](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md), task retry with backoff, loop detection, tool output truncation/compression) are covered in the [Production Checklist](#production-checklist).
@@ -407,7 +407,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Bound a single LLM call | `callTimeoutMs` per agent (aborts one stalled `adapter.chat()`, uniform across providers) | `AgentConfig` |
 | Cap tool output | `maxToolOutputChars` (or per-tool `maxOutputChars`) + `compressToolResults: true` | `AgentConfig` and `defineTool()` |
 | Recover from failure | Per-task `maxRetries`, `retryDelayMs`, `retryBackoff` (exponential multiplier) | Task config used via `runTasks()` |
-| Survive a crash or restart | `checkpoint` (pass a `runId` or a durable `MemoryStore`) + `restore()` to resume, skipping completed tasks | `OrchestratorConfig` / run options |
+| Survive a crash or restart | `checkpoint` (pass a `runId`, or a durable `MemoryStore` like the bundled `FileStore`) + `restore()` to resume, skipping completed tasks | `OrchestratorConfig` / run options |
 | Hard-cap spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |

@@ -113,13 +113,14 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
-export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError } from './errors.js'
+export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isRetryableError } from './errors.js'
 
 // ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
 export { InMemoryStore } from './memory/store.js'
+export { FileStore } from './memory/file-store.js'
 export { SharedMemory } from './memory/shared.js'
 export {
   Checkpoint,
