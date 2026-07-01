@@ -57,6 +57,9 @@ describe('AgentRunner.run() error propagation (#98)', () => {
 
     expect(result.success).toBe(false)
     expect(result.output).toContain('API 500')
+    // Locks the non-streaming write-side: agent.run()'s catch must preserve the
+    // raw error on result.error so executeWithRetry can classify it (#337).
+    expect(result.error).toBe(apiError)
   })
 
   it('AgentRunner.run() throws when adapter errors', async () => {
