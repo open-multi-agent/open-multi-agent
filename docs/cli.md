@@ -161,7 +161,7 @@ Used with **`oma task --file`**.
 ```
 
 - **`dependsOn`** — Task titles (not internal ids), same convention as the coordinator output in the library.
-- Optional per-task fields: `memoryScope` (`"dependencies"` \| `"all"`), `maxRetries`, `retryDelayMs`, `retryBackoff`.
+- Optional per-task fields: `memoryScope` (`"dependencies"` \| `"all"`), `maxRetries`, `retryDelayMs`, `retryBackoff`. When retry is enabled (`maxRetries > 0`), backoff is jittered and provably-terminal failures — 4xx client errors other than 408/409/429, plus token-budget and invalid-message errors — skip retries automatically; no extra config.
 - **`tasks`** must be a non-empty array; each item needs string `title` and `description`.
 
 If **`--team path.json`** is passed, the file’s top-level `team` property is ignored and the external file is used instead (useful when the same team definition is shared across several pipeline files).
