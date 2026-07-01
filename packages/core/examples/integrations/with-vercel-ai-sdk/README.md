@@ -47,7 +47,7 @@ Open [http://localhost:3000](http://localhost:3000), type a topic, and watch the
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 22 (Vercel AI SDK 7 requires Node 22+)
 - `DEEPSEEK_API_KEY` environment variable (used by both OMA and AI SDK)
 
 ## Key files
