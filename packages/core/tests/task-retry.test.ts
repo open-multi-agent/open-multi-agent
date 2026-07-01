@@ -426,10 +426,17 @@ describe('executeWithRetry', () => {
       retryDelayMs: 10,
     })
 
-    const result = await executeWithRetry(run, task, undefined, noDelay)
+    const retryEvents: unknown[] = []
+    const result = await executeWithRetry(
+      run,
+      task,
+      (data) => retryEvents.push(data),
+      noDelay,
+    )
 
     expect(result.success).toBe(false)
     expect(run).toHaveBeenCalledTimes(1)
+    expect(retryEvents).toHaveLength(0)  // terminal → no retry event
   })
 
   it('retries a retryable success:false result error (503) then succeeds', async () => {
