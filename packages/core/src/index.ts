@@ -174,6 +174,7 @@ export type {
   // Team
   TeamConfig,
   TeamRunResult,
+  RunMetrics,
   RunTeamOptions,
   RunTasksOptions,
   RunTaskSpec,

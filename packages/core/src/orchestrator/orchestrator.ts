@@ -57,6 +57,7 @@ import type {
   OrchestratorConfig,
   OrchestratorEvent,
   RestoreOptions,
+  RunMetrics,
   RunTaskSpec,
   RunTasksOptions,
   RunTeamOptions,
@@ -220,6 +221,60 @@ function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
     input_tokens: a.input_tokens + b.input_tokens,
     output_tokens: a.output_tokens + b.output_tokens,
+  }
+}
+
+function computeRunMetrics(
+  tasks?: readonly TaskExecutionRecord[],
+): RunMetrics | undefined {
+  if (!tasks || tasks.length === 0) return undefined
+
+  let inputTokens = 0
+  let outputTokens = 0
+  let totalRetries = 0
+  let errorCount = 0
+  let failureCount = 0
+  let completedCount = 0
+  let minTaskDurationMs: number | undefined
+  let maxTaskDurationMs: number | undefined
+  let totalDurationMs = 0
+
+  for (const task of tasks) {
+    if (task.status === 'failed') {
+      failureCount++
+    }
+    if (task.status === 'failed' || task.status === 'skipped' || task.status === 'blocked') {
+      errorCount++
+    }
+    if (task.status === 'completed') {
+      completedCount++
+    }
+
+    const metrics = task.metrics
+    if (metrics) {
+      inputTokens += metrics.tokenUsage.input_tokens
+      outputTokens += metrics.tokenUsage.output_tokens
+      totalRetries += metrics.retries
+      totalDurationMs += metrics.durationMs
+      if (minTaskDurationMs === undefined || metrics.durationMs < minTaskDurationMs) {
+        minTaskDurationMs = metrics.durationMs
+      }
+      if (maxTaskDurationMs === undefined || metrics.durationMs > maxTaskDurationMs) {
+        maxTaskDurationMs = metrics.durationMs
+      }
+    }
+  }
+
+  return {
+    totalTokens: { input_tokens: inputTokens, output_tokens: outputTokens },
+    totalRetries,
+    errorCount,
+    failureCount,
+    completedCount,
+    minTaskDurationMs,
+    maxTaskDurationMs,
+    avgTaskDurationMs: completedCount > 0 ? Math.round(totalDurationMs / completedCount) : undefined,
+    totalDurationMs,
   }
 }
 
@@ -1024,6 +1079,7 @@ async function executeQueue(
         durationMs: Math.max(0, taskEndMs - taskStartMs),
         tokenUsage: result.tokenUsage,
         toolCalls: result.toolCalls,
+        retries: retryCount,
       })
       ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, result.tokenUsage)
       const totalTokens = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
@@ -1794,6 +1850,7 @@ export class OpenMultiAgent {
           durationMs: Math.max(0, scEndMs - scStartMs),
           tokenUsage: result.tokenUsage,
           toolCalls: result.toolCalls,
+          retries: 0,
         },
       }]
       return this.buildTeamRunResult(agentResults, goal, tasks)
@@ -2993,12 +3050,15 @@ export class OpenMultiAgent {
       }
     }
 
+    const metrics = computeRunMetrics(tasks)
+
     return {
       success: overallSuccess,
       goal,
       tasks,
       agentResults: collapsed,
       totalTokenUsage: totalUsage,
+      metrics,
     }
   }
 }

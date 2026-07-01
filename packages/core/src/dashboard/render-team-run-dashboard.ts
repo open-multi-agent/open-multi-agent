@@ -23,6 +23,7 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
     generatedAt,
     goal: result.goal ?? '',
     tasks,
+    metrics: result.metrics ?? null,
     layout: {
       positions: serializedPositions,
       width: layout.width,
@@ -189,7 +190,10 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
         .bg-surface-container-low { background: var(--surface-container-low); }
         .bg-surface-container-lowest { background: var(--surface-container-lowest); }
         .bg-surface-variant { background: var(--surface-variant); }
+        .rounded { border-radius: 0.25rem; }
         .text-primary { color: var(--primary); }
+        .text-secondary { color: var(--secondary); }
+        .text-tertiary { color: var(--tertiary); }
         .text-secondary { color: var(--secondary); }
         .text-tertiary { color: var(--tertiary); }
         .text-error { color: var(--error); }
@@ -232,6 +236,13 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
 </head>
 <body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary">
     <main class="p-8 min-h-[calc(100vh-64px)] grid-pattern relative overflow-hidden flex flex-col lg:flex-row gap-6">
+        <div id="runMetricsBar" class="hidden w-full bg-surface-container-high p-4 flex flex-wrap gap-6 text-xs font-mono border-b border-outline-variant/20">
+            <div class="flex gap-1"><span class="text-on-surface-variant">Tokens:</span><span id="rmTokens" class="text-primary">-</span></div>
+            <div class="flex gap-1"><span class="text-on-surface-variant">Retries:</span><span id="rmRetries" class="text-on-surface">-</span></div>
+            <div class="flex gap-1"><span class="text-on-surface-variant">Errors:</span><span id="rmErrors" class="text-error">-</span></div>
+            <div class="flex gap-1"><span class="text-on-surface-variant">Completed:</span><span id="rmCompleted" class="text-tertiary">-</span></div>
+            <div class="flex gap-1"><span class="text-on-surface-variant">Duration:</span><span id="rmDuration" class="text-secondary">-</span></div>
+        </div>
         <div id="viewport" class="flex-1 relative min-h-[600px] overflow-hidden cursor-grab">
             <div id="canvas" class="absolute inset-0 origin-top-left">
                 <svg id="edgesLayer" class="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -394,6 +405,21 @@ export function renderTeamRunDashboard(result: TeamRunResult): string {
 
         const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
         goalText.textContent = payload.goal ?? "";
+
+        (function renderRunMetrics() {
+            const m = payload.metrics;
+            if (!m) return;
+            const bar = document.getElementById("runMetricsBar");
+            bar.classList.remove("hidden");
+            document.getElementById("rmTokens").textContent =
+                (m.totalTokens.input_tokens + m.totalTokens.output_tokens).toLocaleString() +
+                " (" + m.totalTokens.input_tokens.toLocaleString() + " in / " + m.totalTokens.output_tokens.toLocaleString() + " out)";
+            document.getElementById("rmRetries").textContent = m.totalRetries.toLocaleString();
+            document.getElementById("rmErrors").textContent = m.errorCount.toLocaleString();
+            document.getElementById("rmCompleted").textContent = m.completedCount + "/" + tasks.length;
+            const durMs = m.avgTaskDurationMs ? (m.avgTaskDurationMs / 1000).toFixed(1) + "s avg" : "-";
+            document.getElementById("rmDuration").textContent = durMs;
+        })();
 
         const statusStyles = {
             completed: { border: "border-tertiary", icon: "check_circle", iconColor: "text-tertiary", container: "bg-surface-container-lowest node-active-glow", statusColor: "text-on-surface-variant", chip: "STABLE" },
