@@ -255,6 +255,9 @@ function computeRunMetrics(
       inputTokens += metrics.tokenUsage.input_tokens
       outputTokens += metrics.tokenUsage.output_tokens
       totalRetries += metrics.retries
+    }
+
+    if (task.status === 'completed' && metrics) {
       totalDurationMs += metrics.durationMs
       if (minTaskDurationMs === undefined || metrics.durationMs < minTaskDurationMs) {
         minTaskDurationMs = metrics.durationMs
