@@ -856,6 +856,19 @@ export interface RunTeamOptions extends RunTasksOptions {
   readonly verifyJudges?: readonly AgentConfig[]
 }
 
+/** Run-level aggregated metrics summary. */
+export interface RunMetrics {
+  readonly totalTokens: TokenUsage
+  readonly totalRetries: number
+  readonly errorCount: number
+  readonly failureCount: number
+  readonly completedCount: number
+  readonly minTaskDurationMs?: number
+  readonly maxTaskDurationMs?: number
+  readonly avgTaskDurationMs?: number
+  readonly totalDurationMs: number
+}
+
 /** Aggregated result for a full team run. */
 export interface TeamRunResult {
   readonly success: boolean
@@ -870,6 +883,8 @@ export interface TeamRunResult {
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage
+  /** Aggregated run-level metrics computed from per-task data. */
+  readonly metrics?: RunMetrics
 }
 
 /** A single serializable task in a deterministic replay plan. */
@@ -957,6 +972,7 @@ export interface TaskExecutionMetrics {
   readonly durationMs: number
   readonly tokenUsage: TokenUsage
   readonly toolCalls: AgentRunResult['toolCalls']
+  readonly retries: number
 }
 
 /** Serializable task snapshot embedded in the static HTML dashboard. */
