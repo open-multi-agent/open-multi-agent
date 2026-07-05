@@ -1345,6 +1345,10 @@ export type TraceEventType =
 export interface TraceEventBase {
   /** Unique identifier for the entire run (runTeam / runTasks / runAgent call). */
   readonly runId: string
+  /** Unique identifier for this span within the run. */
+  readonly spanId: string
+  /** Span ID of the causal parent, when the framework can determine one. */
+  readonly parentId?: string
   readonly type: TraceEventType
   /** Unix epoch ms when the span started. */
   readonly startMs: number
