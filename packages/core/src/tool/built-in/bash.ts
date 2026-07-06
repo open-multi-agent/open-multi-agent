@@ -149,9 +149,31 @@ function runCommand(
       signal.addEventListener('abort', onAbort, { once: true })
     }
 
+    // `close` (process exited AND stdio drained) is the normal completion
+    // path. After a forced kill we settle on `exit` instead: on Windows,
+    // MSYS bash's fork emulation can leave descendants that taskkill cannot
+    // reach (their recorded parent PID is a dead intermediate process), and
+    // any such straggler would hold the stdio pipes open and delay `close`
+    // until it exits naturally.
+    //
+    // When we killed the process ourselves, report the conventional exit
+    // codes (124 timeout / 130 abort) authoritatively: the code the OS
+    // reports for a forced termination is platform-dependent (`null` after
+    // SIGKILL on POSIX, `1` after taskkill on Windows).
+    const resolveExitCode = (code: number | null): number => {
+      if (timedOut) return 124
+      if (aborted) return 130
+      return code ?? 1
+    }
+
     child.on('close', (code: number | null) => {
-      const exitCode = code ?? (timedOut ? 124 : aborted ? 130 : 1)
-      done(exitCode)
+      done(resolveExitCode(code))
+    })
+
+    child.on('exit', (code: number | null) => {
+      if (timedOut || aborted) {
+        done(resolveExitCode(code))
+      }
     })
 
     child.on('error', (err: Error) => {
@@ -172,25 +194,40 @@ function runCommand(
 }
 
 /**
- * Kill the child and any descendants spawned through `&` / job-control on
- * POSIX. We rely on `detached: true` at spawn time, which puts the bash
+ * Kill the child and any descendants spawned through `&` / job-control.
+ *
+ * POSIX: we rely on `detached: true` at spawn time, which puts the bash
  * shell in its own process group; sending SIGKILL to the negated PID
  * delivers to every member of that group.
  *
- * Windows does not have process groups; fall back to killing the direct
- * child only.
+ * Windows: there are no POSIX process groups, and `child.kill()` terminates
+ * only the direct child — orphaned descendants would both survive and hold
+ * the stdio pipes open, delaying the `close` event until they exit. Use
+ * `taskkill /T /F` (always present in System32) to terminate the whole tree.
  */
 function killProcessTree(child: ChildProcess): void {
-  if (child.pid !== undefined && process.platform !== 'win32') {
-    try {
-      process.kill(-child.pid, 'SIGKILL')
-      return
-    } catch {
-      // The child may already have exited; fall through to a direct kill,
-      // which is a no-op in that case.
-    }
+  if (child.pid === undefined) {
+    child.kill('SIGKILL')
+    return
   }
-  child.kill('SIGKILL')
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+    })
+    // taskkill fails when the tree already exited; direct kill is then a no-op.
+    killer.on('error', () => child.kill('SIGKILL'))
+    killer.on('exit', (code) => {
+      if (code !== 0) child.kill('SIGKILL')
+    })
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+  } catch {
+    // The child may already have exited; fall through to a direct kill,
+    // which is a no-op in that case.
+    child.kill('SIGKILL')
+  }
 }
 
 function buildSafeShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
