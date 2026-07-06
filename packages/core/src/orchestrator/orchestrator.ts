@@ -75,7 +75,7 @@ import type { ZodSchema } from 'zod'
 import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
-import { emitTrace, generateRunId } from '../utils/trace.js'
+import { emitTrace, generateRunId, generateSpanId } from '../utils/trace.js'
 import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
@@ -781,17 +781,24 @@ function buildTaskAgentTeamInfo(
     }, ctx.config.defaultToolPreset), route)
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
+    const delegatedParentId = traceBase.traceSpanId ?? traceBase.traceParentId
+    const delegatedSpanId = traceBase.onTrace ? generateSpanId() : undefined
+    const childTraceBase: Partial<RunOptions> = {
+      ...traceBase,
+      traceAgent: targetAgent,
+      taskId,
+      ...(delegatedParentId ? { traceParentId: delegatedParentId } : {}),
+      ...(delegatedSpanId ? { traceSpanId: delegatedSpanId } : {}),
+    }
     const nestedTeam = buildTaskAgentTeamInfo(
       ctx,
       taskId,
-      traceBase,
+      childTraceBase,
       delegationDepth + 1,
       [...delegationChain, targetAgent],
     )
     const childOpts: Partial<RunOptions> = {
-      ...traceBase,
-      traceAgent: targetAgent,
-      taskId,
+      ...childTraceBase,
       team: nestedTeam,
     }
     return pool.runEphemeral(
@@ -976,6 +983,8 @@ async function executeQueue(
       const prompt = await buildTaskPrompt(task, team, queue, ctx.revealCoordinatorContext)
 
       // Trace + abort + team tool context (delegate_to_agent)
+      const taskSpanId = config.onTrace ? generateSpanId() : undefined
+      const agentSpanId = config.onTrace ? generateSpanId() : undefined
       const traceBase: Partial<RunOptions> = {
         ...(config.onTrace
           ? {
@@ -983,6 +992,8 @@ async function executeQueue(
               runId: ctx.runId ?? '',
               taskId: task.id,
               traceAgent: assignee,
+              ...(taskSpanId ? { traceParentId: taskSpanId } : {}),
+              ...(agentSpanId ? { traceSpanId: agentSpanId } : {}),
             }
           : {}),
         ...(ctx.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
@@ -1013,6 +1024,8 @@ async function executeQueue(
               emitTrace(config.onTrace, {
                 type: 'agent_stream',
                 runId: ctx.runId ?? '',
+                spanId: generateSpanId(),
+                ...(agentSpanId ? { parentId: agentSpanId } : {}),
                 taskId: task.id,
                 agent: assignee,
                 streamType: event.type,
@@ -1063,6 +1076,7 @@ async function executeQueue(
         emitTrace(config.onTrace, {
           type: 'task',
           runId: ctx.runId ?? '',
+          spanId: taskSpanId ?? generateSpanId(),
           taskId: task.id,
           taskTitle: task.title,
           agent: assignee,
@@ -1458,6 +1472,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
         emitTrace(onTrace, {
           type: 'consensus',
           runId: runId ?? '',
+          spanId: generateSpanId(),
           agent: judge.name,
           round,
           accepted: verdict.accept,
@@ -1875,6 +1890,7 @@ export class OpenMultiAgent {
     const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
     const runId = this.config.onTrace ? generateRunId() : undefined
+    const coordinatorDecomposeSpanId = this.config.onTrace ? generateSpanId() : undefined
 
     this.config.onProgress?.({
       type: 'agent_start',
@@ -1883,7 +1899,13 @@ export class OpenMultiAgent {
     })
 
     const decompTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
-      ? { onTrace: this.config.onTrace, runId: runId ?? '', traceAgent: 'coordinator', abortSignal: options?.abortSignal }
+      ? {
+          onTrace: this.config.onTrace,
+          runId: runId ?? '',
+          traceAgent: 'coordinator',
+          ...(coordinatorDecomposeSpanId ? { traceSpanId: coordinatorDecomposeSpanId } : {}),
+          ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
+        }
       : options?.abortSignal ? { abortSignal: options.abortSignal } : undefined
     const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
@@ -1990,6 +2012,8 @@ export class OpenMultiAgent {
       emitTrace(this.config.onTrace, {
         type: 'plan_ready',
         runId: runId ?? '',
+        spanId: generateSpanId(),
+        ...(coordinatorDecomposeSpanId ? { parentId: coordinatorDecomposeSpanId } : {}),
         agent: 'coordinator',
         taskCount: planTasks.length,
         approved,

@@ -1151,8 +1151,13 @@ describe('OpenMultiAgent', () => {
       expect(planReady.taskCount).toBe(1)
       expect(planReady.approved).toBe(false)
       expect(planReady.runId).toMatch(/.+/)
+      expect(planReady.spanId).toMatch(/^[0-9a-f-]{36}$/)
       expect(planReady.durationMs).toBeGreaterThanOrEqual(0)
       expect(planReady.startMs).toBeLessThanOrEqual(planReady.endMs)
+
+      const coordinatorTrace = traces.find((t) => t.type === 'agent' && t.agent === 'coordinator')
+      expect(coordinatorTrace).toBeDefined()
+      expect(planReady.parentId).toBe(coordinatorTrace!.spanId)
     })
   })
 
@@ -1428,10 +1433,17 @@ describe('OpenMultiAgent', () => {
       expect(streamTraces.length).toBeGreaterThan(0)
       expect(streamTraces.some((t) => t.streamType === 'text')).toBe(true)
       expect(streamTraces.some((t) => t.streamType === 'done')).toBe(true)
+      const workerAgentTrace = traces.find((t) => t.type === 'agent' && t.agent === 'worker' && t.taskId)
+      expect(workerAgentTrace).toBeDefined()
+      const taskTrace = traces.find((t) => t.type === 'task' && t.taskId === workerAgentTrace!.taskId)
+      expect(taskTrace).toBeDefined()
+      expect(workerAgentTrace!.parentId).toBe(taskTrace!.spanId)
       for (const trace of streamTraces) {
         expect(trace.agent).toBe('worker')
         expect(trace.taskId).toMatch(/.+/)
         expect(trace.runId).toMatch(/.+/)
+        expect(trace.spanId).toMatch(/^[0-9a-f-]{36}$/)
+        expect(trace.parentId).toBe(workerAgentTrace!.spanId)
         expect(trace.durationMs).toBe(0)
       }
     })
