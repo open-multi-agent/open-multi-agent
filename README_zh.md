@@ -67,6 +67,14 @@ npm install @open-multi-agent/core
 
 其他运行方式：克隆仓库，以 `npx tsx packages/core/examples/basics/team-collaboration.ts` 运行任意[示例](packages/core/examples/)；或借助 [Express](packages/core/examples/integrations/express-customer-support/)、[Next.js](packages/core/examples/integrations/with-vercel-ai-sdk/) 应用将 OMA 嵌入真实后端。如需免去本地搭建，[Next.js 部署模板](https://github.com/open-multi-agent/oma-nextjs-starter)可一键部署至 Vercel；通过 [Ollama](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) 运行本地模型则无需 API key。
 
+## 企业服务
+
+面向互联网、制造业、传统企业，提供 AI 落地咨询与商业支持。微信扫码添加，或访问官网 [yuanasi.com](https://yuanasi.com)。
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
+</p>
+
 ## 与其他框架对比
 
 大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制。
