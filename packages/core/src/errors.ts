@@ -19,6 +19,22 @@ export class TokenBudgetExceededError extends Error {
 }
 
 /**
+ * Raised when an orchestrator run exceeds its configured estimated cost budget.
+ */
+export class CostBudgetExceededError extends Error {
+  readonly code = 'COST_BUDGET_EXCEEDED'
+
+  constructor(
+    readonly agent: string,
+    readonly costUsed: number,
+    readonly budget: number,
+  ) {
+    super(`Agent "${agent}" exceeded cost budget: ${costUsed} estimated cost used (budget: ${budget})`)
+    this.name = 'CostBudgetExceededError'
+  }
+}
+
+/**
  * Raised when a single LLM call (one `adapter.chat()` request) exceeds the
  * per-call deadline configured via {@link AgentConfig.callTimeoutMs}.
  *
@@ -87,6 +103,7 @@ function extractStatus(error: unknown): number | undefined {
  */
 export function isRetryableError(error: unknown): boolean {
   if (error instanceof TokenBudgetExceededError) return false
+  if (error instanceof CostBudgetExceededError) return false
   if (error instanceof InvalidMessageError) return false
   if (error instanceof LLMCallTimeoutError) return true
   if (error instanceof Error && error.name === 'AbortError') return false

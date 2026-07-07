@@ -3,7 +3,15 @@ import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { Agent } from '../src/agent/agent.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 import { ToolExecutor } from '../src/tool/executor.js'
-import type { AgentConfig, LLMChatOptions, LLMMessage, LLMResponse, OrchestratorEvent } from '../src/types.js'
+import type {
+  AgentConfig,
+  CostEstimateContext,
+  LLMChatOptions,
+  LLMMessage,
+  LLMResponse,
+  OrchestratorEvent,
+  TokenUsage,
+} from '../src/types.js'
 
 let mockAdapterResponses: string[] = []
 let mockAdapterUsage: Array<{ input_tokens: number; output_tokens: number }> = []
@@ -42,6 +50,18 @@ function agentConfig(name: string, maxTokenBudget?: number): AgentConfig {
   }
 }
 
+function usageCost(usage: TokenUsage, _context: CostEstimateContext): number {
+  return (usage.input_tokens + usage.output_tokens) / 100
+}
+
+function hasCostBudgetEvent(events: OrchestratorEvent[]): boolean {
+  return events.some((event) => {
+    if (event.type !== 'budget_exceeded') return false
+    const data = event.data as { code?: string } | undefined
+    return data?.code === 'COST_BUDGET_EXCEEDED'
+  })
+}
+
 describe('token budget enforcement', () => {
   beforeEach(() => {
     mockAdapterResponses = []
@@ -66,6 +86,53 @@ describe('token budget enforcement', () => {
     expect(result.messages[0]?.role).toBe('assistant')
     expect(result.messages[0]?.content[0]).toMatchObject({ type: 'text', text: 'over budget' })
     expect(events.some(e => e.type === 'budget_exceeded')).toBe(true)
+  })
+
+  it('enforces orchestrator cost budget in runAgent', async () => {
+    mockAdapterResponses = ['over cost budget']
+    mockAdapterUsage = [{ input_tokens: 20, output_tokens: 15 }]
+
+    const events: OrchestratorEvent[] = []
+    const oma = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxCostBudget: 0.30,
+      estimateCost: usageCost,
+      onProgress: e => events.push(e),
+    })
+
+    const result = await oma.runAgent(agentConfig('solo'), 'test')
+
+    expect(result.success).toBe(false)
+    expect(result.budgetExceeded).toBe(true)
+    expect(hasCostBudgetEvent(events)).toBe(true)
+  })
+
+  it('passes model information to the cost estimator', async () => {
+    mockAdapterResponses = ['priced by model']
+    mockAdapterUsage = [{ input_tokens: 5, output_tokens: 5 }]
+
+    const contexts: CostEstimateContext[] = []
+    const oma = new OpenMultiAgent({
+      defaultModel: 'default-model',
+      maxCostBudget: 100,
+      estimateCost: (usage, context) => {
+        contexts.push(context)
+        return usageCost(usage, context)
+      },
+    })
+
+    await oma.runAgent({
+      ...agentConfig('premium'),
+      model: 'premium-model',
+    }, 'test')
+
+    expect(contexts).toHaveLength(1)
+    expect(contexts[0]).toMatchObject({
+      agentName: 'premium',
+      model: 'premium-model',
+      provider: 'openai',
+      phase: 'agent',
+    })
   })
 
   it('emits budget_exceeded stream event without error transition', async () => {
@@ -184,6 +251,38 @@ describe('token budget enforcement', () => {
     expect(events.some(e => e.type === 'task_skipped')).toBe(true)
   })
 
+  it('enforces cost budget in runTasks and skips remaining tasks', async () => {
+    mockAdapterResponses = ['done-a', 'done-b', 'done-c']
+    mockAdapterUsage = [
+      { input_tokens: 20, output_tokens: 15 },
+      { input_tokens: 20, output_tokens: 15 },
+      { input_tokens: 20, output_tokens: 15 },
+    ]
+
+    const events: OrchestratorEvent[] = []
+    const oma = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxCostBudget: 0.60,
+      estimateCost: usageCost,
+      onProgress: e => events.push(e),
+    })
+    const team = oma.createTeam('cost-team', {
+      name: 'cost-team',
+      agents: [agentConfig('worker')],
+      sharedMemory: false,
+    })
+
+    const result = await oma.runTasks(team, [
+      { title: 'A', description: 'A', assignee: 'worker' },
+      { title: 'B', description: 'B', assignee: 'worker', dependsOn: ['A'] },
+      { title: 'C', description: 'C', assignee: 'worker', dependsOn: ['B'] },
+    ])
+
+    expect(result.totalTokenUsage.input_tokens + result.totalTokenUsage.output_tokens).toBe(70)
+    expect(hasCostBudgetEvent(events)).toBe(true)
+    expect(events.some(e => e.type === 'task_skipped')).toBe(true)
+  })
+
   it('counts retry token usage before enforcing team budget', async () => {
     mockAdapterResponses = ['attempt-1', 'attempt-2', 'should-skip']
     mockAdapterUsage = [
@@ -244,5 +343,37 @@ describe('token budget enforcement', () => {
     const result = await oma.runTeam(team, 'First plan the work, then execute it')
     expect(result.totalTokenUsage.input_tokens + result.totalTokenUsage.output_tokens).toBe(70)
     expect(events.some(e => e.type === 'budget_exceeded')).toBe(true)
+  })
+
+  it('enforces cost budget in runTeam before synthesis', async () => {
+    mockAdapterResponses = [
+      '```json\n[{"title":"Task A","description":"Do A","assignee":"worker"}]\n```',
+      'worker result',
+      'synthesis should not run when cost budget is exceeded',
+    ]
+    mockAdapterUsage = [
+      { input_tokens: 20, output_tokens: 15 },
+      { input_tokens: 20, output_tokens: 15 },
+      { input_tokens: 20, output_tokens: 15 },
+    ]
+
+    const events: OrchestratorEvent[] = []
+    const oma = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxCostBudget: 0.60,
+      estimateCost: usageCost,
+      onProgress: e => events.push(e),
+    })
+    const team = oma.createTeam('cost-team-runteam', {
+      name: 'cost-team-runteam',
+      agents: [agentConfig('worker')],
+      sharedMemory: false,
+    })
+
+    const result = await oma.runTeam(team, 'First plan the work, then execute it')
+
+    expect(result.totalTokenUsage.input_tokens + result.totalTokenUsage.output_tokens).toBe(70)
+    expect(hasCostBudgetEvent(events)).toBe(true)
+    expect(result.agentResults.get('coordinator')?.output).toContain('Task A')
   })
 })

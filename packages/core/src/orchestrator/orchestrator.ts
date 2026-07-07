@@ -50,6 +50,7 @@ import type {
   ConsensusResult,
   ConsensusVerifyOptions,
   CoordinatorConfig,
+  CostEstimateContext,
   ModelRouteConfig,
   ModelRoutingPolicy,
   PlanArtifact,
@@ -87,7 +88,7 @@ import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
 import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
-import { TokenBudgetExceededError, isRetryableError } from '../errors.js'
+import { CostBudgetExceededError, TokenBudgetExceededError, isRetryableError } from '../errors.js'
 import { abortableDelay } from '../utils/abort.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
 
@@ -285,6 +286,137 @@ function resolveTokenBudget(primary?: number, fallback?: number): number | undef
   if (primary === undefined) return fallback
   if (fallback === undefined) return primary
   return Math.min(primary, fallback)
+}
+
+type BudgetExceededError = TokenBudgetExceededError | CostBudgetExceededError
+
+function totalTokens(usage: TokenUsage): number {
+  return usage.input_tokens + usage.output_tokens
+}
+
+function buildCostEstimateContext(params: {
+  readonly agentName: string
+  readonly model: string
+  readonly provider?: AgentConfig['provider']
+  readonly phase: CostEstimateContext['phase']
+  readonly taskId?: string
+}): CostEstimateContext {
+  return {
+    agentName: params.agentName,
+    model: params.model,
+    phase: params.phase,
+    ...(params.provider !== undefined ? { provider: params.provider } : {}),
+    ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
+  }
+}
+
+function estimateIncrementalCost(
+  usage: TokenUsage,
+  context: CostEstimateContext,
+  estimateCost: NonNullable<OrchestratorConfig['estimateCost']>,
+): number {
+  const cost = estimateCost(usage, context)
+  if (!Number.isFinite(cost) || cost < 0) {
+    throw new Error(
+      `Cost estimator returned invalid cost for agent "${context.agentName}": ${String(cost)}`,
+    )
+  }
+  return cost
+}
+
+function applyBudgetAccounting(params: {
+  readonly currentUsage: TokenUsage
+  readonly currentCost: number
+  readonly usage: TokenUsage
+  readonly maxTokenBudget?: number
+  readonly maxCostBudget?: number
+  readonly estimateCost?: OrchestratorConfig['estimateCost']
+  readonly costContext: CostEstimateContext
+}): {
+  readonly cumulativeUsage: TokenUsage
+  readonly cumulativeCost: number
+  readonly exceeded?: BudgetExceededError
+} {
+  const cumulativeUsage = addUsage(params.currentUsage, params.usage)
+  const cumulativeCost = params.estimateCost
+    ? params.currentCost + estimateIncrementalCost(params.usage, params.costContext, params.estimateCost)
+    : params.currentCost
+
+  if (
+    params.maxTokenBudget !== undefined
+    && totalTokens(cumulativeUsage) > params.maxTokenBudget
+  ) {
+    return {
+      cumulativeUsage,
+      cumulativeCost,
+      exceeded: new TokenBudgetExceededError(
+        params.costContext.agentName,
+        totalTokens(cumulativeUsage),
+        params.maxTokenBudget,
+      ),
+    }
+  }
+
+  if (
+    params.maxCostBudget !== undefined
+    && params.estimateCost !== undefined
+    && cumulativeCost > params.maxCostBudget
+  ) {
+    return {
+      cumulativeUsage,
+      cumulativeCost,
+      exceeded: new CostBudgetExceededError(
+        params.costContext.agentName,
+        cumulativeCost,
+        params.maxCostBudget,
+      ),
+    }
+  }
+
+  return { cumulativeUsage, cumulativeCost }
+}
+
+function emitBudgetExceeded(
+  config: OrchestratorConfig,
+  error: BudgetExceededError,
+  agent: string,
+  task?: string,
+): void {
+  config.onProgress?.({
+    type: 'budget_exceeded',
+    agent,
+    ...(task !== undefined ? { task } : {}),
+    data: error,
+  } satisfies OrchestratorEvent)
+}
+
+function recordRunUsage(
+  ctx: RunContext,
+  usage: TokenUsage,
+  costContext: CostEstimateContext,
+  agent: string = costContext.agentName,
+  task?: string,
+): BudgetExceededError | undefined {
+  const accounting = applyBudgetAccounting({
+    currentUsage: ctx.cumulativeUsage,
+    currentCost: ctx.cumulativeCost,
+    usage,
+    maxTokenBudget: ctx.maxTokenBudget,
+    maxCostBudget: ctx.maxCostBudget,
+    estimateCost: ctx.estimateCost,
+    costContext,
+  })
+  ctx.cumulativeUsage = accounting.cumulativeUsage
+  ctx.cumulativeCost = accounting.cumulativeCost
+
+  if (!ctx.budgetExceededTriggered && accounting.exceeded) {
+    ctx.budgetExceededTriggered = true
+    ctx.budgetExceededReason = accounting.exceeded.message
+    emitBudgetExceeded(ctx.config, accounting.exceeded, agent, task)
+    return accounting.exceeded
+  }
+
+  return undefined
 }
 
 /**
@@ -687,7 +819,10 @@ interface RunContext {
   /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
   readonly abortSignal?: AbortSignal
   cumulativeUsage: TokenUsage
+  cumulativeCost: number
   readonly maxTokenBudget?: number
+  readonly maxCostBudget?: number
+  readonly estimateCost?: OrchestratorConfig['estimateCost']
   budgetExceededTriggered: boolean
   budgetExceededReason?: string
   readonly taskMetrics: Map<string, TaskExecutionMetrics>
@@ -1008,14 +1143,16 @@ async function executeQueue(
         task,
         leaf: ctx.taskLeafById.get(task.id),
       })
+      const workerEffectiveConfig = withModelRoute(applyDefaultToolPreset({
+        ...agentConfig,
+        model: agentConfig.model ?? config.defaultModel,
+        provider: agentConfig.provider ?? config.defaultProvider,
+        baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
+        apiKey: agentConfig.apiKey ?? config.defaultApiKey,
+        cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
+      }, config.defaultToolPreset), workerRoute)
       const routedAgent = workerRoute
-        ? buildAgent(withModelRoute(applyDefaultToolPreset({
-            ...agentConfig,
-            provider: agentConfig.provider ?? config.defaultProvider,
-            baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
-            apiKey: agentConfig.apiKey ?? config.defaultApiKey,
-            cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
-          }, config.defaultToolPreset), workerRoute), { includeDelegateTool: true })
+        ? buildAgent(workerEffectiveConfig, { includeDelegateTool: true })
         : undefined
       const streamCallback = config.onAgentStream
         ? (event: StreamEvent) => {
@@ -1098,23 +1235,13 @@ async function executeQueue(
         toolCalls: result.toolCalls,
         retries: retryCount,
       })
-      ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, result.tokenUsage)
-      const totalTokens = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
-      if (
-        !ctx.budgetExceededTriggered
-        && ctx.maxTokenBudget !== undefined
-        && totalTokens > ctx.maxTokenBudget
-      ) {
-        ctx.budgetExceededTriggered = true
-        const err = new TokenBudgetExceededError('orchestrator', totalTokens, ctx.maxTokenBudget)
-        ctx.budgetExceededReason = err.message
-        config.onProgress?.({
-          type: 'budget_exceeded',
-          agent: assignee,
-          task: task.id,
-          data: err,
-        } satisfies OrchestratorEvent)
-      }
+      recordRunUsage(ctx, result.tokenUsage, buildCostEstimateContext({
+        agentName: assignee,
+        model: workerEffectiveConfig.model ?? config.defaultModel ?? DEFAULT_MODEL,
+        provider: workerEffectiveConfig.provider,
+        phase: 'worker',
+        taskId: task.id,
+      }), assignee, task.id)
 
       if (result.success) {
         const sharedMem = team.getSharedMemoryInstance()
@@ -1416,6 +1543,8 @@ interface ConsensusCoreParams {
   readonly defaults: ConsensusAgentDefaults
   readonly onTrace?: OrchestratorConfig['onTrace']
   readonly runId?: string
+  readonly onUsage?: (usage: TokenUsage, effectiveConfig: AgentConfig) => void
+  readonly shouldStop?: () => boolean
   /** Existing pool to reuse; a fresh one is created when omitted. */
   readonly pool?: AgentPool
 }
@@ -1443,11 +1572,15 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
   const overBudget = (): boolean =>
     budget !== undefined && budgetBaseTokens + usage.input_tokens + usage.output_tokens > budget
 
-  const runEphemeral = (config: AgentConfig, text: string): Promise<AgentRunResult> =>
-    pool.runEphemeral(buildAgent(applyConsensusDefaults(config, defaults)), text)
+  const runEphemeral = async (config: AgentConfig, text: string): Promise<AgentRunResult> => {
+    const effective = applyConsensusDefaults(config, defaults)
+    const result = await pool.runEphemeral(buildAgent(effective), text)
+    params.onUsage?.(result.tokenUsage, effective)
+    return result
+  }
 
   // Proposer usage was already accumulated by the caller; bail before judging if it blew the budget.
-  if (overBudget()) {
+  if (overBudget() || params.shouldStop?.()) {
     return { answer, verdict: 'rejected', dissent, rounds, tokenUsage: usage }
   }
 
@@ -1462,7 +1595,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
       const judgeText = buildJudgePrompt({ judge: judge.name, answer, prompt, mode, judgeIndex: j, judgePrompt })
       const r = await runEphemeral(judge, judgeText)
       usage = addUsage(usage, r.tokenUsage)
-      if (overBudget()) { budgetHit = true; break }
+      if (overBudget() || params.shouldStop?.()) { budgetHit = true; break }
 
       const verdict = parseJudgeVerdict(r.output, verdictSchema)
 
@@ -1503,7 +1636,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
       const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, answer, roundDissent))
       usage = addUsage(usage, r.tokenUsage)
       if (r.success && r.output) answer = r.output
-      if (overBudget()) { budgetHit = true; break }
+      if (overBudget() || params.shouldStop?.()) { budgetHit = true; break }
       continue
     }
     break
@@ -1561,9 +1694,17 @@ async function runTaskVerify(
     },
     onTrace: config.onTrace,
     ...(ctx.runId ? { runId: ctx.runId } : {}),
+    onUsage: (usage, effectiveConfig) => {
+      recordRunUsage(ctx, usage, buildCostEstimateContext({
+        agentName: effectiveConfig.name,
+        model: effectiveConfig.model ?? config.defaultModel ?? DEFAULT_MODEL,
+        provider: effectiveConfig.provider,
+        phase: 'consensus',
+        taskId: task.id,
+      }), assignee, task.id)
+    },
+    shouldStop: () => ctx.budgetExceededTriggered,
   })
-
-  ctx.cumulativeUsage = addUsage(ctx.cumulativeUsage, consensus.tokenUsage)
 
   // Surface the verdict as a task-level outcome so downstream agents and the
   // final synthesis can see whether the result survived scrutiny.
@@ -1572,19 +1713,6 @@ async function runTaskVerify(
       ? 'accepted'
       : `rejected${consensus.dissent.length ? `: ${consensus.dissent.join('; ')}` : ''}`
     await sharedMem.write(assignee, `task:${task.id}:verdict`, summary)
-  }
-
-  const total = ctx.cumulativeUsage.input_tokens + ctx.cumulativeUsage.output_tokens
-  if (!ctx.budgetExceededTriggered && ctx.maxTokenBudget !== undefined && total > ctx.maxTokenBudget) {
-    ctx.budgetExceededTriggered = true
-    const err = new TokenBudgetExceededError('orchestrator', total, ctx.maxTokenBudget)
-    ctx.budgetExceededReason = err.message
-    config.onProgress?.({
-      type: 'budget_exceeded',
-      agent: assignee,
-      task: task.id,
-      data: err,
-    } satisfies OrchestratorEvent)
   }
 
   // Only an *accepted* revision supersedes the task result; a rejected revision is
@@ -1611,8 +1739,8 @@ async function runTaskVerify(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
@@ -1640,6 +1768,8 @@ export class OpenMultiAgent {
       // disable the filesystem sandbox; a string sets a custom sandbox root.
       defaultCwd: config.defaultCwd === undefined ? defaultWorkspaceDir() : config.defaultCwd,
       maxTokenBudget: config.maxTokenBudget,
+      maxCostBudget: config.maxCostBudget,
+      estimateCost: config.estimateCost,
       defaultToolPreset: config.defaultToolPreset,
       checkpoint: config.checkpoint,
       onApproval: config.onApproval,
@@ -1728,6 +1858,7 @@ export class OpenMultiAgent {
         : undefined
 
     const result = await agent.run(prompt, runOptions)
+    let finalResult = result
 
     if (result.budgetExceeded) {
       this.config.onProgress?.({
@@ -1741,17 +1872,45 @@ export class OpenMultiAgent {
       })
     }
 
+    if (!result.budgetExceeded && this.config.estimateCost) {
+      const accounting = applyBudgetAccounting({
+        currentUsage: ZERO_USAGE,
+        currentCost: 0,
+        usage: result.tokenUsage,
+        maxCostBudget: this.config.maxCostBudget,
+        estimateCost: this.config.estimateCost,
+        costContext: buildCostEstimateContext({
+          agentName: config.name,
+          model: effective.model ?? this.config.defaultModel,
+          provider: effective.provider,
+          phase: 'agent',
+        }),
+      })
+      if (accounting.exceeded instanceof CostBudgetExceededError) {
+        this.config.onProgress?.({
+          type: 'budget_exceeded',
+          agent: config.name,
+          data: accounting.exceeded,
+        })
+        finalResult = {
+          ...result,
+          success: false,
+          budgetExceeded: true,
+        }
+      }
+    }
+
     this.config.onProgress?.({
       type: 'agent_complete',
       agent: config.name,
-      data: result,
+      data: finalResult,
     })
 
-    if (result.success) {
+    if (finalResult.success) {
       this.completedTaskCount++
     }
 
-    return result
+    return finalResult
   }
 
   // -------------------------------------------------------------------------
@@ -1833,6 +1992,7 @@ export class OpenMultiAgent {
       const scStartMs = Date.now()
       const result = await agent.run(goal, runOptions)
       const scEndMs = Date.now()
+      let finalResult = result
 
       if (result.budgetExceeded) {
         this.config.onProgress?.({
@@ -1846,28 +2006,56 @@ export class OpenMultiAgent {
         })
       }
 
+      if (!result.budgetExceeded && this.config.estimateCost) {
+        const accounting = applyBudgetAccounting({
+          currentUsage: ZERO_USAGE,
+          currentCost: 0,
+          usage: result.tokenUsage,
+          maxCostBudget: this.config.maxCostBudget,
+          estimateCost: this.config.estimateCost,
+          costContext: buildCostEstimateContext({
+            agentName: bestAgent.name,
+            model: effective.model ?? this.config.defaultModel,
+            provider: effective.provider,
+            phase: 'short-circuit',
+          }),
+        })
+        if (accounting.exceeded instanceof CostBudgetExceededError) {
+          this.config.onProgress?.({
+            type: 'budget_exceeded',
+            agent: bestAgent.name,
+            data: accounting.exceeded,
+          })
+          finalResult = {
+            ...result,
+            success: false,
+            budgetExceeded: true,
+          }
+        }
+      }
+
       this.config.onProgress?.({
         type: 'agent_complete',
         agent: bestAgent.name,
-        data: { phase: 'short-circuit', result },
+        data: { phase: 'short-circuit', result: finalResult },
       })
 
       const agentResults = new Map<string, AgentRunResult>()
-      agentResults.set(bestAgent.name, result)
+      agentResults.set(bestAgent.name, finalResult)
 
 
       const tasks: readonly TaskExecutionRecord[] = [{
         id: 'short-circuit',
         title: `Short-circuit: ${bestAgent.name}`,
         assignee: bestAgent.name,
-        status: result.success ? 'completed' : 'failed',
+        status: finalResult.success ? 'completed' : 'failed',
         dependsOn: [],
         metrics: {
           startMs: scStartMs,
           endMs: scEndMs,
           durationMs: Math.max(0, scEndMs - scStartMs),
-          tokenUsage: result.tokenUsage,
-          toolCalls: result.toolCalls,
+          tokenUsage: finalResult.tokenUsage,
+          toolCalls: finalResult.toolCalls,
           retries: 0,
         },
       }]
@@ -1911,21 +2099,26 @@ export class OpenMultiAgent {
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
     const maxTokenBudget = this.config.maxTokenBudget
-    let cumulativeUsage = addUsage(ZERO_USAGE, decompositionResult.tokenUsage)
+    const maxCostBudget = this.config.maxCostBudget
+    const decompositionBudget = applyBudgetAccounting({
+      currentUsage: ZERO_USAGE,
+      currentCost: 0,
+      usage: decompositionResult.tokenUsage,
+      maxTokenBudget,
+      maxCostBudget,
+      estimateCost: this.config.estimateCost,
+      costContext: buildCostEstimateContext({
+        agentName: 'coordinator',
+        model: coordinatorConfig.model ?? this.config.defaultModel,
+        provider: coordinatorConfig.provider,
+        phase: 'coordinator',
+      }),
+    })
+    let cumulativeUsage = decompositionBudget.cumulativeUsage
+    let cumulativeCost = decompositionBudget.cumulativeCost
 
-    if (
-      maxTokenBudget !== undefined
-      && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > maxTokenBudget
-    ) {
-      this.config.onProgress?.({
-        type: 'budget_exceeded',
-        agent: 'coordinator',
-        data: new TokenBudgetExceededError(
-          'coordinator',
-          cumulativeUsage.input_tokens + cumulativeUsage.output_tokens,
-          maxTokenBudget,
-        ),
-      })
+    if (decompositionBudget.exceeded) {
+      emitBudgetExceeded(this.config, decompositionBudget.exceeded, 'coordinator')
       return this.buildTeamRunResult(agentResults, goal, [])
     }
 
@@ -1980,7 +2173,10 @@ export class OpenMultiAgent {
       runId,
       abortSignal: options?.abortSignal,
       cumulativeUsage,
+      cumulativeCost,
       maxTokenBudget,
+      maxCostBudget,
+      estimateCost: this.config.estimateCost,
       budgetExceededTriggered: false,
       budgetExceededReason: undefined,
       taskMetrics,
@@ -2054,6 +2250,7 @@ export class OpenMultiAgent {
 
     await executeQueue(queue, ctx)
     cumulativeUsage = ctx.cumulativeUsage
+    cumulativeCost = ctx.cumulativeCost
     const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
       id: task.id,
       title: task.title,
@@ -2077,7 +2274,10 @@ export class OpenMultiAgent {
       runId,
       abortSignal: options?.abortSignal,
       cumulativeUsage,
+      cumulativeCost,
       maxTokenBudget,
+      maxCostBudget,
+      estimateCost: this.config.estimateCost,
     })
     if (synthesis === null) {
       // Aborted or already over budget — return raw task outputs, no synthesis.
@@ -2085,6 +2285,7 @@ export class OpenMultiAgent {
     }
     agentResults.set('coordinator', synthesis.result)
     cumulativeUsage = synthesis.cumulativeUsage
+    cumulativeCost = synthesis.cumulativeCost
 
     // Note: coordinator decompose and synthesis are internal meta-steps.
     // Only actual user tasks (non-coordinator keys) are counted in
@@ -2647,41 +2848,54 @@ export class OpenMultiAgent {
       readonly runId?: string
       readonly abortSignal?: AbortSignal
       readonly cumulativeUsage: TokenUsage
+      readonly cumulativeCost: number
       readonly maxTokenBudget?: number
+      readonly maxCostBudget?: number
+      readonly estimateCost?: OrchestratorConfig['estimateCost']
     },
-  ): Promise<{ readonly result: AgentRunResult; readonly cumulativeUsage: TokenUsage } | null> {
+  ): Promise<{ readonly result: AgentRunResult; readonly cumulativeUsage: TokenUsage; readonly cumulativeCost: number } | null> {
     if (opts.abortSignal?.aborted) return null
     if (
       opts.maxTokenBudget !== undefined
-      && opts.cumulativeUsage.input_tokens + opts.cumulativeUsage.output_tokens > opts.maxTokenBudget
+      && totalTokens(opts.cumulativeUsage) > opts.maxTokenBudget
+    ) {
+      return null
+    }
+    if (
+      opts.maxCostBudget !== undefined
+      && opts.estimateCost !== undefined
+      && opts.cumulativeCost > opts.maxCostBudget
     ) {
       return null
     }
 
     const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
-    const synthesisAgent = buildAgent(withModelRoute(
+    const synthesisConfig = withModelRoute(
       coordinatorBaseConfig,
       routeMatches(opts.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
-    ))
+    )
+    const synthesisAgent = buildAgent(synthesisConfig)
     const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
       ? { onTrace: this.config.onTrace, runId: opts.runId ?? '', traceAgent: 'coordinator' }
       : undefined
     const result = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
-    const cumulativeUsage = addUsage(opts.cumulativeUsage, result.tokenUsage)
+    const accounting = applyBudgetAccounting({
+      currentUsage: opts.cumulativeUsage,
+      currentCost: opts.cumulativeCost,
+      usage: result.tokenUsage,
+      maxTokenBudget: opts.maxTokenBudget,
+      maxCostBudget: opts.maxCostBudget,
+      estimateCost: opts.estimateCost,
+      costContext: buildCostEstimateContext({
+        agentName: 'coordinator',
+        model: synthesisConfig.model ?? this.config.defaultModel,
+        provider: synthesisConfig.provider,
+        phase: 'synthesis',
+      }),
+    })
 
-    if (
-      opts.maxTokenBudget !== undefined
-      && cumulativeUsage.input_tokens + cumulativeUsage.output_tokens > opts.maxTokenBudget
-    ) {
-      this.config.onProgress?.({
-        type: 'budget_exceeded',
-        agent: 'coordinator',
-        data: new TokenBudgetExceededError(
-          'coordinator',
-          cumulativeUsage.input_tokens + cumulativeUsage.output_tokens,
-          opts.maxTokenBudget,
-        ),
-      })
+    if (accounting.exceeded) {
+      emitBudgetExceeded(this.config, accounting.exceeded, 'coordinator')
     }
 
     this.config.onProgress?.({
@@ -2690,7 +2904,11 @@ export class OpenMultiAgent {
       data: result,
     })
 
-    return { result, cumulativeUsage }
+    return {
+      result,
+      cumulativeUsage: accounting.cumulativeUsage,
+      cumulativeCost: accounting.cumulativeCost,
+    }
   }
 
   /** Build the synthesis prompt shown to the coordinator after all tasks complete. */
@@ -2789,7 +3007,10 @@ export class OpenMultiAgent {
       runId: this.config.onTrace ? generateRunId() : undefined,
       abortSignal: options?.abortSignal,
       cumulativeUsage: ZERO_USAGE,
+      cumulativeCost: 0,
       maxTokenBudget: this.config.maxTokenBudget,
+      maxCostBudget: this.config.maxCostBudget,
+      estimateCost: this.config.estimateCost,
       budgetExceededTriggered: false,
       budgetExceededReason: undefined,
       taskMetrics: new Map<string, TaskExecutionMetrics>(),
@@ -2813,11 +3034,15 @@ export class OpenMultiAgent {
           runId: ctx.runId,
           abortSignal: options?.abortSignal,
           cumulativeUsage: ctx.cumulativeUsage,
+          cumulativeCost: ctx.cumulativeCost,
           maxTokenBudget: ctx.maxTokenBudget,
+          maxCostBudget: ctx.maxCostBudget,
+          estimateCost: ctx.estimateCost,
         })
         if (synthesis !== null && synthesis.result.success) {
           agentResults.set('coordinator', synthesis.result)
           ctx.cumulativeUsage = synthesis.cumulativeUsage
+          ctx.cumulativeCost = synthesis.cumulativeCost
         } else if (synthesis !== null) {
           // Synthesis ran but the coordinator agent failed (e.g. the LLM call
           // errored). Keep the recovered task outputs and surface the failure
