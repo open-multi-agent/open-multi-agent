@@ -32,3 +32,8 @@ function noop() {}
 export function generateRunId(): string {
   return randomUUID()
 }
+
+/** Generate a unique span ID for a single trace event. */
+export function generateSpanId(): string {
+  return randomUUID()
+}

@@ -46,7 +46,7 @@ import type {
   TokenUsage,
   ToolUseContext,
 } from '../types.js'
-import { emitTrace, generateRunId } from '../utils/trace.js'
+import { emitTrace, generateRunId, generateSpanId } from '../utils/trace.js'
 import { mergeAbortSignals } from '../utils/abort.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
@@ -322,6 +322,7 @@ export class Agent {
     this.transitionTo('running')
 
     const agentStartMs = Date.now()
+    let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
 
     try {
       // --- beforeRun hook ---
@@ -336,8 +337,13 @@ export class Agent {
         this.state.messages.push(msg)
         callerOptions?.onMessage?.(msg)
       }
-      // Auto-generate runId when onTrace is provided but runId is missing
-      const needsRunId = callerOptions?.onTrace && !callerOptions.runId
+      // Auto-generate trace identifiers when onTrace is provided but they are missing.
+      const effectiveRunId = callerOptions?.onTrace
+        ? callerOptions.runId || generateRunId()
+        : callerOptions?.runId
+      const effectiveSpanId = callerOptions?.onTrace
+        ? callerOptions.traceSpanId || generateSpanId()
+        : callerOptions?.traceSpanId
       // Create a fresh timeout signal per run (not per runner) so that
       // each run() / prompt() call gets its own timeout window.
       const timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
@@ -352,9 +358,11 @@ export class Agent {
       const runOptions: RunOptions = {
         ...callerOptions,
         onMessage: internalOnMessage,
-        ...(needsRunId ? { runId: generateRunId() } : undefined),
+        ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
+        ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
         ...(effectiveAbort ? { abortSignal: effectiveAbort } : undefined),
       }
+      effectiveTraceOptions = runOptions
 
       const result = await runner.run(messages, runOptions)
       this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
@@ -365,7 +373,7 @@ export class Agent {
           budgetResult = await this.config.afterRun(budgetResult)
         }
         this.transitionTo('completed')
-        this.emitAgentTrace(callerOptions, agentStartMs, budgetResult)
+        this.emitAgentTrace(runOptions, agentStartMs, budgetResult)
         return budgetResult
       }
 
@@ -381,7 +389,7 @@ export class Agent {
         if (this.config.afterRun) {
           validated = await this.config.afterRun(validated)
         }
-        this.emitAgentTrace(callerOptions, agentStartMs, validated)
+        this.emitAgentTrace(runOptions, agentStartMs, validated)
         return validated
       }
 
@@ -393,7 +401,7 @@ export class Agent {
       }
 
       this.transitionTo('completed')
-      this.emitAgentTrace(callerOptions, agentStartMs, agentResult)
+      this.emitAgentTrace(runOptions, agentStartMs, agentResult)
       return agentResult
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
@@ -411,7 +419,7 @@ export class Agent {
         // place this error object survives before it is stringified.
         error,
       }
-      this.emitAgentTrace(callerOptions, agentStartMs, errorResult)
+      this.emitAgentTrace(effectiveTraceOptions, agentStartMs, errorResult)
       return errorResult
     }
   }
@@ -427,6 +435,8 @@ export class Agent {
     emitTrace(options.onTrace, {
       type: 'agent',
       runId: options.runId ?? '',
+      spanId: options.traceSpanId ?? generateSpanId(),
+      ...(options.traceParentId ? { parentId: options.traceParentId } : {}),
       taskId: options.taskId,
       agent: options.traceAgent ?? this.name,
       turns: result.messages.filter(m => m.role === 'assistant').length,
@@ -529,6 +539,9 @@ export class Agent {
    */
   private async *executeStream(messages: LLMMessage[], callerOptions?: Partial<RunOptions>): AsyncGenerator<StreamEvent> {
     this.transitionTo('running')
+    const agentStartMs = Date.now()
+    let agentTraceEmitted = false
+    let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
 
     try {
       // --- beforeRun hook ---
@@ -547,13 +560,23 @@ export class Agent {
       const effectiveAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
-
-      for await (const event of runner.stream(messages, {
+      const effectiveRunId = callerOptions?.onTrace
+        ? callerOptions.runId || generateRunId()
+        : callerOptions?.runId
+      const effectiveSpanId = callerOptions?.onTrace
+        ? callerOptions.traceSpanId || generateSpanId()
+        : callerOptions?.traceSpanId
+      const runOptions: RunOptions = {
         ...callerOptions,
-        ...(effectiveAbort ? { abortSignal: effectiveAbort } : {}),
-      })) {
+        ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
+        ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
+        ...(effectiveAbort ? { abortSignal: effectiveAbort } : undefined),
+      }
+      effectiveTraceOptions = runOptions
+
+      for await (const event of runner.stream(messages, runOptions)) {
         if (event.type === 'done') {
-          const result = event.data as import('./runner.js').RunResult
+          const result = event.data as RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
 
           let agentResult = this.toAgentRunResult(result, !result.budgetExceeded)
@@ -561,6 +584,8 @@ export class Agent {
             agentResult = await this.config.afterRun(agentResult)
           }
           this.transitionTo('completed')
+          this.emitAgentTrace(runOptions, agentStartMs, agentResult)
+          agentTraceEmitted = true
           yield { type: 'done', data: agentResult } satisfies StreamEvent
           continue
         } else if (event.type === 'error') {
@@ -568,6 +593,16 @@ export class Agent {
             ? event.data
             : new Error(String(event.data))
           this.transitionToError(error)
+          this.emitAgentTrace(runOptions, agentStartMs, {
+            success: false,
+            output: error.message,
+            messages: [],
+            tokenUsage: ZERO_USAGE,
+            toolCalls: [],
+            structured: undefined,
+            error,
+          })
+          agentTraceEmitted = true
         }
 
         yield event
@@ -575,6 +610,17 @@ export class Agent {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
+      if (!agentTraceEmitted) {
+        this.emitAgentTrace(effectiveTraceOptions, agentStartMs, {
+          success: false,
+          output: error.message,
+          messages: [],
+          tokenUsage: ZERO_USAGE,
+          toolCalls: [],
+          structured: undefined,
+          error,
+        })
+      }
       yield { type: 'error', data: error } satisfies StreamEvent
     }
   }

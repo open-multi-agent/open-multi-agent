@@ -176,6 +176,7 @@ export type {
   // Team
   TeamConfig,
   TeamRunResult,
+  RunMetrics,
   RunTeamOptions,
   RunTasksOptions,
   RunTaskSpec,
@@ -232,4 +233,4 @@ export type {
   SharedMemoryWriteOptions,
 } from './types.js'
 
-export { generateRunId } from './utils/trace.js'
+export { generateRunId, generateSpanId } from './utils/trace.js'

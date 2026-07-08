@@ -18,7 +18,7 @@ Common event types include `task_start`, `task_complete`, `task_retry`, `task_sk
 
 ## Trace Spans
 
-Use `onTrace` when you need structured spans for LLM calls, tool executions, and tasks. Each span carries parent IDs, durations, token counts, and best-effort-redacted tool I/O.
+Use `onTrace` when you need structured spans for LLM calls, tool executions, and tasks. Each span carries a `runId`, its own `spanId`, an optional `parentId`, durations, token counts, and best-effort-redacted tool I/O.
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
@@ -29,6 +29,8 @@ const orchestrator = new OpenMultiAgent({
 ```
 
 Forward trace spans to OpenTelemetry, Datadog, Honeycomb, Langfuse, or your own run database only after deciding what data is safe for that sink. See [`integrations/trace-observability`](../packages/core/examples/integrations/trace-observability.ts) for a runnable example.
+
+Span parentage is best-effort and uses the causal structure known to the runtime. In team runs, worker agent spans point to their task span, and LLM/tool/stream spans point to the agent span. Root spans such as top-level agent runs omit `parentId`.
 
 ## Post-Run Dashboard
 
@@ -52,7 +54,7 @@ For production runs, persist enough data to reconstruct a failure without replay
 
 - `TeamRunResult.tasks` for the executed DAG and task states.
 - `TeamRunResult.totalTokenUsage` for cost attribution.
-- `onTrace` spans for LLM calls and tool executions.
+- `onTrace` spans for LLM calls and tool executions, keyed by `runId` + `spanId`.
 - The rendered dashboard HTML when you need a shareable post-mortem artifact.
 
 > **Redaction scope.** The redaction noted above applies to *telemetry* — trace spans and the dashboard payload. It does **not** cover persisted run state: shared-memory writes and checkpoint saves store agent output verbatim. To scrub secrets there, wrap the durable store with [`RedactingStore`](shared-memory.md#redacting-persisted-secrets).

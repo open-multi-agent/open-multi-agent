@@ -235,12 +235,6 @@ await orchestrator.runTeam(team, goal, {
 
 做了 `open-multi-agent` 集成？见[集成提交指南](examples/integrations/README.md)：如何提交 reference / vendor 示例，以及如何被列入这里。
 
-### Provider 社区优惠
-
-面向 `open-multi-agent` 用户的限时 provider 优惠。该列表不代表付费背书或唯一官方推荐。
-
-- **[MiniMax](https://platform.minimaxi.com/subscribe/token-plan?code=98qruMqQhL&source=link)** — 在 OMA 的 TypeScript 多智能体工作流中使用 MiniMax M3。OMA 用户可在 2026-06-30 前享 MiniMax Token Plan 专属 88 折优惠。见 [MiniMax 接入指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md)。
-
 ### Featured partner
 
 面向已经深度集成 `open-multi-agent` 的产品和平台。条款和申请方式见 [Featured partner 计划](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md)。
