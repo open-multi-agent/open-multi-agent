@@ -55,7 +55,7 @@ function buildMockAgent(config: AgentConfig, responses: string[]): Agent {
     temperature: config.temperature,
     agentName: config.name,
   })
-  ;(agent as any).runner = runner
+  ;(agent as any).backend = runner
   return agent
 }
 

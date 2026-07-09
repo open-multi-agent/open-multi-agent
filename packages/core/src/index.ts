@@ -65,6 +65,9 @@ export { renderTeamRunDashboard } from './dashboard/render-team-run-dashboard.js
 // ---------------------------------------------------------------------------
 
 export { Agent } from './agent/agent.js'
+// The execution seam behind every Agent. `AgentRunner` (the LLM loop) implements
+// it; the ACP backend (`@open-multi-agent/core/acp`) is an alternative impl.
+export type { AgentBackend, RunOptions, RunResult } from './agent/runner.js'
 export { LoopDetector } from './agent/loop-detector.js'
 export { buildStructuredOutputInstruction, extractJSON, validateOutput } from './agent/structured-output.js'
 export { AgentPool, Semaphore } from './agent/pool.js'
@@ -165,6 +168,9 @@ export type {
   AgentConfig,
   AgentState,
   AgentRunResult,
+  AgentBackendConfig,
+  AcpPermissionPolicy,
+  AcpPermissionRequest,
   BeforeRunHookContext,
   ToolCallRecord,
   LoopDetectionConfig,

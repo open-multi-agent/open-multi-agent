@@ -373,6 +373,61 @@ export interface BeforeRunHookContext {
   readonly agent: AgentConfig
 }
 
+/**
+ * A minimal, SDK-agnostic view of an ACP `session/request_permission` prompt,
+ * passed to a {@link AgentBackendConfig.permission} callback so callers can decide
+ * without importing `@agentclientprotocol/sdk`.
+ */
+export interface AcpPermissionRequest {
+  /** Human-readable title of the pending tool call (e.g. `"Edit src/app.ts"`). */
+  readonly title: string
+  /** ACP tool kind when the agent provides one (e.g. `'edit'`, `'execute'`, `'read'`). */
+  readonly kind?: string
+  /** The option kinds the agent offered (e.g. `'allow_once'`, `'reject_always'`). */
+  readonly optionKinds: readonly string[]
+}
+
+/**
+ * How an ACP-backed agent answers a permission prompt. OMA runs agents
+ * autonomously inside a task DAG, so the default is `'auto-approve'`.
+ *  - `'auto-approve'` — select the first `allow_*` option (falls back to cancel).
+ *  - `'reject'` — select a `reject_*` option (falls back to cancel).
+ *  - function — decide per request; `true` approves, `false` rejects.
+ */
+export type AcpPermissionPolicy =
+  | 'auto-approve'
+  | 'reject'
+  | ((request: AcpPermissionRequest) => boolean | Promise<boolean>)
+
+/**
+ * Configuration for running an external agent over the Agent Client Protocol
+ * (ACP) as an OMA team member — see {@link AgentConfig.backend}. The agent is a
+ * local subprocess (a coding CLI such as Gemini CLI or Claude Code) that runs its
+ * own agentic loop, while OMA drives it, collects its output and token usage, and
+ * schedules it in the task DAG alongside LLM agents.
+ *
+ * A discriminated union keyed by {@link kind}; only `'acp'` exists today.
+ * Requires the optional peer `@agentclientprotocol/sdk`.
+ */
+export interface AgentBackendConfig {
+  /** Backend discriminant. Only `'acp'` is supported today. */
+  readonly kind: 'acp'
+  /** Executable to spawn (e.g. `'npx'`, `'gemini'`, `'codex-acp'`). */
+  readonly command: string
+  /** Arguments passed to `command` (e.g. `['-y', '@agentclientprotocol/claude-agent-acp']`). */
+  readonly args?: readonly string[]
+  /** Extra environment variables for the subprocess, merged over `process.env`. */
+  readonly env?: Readonly<Record<string, string>>
+  /**
+   * Working directory the agent reads and edits. Defaults to `process.cwd()`.
+   * Unlike OMA's filesystem-tool sandbox, an ACP agent accesses this directory
+   * directly — scope it to a project you trust the external agent with.
+   */
+  readonly cwd?: string
+  /** How to answer the agent's permission prompts. Defaults to `'auto-approve'`. */
+  readonly permission?: AcpPermissionPolicy
+}
+
 /** Static configuration for a single agent. */
 export interface AgentConfig {
   readonly name: string
@@ -392,6 +447,16 @@ export interface AgentConfig {
    * and `region` are ignored for LLM calls.
    */
   readonly adapter?: LLMAdapter
+  /**
+   * Run this agent on an external {@link AgentBackendConfig} (e.g. a coding CLI
+   * over the Agent Client Protocol) instead of an LLM adapter. When set, the
+   * LLM-specific fields (`model`, `provider`, `adapter`, sampling, tools, context
+   * strategy) do not apply — the external agent runs its own loop — but the agent
+   * still participates in the task DAG, shared memory, cascade-on-failure, and
+   * token budget like any other team member. Requires the optional peer
+   * `@agentclientprotocol/sdk`; import the backend from `@open-multi-agent/core/acp`.
+   */
+  readonly backend?: AgentBackendConfig
   readonly provider?: SupportedProvider
   /**
    * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).

@@ -50,7 +50,7 @@ function buildMockAgent(config: AgentConfig, responseText: string) {
     temperature: config.temperature,
     agentName: config.name,
   })
-  ;(agent as any).runner = runner
+  ;(agent as any).backend = runner
 
   return { agent, calls }
 }
@@ -330,7 +330,7 @@ describe('Agent hooks — beforeRun / afterRun', () => {
       model: config.model,
       agentName: config.name,
     })
-    ;(agent as any).runner = runner
+    ;(agent as any).backend = runner
 
     // Directly call run which creates a single text-only user message.
     // To test mixed content, we need to go through the private executeRun.

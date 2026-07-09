@@ -37,6 +37,7 @@
  */
 
 import type {
+  AgentBackendConfig,
   AgentConfig,
   AgentState,
   AgentRunResult,
@@ -52,7 +53,7 @@ import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '..
 import type { ToolExecutor } from '../tool/executor.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { createAdapter } from '../llm/adapter.js'
-import { AgentRunner, type RunnerOptions, type RunOptions, type RunResult } from './runner.js'
+import { AgentRunner, type AgentBackend, type RunnerOptions, type RunOptions, type RunResult } from './runner.js'
 import {
   buildStructuredOutputInstruction,
   extractJSON,
@@ -84,7 +85,7 @@ export class Agent {
   readonly name: string
   readonly config: AgentConfig
 
-  private runner: AgentRunner | null = null
+  private backend: AgentBackend | null = null
   private state: AgentState
   private readonly _toolRegistry: ToolRegistry
   private readonly _toolExecutor: ToolExecutor
@@ -106,11 +107,12 @@ export class Agent {
     this.name = config.name
     // `model` is optional on AgentConfig so orchestrated agents can inherit
     // `OrchestratorConfig.defaultModel`. A standalone Agent has no orchestrator
-    // to inherit from, so it must declare a model explicitly.
-    if (config.model === undefined) {
+    // to inherit from, so it must declare a model explicitly — unless it runs on
+    // an external `backend` (e.g. an ACP coding CLI), which needs no LLM model.
+    if (config.model === undefined && config.backend === undefined) {
       throw new Error(
-        `Agent "${config.name}" has no model. Set 'model' in its config, or run it ` +
-          `through OpenMultiAgent to inherit 'defaultModel'.`,
+        `Agent "${config.name}" has no model. Set 'model' in its config, or a 'backend', ` +
+          `or run it through OpenMultiAgent to inherit 'defaultModel'.`,
       )
     }
     this.config = config
@@ -129,14 +131,24 @@ export class Agent {
   // -------------------------------------------------------------------------
 
   /**
-   * Lazily create the {@link AgentRunner}.
+   * Lazily create the {@link AgentBackend} that executes this agent's runs.
    *
-   * The adapter is created asynchronously (it may lazy-import provider SDKs),
-   * so we defer construction until the first `run` / `prompt` / `stream` call.
+   * Defaults to an {@link AgentRunner} (the LLM conversation loop). When
+   * {@link AgentConfig.backend} is set, delegates to an external backend (e.g. an
+   * ACP coding CLI) instead. Construction is async because it may lazy-import a
+   * provider SDK or the optional ACP peer, so we defer it to the first
+   * `run` / `prompt` / `stream` call.
    */
-  private async getRunner(): Promise<AgentRunner> {
-    if (this.runner !== null) {
-      return this.runner
+  private async getBackend(): Promise<AgentBackend> {
+    if (this.backend !== null) {
+      return this.backend
+    }
+
+    // External backend: it runs its own agentic loop, so none of the
+    // LLM-specific configuration below applies.
+    if (this.config.backend) {
+      this.backend = await this.createExternalBackend(this.config.backend)
+      return this.backend
     }
 
     const provider = this.config.provider ?? 'anthropic'
@@ -184,14 +196,42 @@ export class Agent {
       compressReasoningText: this.config.compressReasoningText,
     }
 
-    this.runner = new AgentRunner(
+    this.backend = new AgentRunner(
       adapter,
       this._toolRegistry,
       this._toolExecutor,
       runnerOptions,
     )
 
-    return this.runner
+    return this.backend
+  }
+
+  /**
+   * Build a non-LLM {@link AgentBackend} from {@link AgentConfig.backend}.
+   *
+   * The backend module is loaded via dynamic `import()` so its optional peer SDK
+   * (e.g. `@agentclientprotocol/sdk`) is only resolved when a backend is used.
+   */
+  private async createExternalBackend(backend: AgentBackendConfig): Promise<AgentBackend> {
+    switch (backend.kind) {
+      case 'acp': {
+        const { createAcpBackend } = await import('./acp-backend.js')
+        return createAcpBackend({
+          command: backend.command,
+          args: backend.args,
+          env: backend.env,
+          cwd: backend.cwd,
+          permission: backend.permission,
+          agentName: this.name,
+          model: this.config.model,
+          callTimeoutMs: this.config.callTimeoutMs,
+        })
+      }
+      default:
+        throw new Error(
+          `Agent "${this.name}": unknown backend kind "${(backend as { kind: string }).kind}".`,
+        )
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -331,7 +371,7 @@ export class Agent {
         this.applyHookContext(messages, modified, hookCtx.prompt)
       }
 
-      const runner = await this.getRunner()
+      const backend = await this.getBackend()
       const internalOnMessage = (msg: LLMMessage) => {
         this.state.messages.push(msg)
         callerOptions?.onMessage?.(msg)
@@ -356,7 +396,7 @@ export class Agent {
         ...(effectiveAbort ? { abortSignal: effectiveAbort } : undefined),
       }
 
-      const result = await runner.run(messages, runOptions)
+      const result = await backend.run(messages, runOptions)
       this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
 
       if (result.budgetExceeded) {
@@ -374,7 +414,7 @@ export class Agent {
         let validated = await this.validateStructuredOutput(
           messages,
           result,
-          runner,
+          backend,
           runOptions,
         )
         // --- afterRun hook ---
@@ -445,7 +485,7 @@ export class Agent {
   private async validateStructuredOutput(
     originalMessages: LLMMessage[],
     result: RunResult,
-    runner: AgentRunner,
+    backend: AgentBackend,
     runOptions: RunOptions,
   ): Promise<AgentRunResult> {
     const schema = this.config.outputSchema!
@@ -486,7 +526,7 @@ export class Agent {
       errorFeedbackMessage,
     ]
 
-    const retryResult = await runner.run(retryMessages, runOptions)
+    const retryResult = await backend.run(retryMessages, runOptions)
     this.state.tokenUsage = addUsage(this.state.tokenUsage, retryResult.tokenUsage)
 
     const mergedTokenUsage = addUsage(result.tokenUsage, retryResult.tokenUsage)
@@ -538,7 +578,7 @@ export class Agent {
         this.applyHookContext(messages, modified, hookCtx.prompt)
       }
 
-      const runner = await this.getRunner()
+      const backend = await this.getBackend()
       // Fresh timeout per stream call, same as executeRun.
       const timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
         ? AbortSignal.timeout(this.config.timeoutMs)
@@ -548,7 +588,7 @@ export class Agent {
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
 
-      for await (const event of runner.stream(messages, {
+      for await (const event of backend.stream(messages, {
         ...callerOptions,
         ...(effectiveAbort ? { abortSignal: effectiveAbort } : {}),
       })) {

@@ -196,7 +196,7 @@ function buildMockAgentWithAdapter(config: AgentConfig, adapter: LLMAdapter): Ag
   const executor = new ToolExecutor(registry)
   const agent = new Agent(config, registry, executor)
 
-  // Inject a pre-built runner so `getRunner()` returns it without calling createAdapter.
+  // Inject a pre-built runner so `getBackend()` returns it without calling createAdapter.
   const runner = new AgentRunner(adapter, registry, executor, {
     model: config.model,
     systemPrompt: config.systemPrompt,
@@ -205,7 +205,7 @@ function buildMockAgentWithAdapter(config: AgentConfig, adapter: LLMAdapter): Ag
     temperature: config.temperature,
     agentName: config.name,
   })
-  ;(agent as any).runner = runner
+  ;(agent as any).backend = runner
 
   return agent
 }

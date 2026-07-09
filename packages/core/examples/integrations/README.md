@@ -10,6 +10,8 @@ or frameworks. The OMA team maintains these once merged, regardless of who
 contributed them. Current:
 
 - `mcp-github.ts`: MCP servers via `connectMCPTools()`.
+- `external-agent-acp.ts`: external coding agents (Gemini CLI / Claude Code) as
+  team members via the `acp` backend. See [docs/external-agents.md](../../../../docs/external-agents.md).
 - `trace-observability.ts`: the `onTrace` API.
 - `with-vercel-ai-sdk/`: Next.js + AI SDK + `runTeam()`.
 - `express-customer-support/`: Express REST API + `runTasks()`. Contributed

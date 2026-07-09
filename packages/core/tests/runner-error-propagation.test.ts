@@ -33,7 +33,7 @@ function buildAgentWithAdapter(config: AgentConfig, adapter: LLMAdapter) {
     maxTurns: config.maxTurns,
     agentName: config.name,
   })
-  ;(agent as any).runner = runner
+  ;(agent as any).backend = runner
 
   return agent
 }

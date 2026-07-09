@@ -46,7 +46,7 @@ The framework's key feature. The coordinator receives goal + roster → emits a 
 |-------|-------|----------------|
 | Orchestrator | `orchestrator/orchestrator.ts`, `scheduler.ts` | Top-level API, task decomposition, retry/backoff, coordinator |
 | Team | `team/team.ts`, `messaging.ts` | Agent roster, MessageBus (point-to-point + broadcast), SharedMemory binding |
-| Agent | `agent/agent.ts`, `runner.ts`, `pool.ts`, `structured-output.ts`, `loop-detector.ts` | Lifecycle (idle→running→completed/error), conversation loop, concurrency pool + per-agent mutex, structured-output validation, loop detection |
+| Agent | `agent/agent.ts`, `runner.ts`, `pool.ts`, `structured-output.ts`, `loop-detector.ts`, `acp-backend.ts` | Lifecycle (idle→running→completed/error), conversation loop, concurrency pool + per-agent mutex, structured-output validation, loop detection; `AgentBackend` seam so an `Agent` runs on either an LLM `AgentRunner` or an external ACP subprocess |
 | Task | `task/queue.ts`, `task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
 | Tool | `tool/framework.ts`, `executor.ts`, `mcp.ts`, `text-tool-extractor.ts`, `built-in/` | `defineTool()` + Zod, ToolRegistry, parallel batch exec, MCP bridge, local-model text tool-call fallback, filesystem sandbox |
 | LLM | `llm/adapter.ts` + 12 per-provider files + `openai-common.ts` + `reasoning-fallback.ts` | `LLMAdapter` (`chat` + `stream`); lazy `createAdapter()` factory; `baseURL` for OpenAI-compatible servers; cross-provider reasoning round-tripping |
@@ -55,7 +55,7 @@ The framework's key feature. The coordinator receives goal + roster → emits a 
 | CLI | `cli/oma.ts` | Shell/CI entry; built to `dist/cli/oma.js`, exposed as the `oma` npm bin |
 | Utils | `utils/*.ts` | Semaphore, token accounting, keyword helpers, trace plumbing, secret/PII redaction |
 | Types / Errors | `types.ts`, `errors.ts` | All interfaces in one file (avoids circular deps); shared error types |
-| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts` | Root + `/mcp` + `/ai-sdk` subpaths so optional peers don't break the main import |
+| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts`, `acp.ts` | Root + `/mcp` + `/ai-sdk` + `/acp` subpaths so optional peers don't break the main import |
 
 ### Non-obvious invariants
 
@@ -67,6 +67,7 @@ Behavior that isn't visible from any single file and will cause bugs if missed:
 - **Filesystem tools are sandboxed, `bash` is not** — `file_read/file_write/file_edit/grep/glob` resolve every path (symlinks included) within `AgentConfig.cwd` / `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables the sandbox; `process.cwd()` widens it. → [docs/tool-configuration.md](docs/tool-configuration.md)
 - **Reasoning is dropped unless opted in** — provider-native `ReasoningBlock`s the target adapter can't echo are silently dropped unless `AgentConfig.preserveReasoningAsText` is on (then converted to inline `<thinking>` text). `<thinking>` text is never parsed back into a signed block. → [docs/context-management.md](docs/context-management.md)
 - **Local-model tool-call fallback** — `text-tool-extractor.ts` only runs when the server emits no native `tool_calls` (Ollama/vLLM/LM Studio); native calls always win.
+- **External (ACP) agents run their own loop** — `AgentConfig.backend = { kind: 'acp', … }` swaps the LLM `AgentRunner` for an `AcpBackend` (spawns a coding CLI over ACP). The runner's tool loop / sandbox / context strategy don't apply; OMA is the ACP *client*, the subprocess does its own file IO in `cwd` (no `fs/*` proxying yet), permission prompts default to auto-approve, and ACP's single context-token figure is mapped to `tokenUsage.input_tokens` (no `usage_update` ⇒ not budget-gated). Everything downstream (`pool`/`scheduler`/`queue`/memory/budget) is backend-agnostic. → [docs/external-agents.md](docs/external-agents.md)
 - **Secrets are auto-redacted** from traces, bash output, and dashboard payloads (`utils/redaction.ts`).
 
 ### Subsystem docs
@@ -82,6 +83,7 @@ Detailed behavior is documented in `docs/` — the single source of truth, so up
 | Checkpoint/resume over `MemoryStore` | `memory/checkpoint.ts`, `orchestrator/orchestrator.ts` | [checkpoint.md](docs/checkpoint.md) |
 | Tracing, progress events, dashboard | `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md) |
 | CLI usage + JSON schemas | `cli/oma.ts` | [cli.md](docs/cli.md) |
+| External coding agents over ACP | `agent/acp-backend.ts` | [external-agents.md](docs/external-agents.md) |
 
 ### Adding an LLM Adapter
 

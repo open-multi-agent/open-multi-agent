@@ -212,6 +212,25 @@ export interface RunResult {
   readonly budgetExceeded?: boolean
 }
 
+/**
+ * The execution seam behind every {@link Agent}: given a conversation, produce a
+ * {@link RunResult} (and a matching {@link StreamEvent} stream). {@link AgentRunner}
+ * is the LLM implementation; alternative backends (e.g. an external coding agent
+ * over ACP — see `@open-multi-agent/core/acp`) implement the same contract so an
+ * `Agent` can drive either without the orchestrator, pool, or team knowing which.
+ *
+ * The contract mirrors {@link AgentRunner.run} / {@link AgentRunner.stream}:
+ * `stream()` yields incremental events and MUST end with a single
+ * `{ type: 'done', data: RunResult }` (or `{ type: 'error', data }` on failure);
+ * `run()` returns that same aggregated {@link RunResult}.
+ */
+export interface AgentBackend {
+  /** Run the conversation to completion and return the aggregated result. */
+  run(messages: LLMMessage[], options?: RunOptions): Promise<RunResult>
+  /** Run the conversation and yield {@link StreamEvent}s, ending with `done`. */
+  stream(messages: LLMMessage[], options?: RunOptions): AsyncIterable<StreamEvent>
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -371,7 +390,7 @@ function loopWarningText(kind: 'tool_repetition' | 'text_repetition'): string {
  * console.log(result.output)
  * ```
  */
-export class AgentRunner {
+export class AgentRunner implements AgentBackend {
   private readonly maxTurns: number
   private summarizeCache: {
     oldSignature: string
