@@ -121,6 +121,8 @@ export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isR
 
 export { InMemoryStore } from './memory/store.js'
 export { FileStore } from './memory/file-store.js'
+export { RedactingStore } from './memory/redacting-store.js'
+export type { RedactingStoreOptions } from './memory/redacting-store.js'
 export { SharedMemory } from './memory/shared.js'
 export {
   Checkpoint,
@@ -174,6 +176,7 @@ export type {
   // Team
   TeamConfig,
   TeamRunResult,
+  RunMetrics,
   RunTeamOptions,
   RunTasksOptions,
   RunTaskSpec,
@@ -230,4 +233,4 @@ export type {
   SharedMemoryWriteOptions,
 } from './types.js'
 
-export { generateRunId } from './utils/trace.js'
+export { generateRunId, generateSpanId } from './utils/trace.js'

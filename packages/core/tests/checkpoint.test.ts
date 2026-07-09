@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Checkpoint, CHECKPOINT_KEY_PREFIX, isCheckpointKey } from '../src/memory/checkpoint.js'
 import { InMemoryStore } from '../src/memory/store.js'
+import { RedactingStore } from '../src/memory/redacting-store.js'
 import { SharedMemory } from '../src/memory/shared.js'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { TaskQueue } from '../src/task/queue.js'
@@ -184,6 +185,85 @@ describe('checkpoint snapshots', () => {
       `${CHECKPOINT_KEY_PREFIX}custom/latest`,
     ])
     expect((await checkpoint.loadLatest())?.queue.completed).toEqual(['a'])
+  })
+
+  it('a RedactingStore-wrapped checkpoint masks secrets yet stays loadable', async () => {
+    const inner = new AsyncMapStore()
+    const checkpoint = new Checkpoint(new RedactingStore(inner), { runId: 'secret-run' })
+    const queue = new TaskQueue()
+    queue.add(task('a'))
+    queue.complete('a', 'done')
+
+    await checkpoint.save({
+      version: 1,
+      mode: 'runTasks',
+      createdAt: new Date().toISOString(),
+      runId: 'secret-run',
+      queue: queue.snapshot(),
+      sharedMemory: {
+        version: 1,
+        turnCount: 1,
+        entries: [
+          {
+            key: 'alice/task:a:result',
+            value: 'the api key is sk-abcdefghijklmnop',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+      completedTaskResults: [{ taskId: 'a', assignee: 'alice', result: 'password="hunter2"' }],
+    })
+
+    // Structurally valid after redaction: loadLatest parses + validates.
+    const loaded = await checkpoint.loadLatest()
+    expect(loaded).not.toBeNull()
+    expect(loaded?.queue.completed).toEqual(['a'])
+
+    // Secrets are masked in both persistence-bearing branches.
+    expect(loaded?.completedTaskResults[0]?.result).toBe('password="[redacted]"')
+    expect(loaded?.sharedMemory?.entries[0]?.value).toBe('the api key is [redacted]')
+
+    // Raw backend never held the secret either.
+    const rawValue = (await inner.get(`${CHECKPOINT_KEY_PREFIX}secret-run/latest`))?.value ?? ''
+    expect(rawValue).not.toContain('sk-abcdefghijklmnop')
+    expect(rawValue).not.toContain('hunter2')
+  })
+
+  it('one RedactingStore backing both shared memory and the checkpoint masks every sink', async () => {
+    // The default reuse case: SharedMemory and Checkpoint share one wrapped store.
+    const inner = new InMemoryStore()
+    const store = new RedactingStore(inner)
+
+    const mem = new SharedMemory(store)
+    const secret = 'password="hunter2" and key sk-abcdefghijklmnop'
+    await mem.write('alice', 'task:a:result', secret)
+
+    const queue = new TaskQueue()
+    queue.add(task('a', { assignee: 'alice' }))
+    queue.complete('a', secret)
+
+    const checkpoint = new Checkpoint(store, { runId: 'reuse' })
+    await checkpoint.save({
+      version: 1,
+      mode: 'runTasks',
+      createdAt: new Date().toISOString(),
+      runId: 'reuse',
+      queue: queue.snapshot(),
+      turnCount: mem.getTurnCount(),
+      completedTaskResults: [{ taskId: 'a', assignee: 'alice', result: secret }],
+    })
+
+    // Shared read and checkpoint reload are both masked and structurally intact.
+    expect((await mem.read('alice/task:a:result'))?.value).not.toContain('hunter2')
+    const loaded = await checkpoint.loadLatest()
+    expect(loaded?.queue.completed).toEqual(['a'])
+    expect(loaded?.completedTaskResults[0]?.result).toContain('[redacted]')
+    expect(loaded?.completedTaskResults[0]?.result).not.toContain('hunter2')
+
+    // No raw secret survives anywhere in the backend, under any key.
+    const rawDump = JSON.stringify(await inner.list())
+    expect(rawDump).not.toContain('hunter2')
+    expect(rawDump).not.toContain('sk-abcdefghijklmnop')
   })
 })
 

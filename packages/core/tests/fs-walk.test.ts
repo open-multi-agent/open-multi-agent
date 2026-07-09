@@ -3,6 +3,9 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { collectFiles } from '../src/tool/built-in/fs-walk.js'
+import { detectSymlinkSupport } from './helpers/symlink-support.js'
+
+const symlinksSupported = await detectSymlinkSupport()
 
 let dir: string
 
@@ -27,7 +30,7 @@ describe('collectFiles', () => {
     expect(files).toContain(join(sub, 'deep.ts'))
   })
 
-  it('skips symlinked directories', async () => {
+  it.skipIf(!symlinksSupported)('skips symlinked directories', async () => {
     const root = join(dir, 'root')
     const outside = join(dir, 'outside')
     await mkdir(root, { recursive: true })
@@ -43,7 +46,7 @@ describe('collectFiles', () => {
     expect(files.some((f) => f.includes('secret.ts'))).toBe(false)
   })
 
-  it('skips symlinks to files', async () => {
+  it.skipIf(!symlinksSupported)('skips symlinks to files', async () => {
     const root = join(dir, 'root')
     const outside = join(dir, 'outside')
     await mkdir(root, { recursive: true })

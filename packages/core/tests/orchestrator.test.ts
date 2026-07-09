@@ -930,6 +930,69 @@ describe('OpenMultiAgent', () => {
       expect(synthesisPrompt).toContain('### Later task (SKIPPED)')
       expect(synthesisPrompt).toContain('Skipped: approval rejected.')
     })
+
+    it('computes run-level metrics from mixed completed and failed tasks', async () => {
+      let coordinatorCalls = 0
+      const coordinatorAdapter: LLMAdapter = {
+        name: 'coordinator-mock',
+        async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+          coordinatorCalls++
+          if (coordinatorCalls === 1) {
+            return textResponse([
+              '```json',
+              '[',
+              '{"title": "Task A", "description": "Fails", "assignee": "worker-a"},',
+              '{"title": "Task B", "description": "Succeeds", "assignee": "worker-b"}',
+              ']',
+              '```',
+            ].join('\n'))
+          }
+          return textResponse('final synthesis')
+        },
+        async *stream() { yield { type: 'done' as const, data: {} } },
+      }
+      const failingAdapter: LLMAdapter = {
+        name: 'failing-worker',
+        async chat(): Promise<LLMResponse> {
+          throw new Error('task failed')
+        },
+        async *stream() { yield { type: 'done' as const, data: {} } },
+      }
+      const successAdapter: LLMAdapter = {
+        name: 'success-worker',
+        async chat(): Promise<LLMResponse> {
+          return textResponse('success output')
+        },
+        async *stream() { yield { type: 'done' as const, data: {} } },
+      }
+
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onApproval: async () => false,
+      })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), adapter: failingAdapter },
+        { ...agentConfig('worker-b'), adapter: successAdapter },
+      ]))
+
+      const result = await oma.runTeam(team, 'First run the failing task, then run the successful task', {
+        coordinator: { adapter: coordinatorAdapter },
+      })
+
+      expect(result.metrics).toBeDefined()
+      const m = result.metrics!
+      expect(m.failureCount).toBe(1)
+      expect(m.errorCount).toBeGreaterThanOrEqual(1)
+      expect(m.completedCount).toBe(1)
+      expect(m.totalRetries).toBe(0)
+      expect(m.totalTokens.input_tokens).toBeGreaterThanOrEqual(0)
+      expect(m.totalTokens.output_tokens).toBeGreaterThanOrEqual(0)
+      expect(m.minTaskDurationMs).toBeDefined()
+      expect(m.maxTaskDurationMs).toBeDefined()
+      expect(typeof m.avgTaskDurationMs).toBe('number')
+      expect(m.avgTaskDurationMs).toBeGreaterThanOrEqual(0)
+      expect(m.totalDurationMs).toBeGreaterThanOrEqual(0)
+    })
   })
 
   describe('config defaults', () => {
@@ -1088,8 +1151,13 @@ describe('OpenMultiAgent', () => {
       expect(planReady.taskCount).toBe(1)
       expect(planReady.approved).toBe(false)
       expect(planReady.runId).toMatch(/.+/)
+      expect(planReady.spanId).toMatch(/^[0-9a-f-]{36}$/)
       expect(planReady.durationMs).toBeGreaterThanOrEqual(0)
       expect(planReady.startMs).toBeLessThanOrEqual(planReady.endMs)
+
+      const coordinatorTrace = traces.find((t) => t.type === 'agent' && t.agent === 'coordinator')
+      expect(coordinatorTrace).toBeDefined()
+      expect(planReady.parentId).toBe(coordinatorTrace!.spanId)
     })
   })
 
@@ -1365,10 +1433,17 @@ describe('OpenMultiAgent', () => {
       expect(streamTraces.length).toBeGreaterThan(0)
       expect(streamTraces.some((t) => t.streamType === 'text')).toBe(true)
       expect(streamTraces.some((t) => t.streamType === 'done')).toBe(true)
+      const workerAgentTrace = traces.find((t) => t.type === 'agent' && t.agent === 'worker' && t.taskId)
+      expect(workerAgentTrace).toBeDefined()
+      const taskTrace = traces.find((t) => t.type === 'task' && t.taskId === workerAgentTrace!.taskId)
+      expect(taskTrace).toBeDefined()
+      expect(workerAgentTrace!.parentId).toBe(taskTrace!.spanId)
       for (const trace of streamTraces) {
         expect(trace.agent).toBe('worker')
         expect(trace.taskId).toMatch(/.+/)
         expect(trace.runId).toMatch(/.+/)
+        expect(trace.spanId).toMatch(/^[0-9a-f-]{36}$/)
+        expect(trace.parentId).toBe(workerAgentTrace!.spanId)
         expect(trace.durationMs).toBe(0)
       }
     })

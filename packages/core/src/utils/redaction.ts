@@ -24,11 +24,32 @@ const TOKEN_LITERAL_PATTERNS: readonly RegExp[] = [
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
 ]
 
+/**
+ * Returns `pattern` with the global flag guaranteed, so a single
+ * `String.replace` scrubs every match rather than just the first. Callers may
+ * pass a non-global custom pattern; we don't mutate it, we clone when needed.
+ */
+function withGlobalFlag(pattern: RegExp): RegExp {
+  return pattern.global ? pattern : new RegExp(pattern.source, `${pattern.flags}g`)
+}
+
 export function isSensitiveName(name: string): boolean {
   return SENSITIVE_NAME_PATTERN.test(name)
 }
 
-export function redactSensitiveText(text: string): string {
+/**
+ * Redact secrets from free text.
+ *
+ * @param text          - Input text.
+ * @param extraPatterns - Optional caller-supplied patterns (e.g. PII such as
+ *                        emails or national IDs) applied on top of the built-in
+ *                        credential patterns. Each matched span is replaced with
+ *                        `[redacted]`; non-global patterns are treated as global.
+ */
+export function redactSensitiveText(
+  text: string,
+  extraPatterns: readonly RegExp[] = [],
+): string {
   if (text.length === 0) return text
 
   let redacted = text.replace(
@@ -89,24 +110,42 @@ export function redactSensitiveText(text: string): string {
     redacted = redacted.replace(pattern, REDACTED)
   }
 
+  for (const pattern of extraPatterns) {
+    redacted = redacted.replace(withGlobalFlag(pattern), REDACTED)
+  }
+
   return redacted
 }
 
-export function redactSensitiveObject<T>(value: T): T {
-  return redactValue(value) as T
+/**
+ * Recursively redact secrets from an object/array, preserving its shape.
+ *
+ * @param value         - Value to redact (returned type-identical).
+ * @param extraPatterns - Optional caller-supplied patterns forwarded to
+ *                        {@link redactSensitiveText} for every string leaf.
+ */
+export function redactSensitiveObject<T>(
+  value: T,
+  extraPatterns: readonly RegExp[] = [],
+): T {
+  return redactValue(value, extraPatterns) as T
 }
 
-function redactValue(value: unknown, key?: string): unknown {
+function redactValue(
+  value: unknown,
+  extraPatterns: readonly RegExp[],
+  key?: string,
+): unknown {
   if (key !== undefined && isSensitiveName(key)) {
     return REDACTED
   }
 
   if (typeof value === 'string') {
-    return redactSensitiveText(value)
+    return redactSensitiveText(value, extraPatterns)
   }
 
   if (Array.isArray(value)) {
-    return value.map(item => redactValue(item))
+    return value.map(item => redactValue(item, extraPatterns))
   }
 
   if (value !== null && typeof value === 'object') {
@@ -114,7 +153,7 @@ function redactValue(value: unknown, key?: string): unknown {
 
     const redacted: Record<string, unknown> = {}
     for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
-      redacted[childKey] = redactValue(childValue, childKey)
+      redacted[childKey] = redactValue(childValue, extraPatterns, childKey)
     }
     return redacted
   }

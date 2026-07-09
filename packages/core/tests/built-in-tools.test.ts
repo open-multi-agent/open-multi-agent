@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { access, mkdir, mkdtemp, rm, symlink, writeFile, readFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { tmpdir } from 'os'
+import { detectSymlinkSupport } from './helpers/symlink-support.js'
 import { fileReadTool } from '../src/tool/built-in/file-read.js'
 import { fileWriteTool } from '../src/tool/built-in/file-write.js'
 import { fileEditTool } from '../src/tool/built-in/file-edit.js'
@@ -24,6 +25,8 @@ import type { AgentRunResult, ToolUseContext } from '../src/types.js'
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const symlinksSupported = await detectSymlinkSupport()
 
 let tmpDir: string
 let defaultContext: ToolUseContext
@@ -313,7 +316,11 @@ describe('bash', () => {
     )
 
     expect(result.isError).toBe(false)
-    expect(result.data).toContain(tmpDir)
+    // Compare by basename: Git Bash on Windows prints the MSYS translation of
+    // the path (`/tmp/oma-test-X` for `C:\...\Temp\oma-test-X`), so the full
+    // native path never appears in `pwd` output there. The mkdtemp suffix
+    // makes the basename unique per run.
+    expect(result.data).toContain(basename(tmpDir))
   })
 
   it('returns exit code for failing commands', async () => {
@@ -623,7 +630,7 @@ describe('glob', () => {
     expect(result.data).toContain('deep.ts')
   })
 
-  it('does not follow symlinked directories outside the sandbox root', async () => {
+  it.skipIf(!symlinksSupported)('does not follow symlinked directories outside the sandbox root', async () => {
     const root = join(tmpDir, 'root')
     const outside = join(tmpDir, 'outside')
     await mkdir(root, { recursive: true })
@@ -646,7 +653,7 @@ describe('glob', () => {
     expect(result.data).not.toContain('linked-outside')
   })
 
-  it('does not follow symlinks to files outside the sandbox root', async () => {
+  it.skipIf(!symlinksSupported)('does not follow symlinks to files outside the sandbox root', async () => {
     const root = join(tmpDir, 'root')
     const outside = join(tmpDir, 'outside')
     await mkdir(root, { recursive: true })
@@ -770,7 +777,7 @@ describe('grep', () => {
 
   // Both branches must reject the symlink — ripgrep defaults to --no-follow,
   // and the Node.js fallback skips symlinks via lstat() in fs-walk.
-  it('does not follow symlinked directories outside the sandbox root', async () => {
+  it.skipIf(!symlinksSupported)('does not follow symlinked directories outside the sandbox root', async () => {
     const root = join(tmpDir, 'root')
     const outside = join(tmpDir, 'outside')
     await mkdir(root, { recursive: true })
@@ -794,7 +801,7 @@ describe('grep', () => {
     expect(result.data).not.toContain('linked-outside')
   })
 
-  it('does not follow symlinks to files outside the sandbox root', async () => {
+  it.skipIf(!symlinksSupported)('does not follow symlinks to files outside the sandbox root', async () => {
     const root = join(tmpDir, 'root')
     const outside = join(tmpDir, 'outside')
     await mkdir(root, { recursive: true })

@@ -36,7 +36,7 @@ import type {
 } from '../types.js'
 import { LLMCallTimeoutError, TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
-import { emitTrace } from '../utils/trace.js'
+import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { mergeAbortSignals } from '../utils/abort.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { redactSensitiveObject, redactSensitiveText } from '../utils/redaction.js'
@@ -184,6 +184,10 @@ export interface RunOptions {
   readonly taskId?: string
   /** Agent name for trace correlation (overrides RunnerOptions.agentName). */
   readonly traceAgent?: string
+  /** Span ID for the current agent run; child LLM/tool spans point at it. */
+  readonly traceSpanId?: string
+  /** Parent span ID for the current agent run. */
+  readonly traceParentId?: string
   /**
    * Per-call abort signal. When set, takes precedence over the static
    * {@link RunnerOptions.abortSignal}. Useful for per-run timeouts.
@@ -562,6 +566,8 @@ export class AgentRunner {
       emitTrace(options.onTrace, {
         type: 'llm_call',
         runId: options.runId ?? '',
+        spanId: generateSpanId(),
+        ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
         taskId: options.taskId,
         agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
         model: summaryOptions.model,
@@ -864,6 +870,8 @@ export class AgentRunner {
           emitTrace(options.onTrace, {
             type: 'llm_call',
             runId: options.runId ?? '',
+            spanId: generateSpanId(),
+            ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
             taskId: options.taskId,
             agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
             model: this.options.model,
@@ -1054,6 +1062,8 @@ export class AgentRunner {
             emitTrace(options.onTrace, {
               type: 'tool_call',
               runId: options.runId ?? '',
+              spanId: generateSpanId(),
+              ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
               taskId: options.taskId,
               agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
               tool: block.name,

@@ -194,6 +194,23 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
+**Cap estimated cost.** Keep the price table in your app and provide an estimator. OMA passes the effective `model`, `provider`, phase, and `taskId` (when available) so you can price per model. The cap is checked at the same turn/task boundaries as `maxTokenBudget`, so a run can overshoot by up to one model turn; it is not a cent-exact stop.
+
+```ts
+const prices = {
+  'gpt-5.4-mini': { input: 0.75, output: 4.5 }, // USD per 1M tokens
+}
+
+const orchestrator = new OpenMultiAgent({
+  maxCostBudget: 0.25,
+  estimateCost: (usage, { model }) => {
+    const price = prices[model] ?? { input: 0, output: 0 }
+    return (usage.input_tokens / 1_000_000) * price.input
+      + (usage.output_tokens / 1_000_000) * price.output
+  },
+})
+```
+
 **Cancel a run.** Pass an `AbortSignal`; aborting stops the run in flight.
 
 ```ts
@@ -234,12 +251,6 @@ Using `open-multi-agent` in production or a side project? [Open a discussion](ht
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
 
 Built an integration? See the [integration guide](examples/integrations/README.md) for how to submit a reference or vendor example and get your product listed.
-
-### Provider community offers
-
-Limited-time provider offers for `open-multi-agent` users. Listings are not paid endorsements.
-
-- **[MiniMax](https://platform.minimax.io/subscribe/coding-plan?code=6ZoOY13DDV&source=link)** — Use MiniMax M3 in OMA's TypeScript multi-agent workflows. OMA users get 12% off the MiniMax Token Plan until 2026-06-30. See the [MiniMax setup guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers/minimax.md).
 
 ### Featured partner
 
@@ -408,7 +419,8 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Cap tool output | `maxToolOutputChars` (or per-tool `maxOutputChars`) + `compressToolResults: true` | `AgentConfig` and `defineTool()` |
 | Recover from failure | Per-task `maxRetries`, `retryDelayMs`, `retryBackoff` (exponential multiplier) | Task config used via `runTasks()` |
 | Survive a crash or restart | `checkpoint` (pass a `runId`, or a durable `MemoryStore` like the bundled `FileStore`) + `restore()` to resume, skipping completed tasks | `OrchestratorConfig` / run options |
-| Hard-cap spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
+| Hard-cap token spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
+| Cap estimated cost | `maxCostBudget` + `estimateCost`; you own the per-model price table, and checks happen at turn/task boundaries rather than cent-exact mid-call stops | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
 import { SharedMemory } from '../src/memory/shared.js'
+import { RedactingStore } from '../src/memory/redacting-store.js'
+import { InMemoryStore } from '../src/memory/store.js'
 import { Team } from '../src/team/team.js'
 import type { MemoryEntry, MemoryStore } from '../src/types.js'
 
@@ -47,6 +49,31 @@ describe('SharedMemory', () => {
     const aliceEntries = await mem.listByAgent('alice')
     expect(aliceEntries).toHaveLength(2)
     expect(aliceEntries.every((e) => e.key.startsWith('alice/'))).toBe(true)
+  })
+
+  // -------------------------------------------------------------------------
+  // Redaction on persist (RedactingStore backend)
+  // -------------------------------------------------------------------------
+
+  it('masks secrets on write while preserving namespacing and metadata', async () => {
+    const mem = new SharedMemory(new RedactingStore(new InMemoryStore()))
+    await mem.write('alice', 'result', 'the token is sk-abcdefghijklmnop', { kind: 'answer' })
+
+    const entry = await mem.read('alice/result')
+    expect(entry).not.toBeNull()
+    expect(entry!.value).not.toContain('sk-abcdefghijklmnop')
+    expect(entry!.value).toContain('[redacted]')
+    // Namespacing + provenance metadata survive redaction.
+    expect(entry!.key).toBe('alice/result')
+    expect(entry!.metadata).toMatchObject({ agent: 'alice', kind: 'answer' })
+  })
+
+  it('redacts a structured value while keeping it parseable on read', async () => {
+    const mem = new SharedMemory(new RedactingStore(new InMemoryStore()))
+    await mem.write('alice', 'creds', { token: 'sk-abcdefghijklmnop', ok: true })
+
+    const entry = await mem.read('alice/creds')
+    expect(entry!.value).toEqual({ token: '[redacted]', ok: true })
   })
 
   // -------------------------------------------------------------------------
