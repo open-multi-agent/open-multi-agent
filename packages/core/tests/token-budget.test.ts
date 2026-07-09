@@ -107,6 +107,13 @@ describe('token budget enforcement', () => {
     expect(hasCostBudgetEvent(events)).toBe(true)
   })
 
+  it('rejects maxCostBudget without a cost estimator', () => {
+    expect(() => new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxCostBudget: 1,
+    })).toThrow(/maxCostBudget requires estimateCost/)
+  })
+
   it('passes model information to the cost estimator', async () => {
     mockAdapterResponses = ['priced by model']
     mockAdapterUsage = [{ input_tokens: 5, output_tokens: 5 }]
@@ -281,6 +288,43 @@ describe('token budget enforcement', () => {
     expect(result.totalTokenUsage.input_tokens + result.totalTokenUsage.output_tokens).toBe(70)
     expect(hasCostBudgetEvent(events)).toBe(true)
     expect(events.some(e => e.type === 'task_skipped')).toBe(true)
+  })
+
+  it('marks a task failed when the cost estimator returns an invalid cost', async () => {
+    mockAdapterResponses = ['done-a', 'should-not-run']
+    mockAdapterUsage = [
+      { input_tokens: 20, output_tokens: 15 },
+      { input_tokens: 20, output_tokens: 15 },
+    ]
+
+    const events: OrchestratorEvent[] = []
+    const oma = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxCostBudget: 100,
+      estimateCost: () => Number.NaN,
+      onProgress: e => events.push(e),
+    })
+    const team = oma.createTeam('bad-estimator-team', {
+      name: 'bad-estimator-team',
+      agents: [agentConfig('worker')],
+      sharedMemory: false,
+    })
+
+    const result = await oma.runTasks(team, [
+      { title: 'A', description: 'A', assignee: 'worker' },
+      { title: 'B', description: 'B', assignee: 'worker', dependsOn: ['A'] },
+    ])
+
+    expect(result.success).toBe(false)
+    expect(result.tasks?.find(task => task.title === 'A')).toMatchObject({
+      status: 'failed',
+    })
+    expect(result.tasks?.find(task => task.title === 'B')?.status).toBe('failed')
+    expect(result.agentResults.get('worker')?.output).toContain('Cost estimator returned invalid cost')
+    expect(events.some((event) => {
+      if (event.type !== 'error') return false
+      return String(event.data).includes('Cost estimator returned invalid cost')
+    })).toBe(true)
   })
 
   it('counts retry token usage before enforcing team budget', async () => {

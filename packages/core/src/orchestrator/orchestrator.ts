@@ -294,6 +294,10 @@ function totalTokens(usage: TokenUsage): number {
   return usage.input_tokens + usage.output_tokens
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function buildCostEstimateContext(params: {
   readonly agentName: string
   readonly model: string
@@ -1235,13 +1239,31 @@ async function executeQueue(
         toolCalls: result.toolCalls,
         retries: retryCount,
       })
-      recordRunUsage(ctx, result.tokenUsage, buildCostEstimateContext({
-        agentName: assignee,
-        model: workerEffectiveConfig.model ?? config.defaultModel ?? DEFAULT_MODEL,
-        provider: workerEffectiveConfig.provider,
-        phase: 'worker',
-        taskId: task.id,
-      }), assignee, task.id)
+      try {
+        recordRunUsage(ctx, result.tokenUsage, buildCostEstimateContext({
+          agentName: assignee,
+          model: workerEffectiveConfig.model ?? config.defaultModel ?? DEFAULT_MODEL,
+          provider: workerEffectiveConfig.provider,
+          phase: 'worker',
+          taskId: task.id,
+        }), assignee, task.id)
+      } catch (error) {
+        const message = errorMessage(error)
+        ctx.agentResults.set(`${assignee}:${task.id}`, {
+          ...result,
+          success: false,
+          output: message,
+          error,
+        })
+        queue.fail(task.id, message)
+        config.onProgress?.({
+          type: 'error',
+          task: task.id,
+          agent: assignee,
+          data: message,
+        } satisfies OrchestratorEvent)
+        return
+      }
 
       if (result.success) {
         const sharedMem = team.getSharedMemoryInstance()
@@ -1756,6 +1778,10 @@ export class OpenMultiAgent {
    *   - `defaultProvider`: `'anthropic'`
    */
   constructor(config: OrchestratorConfig = {}) {
+    if (config.maxCostBudget !== undefined && config.estimateCost === undefined) {
+      throw new Error('maxCostBudget requires estimateCost so cost caps cannot be silently ignored.')
+    }
+
     this.config = {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
