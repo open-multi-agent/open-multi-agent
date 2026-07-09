@@ -157,6 +157,20 @@ export interface TokenUsage {
   readonly output_tokens: number
 }
 
+/** Context passed to user-supplied cost estimators. */
+export interface CostEstimateContext {
+  /** Agent whose LLM usage is being costed. */
+  readonly agentName: string
+  /** Model identifier used for the LLM call. */
+  readonly model: string
+  /** Provider used for the LLM call, when known. */
+  readonly provider?: SupportedProvider
+  /** Execution phase that produced this usage. */
+  readonly phase: 'agent' | 'short-circuit' | 'coordinator' | 'worker' | 'synthesis' | 'consensus' | 'delegated'
+  /** Task ID associated with the usage, when usage came from a task. */
+  readonly taskId?: string
+}
+
 /** Normalised response returned by every {@link LLMAdapter} implementation. */
 export interface LLMResponse {
   readonly id: string
@@ -921,6 +935,19 @@ export interface RunTeamOptions extends RunTasksOptions {
   readonly verifyJudges?: readonly AgentConfig[]
 }
 
+/** Run-level aggregated metrics summary. */
+export interface RunMetrics {
+  readonly totalTokens: TokenUsage
+  readonly totalRetries: number
+  readonly errorCount: number
+  readonly failureCount: number
+  readonly completedCount: number
+  readonly minTaskDurationMs?: number
+  readonly maxTaskDurationMs?: number
+  readonly avgTaskDurationMs?: number
+  readonly totalDurationMs: number
+}
+
 /** Aggregated result for a full team run. */
 export interface TeamRunResult {
   readonly success: boolean
@@ -935,6 +962,8 @@ export interface TeamRunResult {
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage
+  /** Aggregated run-level metrics computed from per-task data. */
+  readonly metrics?: RunMetrics
 }
 
 /** A single serializable task in a deterministic replay plan. */
@@ -1022,6 +1051,7 @@ export interface TaskExecutionMetrics {
   readonly durationMs: number
   readonly tokenUsage: TokenUsage
   readonly toolCalls: AgentRunResult['toolCalls']
+  readonly retries: number
 }
 
 /** Serializable task snapshot embedded in the static HTML dashboard. */
@@ -1119,6 +1149,26 @@ export interface OrchestratorConfig {
   readonly maxDelegationDepth?: number
   /** Maximum cumulative tokens (input + output) allowed per orchestrator run. */
   readonly maxTokenBudget?: number
+  /**
+   * Maximum estimated run cost allowed for an orchestrator-managed run.
+   *
+   * Requires {@link estimateCost}. The framework intentionally does not ship a
+   * model price table; callers own provider-specific pricing. Checked at the
+   * same turn/task boundaries as {@link maxTokenBudget}, so a run may overshoot
+   * by up to one model turn and should not be treated as a cent-exact stop.
+   */
+  readonly maxCostBudget?: number
+  /**
+   * Converts incremental token usage into a caller-defined cost unit.
+   *
+   * Called with usage from one LLM result, not cumulative usage. Return the
+   * amount to add to the run's cumulative estimated cost. The context includes
+   * the effective model after defaults and model routing.
+   */
+  readonly estimateCost?: (
+    usage: TokenUsage,
+    context: CostEstimateContext,
+  ) => number
   /**
    * Default model inherited by every agent that does not set its own
    * {@link AgentConfig.model} — workers, the coordinator, and consensus agents
@@ -1394,6 +1444,10 @@ export type TraceEventType =
 export interface TraceEventBase {
   /** Unique identifier for the entire run (runTeam / runTasks / runAgent call). */
   readonly runId: string
+  /** Unique identifier for this span within the run. */
+  readonly spanId: string
+  /** Span ID of the causal parent, when the framework can determine one. */
+  readonly parentId?: string
   readonly type: TraceEventType
   /** Unix epoch ms when the span started. */
   readonly startMs: number
