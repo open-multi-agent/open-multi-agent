@@ -1235,6 +1235,28 @@ export interface SharedMemorySnapshot {
   readonly entries: readonly MemoryEntrySnapshot[]
 }
 
+/** Serializable form of an inter-agent message. */
+export interface MessageSnapshot {
+  readonly id: string
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly timestamp: string
+}
+
+/** Serializable read-state for one agent on the MessageBus. */
+export interface MessageReadStateSnapshot {
+  readonly agentName: string
+  readonly messageIds: readonly string[]
+}
+
+/** Serializable form of MessageBus state. Runtime subscribers are not persisted. */
+export interface MessageBusSnapshot {
+  readonly version: 1
+  readonly messages: readonly MessageSnapshot[]
+  readonly readState: readonly MessageReadStateSnapshot[]
+}
+
 /** Serializable form of a {@link Task}. */
 export interface TaskSnapshot {
   readonly id: string
@@ -1282,6 +1304,7 @@ export interface CheckpointSnapshot {
   readonly goal?: string
   readonly queue: TaskQueueSnapshot
   readonly sharedMemory?: SharedMemorySnapshot
+  readonly messageBus?: MessageBusSnapshot
   /**
    * Shared-memory turn counter at checkpoint time. Persisted separately from
    * {@link sharedMemory} so TTL/expiry stays correct on resume even when the

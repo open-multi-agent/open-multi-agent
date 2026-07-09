@@ -472,6 +472,44 @@ describe('OpenMultiAgent checkpoint/restore', () => {
     const persisted = await new Checkpoint(checkpointStore, {}).loadLatest()
     expect(persisted?.sharedMemory?.entries.some((entry) => entry.key === 'seed/note')).toBe(true)
   })
+
+  it('persists MessageBus messages and read state through checkpoint restore', async () => {
+    const checkpointStore = new InMemoryStore()
+    const scripted = scriptedAdapter(['only output'])
+    const orchestrator = new OpenMultiAgent()
+    const team = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+    })
+    team.sendMessage('alice', 'worker', 'direct handoff')
+    team.broadcast('alice', 'broadcast note')
+    const [readMessage] = team.getUnreadMessages('worker')
+    team.markMessagesRead('worker', [readMessage!.id])
+
+    await orchestrator.runTasks(team, [
+      { title: 'only', description: 'do it', assignee: 'worker' },
+    ], { checkpoint: { store: checkpointStore } })
+
+    const persisted = await new Checkpoint(checkpointStore, {}).loadLatest()
+    expect(persisted?.messageBus?.messages.map((message) => message.content)).toEqual([
+      'direct handoff',
+      'broadcast note',
+    ])
+
+    const resumedTeam = new Team({
+      name: 'team',
+      agents: [worker('worker', scripted.adapter)],
+    })
+    await orchestrator.restore(resumedTeam, { checkpoint: { store: checkpointStore } })
+
+    expect(resumedTeam.getMessages('worker').map((message) => message.content)).toEqual([
+      'direct handoff',
+      'broadcast note',
+    ])
+    expect(resumedTeam.getUnreadMessages('worker').map((message) => message.content)).toEqual([
+      'broadcast note',
+    ])
+  })
 })
 
 /** A store whose writes always reject, to exercise best-effort checkpointing. */

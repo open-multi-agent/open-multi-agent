@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { MessageBusSnapshot } from '../types.js'
 
 // ---------------------------------------------------------------------------
 // Message type
@@ -83,6 +84,57 @@ export class MessageBus {
     string,
     Map<symbol, (message: Message) => void>
   >()
+
+  // ---------------------------------------------------------------------------
+  // Snapshot / restore
+  // ---------------------------------------------------------------------------
+
+  /** Returns a serializable snapshot of retained messages and read state. */
+  snapshot(): MessageBusSnapshot {
+    return {
+      version: 1,
+      messages: this.messages.map((message) => ({
+        ...message,
+        timestamp: message.timestamp.toISOString(),
+      })),
+      readState: Array.from(this.readState.entries()).map(([agentName, ids]) => ({
+        agentName,
+        messageIds: Array.from(ids),
+      })),
+    }
+  }
+
+  /**
+   * Replaces retained messages and read state from a snapshot.
+   *
+   * Active subscribers are intentionally left untouched: callbacks are live
+   * process state, not persisted checkpoint data.
+   */
+  restore(snapshot: MessageBusSnapshot): void {
+    if (snapshot.version !== 1) {
+      throw new Error(`MessageBus.restore: unsupported snapshot version ${String(snapshot.version)}.`)
+    }
+
+    this.messages.splice(
+      0,
+      this.messages.length,
+      ...snapshot.messages.map((message) => ({
+        ...message,
+        timestamp: new Date(message.timestamp),
+      })),
+    )
+    this.readState.clear()
+    for (const entry of snapshot.readState) {
+      this.readState.set(entry.agentName, new Set(entry.messageIds))
+    }
+  }
+
+  /** Builds a fresh MessageBus from a snapshot. */
+  static fromSnapshot(snapshot: MessageBusSnapshot): MessageBus {
+    const bus = new MessageBus()
+    bus.restore(snapshot)
+    return bus
+  }
 
   // ---------------------------------------------------------------------------
   // Write operations
