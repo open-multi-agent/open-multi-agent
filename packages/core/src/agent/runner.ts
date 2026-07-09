@@ -141,6 +141,8 @@ export interface RunnerOptions {
   readonly agentName?: string
   /** Short role description of the agent (used in tool context). */
   readonly agentRole?: string
+  /** Per-agent scoped secrets exposed to tools via {@link ToolUseContext.credentials}. */
+  readonly credentials?: Readonly<Record<string, string>>
   /** Loop detection configuration. When set, detects stuck agent loops. */
   readonly loopDetection?: LoopDetectionConfig
   /** Maximum cumulative tokens (input + output) allowed for this run. */
@@ -1417,6 +1419,7 @@ export class AgentRunner {
       abortSignal: options.abortSignal ?? this.options.abortSignal,
       cwd: this.options.cwd === undefined ? defaultWorkspaceDir() : this.options.cwd,
       ...(options.team !== undefined ? { team: options.team } : {}),
+      ...(this.options.credentials !== undefined ? { credentials: this.options.credentials } : {}),
     }
   }
 }

@@ -240,6 +240,19 @@ export interface ToolUseContext {
   readonly cwd?: string | null
   /** Arbitrary caller-supplied metadata (session ID, request ID, etc.). */
   readonly metadata?: Readonly<Record<string, unknown>>
+  /**
+   * Per-agent scoped secrets for tool code to consume (API tokens, service
+   * keys, etc.), sourced from {@link AgentConfig.credentials}. A tool reads
+   * `context.credentials?.STRIPE_KEY` instead of closing over a module-level
+   * secret, so each agent holds only the credentials it was assigned — a
+   * compromised or misbehaving subagent cannot reach another agent's secrets.
+   *
+   * This is an ergonomic scoping seam, not an isolation boundary: tool code
+   * still runs in-process and can read `process.env`. Values are treated as
+   * secrets — the `credentials` key is auto-redacted from traces and
+   * dashboards (see `utils/redaction.ts`).
+   */
+  readonly credentials?: Readonly<Record<string, string>>
 }
 
 /** Minimal descriptor for the agent that is invoking a tool. */
@@ -420,6 +433,19 @@ export interface AgentConfig {
   readonly disallowedTools?: readonly string[]
   /** Predefined tool preset for common use cases. */
   readonly toolPreset?: 'readonly' | 'readwrite' | 'full'
+  /**
+   * Per-agent scoped secrets made available to tool code via
+   * {@link ToolUseContext.credentials}. Give each agent only the credentials
+   * it needs (e.g. a `researcher` gets a search-API key, a `publisher` gets a
+   * CMS token) instead of closing a single shared secret over every tool.
+   * Never merged across agents and never inherited from the coordinator: an
+   * agent holds exactly the bag set here, or none.
+   *
+   * A scoping convenience, not a sandbox — tool code runs in-process and can
+   * still read `process.env`. Values are treated as secrets: the `credentials`
+   * key is auto-redacted from traces and dashboards.
+   */
+  readonly credentials?: Readonly<Record<string, string>>
   /**
    * Root directory used by built-in filesystem tools (`file_read`,
    * `file_write`, `file_edit`, `grep`, `glob`). Paths must be absolute and
