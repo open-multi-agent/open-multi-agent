@@ -198,7 +198,7 @@ const orchestrator = new OpenMultiAgent({
 
 ```ts
 const prices = {
-  'gpt-4.1-mini': { input: 0.40, output: 1.60 }, // USD per 1M tokens
+  'gpt-5.4-mini': { input: 0.75, output: 4.5 }, // USD per 1M tokens
 }
 
 const orchestrator = new OpenMultiAgent({
