@@ -157,6 +157,20 @@ export interface TokenUsage {
   readonly output_tokens: number
 }
 
+/** Context passed to user-supplied cost estimators. */
+export interface CostEstimateContext {
+  /** Agent whose LLM usage is being costed. */
+  readonly agentName: string
+  /** Model identifier used for the LLM call. */
+  readonly model: string
+  /** Provider used for the LLM call, when known. */
+  readonly provider?: SupportedProvider
+  /** Execution phase that produced this usage. */
+  readonly phase: 'agent' | 'short-circuit' | 'coordinator' | 'worker' | 'synthesis' | 'consensus' | 'delegated'
+  /** Task ID associated with the usage, when usage came from a task. */
+  readonly taskId?: string
+}
+
 /** Normalised response returned by every {@link LLMAdapter} implementation. */
 export interface LLMResponse {
   readonly id: string
@@ -1070,6 +1084,26 @@ export interface OrchestratorConfig {
   readonly maxDelegationDepth?: number
   /** Maximum cumulative tokens (input + output) allowed per orchestrator run. */
   readonly maxTokenBudget?: number
+  /**
+   * Maximum estimated run cost allowed for an orchestrator-managed run.
+   *
+   * Requires {@link estimateCost}. The framework intentionally does not ship a
+   * model price table; callers own provider-specific pricing. Checked at the
+   * same turn/task boundaries as {@link maxTokenBudget}, so a run may overshoot
+   * by up to one model turn and should not be treated as a cent-exact stop.
+   */
+  readonly maxCostBudget?: number
+  /**
+   * Converts incremental token usage into a caller-defined cost unit.
+   *
+   * Called with usage from one LLM result, not cumulative usage. Return the
+   * amount to add to the run's cumulative estimated cost. The context includes
+   * the effective model after defaults and model routing.
+   */
+  readonly estimateCost?: (
+    usage: TokenUsage,
+    context: CostEstimateContext,
+  ) => number
   /**
    * Default model inherited by every agent that does not set its own
    * {@link AgentConfig.model} — workers, the coordinator, and consensus agents
