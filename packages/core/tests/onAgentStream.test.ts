@@ -57,7 +57,7 @@ function buildMockAgent(config: AgentConfig, responseText: string) {
     maxTurns: config.maxTurns,
     agentName: config.name,
   })
-  ;(agent as any).runner = runner
+  ;(agent as any).backend = runner
 
   return { agent, calls }
 }

@@ -14,6 +14,8 @@ contributed them. Current:
   jobs — N Open Design landing-page variants generated in parallel via
   `runTasks()`, each variant driven `create_project → start_run → poll get_run`
   to a terminal status by deterministic code.
+- `external-agent-acp.ts`: external coding agents (Gemini CLI / Claude Code) as
+  team members via the `acp` backend. See [docs/external-agents.md](../../../../docs/external-agents.md).
 - `trace-observability.ts`: the `onTrace` API.
 - `with-vercel-ai-sdk/`: Next.js + AI SDK + `runTeam()`.
 - `express-customer-support/`: Express REST API + `runTasks()`. Contributed
