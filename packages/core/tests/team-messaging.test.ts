@@ -140,6 +140,67 @@ describe('MessageBus', () => {
       expect(convo[1]!.content).toBe('hi back')
     })
   })
+
+  describe('snapshot / restore', () => {
+    it('round-trips messages and per-agent read state', () => {
+      const bus = new MessageBus()
+      const direct = bus.send('alice', 'bob', 'hello')
+      const broadcast = bus.broadcast('alice', 'stand by')
+      bus.markRead('bob', [direct.id])
+
+      const restored = MessageBus.fromSnapshot(bus.snapshot())
+
+      expect(restored.getAll('bob').map((message) => message.content)).toEqual([
+        'hello',
+        'stand by',
+      ])
+      expect(restored.getUnread('bob').map((message) => message.id)).toEqual([
+        broadcast.id,
+      ])
+      expect(restored.getAll('bob')[0]!.timestamp).toBeInstanceOf(Date)
+      expect(restored.getAll('bob')[0]!.timestamp.getTime()).toBe(direct.timestamp.getTime())
+    })
+
+    it('does not restore live subscribers', () => {
+      const bus = new MessageBus()
+      const received: string[] = []
+      bus.subscribe('bob', (message) => received.push(message.content))
+
+      bus.send('alice', 'bob', 'before snapshot')
+      const restored = MessageBus.fromSnapshot(bus.snapshot())
+      restored.send('alice', 'bob', 'after restore')
+
+      expect(received).toEqual(['before snapshot'])
+    })
+
+    it('keeps current process-local subscribers when restoring into an existing bus', () => {
+      const source = new MessageBus()
+      source.send('alice', 'bob', 'checkpointed')
+      const target = new MessageBus()
+      const received: string[] = []
+      target.subscribe('bob', (message) => received.push(message.content))
+
+      target.restore(source.snapshot())
+      target.send('alice', 'bob', 'after restore')
+
+      expect(target.getAll('bob').map((message) => message.content)).toEqual([
+        'checkpointed',
+        'after restore',
+      ])
+      expect(received).toEqual(['after restore'])
+    })
+
+    it('rejects unsupported snapshot versions', () => {
+      const bus = new MessageBus()
+      const snapshot = {
+        ...bus.snapshot(),
+        version: 2,
+      }
+
+      expect(() => MessageBus.fromSnapshot(snapshot as ReturnType<MessageBus['snapshot']>))
+        .toThrow(/unsupported snapshot version 2/)
+    })
+  })
 })
 
 // ===========================================================================
@@ -173,6 +234,18 @@ describe('Team', () => {
       expect(team.getMessages('bob')).toHaveLength(1)
       expect(team.getMessages('bob')[0]!.content).toBe('hey')
       expect(events).toHaveLength(1)
+    })
+
+    it('tracks unread message state', () => {
+      const team = new Team(teamConfig())
+
+      team.sendMessage('alice', 'bob', 'read me')
+      const unread = team.getUnreadMessages('bob')
+      team.markMessagesRead('bob', unread.map((message) => message.id))
+
+      expect(unread).toHaveLength(1)
+      expect(team.getUnreadMessages('bob')).toHaveLength(0)
+      expect(team.getMessages('bob')).toHaveLength(1)
     })
 
     it('broadcasts and emits broadcast event', () => {

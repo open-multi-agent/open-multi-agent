@@ -126,6 +126,27 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
+## Redacting persisted secrets
+
+A checkpoint stores completed task results — and, for a separate checkpoint store, the shared-memory snapshot — **verbatim**. Redaction elsewhere (traces, dashboard) does **not** reach this path, so a secret an agent emits into its answer lands on disk. To scrub it, wrap the durable store with **`RedactingStore`**:
+
+```typescript
+import { RedactingStore, FileStore } from '@open-multi-agent/core'
+
+await orchestrator.runTasks(team, tasks, {
+  checkpoint: { store: new RedactingStore(new FileStore('./.oma/checkpoint.json')) },
+})
+```
+
+`RedactingStore` redacts values on write at the store boundary, so it covers **both** persistence paths through the same primitive:
+
+- Wrap the **checkpoint store** (above) to scrub the checkpoint's own results and any embedded shared-memory snapshot.
+- Wrap the **shared-memory store** (`sharedMemoryStore: new RedactingStore(...)`) to scrub the `<agent>/<key>` entries. In the default `checkpoint: true` reuse case the checkpoint store *is* that store, so one wrap scrubs both.
+
+Wrap **every durable store you persist to**: in a split setup — wrapped shared store, separate *unwrapped* checkpoint store — the checkpoint's `completedTaskResults` (sourced from the queue, not the store) would still be raw. Add custom value patterns (e.g. PII) via `new RedactingStore(store, { patterns: [/…/] })`.
+
+Redaction is opt-in by construction and lossy on purpose: a **resumed** run sees `[redacted]` in place of the masked values. Don't enable it if a downstream agent legitimately needs a persisted secret on resume.
+
 ## Advanced: the `Checkpoint` class
 
 For inspecting or managing checkpoints directly, the manager and key helpers are exported:

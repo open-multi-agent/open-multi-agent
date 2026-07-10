@@ -56,7 +56,7 @@ After the task completes, its result is fed into the same consensus loop. If con
 
 ## Budget invariant
 
-Consensus token usage counts against the parent budget exactly like delegation does. Proposer, judge, and revision usage all accumulate into the running total and are checked against `OrchestratorConfig.maxTokenBudget`. Once the cumulative total crosses the budget, consensus **stops issuing further judge calls** — no separate budget knob, no escape hatch. For the per-task `verify` hook, judge usage rolls into the same run-level budget as the rest of the pipeline and trips the same gate.
+Consensus token usage counts against the parent budget exactly like delegation does. Proposer, judge, and revision usage all accumulate into the running total and are checked against `OrchestratorConfig.maxTokenBudget`. Once the cumulative total crosses the budget, consensus **stops issuing further judge calls** — no separate budget knob, no escape hatch. For the per-task `verify` hook, judge usage rolls into the same run-level budget as the rest of the pipeline and trips the same gate. The same holds for cost: when `estimateCost` and `maxCostBudget` are configured, verify-hook usage is priced into the run's cumulative estimated cost and stops further judge calls at the same boundary once the cap is crossed. Because `maxCostBudget` is a run-level cap, the standalone `runConsensus` primitive tracks tokens only.
 
 ## Observability
 

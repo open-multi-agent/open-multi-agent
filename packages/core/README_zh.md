@@ -194,6 +194,23 @@ const orchestrator = new OpenMultiAgent({
 })
 ```
 
+**封顶预估成本。** 价格表由应用侧维护，并提供估价函数；OMA 会将生效的 `model`、`provider`、执行阶段与 `taskId`（若有）一并传入，以便按模型计价。成本上限在与 `maxTokenBudget` 相同的轮次/任务边界处校验，单次运行至多可能超出一个模型轮次，并非精确到分的即时中止。
+
+```ts
+const prices = {
+  'gpt-5.4-mini': { input: 0.75, output: 4.5 }, // 美元，每百万 tokens
+}
+
+const orchestrator = new OpenMultiAgent({
+  maxCostBudget: 0.25,
+  estimateCost: (usage, { model }) => {
+    const price = prices[model] ?? { input: 0, output: 0 }
+    return (usage.input_tokens / 1_000_000) * price.input
+      + (usage.output_tokens / 1_000_000) * price.output
+  },
+})
+```
+
 **取消运行。** 传入 `AbortSignal`；触发 abort 即中止运行。
 
 ```ts
@@ -402,7 +419,8 @@ await oma.runAgent(
 | 限制工具输出 | `maxToolOutputChars`（或单工具 `maxOutputChars`）+ `compressToolResults: true` | `AgentConfig` 和 `defineTool()` |
 | 失败重试 | 任务级 `maxRetries`、`retryDelayMs`、`retryBackoff`（指数退避倍率） | 通过 `runTasks()` 用的任务配置 |
 | 崩溃/重启后恢复 | `checkpoint`（给 `runId`，或内置 `FileStore` 等持久化 `MemoryStore`）+ `restore()` 恢复运行，跳过已完成任务 | `OrchestratorConfig` / 运行选项 |
-| 总额封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
+| token 用量封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
+| 预估成本封顶 | `maxCostBudget` + `estimateCost`；每个模型的价格表由应用侧维护，校验发生在轮次/任务边界，而非精确到分的调用中途中止 | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
 | 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
 | 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |

@@ -25,3 +25,22 @@ const team = orchestrator.createTeam('durable-team', {
 ```
 
 When both are provided, `sharedMemoryStore` wins. SDK-only: the CLI cannot pass runtime objects.
+
+## Redacting persisted secrets
+
+Shared-memory writes persist agent output **verbatim**. Redaction elsewhere (trace spans, the dashboard) stops at the telemetry layer and does not reach the store — so if an agent can emit a secret into its answer and your store is durable, that secret lands on disk. Wrap the store with **`RedactingStore`**, a `MemoryStore` decorator that scrubs credentials (plus any custom patterns you add) from values on write, at the one choke point every write passes through:
+
+```typescript
+import { RedactingStore, FileStore } from '@open-multi-agent/core'
+
+const team = orchestrator.createTeam('durable-team', {
+  name: 'durable-team',
+  agents: [researcher, writer],
+  sharedMemoryStore: new RedactingStore(new FileStore('./.oma/memory.json'), {
+    // Optional: extra value patterns (e.g. PII) on top of built-in credential redaction.
+    patterns: [/\b\d{3}-\d{2}-\d{4}\b/],
+  }),
+})
+```
+
+Because checkpoints default to the team's shared-memory store, this one wrap also redacts the checkpoint written to it (see [Checkpoint & resume](checkpoint.md#redacting-persisted-secrets)). Redaction is **write-time**, so it is opt-in by construction and lossy on purpose: a downstream agent — or a resumed run — reads `[redacted]` where the secret was. The caller-facing run result is untouched; it never passes through the store.
