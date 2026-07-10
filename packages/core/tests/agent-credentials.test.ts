@@ -243,4 +243,40 @@ describe('per-agent credentials: orchestrator', () => {
 
     expect(seen()).toEqual({ CMS_TOKEN: 'cms-xyz' })
   })
+
+  it("gives a delegated subagent its own credentials, not the delegator's", async () => {
+    // The #19 headline: a compromised/misbehaving subagent must not inherit the
+    // delegator's access. Agent `a` delegates to `b`; `b`'s tool must see only
+    // `b`'s bag — never `a`'s secret.
+    const b = credentialSpy('read_secret')
+    const oma = new OpenMultiAgent({})
+    const team = oma.createTeam('t', {
+      name: 't',
+      agents: [
+        {
+          name: 'a',
+          model: 'mock-model',
+          adapter: scriptedAdapter([
+            toolUse('delegate_to_agent', { target_agent: 'b', prompt: 'read the secret' }),
+            text('delegated'),
+          ]),
+          tools: ['delegate_to_agent'],
+          credentials: { TOKEN: 'secret-A' },
+        },
+        {
+          name: 'b',
+          model: 'mock-model',
+          adapter: scriptedAdapter([toolUse('read_secret', {}), text('done')]),
+          customTools: [b.tool],
+          credentials: { TOKEN: 'secret-B' },
+        },
+      ],
+    })
+
+    await oma.runTasks(team, [{ title: 'Task A', description: 'delegate to b', assignee: 'a' }])
+
+    // `b` ran via delegation and saw exactly its own bag — never the delegator's.
+    expect(b.seen()).toEqual({ TOKEN: 'secret-B' })
+    expect(JSON.stringify(b.seen())).not.toContain('secret-A')
+  })
 })
