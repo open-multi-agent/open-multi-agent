@@ -157,6 +157,44 @@ const agent: AgentConfig = {
 
 **Register at runtime** via `agent.addTool(tool)`. Tools added this way are always available, regardless of filtering.
 
+## Per-agent tool credentials
+
+A tool's `execute` closure often captures a secret — an API token, a service key. If several agents share that tool, they all wield the same secret at full scope: a compromised or misbehaving subagent inherits every credential the coordinator holds. To scope secrets per agent, set a `credentials` bag on `AgentConfig` and read it from `ToolUseContext` inside the tool, instead of closing over a module-level secret.
+
+```typescript
+const search = defineTool({
+  name: 'web_search',
+  description: 'Search the web.',
+  inputSchema: z.object({ query: z.string() }),
+  // Reads the calling agent's scoped key, not a shared module secret.
+  execute: async ({ query }, ctx) => ({
+    data: await callSearchApi(query, ctx.credentials?.SEARCH_API_KEY),
+  }),
+})
+
+const team = {
+  name: 'research',
+  agents: [
+    {
+      name: 'researcher',
+      model: 'claude-sonnet-4-6',
+      customTools: [search],
+      credentials: { SEARCH_API_KEY: process.env.RESEARCHER_SEARCH_KEY! },
+    },
+    {
+      name: 'publisher',
+      model: 'claude-sonnet-4-6',
+      customTools: [cms], // a CMS tool defined like `search` above
+      credentials: { CMS_TOKEN: process.env.PUBLISHER_CMS_TOKEN! },
+    },
+  ],
+}
+```
+
+The bag is **per agent and never merged**: `researcher` sees only `SEARCH_API_KEY`, `publisher` sees only `CMS_TOKEN`, and neither the coordinator nor a delegated subagent inherits another agent's bag. An agent with no `credentials` set gets `ctx.credentials === undefined`.
+
+This is a **scoping convenience, not an isolation boundary**. Tool code runs in-process and can still read `process.env` or any module-level variable; `credentials` just gives you a first-class place to hand each agent only the secrets it needs. (You can already approximate this by giving each agent its own `customTools` instance with a scoped closure — the `credentials` bag makes it explicit and keeps the secret out of the closure.) Values are treated as secrets: the `credentials` key is auto-redacted from traces and dashboards.
+
 ## Tool Output Control
 
 Long tool outputs can blow up conversation size and cost. Two controls work together.
