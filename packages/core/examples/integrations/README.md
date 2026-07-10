@@ -10,6 +10,10 @@ or frameworks. The OMA team maintains these once merged, regardless of who
 contributed them. Current:
 
 - `mcp-github.ts`: MCP servers via `connectMCPTools()`.
+- `mcp-open-design.ts`: batch fan-out over an MCP server's async, long-running
+  jobs — N Open Design landing-page variants generated in parallel via
+  `runTasks()`, each variant driven `create_project → start_run → poll get_run`
+  to a terminal status by deterministic code.
 - `trace-observability.ts`: the `onTrace` API.
 - `with-vercel-ai-sdk/`: Next.js + AI SDK + `runTeam()`.
 - `express-customer-support/`: Express REST API + `runTasks()`. Contributed
