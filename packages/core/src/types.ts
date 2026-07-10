@@ -404,8 +404,9 @@ export interface AcpPermissionRequest {
 /**
  * How an ACP-backed agent answers a permission prompt. OMA runs agents
  * autonomously inside a task DAG, so the default is `'auto-approve'`.
- *  - `'auto-approve'` — select the first `allow_*` option (falls back to cancel).
- *  - `'reject'` — select a `reject_*` option (falls back to cancel).
+ *  - `'auto-approve'` — select an `allow_*` option, preferring the least-privilege
+ *    `allow_once` over a session-wide `allow_always` (falls back to cancel).
+ *  - `'reject'` — select a `reject_*` option, preferring `reject_once` (falls back to cancel).
  *  - function — decide per request; `true` approves, `false` rejects.
  */
 export type AcpPermissionPolicy =

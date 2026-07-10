@@ -222,6 +222,9 @@ export class Agent {
           env: backend.env,
           cwd: backend.cwd,
           permission: backend.permission,
+          // ACP has no system-prompt field; the backend prepends this to the
+          // agent's first turn so its configured role reaches the external CLI.
+          systemPrompt: this.config.systemPrompt,
           agentName: this.name,
           model: this.config.model,
           callTimeoutMs: this.config.callTimeoutMs,

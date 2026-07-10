@@ -67,6 +67,13 @@ export interface AcpBackendOptions {
   readonly cwd?: string
   /** How to answer the agent's permission prompts. Defaults to `'auto-approve'`. */
   readonly permission?: AcpPermissionPolicy
+  /**
+   * The agent's role / system prompt. ACP has no session-level system-prompt
+   * field, so this is prepended to the *first* `session/prompt` turn (once per
+   * session) to convey the agent's role to the external CLI. Empty/whitespace is
+   * ignored.
+   */
+  readonly systemPrompt?: string
   /** Agent name, used as the ACP client identity and in error messages. */
   readonly agentName?: string
   /** Model/label, forwarded only for diagnostics. */
@@ -101,9 +108,18 @@ export class AcpBackend implements AgentBackend {
   private ctx: ClientContext | null = null
   private session: ActiveSession | null = null
   private starting: Promise<void> | null = null
+  /**
+   * Cumulative context-token reading from the last `usage_update`. ACP reports a
+   * running total ("tokens currently in context"), not a per-turn delta, so each
+   * turn's usage is reported as the increment over this value (see {@link stream}).
+   */
+  private lastUsedTokens = 0
+  /** Role prompt to prepend to the first turn of the session; cleared once sent. */
+  private systemPromptPending: string | undefined
 
   constructor(options: AcpBackendOptions) {
     this.options = options
+    this.systemPromptPending = options.systemPrompt?.trim() || undefined
   }
 
   /** Run one prompt turn to completion and return the aggregated {@link RunResult}. */
@@ -151,7 +167,9 @@ export class AcpBackend implements AgentBackend {
     // completing `tool_call_update` (which may omit the title/input).
     const toolMeta = new Map<string, { start: number; title?: string; input?: Record<string, unknown> }>()
     const assistantText: string[] = []
-    let usedTokens = 0
+    // The latest cumulative context reading seen this turn; undefined ⇒ the
+    // agent sent no usage_update, so this turn reports zero usage.
+    let usedThisTurn: number | undefined
 
     // Wire abort → session/cancel; a well-behaved agent replies with a
     // `cancelled` stop, which ends the drain loop below.
@@ -160,15 +178,30 @@ export class AcpBackend implements AgentBackend {
         .notify('session/cancel', { sessionId: session.sessionId } satisfies CancelNotification)
         .catch(() => {})
     }
-    if (abort) {
-      if (abort.aborted) onAbort()
-      else abort.addEventListener('abort', onAbort, { once: true })
+    // If the caller already aborted before we start a turn, don't prompt at all —
+    // there is no in-flight turn to cancel. Return empty output, mirroring a turn
+    // that was cancelled immediately.
+    if (abort?.aborted) {
+      yield {
+        type: 'done',
+        data: { messages: [], output: '', toolCalls: [], tokenUsage: ZERO_USAGE, turns: 0 },
+      }
+      return
     }
+    abort?.addEventListener('abort', onAbort, { once: true })
 
     try {
+      // ACP has no session-level system prompt, so convey the agent's role by
+      // prepending it to the first prompt of the session (once). Later turns
+      // reuse the same session, which already carries it.
+      const promptText = this.systemPromptPending
+        ? `${this.systemPromptPending}\n\n${userText}`
+        : userText
+      this.systemPromptPending = undefined
+
       // Fire the prompt; its completion is also queued as a `stop` message for
       // nextUpdate(). Attach a no-op catch now, then propagate after draining.
-      const promptPromise = session.prompt(userText)
+      const promptPromise = session.prompt(promptText)
       promptPromise.catch(() => {})
 
       let stopReason: StopReason = 'end_turn'
@@ -208,9 +241,11 @@ export class AcpBackend implements AgentBackend {
             break
           }
           case 'usage_update': {
-            // ACP reports a single context-token figure, not an input/output
-            // split; record it as the run's total (see docs/external-agents.md).
-            usedTokens = update.used
+            // ACP reports a single *cumulative* context-token figure ("tokens
+            // currently in context"), not an input/output split or a per-turn
+            // delta. Keep the latest reading; it is converted to an incremental
+            // figure below (see docs/external-agents.md).
+            usedThisTurn = update.used
             break
           }
           default:
@@ -237,6 +272,16 @@ export class AcpBackend implements AgentBackend {
         : undefined
       if (assistantMsg) options.onMessage?.(assistantMsg)
 
+      // Convert ACP's cumulative context reading into this turn's incremental
+      // usage, so summing token usage across a reused session telescopes to the
+      // final figure instead of double-counting. A turn with no usage_update
+      // reports 0 and leaves the running total untouched.
+      let inputTokens = 0
+      if (usedThisTurn !== undefined) {
+        inputTokens = Math.max(0, usedThisTurn - this.lastUsedTokens)
+        this.lastUsedTokens = usedThisTurn
+      }
+
       // `max_tokens` / `max_turn_requests` mean the agent stopped before finishing;
       // reuse the "hit a limit, may be incomplete" signal so the task soft-fails.
       const budgetExceeded = stopReason === 'max_tokens' || stopReason === 'max_turn_requests'
@@ -244,7 +289,7 @@ export class AcpBackend implements AgentBackend {
         messages: assistantMsg ? [assistantMsg] : [],
         output,
         toolCalls,
-        tokenUsage: { input_tokens: usedTokens, output_tokens: 0 },
+        tokenUsage: { input_tokens: inputTokens, output_tokens: 0 },
         turns: 1,
         ...(budgetExceeded ? { budgetExceeded: true } : {}),
       }
@@ -270,6 +315,10 @@ export class AcpBackend implements AgentBackend {
     this.ctx = null
     this.conn = null
     this.starting = null
+    // Reset per-session accounting: a fresh session restarts its cumulative
+    // token reading from zero and re-prepends the role prompt on its first turn.
+    this.lastUsedTokens = 0
+    this.systemPromptPending = this.options.systemPrompt?.trim() || undefined
   }
 
   // -------------------------------------------------------------------------
@@ -283,7 +332,14 @@ export class AcpBackend implements AgentBackend {
     if (!this.starting) {
       this.starting = this.start()
     }
-    await this.starting
+    try {
+      await this.starting
+    } catch (err) {
+      // Clear the cached promise so a later run can retry, instead of re-throwing
+      // this same rejection forever (e.g. after a transient spawn failure).
+      this.starting = null
+      throw err
+    }
     return { session: this.session!, ctx: this.ctx! }
   }
 
@@ -308,7 +364,10 @@ export class AcpBackend implements AgentBackend {
     params: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
     const options = params.options
-    const allow = pick(options, 'allow_always') ?? pick(options, 'allow_once')
+    // Prefer the least-privilege option: a one-time `allow_once` / `reject_once`
+    // over a session-wide `allow_always` / `reject_always`, so a single auto
+    // decision doesn't silently broaden scope for the rest of the session.
+    const allow = pick(options, 'allow_once') ?? pick(options, 'allow_always')
     const reject = pick(options, 'reject_once') ?? pick(options, 'reject_always')
     const policy = this.options.permission ?? 'auto-approve'
 

@@ -86,13 +86,17 @@ needs only one key (`ANTHROPIC_API_KEY`) for the whole team.
 
 When `backend` is set, the LLM-specific fields (`model`, `provider`, `adapter`,
 sampling, `tools`, context strategy) do not apply — the external agent runs its own
-loop. `model` becomes optional.
+loop, and `model` becomes optional. The agent's `systemPrompt` is the exception: it
+still shapes the external agent because OMA — lacking any ACP system-prompt field —
+prepends it to the agent's first prompt (once per session), on top of seeding the
+coordinator's routing as it does for every agent.
 
 ### Permissions
 
 ACP agents ask the client to approve sensitive tool calls (editing a file, running a
 command). Because OMA runs agents autonomously inside a DAG, the default is
-`'auto-approve'` (select the first `allow_*` option). Tighten it as needed:
+`'auto-approve'` (it picks the least-privilege `allow_once` when offered, otherwise
+`allow_always`). Tighten it as needed:
 
 ```typescript
 backend: {
@@ -136,12 +140,15 @@ treat an ACP agent exactly like an LLM agent, with no special cases.
 
 ### Token accounting caveat
 
-ACP reports a single **context-token** figure (`usage_update.used`), not an
-input/output split. OMA records it as `tokenUsage.input_tokens` (with
-`output_tokens: 0`) so it aggregates into the run total and honors `maxTokenBudget`.
-An agent that emits no `usage_update` reports `{0, 0}` and is therefore **not**
-budget-gated — size the budget on LLM agents, or bound the ACP agent with its own
-`--max-*` flags.
+ACP reports a single **context-token** figure (`usage_update.used` — "tokens
+currently in context"), not an input/output split, and it is *cumulative* across a
+session, not a per-turn delta. Because OMA reuses one session across an agent's
+turns, it records each turn's usage as the **increment** since the previous reading
+and stores it as `tokenUsage.input_tokens` (with `output_tokens: 0`) — so summing
+across turns telescopes to the latest figure instead of double-counting. That total
+aggregates into the run and honors `maxTokenBudget`. An agent that emits no
+`usage_update` reports `{0, 0}` and is therefore **not** budget-gated — size the
+budget on LLM agents, or bound the ACP agent with its own `--max-*` flags.
 
 ## Programmatic API
 

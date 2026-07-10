@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { agent, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import type { AgentApp, AgentRequestHandlersByMethod } from '@agentclientprotocol/sdk'
 
-import { AcpBackend } from '../src/agent/acp-backend.js'
+import { AcpBackend, type AcpBackendOptions } from '../src/agent/acp-backend.js'
 import { Agent } from '../src/agent/agent.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 import { ToolExecutor } from '../src/tool/executor.js'
@@ -24,6 +24,12 @@ function userMsg(text: string): LLMMessage {
   return { role: 'user', content: [{ type: 'text', text }] }
 }
 
+/** Extract the text an ACP agent received in a `session/prompt` turn. */
+function promptText(prompt: unknown): string {
+  const blocks = (Array.isArray(prompt) ? prompt : [prompt]) as Array<{ type?: string; text?: string }>
+  return blocks.find((b) => b?.type === 'text')?.text ?? ''
+}
+
 /** Build a fake ACP agent whose prompt turn is driven by `promptHandler`. */
 function fakeAgent(promptHandler: PromptHandler): AgentApp {
   return agent({ name: 'fake' })
@@ -33,11 +39,16 @@ function fakeAgent(promptHandler: PromptHandler): AgentApp {
 }
 
 /** An {@link AcpBackend} connected in-process to `fake` (no subprocess). */
-function backendFor(fake: AgentApp, permission?: AcpPermissionPolicy): AcpBackend {
+function backendFor(
+  fake: AgentApp,
+  permission?: AcpPermissionPolicy,
+  extra?: Partial<AcpBackendOptions>,
+): AcpBackend {
   return new AcpBackend({
     command: 'unused',
     agentName: 'fake',
     ...(permission ? { permission } : {}),
+    ...extra,
     connect: (clientApp) => {
       const connection = clientApp.connect(fake)
       return {
@@ -163,6 +174,36 @@ describe('AcpBackend (in-process fake agent)', () => {
     }
   })
 
+  it('auto-approve prefers the least-privilege allow_once over allow_always', async () => {
+    const backend = backendFor(
+      fakeAgent(async ({ params, client }) => {
+        const response = await client.request('session/request_permission', {
+          sessionId: params.sessionId,
+          toolCall: { toolCallId: 't1', title: 'Edit', kind: 'edit', status: 'pending' },
+          options: [
+            // `allow_always` is listed first on purpose.
+            { optionId: 'always', name: 'Always', kind: 'allow_always' },
+            { optionId: 'once', name: 'Once', kind: 'allow_once' },
+          ],
+        })
+        const chosen =
+          response.outcome.outcome === 'selected' ? response.outcome.optionId : 'cancelled'
+        await client.notify('session/update', {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: chosen } },
+        })
+        return { stopReason: 'end_turn' }
+      }),
+    )
+    try {
+      const result = await backend.run([userMsg('go')])
+      // Auto-approve must pick `allow_once`, not the first (`allow_always`) option.
+      expect(result.output).toBe('once')
+    } finally {
+      await backend.dispose()
+    }
+  })
+
   it("rejects permission requests under the 'reject' policy", async () => {
     const backend = backendFor(fakeAgent(reportPermissionChoice), 'reject')
     try {
@@ -221,6 +262,122 @@ describe('AcpBackend (in-process fake agent)', () => {
     const backend = backendFor(fakeAgent(async () => ({ stopReason: 'end_turn' })))
     try {
       await expect(backend.run([])).rejects.toThrow(/empty prompt/i)
+    } finally {
+      await backend.dispose()
+    }
+  })
+
+  it('reports token usage as a per-turn delta across a reused session', async () => {
+    // `usage_update.used` is cumulative context occupancy, so a reused session
+    // reports a growing total. The backend must record each turn's increment,
+    // not the running total, or summing across turns double-counts.
+    const readings = [1000, 2500, 3000]
+    let turn = 0
+    const backend = backendFor(
+      fakeAgent(async ({ params, client }) => {
+        await client.notify('session/update', {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: 'usage_update', used: readings[turn++]!, size: 200000 },
+        })
+        return { stopReason: 'end_turn' }
+      }),
+    )
+    try {
+      const first = await backend.run([userMsg('turn 1')])
+      const second = await backend.run([userMsg('turn 2')])
+      const third = await backend.run([userMsg('turn 3')])
+      expect(first.tokenUsage.input_tokens).toBe(1000)
+      expect(second.tokenUsage.input_tokens).toBe(1500) // 2500 - 1000
+      expect(third.tokenUsage.input_tokens).toBe(500) // 3000 - 2500
+      // The sum telescopes to the latest cumulative reading (3000), not 6500.
+      const total =
+        first.tokenUsage.input_tokens +
+        second.tokenUsage.input_tokens +
+        third.tokenUsage.input_tokens
+      expect(total).toBe(3000)
+    } finally {
+      await backend.dispose()
+    }
+  })
+
+  it('prepends systemPrompt to the first turn only, then reuses the session', async () => {
+    const seen: string[] = []
+    const backend = backendFor(
+      fakeAgent(async ({ params, client }) => {
+        seen.push(promptText(params.prompt))
+        await client.notify('session/update', {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } },
+        })
+        return { stopReason: 'end_turn' }
+      }),
+      undefined,
+      { systemPrompt: 'You are a coder.' },
+    )
+    try {
+      await backend.run([userMsg('do X')])
+      await backend.run([userMsg('do Y')])
+      expect(seen[0]).toBe('You are a coder.\n\ndo X')
+      expect(seen[1]).toBe('do Y')
+    } finally {
+      await backend.dispose()
+    }
+  })
+
+  it('does not start a turn when the abort signal is already aborted', async () => {
+    let prompted = false
+    const backend = backendFor(
+      fakeAgent(async ({ params, client }) => {
+        prompted = true
+        await client.notify('session/update', {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'x' } },
+        })
+        return { stopReason: 'end_turn' }
+      }),
+    )
+    try {
+      const result = await backend.run([userMsg('go')], { abortSignal: AbortSignal.abort() })
+      expect(result.output).toBe('')
+      expect(prompted).toBe(false)
+    } finally {
+      await backend.dispose()
+    }
+  })
+
+  it('retries session startup after a failed start instead of caching the rejection', async () => {
+    let attempts = 0
+    const fake = fakeAgent(async ({ params, client }) => {
+      await client.notify('session/update', {
+        sessionId: params.sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } },
+      })
+      return { stopReason: 'end_turn' }
+    })
+    const backend = new AcpBackend({
+      command: 'unused',
+      agentName: 'fake',
+      connect: (clientApp) => {
+        attempts++
+        if (attempts === 1) throw new Error('spawn failed')
+        const connection = clientApp.connect(fake)
+        return {
+          connection,
+          dispose: () => {
+            try {
+              connection.close()
+            } catch {
+              // best-effort
+            }
+          },
+        }
+      },
+    })
+    try {
+      await expect(backend.run([userMsg('go')])).rejects.toThrow(/spawn failed/)
+      const result = await backend.run([userMsg('go')])
+      expect(result.output).toBe('ok')
+      expect(attempts).toBe(2)
     } finally {
       await backend.dispose()
     }
