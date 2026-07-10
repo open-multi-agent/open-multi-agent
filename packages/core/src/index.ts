@@ -124,6 +124,8 @@ export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isR
 
 export { InMemoryStore } from './memory/store.js'
 export { FileStore } from './memory/file-store.js'
+export { RedactingStore } from './memory/redacting-store.js'
+export type { RedactingStoreOptions } from './memory/redacting-store.js'
 export { SharedMemory } from './memory/shared.js'
 export {
   Checkpoint,

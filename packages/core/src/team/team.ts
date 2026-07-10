@@ -10,6 +10,7 @@
 import type {
   AgentConfig,
   MemoryStore,
+  MessageBusSnapshot,
   OrchestratorEvent,
   Task,
   TaskStatus,
@@ -194,6 +195,28 @@ export class Team {
    */
   getMessages(agentName: string): Message[] {
     return this.bus.getAll(agentName)
+  }
+
+  /**
+   * Returns messages addressed to `agentName` that have not been marked read.
+   */
+  getUnreadMessages(agentName: string): Message[] {
+    return this.bus.getUnread(agentName)
+  }
+
+  /** Marks messages as read for `agentName`. */
+  markMessagesRead(agentName: string, messageIds: string[]): void {
+    this.bus.markRead(agentName, messageIds)
+  }
+
+  /** Returns a serializable snapshot of the team's message bus. @internal */
+  snapshotMessageBus(): MessageBusSnapshot {
+    return this.bus.snapshot()
+  }
+
+  /** Restores the team's message bus from a checkpoint snapshot. @internal */
+  restoreMessageBus(snapshot: MessageBusSnapshot): void {
+    this.bus.restore(snapshot)
   }
 
   /**

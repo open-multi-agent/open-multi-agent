@@ -56,3 +56,5 @@ For production runs, persist enough data to reconstruct a failure without replay
 - `TeamRunResult.totalTokenUsage` for cost attribution.
 - `onTrace` spans for LLM calls and tool executions, keyed by `runId` + `spanId`.
 - The rendered dashboard HTML when you need a shareable post-mortem artifact.
+
+> **Redaction scope.** The redaction noted above applies to *telemetry* — trace spans and the dashboard payload. It does **not** cover persisted run state: shared-memory writes and checkpoint saves store agent output verbatim. To scrub secrets there, wrap the durable store with [`RedactingStore`](shared-memory.md#redacting-persisted-secrets).

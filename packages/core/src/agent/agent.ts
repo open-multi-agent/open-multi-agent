@@ -187,6 +187,7 @@ export class Agent {
       cwd: this.config.cwd,
       agentName: this.name,
       agentRole: this.config.systemPrompt?.slice(0, 50) ?? 'assistant',
+      credentials: this.config.credentials,
       callTimeoutMs: this.config.callTimeoutMs,
       loopDetection: this.config.loopDetection,
       maxTokenBudget: this.config.maxTokenBudget,
@@ -762,6 +763,7 @@ export class Agent {
       },
       abortSignal,
       cwd: this.config.cwd === undefined ? defaultWorkspaceDir() : this.config.cwd,
+      ...(this.config.credentials !== undefined ? { credentials: this.config.credentials } : {}),
     }
   }
 }

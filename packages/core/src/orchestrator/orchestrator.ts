@@ -989,6 +989,7 @@ async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<voi
       ...(sharedMem && !active.reusesSharedMemoryStore
         ? { sharedMemory: await sharedMem.snapshot() }
         : {}),
+      messageBus: ctx.team.snapshotMessageBus(),
       ...(sharedMem ? { turnCount: sharedMem.getTurnCount() } : {}),
       completedTaskResults,
     }
@@ -2497,6 +2498,9 @@ export class OpenMultiAgent {
       // Reused-store checkpoint: entries are already in the store; only the
       // turn counter needs restoring so TTL expiry resumes correctly.
       sharedMem.setTurnCount(snapshot.turnCount)
+    }
+    if (snapshot.messageBus) {
+      team.restoreMessageBus(snapshot.messageBus)
     }
 
     const queue = TaskQueue.fromSnapshot(snapshot.queue, { resetInProgress: true })
