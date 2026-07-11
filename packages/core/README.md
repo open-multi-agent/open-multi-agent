@@ -50,7 +50,7 @@
 
 > **Your engineers describe the goal, not the graph.**
 
-Graph-first frameworks make you enumerate every node and edge up front. OMA runs a **dynamic workflow**: the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one. The coordinator emits that plan as data for a deterministic scheduler to execute, so the plan is inspectable and replayable.
+Graph-first frameworks make you enumerate every node and edge up front. OMA runs a **dynamic workflow**: the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one. The coordinator emits that plan as data for a deterministic scheduler to execute, so the plan is inspectable and replayable. It is the same bet Anthropic made with Claude Code's [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) in May 2026, offered here as an open library that runs on any provider, inside your own backend.
 
 `@open-multi-agent/core` keeps a lightweight core. The orchestration engine plus the mainstream model providers (Anthropic, OpenAI, and any OpenAI-compatible endpoint) work out of the box; additional providers (Gemini, Bedrock), MCP, and the Vercel AI SDK bridge are opt-in peer dependencies you install only when you use them.
 
@@ -304,7 +304,7 @@ Run any script with `npx tsx packages/core/examples/<path>.ts`; the full applica
 
 ## How is this different from X?
 
-Most TypeScript teams picking a multi-agent layer are really choosing between OMA, LangGraph JS, and Mastra. The mechanism is what differs.
+Most TypeScript teams picking a multi-agent layer are really choosing between OMA, LangGraph JS, and Mastra. The mechanism is what differs: dynamic planning instead of rigid hand-wired graphs.
 
 **vs. LangGraph JS.** LangGraph has you design a declarative graph (nodes, edges, conditional routing) up front, then compiles it into an invokable; OMA's Coordinator decomposes the goal into a task DAG at runtime and auto-parallelizes independents. Both checkpoint and resume, though LangGraph's persistence ecosystem runs deeper. Reach for OMA when the plan should adapt to the goal instead of being wired ahead of time.
 
@@ -313,6 +313,8 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
 **vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a lean runtime (three core dependencies, plus opt-in peers you install only when you use them) and direct Node.js embedding, with no separate Python service to stand up alongside your stack.
 
 **vs. Vercel AI SDK.** AI SDK is the LLM-call layer (provider abstraction, streaming, tool calls, and structured outputs), not a multi-agent orchestrator. Use it alone for single-agent calls; reach for OMA the moment you need a coordinated team. OMA even ships an optional AI SDK bridge.
+
+**vs. Claude Code's dynamic workflows.** Anthropic shipped [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) in Claude Code in May 2026: Claude writes its own orchestration scripts and fans out parallel subagents inside a session. The difference is form factor: dynamic workflows run inside Claude Code on Claude subagents, while OMA embeds the same goal-to-DAG mechanism in your own Node.js backend as an MIT library, on any provider. The plan stays data you can inspect and replay (`planOnly`, `createPlanArtifact`, `runFromPlan`), and over [ACP](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md) an OMA team can even run Claude Code itself as one of its agents.
 
 ## Architecture
 
