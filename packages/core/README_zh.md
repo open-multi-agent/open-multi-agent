@@ -50,7 +50,7 @@
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。
+图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一方向的押注；OMA 以开源库的形式把它带入任意 provider、你自己的后端。
 
 `@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
 
@@ -304,7 +304,7 @@ await orchestrator.runTeam(team, goal, {
 
 ## 与其他框架对比
 
-大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制。
+大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制：动态规划，而非僵化的手工连线图。
 
 **对比 LangGraph JS。** LangGraph 需先设计好声明式图（节点、边、条件路由），再编译为可调用对象；OMA 的 Coordinator 则在运行时将目标拆解为任务 DAG，并自动并行其中的无依赖项。两者均支持 checkpoint 与 resume，只是 LangGraph 的持久化生态更为完善。若需让编排随目标自适应、而非预先固定图结构，OMA 更为合适。
 
@@ -313,6 +313,8 @@ await orchestrator.runTeam(team, goal, {
 **对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，运行时精简（三个核心依赖，外加按需安装的可选 peer），直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。
 
 **对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），而非多智能体编排器。单 agent 调用单独用它即可；一旦需要协同的团队，则选用 OMA。OMA 亦提供可选的 AI SDK bridge。
+
+**对比 Claude Code 的 dynamic workflows。** Anthropic 于 2026 年 5 月在 Claude Code 中推出 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code)：由 Claude 自行编写编排脚本，在会话内并行派生子 agent。差异在于形态：dynamic workflows 运行于 Claude Code 内部、面向 Claude 子 agent，而 OMA 以 MIT 协议的库形式，把同一套目标到 DAG 的机制嵌入你自己的 Node.js 后端，可用任意 provider。计划始终是可审查、可回放的数据（`planOnly`、`createPlanArtifact`、`runFromPlan`）；通过 [ACP](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)，OMA 团队甚至可以把 Claude Code 本身作为其中一个 agent 来编排。
 
 ## 架构
 

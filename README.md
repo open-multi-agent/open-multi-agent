@@ -50,7 +50,7 @@
 
 > **Your engineers describe the goal, not the graph.**
 
-Graph-first frameworks make you enumerate every node and edge up front. OMA runs a **dynamic workflow**: the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one. The coordinator emits that plan as data for a deterministic scheduler to execute, so the plan is inspectable and replayable.
+Graph-first frameworks make you enumerate every node and edge up front. OMA runs a **dynamic workflow**: the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one. The coordinator emits that plan as data for a deterministic scheduler to execute, so the plan is inspectable and replayable. It is the same bet Anthropic made with Claude Code's [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) in May 2026, offered here as an open library that runs on any provider, inside your own backend.
 
 `@open-multi-agent/core` keeps a lightweight core. The orchestration engine plus the mainstream model providers (Anthropic, OpenAI, and any OpenAI-compatible endpoint) work out of the box; additional providers (Gemini, Bedrock), MCP, and the Vercel AI SDK bridge are opt-in peer dependencies you install only when you use them.
 
@@ -95,7 +95,9 @@ Using `open-multi-agent` in production or a side project? [Open a discussion](ht
 
 ## How is this different from X?
 
-Most TypeScript teams choosing a multi-agent layer are weighing OMA against LangGraph JS, Mastra, CrewAI, and the Vercel AI SDK. The short version: OMA is goal-driven. Hand its Coordinator a goal and it builds the task DAG at runtime, instead of making you wire the graph up front.
+Most TypeScript teams choosing a multi-agent layer are weighing OMA against LangGraph JS, Mastra, CrewAI, and the Vercel AI SDK. The short version: OMA is goal-driven, dynamic planning instead of rigid hand-wired graphs. Hand its Coordinator a goal and it builds the task DAG at runtime.
+
+That comparison includes Claude Code's own [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code), and OMA is composable with it rather than only competing: over [ACP](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md), an OMA team can run Claude Code itself as one of its agents.
 
 Full head-to-head on each on the package page: [How is this different?](packages/core/README.md#how-is-this-different-from-x)
 

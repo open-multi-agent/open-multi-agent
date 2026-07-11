@@ -50,7 +50,7 @@
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。
+图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一方向的押注；OMA 以开源库的形式把它带入任意 provider、你自己的后端。
 
 `@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
 
@@ -103,7 +103,9 @@ npm install @open-multi-agent/core
 
 ## 与其他框架对比
 
-大多数 TypeScript 团队选多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra、CrewAI、Vercel AI SDK 之间取舍。一句话：OMA 是目标驱动的，把目标交给 Coordinator，它在运行时构建任务 DAG，而不必你预先把图连好。
+大多数 TypeScript 团队选多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra、CrewAI、Vercel AI SDK 之间取舍。一句话：OMA 是目标驱动的，动态规划而非僵化的手工连线图。把目标交给 Coordinator，它在运行时构建任务 DAG。
+
+这一对比也涵盖 Claude Code 自身的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code)；相较于单纯竞争，OMA 与它更是可组合的：通过 [ACP](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)，OMA 团队可以把 Claude Code 本身作为其中一个 agent 来编排。
 
 逐个正面对比见包页：[与其他框架对比](packages/core/README_zh.md#与其他框架对比)
 
