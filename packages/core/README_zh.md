@@ -34,6 +34,13 @@
 <br />
 
 <p align="center">
+  <a href="https://open-multi-agent.com/zh/">官网</a> ·
+  <a href="https://open-multi-agent.com/zh/getting-started/introduction/">文档</a> ·
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
+  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">讨论区</a>
+</p>
+
+<p align="center">
   <a href="./README.md">English</a> · <strong>中文</strong>
 </p>
 
@@ -168,7 +175,8 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **固定并重放计划** | 用 `createPlanArtifact` 将 `planOnly` 的拆解结果序列化，之后 `runFromPlan` 不再调用协调者，直接重放完全相同的任务图。（[`patterns/plan-replay`](examples/patterns/plan-replay.ts)） |
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
-| **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
+| **外部编码 agent（ACP）** | 把某个 agent 的 LLM 循环换成通过 [Agent Client Protocol](https://agentclientprotocol.com) 驱动的外部编码 CLI：设置 `backend: { kind: 'acp', … }`，子进程自行运行其回合，而 pool、scheduler、queue、共享记忆与预算全部与 backend 无关。([外部 agent](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)) |
+| **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard，外加 `TeamRunResult.metrics` 运行级指标汇总（token、重试、错误/失败计数、任务时长统计）。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自有后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
 | **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。内置的零依赖 `FileStore` 让 checkpoint 无需额外后端即可持久化；存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
@@ -474,6 +482,10 @@ Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
 - [@dvirarad](https://github.com/dvirarad)（OpenAI 系列 adapter 健壮性）
 - [@cat0825](https://github.com/cat0825)（model routing 策略、plan 重放、结构化共享记忆 handoff）
 - [@mvanhorn](https://github.com/mvanhorn)（checkpoint & resume）
+- [@lesbass](https://github.com/lesbass)（`TeamRunResult` 运行级 metrics 汇总）
+- [@tlysanhuo](https://github.com/tlysanhuo)（trace span 父级链接）
+- [@LambIessz](https://github.com/LambIessz)（orchestrator 成本预算、MessageBus 持久化进 checkpoint）
+- [@Bobuyoucrypto](https://github.com/Bobuyoucrypto)（Windows bash 超时杀进程树）
 
 **Provider 集成**
 

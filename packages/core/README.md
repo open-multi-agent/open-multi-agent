@@ -34,6 +34,13 @@
 <br />
 
 <p align="center">
+  <a href="https://open-multi-agent.com">Website</a> ·
+  <a href="https://open-multi-agent.com/getting-started/introduction/">Docs</a> ·
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
+  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">Discussions</a>
+</p>
+
+<p align="center">
   <strong>English</strong> · <a href="./README_zh.md">中文</a>
 </p>
 
@@ -168,7 +175,8 @@ Route orchestration phases to different models with an opt-in `modelRouting` pol
 | **Pin and replay plans** | Serialize a `planOnly` decomposition with `createPlanArtifact`, then `runFromPlan` replays the exact task graph without re-invoking the coordinator. ([`patterns/plan-replay`](examples/patterns/plan-replay.ts)) |
 | **Lifecycle hooks + cancellation** | `beforeRun` rewrites the prompt, `afterRun` post-processes or rejects the result; pass an `AbortSignal` to cancel a run in flight. |
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
-| **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG. API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
+| **External coding agents (ACP)** | Swap an agent's LLM loop for an external coding CLI over the [Agent Client Protocol](https://agentclientprotocol.com): set `backend: { kind: 'acp', … }` and the subprocess runs its own turns, while the pool, scheduler, queue, shared memory, and budget stay backend-agnostic. ([external agents](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)) |
+| **Observability** | `onProgress` events, `onTrace` spans, post-run HTML dashboard rendering the executed task DAG, plus a run-level metrics rollup on `TeamRunResult.metrics` (tokens, retries, error/failure counts, task-duration stats). API keys and tokens are redacted from traces, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
 | **Checkpoint & resume** | Opt-in per-run checkpointing over any `MemoryStore`: snapshot on each completed task, then `restore()` skips finished tasks to continue after a crash or restart. The bundled zero-dependency `FileStore` makes checkpoints durable out of the box; best-effort saves never take the run down. ([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **Sandboxed filesystem workspace** | Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by default; agents sharing the default configuration share this root. For per-agent isolation, set `AgentConfig.cwd`; for a different shared root, set `OrchestratorConfig.defaultCwd`; pass `null` to disable. ([sandbox config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
@@ -474,6 +482,10 @@ Issues, feature requests, and PRs are welcome. Some areas where contributions wo
 - [@dvirarad](https://github.com/dvirarad) (OpenAI-family adapter hardening)
 - [@cat0825](https://github.com/cat0825) (model routing policy, plan replay, structured shared-memory handoff)
 - [@mvanhorn](https://github.com/mvanhorn) (checkpoint & resume)
+- [@lesbass](https://github.com/lesbass) (run-level metrics rollup on `TeamRunResult`)
+- [@tlysanhuo](https://github.com/tlysanhuo) (trace span parent linkage)
+- [@LambIessz](https://github.com/LambIessz) (orchestrator cost budget, MessageBus persistence in checkpoints)
+- [@Bobuyoucrypto](https://github.com/Bobuyoucrypto) (Windows bash timeout process-tree kill)
 
 **Provider integrations**
 

@@ -34,6 +34,13 @@
 <br />
 
 <p align="center">
+  <a href="https://open-multi-agent.com">Website</a> ·
+  <a href="https://open-multi-agent.com/getting-started/introduction/">Docs</a> ·
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
+  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">Discussions</a>
+</p>
+
+<p align="center">
   <strong>English</strong> · <a href="./README_zh.md">中文</a>
 </p>
 
@@ -67,18 +74,6 @@ The full quickstart, the three ways to run, provider setup, the production check
 
 Other ways to run: clone the repo and run any [example](packages/core/examples/) with `npx tsx packages/core/examples/basics/team-collaboration.ts`, or embed OMA in a real backend with the [Express](packages/core/examples/integrations/express-customer-support/) and [Next.js](packages/core/examples/integrations/with-vercel-ai-sdk/) apps. To skip local setup, the [Next.js starter](https://github.com/open-multi-agent/oma-nextjs-starter) deploys to Vercel in one click; local models via [Ollama](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) need no API key.
 
-## How is this different from X?
-
-Most TypeScript teams picking a multi-agent layer are really choosing between OMA, LangGraph JS, and Mastra. The mechanism is what differs.
-
-**vs. LangGraph JS.** LangGraph has you design a declarative graph (nodes, edges, conditional routing) up front, then compiles it into an invokable; OMA's Coordinator decomposes the goal into a task DAG at runtime and auto-parallelizes independents. Both checkpoint and resume, though LangGraph's persistence ecosystem runs deeper. Reach for OMA when the plan should adapt to the goal instead of being wired ahead of time.
-
-**vs. Mastra.** Both are TypeScript-native; the difference is who drives orchestration. Mastra has you wire the workflow by hand. OMA is goal-driven: hand its Coordinator a goal and it builds the task DAG at runtime. `runTeam(team, goal)` in one call.
-
-**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a lean runtime (three core dependencies, plus opt-in peers you install only when you use them) and direct Node.js embedding, with no separate Python service to stand up alongside your stack.
-
-**vs. Vercel AI SDK.** AI SDK is the LLM-call layer (provider abstraction, streaming, tool calls, and structured outputs), not a multi-agent orchestrator. Use it alone for single-agent calls; reach for OMA the moment you need a coordinated team. OMA even ships an optional AI SDK bridge.
-
 ## Ecosystem
 
 `open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
@@ -97,6 +92,12 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
 
 Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here. For a deep integration, see the [Featured partner program](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md).
+
+## How is this different from X?
+
+Most TypeScript teams choosing a multi-agent layer are weighing OMA against LangGraph JS, Mastra, CrewAI, and the Vercel AI SDK. The short version: OMA is goal-driven. Hand its Coordinator a goal and it builds the task DAG at runtime, instead of making you wire the graph up front.
+
+Full head-to-head on each on the package page: [How is this different?](packages/core/README.md#how-is-this-different-from-x)
 
 ## Repository
 

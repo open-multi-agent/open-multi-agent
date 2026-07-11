@@ -34,6 +34,13 @@
 <br />
 
 <p align="center">
+  <a href="https://open-multi-agent.com/zh/">官网</a> ·
+  <a href="https://open-multi-agent.com/zh/getting-started/introduction/">文档</a> ·
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
+  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">讨论区</a>
+</p>
+
+<p align="center">
   <a href="./README.md">English</a> · <strong>中文</strong>
 </p>
 
@@ -75,18 +82,6 @@ npm install @open-multi-agent/core
   <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
 </p>
 
-## 与其他框架对比
-
-大多数 TypeScript 团队在选择多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra 之间取舍。差异在于机制。
-
-**对比 LangGraph JS。** LangGraph 需先设计好声明式图（节点、边、条件路由），再编译为可调用对象；OMA 的 Coordinator 则在运行时将目标拆解为任务 DAG，并自动并行其中的无依赖项。两者均支持 checkpoint 与 resume，只是 LangGraph 的持久化生态更为完善。若需让编排随目标自适应、而非预先固定图结构，OMA 更为合适。
-
-**对比 Mastra。** 两者均为原生 TypeScript，差异在于由谁驱动编排。Mastra 需手工连接工作流；OMA 则是目标驱动：将目标交给 Coordinator，即可在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行调用即可。
-
-**对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，运行时精简（三个核心依赖，外加按需安装的可选 peer），直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。
-
-**对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），而非多智能体编排器。单 agent 调用单独用它即可；一旦需要协同的团队，则选用 OMA。OMA 亦提供可选的 AI SDK bridge。
-
 ## 生态
 
 `open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
@@ -105,6 +100,12 @@ npm install @open-multi-agent/core
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
 在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。深度集成的产品见 [Featured partner 计划](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md)。
+
+## 与其他框架对比
+
+大多数 TypeScript 团队选多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra、CrewAI、Vercel AI SDK 之间取舍。一句话：OMA 是目标驱动的，把目标交给 Coordinator，它在运行时构建任务 DAG，而不必你预先把图连好。
+
+逐个正面对比见包页：[与其他框架对比](packages/core/README_zh.md#与其他框架对比)
 
 ## 仓库结构
 
