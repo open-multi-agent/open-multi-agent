@@ -46,13 +46,13 @@
 
 <br />
 
-`open-multi-agent` is a multi-agent orchestration framework for TypeScript backends. Give it a goal; a coordinator agent decomposes it into a task DAG, parallelizes independents, and synthesizes the result. Drops into any Node.js backend.
+`open-multi-agent` is an AI agent orchestration framework for TypeScript backends that drops into any Node.js app.
 
 > **Your engineers describe the goal, not the graph.**
 
-Graph-first frameworks make you enumerate every node and edge up front. OMA runs a **dynamic workflow**: the task DAG is built at runtime, so it adapts to the goal instead of being hand-wired for one. The coordinator emits that plan as data for a deterministic scheduler to execute, so the plan is inspectable and replayable. It is the same bet Anthropic made with Claude Code's [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) in May 2026, offered here as an open library that runs on any provider, inside your own backend.
+Graph-first frameworks make you wire every node and edge up front. OMA runs a **dynamic workflow**: a coordinator turns the goal into a task DAG at runtime, parallelizes independent tasks, and synthesizes the result. That plan is emitted as data for a deterministic scheduler to run, so it stays inspectable and replayable. It is the same bet Anthropic made with Claude Code's [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code); OMA offers it as an open library that runs on any provider, in your own backend.
 
-`@open-multi-agent/core` keeps a lightweight core. The orchestration engine plus the mainstream model providers (Anthropic, OpenAI, and any OpenAI-compatible endpoint) work out of the box; additional providers (Gemini, Bedrock), MCP, and the Vercel AI SDK bridge are opt-in peer dependencies you install only when you use them.
+Lightweight core: the engine plus Anthropic, OpenAI, and any OpenAI-compatible endpoint work out of the box; Gemini, Bedrock, MCP, and the Vercel AI SDK bridge are opt-in peer dependencies.
 
 ## Get started
 

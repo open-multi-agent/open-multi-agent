@@ -46,13 +46,13 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架。给定一个目标，协调者 agent 会将其拆解为任务 DAG，并行执行独立任务，合成最终结果。可直接嵌入任意现有 Node.js 后端。
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。
 
 > **工程师只描述目标，不画任务图。**
 
-图优先的框架要求预先列出每个节点与每条边；OMA 是**动态工作流**（dynamic workflow）：任务 DAG 在运行时生成，随目标自适应，而非针对单一流程预先固化。协调者将该计划以数据形式交给确定性调度器执行，因此该计划可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一方向的押注；OMA 以开源库的形式把它带入任意 provider、你自己的后端。
+图优先的框架要求你预先列出每个节点与每条边。OMA 是**动态工作流**（dynamic workflow）：协调者在运行时把目标拆成任务 DAG，并行执行独立任务并合成结果；这份计划以数据形式交给确定性调度器执行，因此始终可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一押注；OMA 以开源库的形式把它带到任意 provider、你自己的后端。
 
-`@open-multi-agent/core` 坚持轻量内核：编排引擎加上主流模型 provider（Anthropic、OpenAI 及任意 OpenAI 兼容端点）开箱即用；额外的 provider（Gemini、Bedrock）、MCP、Vercel AI SDK bridge 均为可选 peer 依赖，按需安装。
+轻量内核：编排引擎加上 Anthropic、OpenAI 及任意 OpenAI 兼容端点开箱即用；Gemini、Bedrock、MCP、Vercel AI SDK bridge 为可选 peer 依赖，按需安装。
 
 ## 快速开始
 
