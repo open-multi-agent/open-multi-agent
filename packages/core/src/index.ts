@@ -119,6 +119,15 @@ export type { SupportedProvider } from './llm/adapter.js'
 export { TokenBudgetExceededError, CostBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isRetryableError } from './errors.js'
 export { createRunIdentity, createRestoreIdentity, validateRunId } from './observability/identity.js'
 export { classifyRunFailure } from './observability/status.js'
+export type {
+  SpanEndRecord,
+  SpanEventName,
+  SpanEventRecord,
+  SpanKind,
+  SpanStartRecord,
+  TraceRecord,
+  TraceRecordBase,
+} from './observability/records.js'
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -176,6 +185,7 @@ export type {
   RunIdentity,
   RunIdentityLink,
   TraceLink,
+  TraceAttributeValue,
   RunIdentityOptions,
   RunStatus,
   RunStatusCode,

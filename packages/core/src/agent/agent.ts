@@ -54,6 +54,7 @@ import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { mergeAbortSignals } from '../utils/abort.js'
 import { createRunIdentity } from '../observability/identity.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
+import { createTraceRuntime } from '../observability/runtime.js'
 import { TokenBudgetExceededError } from '../errors.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
@@ -376,6 +377,23 @@ export class Agent {
     const identity = callerOptions?.identity ?? createRunIdentity(
       callerOptions?.runId !== undefined ? { runId: callerOptions.runId } : {},
     )
+    const traceRuntime = callerOptions?.traceRuntime
+      ?? createTraceRuntime(identity, callerOptions?.onTrace)
+    const traceRuntimeOwner = traceRuntime !== undefined && callerOptions?.traceRuntime === undefined
+    const traceSpan = traceRuntime?.startSpan({
+      kind: 'agent',
+      name: 'invoke_agent',
+      parent: callerOptions?.traceSpan ?? traceRuntime.root,
+      links: callerOptions?.traceLinks,
+      attributes: {
+        'oma.agent.name': callerOptions?.traceAgent ?? this.name,
+        ...(callerOptions?.tracePhase ? { 'oma.phase': callerOptions.tracePhase } : {}),
+        ...(callerOptions?.traceAgentAttempt !== undefined
+          ? { 'oma.agent.attempt': callerOptions.traceAgentAttempt }
+          : {}),
+        ...(callerOptions?.taskId ? { 'oma.task.id': callerOptions.taskId } : {}),
+      },
+    })
     let timeoutSignal: AbortSignal | undefined
     let callerAbort: AbortSignal | undefined
     let failureKind: TraceErrorKind | undefined
@@ -414,6 +432,9 @@ export class Agent {
       const runOptions: RunOptions = {
         ...callerOptions,
         identity,
+        ...(traceRuntime ? { traceRuntime } : {}),
+        ...(traceSpan ? { traceSpan } : {}),
+        ...(traceRuntimeOwner ? { traceRuntimeOwner: true } : {}),
         onMessage: internalOnMessage,
         ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
         ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
@@ -546,9 +567,8 @@ export class Agent {
     startMs: number,
     result: AgentRunResult,
   ): void {
-    if (!options?.onTrace) return
     const endMs = Date.now()
-    emitTrace(options.onTrace, {
+    const legacyEvent = options?.onTrace ? {
       type: 'agent',
       runId: options.runId ?? '',
       spanId: options.traceSpanId ?? generateSpanId(),
@@ -561,7 +581,29 @@ export class Agent {
       startMs,
       endMs,
       durationMs: endMs - startMs,
-    })
+    } as const : undefined
+    if (options?.traceSpan) {
+      options.traceSpan.end({
+        status: result.status ?? statusOnly(result.success ? 'ok' : 'error'),
+        ...(result.errorInfo ? { error: result.errorInfo } : {}),
+        attributes: {
+          'oma.agent.name': options.traceAgent ?? this.name,
+          'oma.agent.turns': result.messages.filter(m => m.role === 'assistant').length,
+          'oma.agent.tool_calls': result.toolCalls.length,
+          'oma.usage.input_tokens': result.tokenUsage.input_tokens,
+          'oma.usage.output_tokens': result.tokenUsage.output_tokens,
+        },
+        ...(legacyEvent ? { legacyEvent } : {}),
+      })
+      if (options.traceRuntimeOwner) {
+        options.traceRuntime?.close({
+          status: result.status ?? statusOnly(result.success ? 'ok' : 'error'),
+          ...(result.errorInfo ? { error: result.errorInfo } : {}),
+        })
+      }
+    } else if (legacyEvent) {
+      emitTrace(options?.onTrace, legacyEvent)
+    }
   }
 
   /**
@@ -667,6 +709,23 @@ export class Agent {
     const identity = callerOptions?.identity ?? createRunIdentity(
       callerOptions?.runId !== undefined ? { runId: callerOptions.runId } : {},
     )
+    const traceRuntime = callerOptions?.traceRuntime
+      ?? createTraceRuntime(identity, callerOptions?.onTrace)
+    const traceRuntimeOwner = traceRuntime !== undefined && callerOptions?.traceRuntime === undefined
+    const traceSpan = traceRuntime?.startSpan({
+      kind: 'agent',
+      name: 'invoke_agent',
+      parent: callerOptions?.traceSpan ?? traceRuntime.root,
+      links: callerOptions?.traceLinks,
+      attributes: {
+        'oma.agent.name': callerOptions?.traceAgent ?? this.name,
+        ...(callerOptions?.tracePhase ? { 'oma.phase': callerOptions.tracePhase } : {}),
+        ...(callerOptions?.traceAgentAttempt !== undefined
+          ? { 'oma.agent.attempt': callerOptions.traceAgentAttempt }
+          : {}),
+        ...(callerOptions?.taskId ? { 'oma.task.id': callerOptions.taskId } : {}),
+      },
+    })
     let agentTraceEmitted = false
     let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
 
@@ -694,6 +753,9 @@ export class Agent {
       const runOptions: RunOptions = {
         ...callerOptions,
         identity,
+        ...(traceRuntime ? { traceRuntime } : {}),
+        ...(traceSpan ? { traceSpan } : {}),
+        ...(traceRuntimeOwner ? { traceRuntimeOwner: true } : {}),
         ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
         ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
         ...(effectiveAbort ? { abortSignal: effectiveAbort } : undefined),
@@ -705,7 +767,13 @@ export class Agent {
           const result = event.data as RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
 
-          const status = result.budgetExceeded ? statusOnly('budget_exhausted') : statusOnly('ok')
+          const status = result.budgetExceeded
+            ? statusOnly('budget_exhausted')
+            : timeoutSignal?.aborted
+              ? statusOnly('timeout')
+              : callerAbort?.aborted && result.aborted
+                ? statusOnly('cancelled')
+                : statusOnly('ok')
           let agentResult = this.toAgentRunResult(
             result, !result.budgetExceeded, undefined, identity, status,
           )

@@ -161,6 +161,15 @@ export interface TokenUsage {
 // Run identity and outcome
 // ---------------------------------------------------------------------------
 
+/** Scalar trace attribute values supported by the v2 record schema. */
+export type TraceAttributeValue =
+  | string
+  | number
+  | boolean
+  | readonly string[]
+  | readonly number[]
+  | readonly boolean[]
+
 /** Stable identity for one logical run and its current execution attempt. */
 export interface RunIdentity {
   /** Logical run identifier. Preserved across checkpoint restore. */
@@ -179,7 +188,8 @@ export interface RunIdentity {
 export interface TraceLink {
   readonly traceId: string
   readonly spanId: string
-  readonly relation: 'continued_from'
+  readonly relation: 'continued_from' | 'depends_on' | 'consumed' | 'delegated_from'
+  readonly attributes?: Readonly<Record<string, TraceAttributeValue>>
 }
 
 /** Backwards-compatible identity-specific alias for {@link TraceLink}. */
@@ -395,7 +405,12 @@ export interface TeamInfo {
    * Run another roster agent to completion and return its result.
    * Only set during orchestrated pool execution (`runTeam` / `runTasks`).
    */
-  readonly runDelegatedAgent?: (targetAgent: string, prompt: string) => Promise<AgentRunResult>
+  readonly runDelegatedAgent?: (
+    targetAgent: string,
+    prompt: string,
+    /** Internal OBS-1B parent handle; callers should omit it. */
+    traceParent?: unknown,
+  ) => Promise<AgentRunResult>
 }
 
 /**

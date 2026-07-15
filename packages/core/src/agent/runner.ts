@@ -41,6 +41,8 @@ import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { mergeAbortSignals } from '../utils/abort.js'
 import { estimateTokens } from '../utils/tokens.js'
 import { redactSensitiveObject, redactSensitiveText } from '../utils/redaction.js'
+import type { TraceRuntime, TraceSpan } from '../observability/runtime.js'
+import { classifyRunFailure } from '../observability/status.js'
 import type { ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
@@ -168,6 +170,18 @@ export interface RunnerOptions {
 export interface RunOptions {
   /** Top-level run identity. Optional for custom backend compatibility. */
   readonly identity?: RunIdentity
+  /** Internal OBS-1B runtime; public sink configuration arrives in OBS-2. */
+  readonly traceRuntime?: TraceRuntime
+  /** Current v2 agent span used as parent for LLM/tool operations. */
+  readonly traceSpan?: TraceSpan
+  /** One-based task attempt number for v2 agent hierarchy. */
+  readonly traceAgentAttempt?: number
+  /** Non-parent relationships attached to the v2 agent span. */
+  readonly traceLinks?: readonly import('../types.js').TraceLink[]
+  /** Stable low-cardinality phase attribute for agent operations. */
+  readonly tracePhase?: string
+  /** True when the current Agent created and therefore closes traceRuntime.root. */
+  readonly traceRuntimeOwner?: boolean
   /** Fired just before each tool is dispatched. */
   readonly onToolCall?: (name: string, input: Record<string, unknown>) => void
   /** Fired after each tool result is received. */
@@ -515,6 +529,104 @@ export class AgentRunner implements AgentBackend {
     }
   }
 
+  /** Execute one model call with OBS-1B closure and legacy completion mapping. */
+  private async tracedChat(
+    messages: LLMMessage[],
+    chatOptions: LLMChatOptions,
+    options: RunOptions,
+    phase: 'turn' | 'summary',
+    turn: number,
+  ): Promise<LLMResponse> {
+    if (!options.traceRuntime || !options.traceSpan) {
+      const startMs = options.onTrace ? Date.now() : 0
+      const response = await this.chatWithCallTimeout(messages, chatOptions)
+      if (options.onTrace) {
+        const endMs = Date.now()
+        emitTrace(options.onTrace, {
+          type: 'llm_call',
+          runId: options.runId ?? '',
+          spanId: generateSpanId(),
+          ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
+          taskId: options.taskId,
+          agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
+          model: chatOptions.model,
+          phase,
+          turn,
+          tokens: response.usage,
+          startMs,
+          endMs,
+          durationMs: endMs - startMs,
+        })
+      }
+      return response
+    }
+
+    const span = options.traceRuntime.startSpan({
+      kind: 'llm',
+      name: 'chat',
+      parent: options.traceSpan,
+      attributes: {
+        'oma.agent.name': options.traceAgent ?? this.options.agentName ?? 'unknown',
+        'oma.llm.model': chatOptions.model,
+        'oma.phase': phase,
+        'oma.llm.turn': turn,
+        ...(options.taskId ? { 'oma.task.id': options.taskId } : {}),
+      },
+    })
+    const classifyCallFailure = (error: unknown) => {
+      const reason = chatOptions.abortSignal?.reason
+      const timedOut = chatOptions.abortSignal?.aborted
+        && reason instanceof Error
+        && reason.name === 'TimeoutError'
+      const cancelled = chatOptions.abortSignal?.aborted && !timedOut
+      return classifyRunFailure(error, {
+        provider: this.adapter.name,
+        ...(timedOut ? { kind: 'timeout' as const, statusCode: 'timeout' as const } : {}),
+        ...(cancelled ? { kind: 'cancellation' as const, statusCode: 'cancelled' as const } : {}),
+      })
+    }
+    try {
+      const response = await this.chatWithCallTimeout(messages, chatOptions)
+      if (chatOptions.abortSignal?.aborted) {
+        const reason = chatOptions.abortSignal.reason ?? new Error('Model call aborted.')
+        const classified = classifyCallFailure(reason)
+        span.end({ status: classified.status, error: classified.errorInfo })
+        return response
+      }
+      const endMs = Date.now()
+      const legacyEvent: TraceEvent | undefined = options.onTrace ? {
+        type: 'llm_call',
+        runId: options.runId ?? '',
+        spanId: generateSpanId(),
+        ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
+        taskId: options.taskId,
+        agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
+        model: chatOptions.model,
+        phase,
+        turn,
+        tokens: response.usage,
+        startMs: span.startUnixMs,
+        endMs,
+        durationMs: Math.max(0, endMs - span.startUnixMs),
+      } : undefined
+      span.end({
+        status: { code: 'ok' },
+        attributes: {
+          'oma.usage.input_tokens': response.usage.input_tokens,
+          'oma.usage.output_tokens': response.usage.output_tokens,
+        },
+        ...(legacyEvent ? { legacyEvent } : {}),
+      })
+      return response
+    } catch (error) {
+      const classified = classifyCallFailure(error)
+      span.end({ status: classified.status, error: classified.errorInfo })
+      throw error
+    } finally {
+      span.ensureEnded()
+    }
+  }
+
   private async summarizeMessages(
     messages: LLMMessage[],
     maxTokens: number,
@@ -585,26 +697,9 @@ export class AgentRunner implements AgentBackend {
       tools: undefined,
     }
 
-    const summaryStartMs = Date.now()
-    const summaryResponse = await this.chatWithCallTimeout(summaryInput, summaryOptions)
-    if (options.onTrace) {
-      const summaryEndMs = Date.now()
-      emitTrace(options.onTrace, {
-        type: 'llm_call',
-        runId: options.runId ?? '',
-        spanId: generateSpanId(),
-        ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
-        taskId: options.taskId,
-        agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
-        model: summaryOptions.model,
-        phase: 'summary',
-        turn: turns,
-        tokens: summaryResponse.usage,
-        startMs: summaryStartMs,
-        endMs: summaryEndMs,
-        durationMs: summaryEndMs - summaryStartMs,
-      })
-    }
+    const summaryResponse = await this.tracedChat(
+      summaryInput, summaryOptions, options, 'summary', turns,
+    )
 
     const summaryText = extractText(summaryResponse.content).trim()
     const summaryPrefix = summaryText.length > 0
@@ -891,26 +986,9 @@ export class AgentRunner implements AgentBackend {
         // ------------------------------------------------------------------
         // Step 1: Call the LLM and collect the full response for this turn.
         // ------------------------------------------------------------------
-        const llmStartMs = Date.now()
-        const response = await this.chatWithCallTimeout(conversationMessages, baseChatOptions)
-        if (options.onTrace) {
-          const llmEndMs = Date.now()
-          emitTrace(options.onTrace, {
-            type: 'llm_call',
-            runId: options.runId ?? '',
-            spanId: generateSpanId(),
-            ...(options.traceSpanId ? { parentId: options.traceSpanId } : {}),
-            taskId: options.taskId,
-            agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
-            model: this.options.model,
-            phase: 'turn',
-            turn: turns,
-            tokens: response.usage,
-            startMs: llmStartMs,
-            endMs: llmEndMs,
-            durationMs: llmEndMs - llmStartMs,
-          })
-        }
+        const response = await this.tracedChat(
+          conversationMessages, baseChatOptions, options, 'turn', turns,
+        )
 
         totalUsage = addTokenUsage(totalUsage, response.usage)
 
@@ -1052,7 +1130,19 @@ export class AgentRunner implements AgentBackend {
         }> => {
           options.onToolCall?.(block.name, block.input)
 
-          const startTime = Date.now()
+          const toolSpan = options.traceRuntime && options.traceSpan
+            ? options.traceRuntime.startSpan({
+                kind: 'tool',
+                name: 'execute_tool',
+                parent: options.traceSpan,
+                attributes: {
+                  'oma.agent.name': options.traceAgent ?? this.options.agentName ?? 'unknown',
+                  'oma.tool.name': block.name,
+                  ...(options.taskId ? { 'oma.task.id': options.taskId } : {}),
+                },
+              })
+            : undefined
+          const startTime = toolSpan?.startUnixMs ?? Date.now()
           let result: ToolResult
 
           if (!grantedToolNames.has(block.name)) {
@@ -1069,10 +1159,20 @@ export class AgentRunner implements AgentBackend {
             }
           } else {
             try {
+              const executionContext: ToolUseContext = toolSpan && toolContext.team?.runDelegatedAgent
+                ? {
+                    ...toolContext,
+                    team: {
+                      ...toolContext.team,
+                      runDelegatedAgent: (targetAgent, prompt) =>
+                        toolContext.team!.runDelegatedAgent!(targetAgent, prompt, toolSpan),
+                    },
+                  }
+                : toolContext
               result = await this.toolExecutor.execute(
                 block.name,
                 block.input,
-                toolContext,
+                executionContext,
               )
             } catch (err) {
               // Tool executor errors become error results — the loop continues.
@@ -1084,10 +1184,7 @@ export class AgentRunner implements AgentBackend {
           const endTime = Date.now()
           const duration = endTime - startTime
 
-          options.onToolResult?.(block.name, result)
-
-          if (options.onTrace) {
-            emitTrace(options.onTrace, {
+          const legacyEvent: TraceEvent | undefined = options.onTrace ? {
               type: 'tool_call',
               runId: options.runId ?? '',
               spanId: generateSpanId(),
@@ -1101,8 +1198,24 @@ export class AgentRunner implements AgentBackend {
               startMs: startTime,
               endMs: endTime,
               durationMs: duration,
+            } : undefined
+          if (toolSpan) {
+            const isError = result.isError ?? false
+            const classified = isError
+              ? classifyRunFailure(new Error(result.data), { kind: 'tool' })
+              : undefined
+            toolSpan.end({
+              status: classified?.status ?? { code: 'ok' },
+              ...(classified ? { error: classified.errorInfo } : {}),
+              attributes: { 'oma.tool.is_error': isError },
+              ...(legacyEvent ? { legacyEvent } : {}),
             })
+            toolSpan.ensureEnded()
+          } else if (legacyEvent) {
+            emitTrace(options.onTrace, legacyEvent)
           }
+
+          options.onToolResult?.(block.name, result)
 
           const record: ToolCallRecord = {
             toolName: block.name,

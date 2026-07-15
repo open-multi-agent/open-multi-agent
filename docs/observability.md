@@ -33,6 +33,40 @@ For source compatibility in the first 1.x release, the new result fields are
 optional in TypeScript declarations, but every runtime result from these APIs
 includes `identity` and `status`.
 
+## TraceRecord schema v2
+
+The core package exports the `TraceRecord` schema used by the internal
+OBS-1B runtime. A span produces `span_start`, zero or more `span_event`
+records, and exactly one self-contained `span_end`. Records carry
+`schemaVersion: 2`, a unique `recordId`, a per-trace strictly increasing
+`sequence`, the run identity, W3C-compatible trace/span IDs, timestamps,
+status, safe attributes, and optional links.
+
+The hierarchy uses parent relationships for lifecycle containment and links
+for non-tree relationships:
+
+- the run root contains coordinator, task, consensus, checkpoint, and callback operations;
+- task attempts are agent children, with LLM and tool calls below the agent;
+- DAG prerequisites use `depends_on` links;
+- delegated agents are children of the `delegate_to_agent` tool and link back to the task;
+- coordinator synthesis uses `consumed` links to task spans;
+- checkpoint restore starts a new trace whose root links `continued_from` the prior root.
+
+`span_end` repeats the span kind, name, start time, final attributes, links,
+status, and structured error so it remains useful if a start/event record is
+lost later in the delivery pipeline. Close is idempotent and the first end
+wins.
+
+OBS-1B does not add a public sink/exporter lifecycle. The runtime is activated
+by the existing `onTrace` path and converts completed v2 operations back to
+the unchanged seven-member `TraceEvent` union. Without `onTrace`, no child
+TraceRecord objects are constructed; top-level identity/status still exist.
+
+Streaming notifications are span events rather than zero-duration child
+spans in v2. TTFT is recorded only by a genuinely streaming provider path;
+the current aggregated `chat()` path never substitutes total latency for
+TTFT. Legacy `agent_stream` callback events remain unchanged.
+
 ## Progress Events
 
 Use `onProgress` when you need lightweight lifecycle events for logs, terminal output, or a live UI.
