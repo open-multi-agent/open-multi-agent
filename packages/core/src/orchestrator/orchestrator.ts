@@ -963,6 +963,7 @@ function buildTaskAgentTeamInfo(
       baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
       apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
       cwd: targetConfig.cwd === undefined ? ctx.config.defaultCwd : targetConfig.cwd,
+      onToolCall: targetConfig.onToolCall ?? ctx.config.onToolCall,
     }, ctx.config.defaultToolPreset), route)
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
@@ -1264,6 +1265,7 @@ async function executeQueue(
           baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
           apiKey: agentConfig.apiKey ?? config.defaultApiKey,
           cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
+          onToolCall: agentConfig.onToolCall ?? config.onToolCall,
         }, config.defaultToolPreset), workerRoute)
         const routedAgent = workerRoute
           ? buildAgent(workerEffectiveConfig, { includeDelegateTool: true })
@@ -1586,6 +1588,7 @@ interface ConsensusAgentDefaults {
   readonly defaultBaseURL: OrchestratorConfig['defaultBaseURL']
   readonly defaultApiKey: OrchestratorConfig['defaultApiKey']
   readonly defaultCwd: OrchestratorConfig['defaultCwd']
+  readonly onToolCall: OrchestratorConfig['onToolCall']
   readonly maxConcurrency: number
 }
 
@@ -1620,6 +1623,7 @@ function applyConsensusDefaults(config: AgentConfig, defaults: ConsensusAgentDef
     baseURL: config.baseURL ?? defaults.defaultBaseURL,
     apiKey: config.apiKey ?? defaults.defaultApiKey,
     cwd: config.cwd === undefined ? defaults.defaultCwd : config.cwd,
+    onToolCall: config.onToolCall ?? defaults.onToolCall,
   }
 }
 
@@ -1914,6 +1918,7 @@ async function runTaskVerify(
       defaultBaseURL: config.defaultBaseURL,
       defaultApiKey: config.defaultApiKey,
       defaultCwd: config.defaultCwd,
+      onToolCall: config.onToolCall,
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
     },
     onTrace: config.onTrace,
@@ -1983,8 +1988,8 @@ async function runTaskVerify(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
@@ -2036,6 +2041,7 @@ export class OpenMultiAgent {
       onProgress: config.onProgress,
       observability: config.observability,
       onTrace: config.onTrace,
+      onToolCall: config.onToolCall,
     }
   }
 
@@ -2099,6 +2105,7 @@ export class OpenMultiAgent {
       apiKey: config.apiKey ?? this.config.defaultApiKey,
       cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
       maxTokenBudget: effectiveBudget,
+      onToolCall: config.onToolCall ?? this.config.onToolCall,
     }, this.config.defaultToolPreset)
     const agent = buildAgent(effective)
     this.config.onProgress?.({
@@ -2261,6 +2268,7 @@ export class OpenMultiAgent {
         apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
         cwd: bestAgent.cwd === undefined ? this.config.defaultCwd : bestAgent.cwd,
         maxTokenBudget: effectiveBudget,
+        onToolCall: bestAgent.onToolCall ?? this.config.onToolCall,
       }, this.config.defaultToolPreset), routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
       const agent = buildAgent(effective)
 
@@ -2973,6 +2981,7 @@ export class OpenMultiAgent {
       defaultBaseURL: this.config.defaultBaseURL,
       defaultApiKey: this.config.defaultApiKey,
       defaultCwd: this.config.defaultCwd,
+      onToolCall: this.config.onToolCall,
       maxConcurrency: this.config.maxConcurrency,
     }
 
@@ -3281,6 +3290,7 @@ export class OpenMultiAgent {
       toolPreset: coordinatorOverrides?.toolPreset,
       tools: coordinatorOverrides?.tools,
       disallowedTools: coordinatorOverrides?.disallowedTools,
+      onToolCall: coordinatorOverrides?.onToolCall ?? this.config.onToolCall,
       cwd: coordinatorOverrides?.cwd === undefined
         ? this.config.defaultCwd
         : coordinatorOverrides.cwd,
@@ -3766,6 +3776,7 @@ export class OpenMultiAgent {
         baseURL: config.baseURL ?? this.config.defaultBaseURL,
         apiKey: config.apiKey ?? this.config.defaultApiKey,
         cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
+        onToolCall: config.onToolCall ?? this.config.onToolCall,
       }, this.config.defaultToolPreset)
       pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }

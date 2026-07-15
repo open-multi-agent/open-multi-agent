@@ -101,6 +101,36 @@ describe('ToolExecutor', () => {
     expect(result.data).toContain('Invalid input')
   })
 
+  it('runs onToolCall after validation and returns an error result on deny', async () => {
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN', isError: false }))
+    const gate = vi.fn(async () => ({ action: 'deny' as const, reason: 'requires human approval' }))
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'bash',
+      description: 'Runs a shell command.',
+      inputSchema: z.object({ command: z.string() }),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, { onToolCall: gate })
+
+    const result = await executor.execute(
+      'bash',
+      { command: 'rm -rf /tmp/demo' },
+      { ...dummyContext, runId: 'run-1', taskId: 'task-1' },
+    )
+
+    expect(gate).toHaveBeenCalledWith({
+      toolName: 'bash',
+      input: { command: 'rm -rf /tmp/demo' },
+      agentName: 'test-agent',
+      runId: 'run-1',
+      taskId: 'task-1',
+    })
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('requires human approval')
+  })
+
   it('catches tool execution errors and returns them as error results', async () => {
     const { executor } = makeExecutor(failTool())
     const result = await executor.execute('fail', {}, dummyContext)

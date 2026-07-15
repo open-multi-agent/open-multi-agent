@@ -191,6 +191,7 @@ export class Agent {
       toolPreset: this.config.toolPreset,
       allowedTools: this.config.tools,
       disallowedTools: this.config.disallowedTools,
+      ...(this.config.onToolCall !== undefined ? { onToolCall: this.config.onToolCall } : {}),
       cwd: this.config.cwd,
       agentName: this.name,
       agentRole: this.config.systemPrompt?.slice(0, 50) ?? 'assistant',

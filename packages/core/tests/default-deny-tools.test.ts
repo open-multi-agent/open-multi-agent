@@ -12,7 +12,7 @@
  * plus the `defaultToolPreset` escape hatch that restores the prior convenience.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { Agent } from '../src/agent/agent.js'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
@@ -249,6 +249,34 @@ describe('default-deny: runTeam short-circuit', () => {
     // Granted via the default preset → the executor ran the real command.
     expect(solo.toolCalls[0]!.output.toLowerCase()).not.toContain('not granted')
     expect(solo.toolCalls[0]!.output).toContain(sentinel)
+  })
+
+  it('onToolCall can deny a granted tool before it executes', async () => {
+    const sentinel = 'OMA_GATE_should_never_run'
+    const { adapter } = scriptedAdapter([
+      toolUse('bash', { command: `echo ${sentinel}` }),
+      text('finished'),
+    ])
+    const onToolCall = vi.fn(async () => ({ action: 'deny' as const, reason: 'blocked by policy' }))
+
+    const oma = new OpenMultiAgent({ defaultToolPreset: 'full', onToolCall })
+    const team = oma.createTeam('t', {
+      name: 't',
+      agents: [{ name: 'solo', model: 'mock-model', adapter }],
+    })
+
+    const result = await oma.runTeam(team, SIMPLE_GOAL)
+    const solo = result.agentResults.get('solo')!
+
+    expect(onToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: 'bash',
+      input: { command: `echo ${sentinel}` },
+      agentName: 'solo',
+    }))
+    expect(solo.toolCalls).toHaveLength(1)
+    expect(solo.toolCalls[0]!.toolName).toBe('bash')
+    expect(solo.toolCalls[0]!.output).toContain('blocked by policy')
+    expect(solo.toolCalls[0]!.output).not.toContain(sentinel)
   })
 
   it('per-agent toolPreset overrides defaultToolPreset', async () => {
