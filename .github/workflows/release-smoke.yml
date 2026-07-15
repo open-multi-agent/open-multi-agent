@@ -1,0 +1,91 @@
+name: Release smoke
+
+# After a GitHub Release is published, prove that the packages we just pushed to
+# npm actually work from a *user's* point of view: `npx create-oma-app@latest`
+# scaffolds the recommended PR-review starter, the @open-multi-agent/core it
+# pins installs from npm, and the demo reaches the missing-key gate.
+#
+# This is a POST-publish alarm, not a gate. The release is already out, so a red
+# run here means "the published bytes are broken, cut a fix" — it does not block
+# anything. The pre-merge equivalent (the `scaffold-e2e` job in ci.yml) proves
+# the same chain from LOCAL tarballs during the release window; this one proves
+# it from the real npm registry once the version is actually live.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  npx-scaffold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scaffold from the published npm package and reach the run gate
+        env:
+          # The tag is the core version (e.g. v1.10.0); create-oma-app has its
+          # own version, so we resolve the scaffolder via @latest and verify it
+          # pins THIS release's core below.
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          # Force the missing-key gate even if the runner ever grows these.
+          OPENAI_API_KEY: ''
+          OMA_MODEL: ''
+          OPENAI_BASE_URL: ''
+          # Re-check the registry on each retry instead of trusting a stale
+          # cached resolution of create-oma-app@latest.
+          npm_config_prefer_online: 'true'
+        run: |
+          set -euo pipefail
+          want="${RELEASE_TAG#v}"   # v1.10.0 -> 1.10.0
+
+          # npm's CDN takes a moment to serve a freshly published version, and
+          # BOTH create-oma-app and the core it pins may have just gone out — so
+          # retry the whole chain instead of failing on a propagation lag. The
+          # core-version check also rejects a stale @latest that predates this
+          # release, turning "wrong version cached" into a retry, not a pass.
+          scaffold_and_install() {
+            project="oma-release-smoke-$attempt"
+            npx --yes create-oma-app@latest "$project" --template pr-review --provider cloud || return 1
+            got=$(node -p "require('./$project/package.json').dependencies['@open-multi-agent/core']" 2>/dev/null) || return 1
+            if [ -n "$want" ] && [ "$got" != "$want" ]; then
+              echo "generated project pins core@$got but this release is $want — likely a stale npm cache"
+              return 1
+            fi
+            ( cd "$project" && npm install --no-audit --no-fund ) || return 1
+            installed=$(node -p "require('./$project/node_modules/@open-multi-agent/core/package.json').version" 2>/dev/null) || return 1
+            if [ "$installed" != "$want" ]; then
+              echo "installed core@$installed but this release is $want"
+              return 1
+            fi
+          }
+
+          attempt=1
+          until scaffold_and_install; do
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::create-oma-app@latest failed to scaffold+install core@$want after $attempt attempts"
+              exit 1
+            fi
+            echo "retrying after npm propagation delay (attempt $attempt)…"
+            attempt=$((attempt + 1))
+            sleep 30
+          done
+
+          echo "scaffolded the PR-review starter with create-oma-app@$(npm view create-oma-app version) → installed core@$want"
+
+          # No API key on purpose: the demo must exit non-zero at the env gate.
+          # Reaching that message proves core resolved from npm, imported, and
+          # ran under tsx — a broken import or syntax error would fail elsewhere.
+          set +e
+          out=$( cd "$project" && npm run demo 2>&1 )
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -eq 0 ] || ! printf '%s' "$out" | grep -q "Missing OPENAI_API_KEY"; then
+            echo "::error::expected a non-zero exit with 'Missing OPENAI_API_KEY'; got exit $code"
+            exit 1
+          fi
+          echo "✓ create-oma-app@latest scaffolds the PR-review starter, installs core from npm, and reaches the run gate"
