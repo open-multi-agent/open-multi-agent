@@ -1342,6 +1342,8 @@ export interface OrchestratorConfig {
    */
   readonly defaultCwd?: string | null
   readonly onProgress?: (event: OrchestratorEvent) => void
+  /** Observability v2 sinks. User code owns forceFlush/shutdown lifecycle. */
+  readonly observability?: import('./observability/sink.js').ObservabilityConfig
   readonly onTrace?: (event: TraceEvent) => void | Promise<void>
   /**
    * Optional approval gate called between task execution rounds.
