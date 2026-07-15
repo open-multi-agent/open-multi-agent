@@ -103,6 +103,9 @@ import {
   type TraceRuntime,
   type TraceSpan,
 } from '../observability/runtime.js'
+import { CompositeSink } from '../observability/composite.js'
+import type { TraceSink } from '../observability/sink.js'
+import { SensitiveDataProcessor } from '../observability/processors.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
 
 // ---------------------------------------------------------------------------
@@ -1980,13 +1983,14 @@ async function runTaskVerify(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
   private completedTaskCount = 0
   private readonly traceRecordObserver?: TraceRecordObserver
+  private readonly traceSink?: TraceSink
 
   /**
    * @param config - Optional top-level configuration.
@@ -2003,6 +2007,13 @@ export class OpenMultiAgent {
     }
 
     this.traceRecordObserver = traceRecordObserverFrom(config)
+    this.traceSink = config.observability && config.observability.sinks.length > 0
+      ? new CompositeSink(config.observability.sinks.map((sink) =>
+          new SensitiveDataProcessor(sink, { capture: config.observability?.capture })), {
+          onDiagnostic: config.observability.onDiagnostic,
+          sinkName: 'OpenMultiAgent',
+        })
+      : undefined
     this.config = {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
@@ -2023,12 +2034,13 @@ export class OpenMultiAgent {
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
       onProgress: config.onProgress,
+      observability: config.observability,
       onTrace: config.onTrace,
     }
   }
 
   private startTrace(identity: RunIdentity): TraceRuntime | undefined {
-    return createTraceRuntime(identity, this.config.onTrace, this.traceRecordObserver)
+    return createTraceRuntime(identity, this.config.onTrace, this.traceRecordObserver, this.traceSink)
   }
 
   // -------------------------------------------------------------------------

@@ -128,6 +128,34 @@ export type {
   TraceRecord,
   TraceRecordBase,
 } from './observability/records.js'
+export {
+  BatchingTraceSink,
+  CompositeSink,
+  DEFAULT_BATCHING_OPTIONS,
+  DiagnosticReporter,
+  FilteringSink,
+  LegacyCallbackTraceSink,
+  SensitiveDataProcessor,
+  emptyTraceSinkStats,
+} from './observability/index.js'
+export type {
+  BatchingTraceSinkOptions,
+  DiagnosticMode,
+  DiagnosticOptions,
+  ExportResult,
+  FlushOptions,
+  FlushResult,
+  ObservabilityConfig,
+  ObservabilityResource,
+  SensitiveDataProcessorOptions,
+  TelemetryDiagnostic,
+  TelemetryDiagnosticCode,
+  TraceCapturePolicy,
+  TraceExporter,
+  TraceFilter,
+  TraceSink,
+  TraceSinkStats,
+} from './observability/index.js'
 
 // ---------------------------------------------------------------------------
 // Memory

@@ -15,7 +15,9 @@ import type {
   SpanStartRecord,
   TraceRecord,
 } from './records.js'
-import { emitTrace } from '../utils/trace.js'
+import type { TraceSink } from './sink.js'
+import { attachLegacyTraceEvent, LegacyCallbackTraceSink } from './legacy-callback.js'
+import { CompositeSink } from './composite.js'
 
 export type TraceRecordObserver = (record: TraceRecord) => void
 
@@ -59,18 +61,33 @@ function safeObserve(observer: TraceRecordObserver | undefined, record: TraceRec
   }
 }
 
+function safeEmit(sink: TraceSink | undefined, record: TraceRecord): void {
+  if (!sink) return
+  try {
+    sink.emit(record)
+  } catch {
+    // A user-supplied sink must never change execution semantics.
+  }
+}
+
 /** One top-level attempt's synchronous record runtime. */
 export class TraceRuntime {
   readonly identity: RunIdentity
   readonly root: TraceSpan
   private sequence = 0
+  private readonly sink?: TraceSink
 
   constructor(
     identity: RunIdentity,
     private readonly observer?: TraceRecordObserver,
-    private readonly legacyCallback?: (event: TraceEvent) => void | Promise<void>,
+    legacyCallback?: (event: TraceEvent) => void | Promise<void>,
+    sink?: TraceSink,
   ) {
     this.identity = identity
+    const legacySink = legacyCallback ? new LegacyCallbackTraceSink(legacyCallback) : undefined
+    this.sink = sink && legacySink
+      ? new CompositeSink([sink, legacySink], { diagnostics: 'silent' })
+      : sink ?? legacySink
     this.root = this.startSpan({
       kind: 'run',
       name: 'oma.run',
@@ -109,6 +126,7 @@ export class TraceRuntime {
       attributes: span.attributes,
     }
     safeObserve(this.observer, record)
+    safeEmit(this.sink, record)
   }
 
   emitEvent(
@@ -124,8 +142,9 @@ export class TraceRuntime {
       name,
       attributes,
     }
+    if (legacyEvent) attachLegacyTraceEvent(record, legacyEvent)
     safeObserve(this.observer, record)
-    if (legacyEvent) emitTrace(this.legacyCallback, legacyEvent)
+    safeEmit(this.sink, record)
   }
 
   emitEnd(span: TraceSpan, options: EndSpanOptions, endUnixMs: number): void {
@@ -144,8 +163,9 @@ export class TraceRuntime {
       ...(links.length > 0 ? { links } : {}),
       attributes,
     }
+    if (options.legacyEvent) attachLegacyTraceEvent(record, options.legacyEvent)
     safeObserve(this.observer, record)
-    if (options.legacyEvent) emitTrace(this.legacyCallback, options.legacyEvent)
+    safeEmit(this.sink, record)
   }
 
   private base(span: TraceSpan) {
@@ -225,7 +245,9 @@ export function createTraceRuntime(
   identity: RunIdentity,
   legacyCallback?: (event: TraceEvent) => void | Promise<void>,
   observer?: TraceRecordObserver,
+  sink?: TraceSink,
 ): TraceRuntime | undefined {
-  return legacyCallback || observer ? new TraceRuntime(identity, observer, legacyCallback) : undefined
+  return legacyCallback || observer || sink
+    ? new TraceRuntime(identity, observer, legacyCallback, sink)
+    : undefined
 }
-
