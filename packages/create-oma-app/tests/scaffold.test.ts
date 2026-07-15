@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { isNonEmptyDir, scaffold, TEMPLATE_DIR, toPackageName } from '../src/scaffold.js'
+import { isNonEmptyDir, scaffold, TEMPLATES_DIR, toPackageName } from '../src/scaffold.js'
 
 let tmp: string
 
@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 describe('scaffold', () => {
-  it('generates a project that depends only on @open-multi-agent/core', () => {
+  it('keeps the default demo compatible and dependent only on core', () => {
     const target = join(tmp, 'my-demo')
     scaffold({ targetDir: target, projectName: 'My Demo' })
 
@@ -24,6 +24,25 @@ describe('scaffold', () => {
     expect(Object.keys(pkg.dependencies)).toEqual(['@open-multi-agent/core'])
     expect(Object.keys(pkg.devDependencies)).toEqual(['tsx'])
     expect(pkg.name).toBe('my-demo') // stamped + sanitized
+  })
+
+  it.each(['pr-review', 'security'] as const)('generates the %s production template with zod', (templateId) => {
+    const target = join(tmp, templateId)
+    scaffold({ targetDir: target, projectName: templateId, templateId })
+    const pkg = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))
+    expect(Object.keys(pkg.dependencies)).toEqual(['@open-multi-agent/core', 'zod'])
+    expect(readFileSync(join(target, 'README.md'), 'utf8')).toMatch(templateId === 'pr-review' ? /PR Review Agent/ : /Security Analysis Agent/)
+  })
+
+  it.each(['demo', 'pr-review', 'security'] as const)('supports cloud and Ollama profiles for %s', (templateId) => {
+    const cloud = join(tmp, `${templateId}-cloud`)
+    const local = join(tmp, `${templateId}-local`)
+    scaffold({ targetDir: cloud, projectName: 'cloud', templateId, providerId: 'cloud' })
+    scaffold({ targetDir: local, projectName: 'local', templateId, providerId: 'ollama' })
+    expect(existsSync(join(cloud, '.env'))).toBe(false)
+    expect(existsSync(join(cloud, '.env.example'))).toBe(true)
+    expect(existsSync(join(cloud, '.env.ollama.example'))).toBe(true)
+    expect(readFileSync(join(local, '.env'), 'utf8')).toContain('OMA_RUNTIME=ollama')
   })
 
   it('restores dotfiles and ships the demo + env example', () => {
@@ -43,7 +62,7 @@ describe('scaffold', () => {
   // goal exceeds 200 chars (packages/core/src/orchestrator/orchestrator.ts), so
   // we pin the demo goal well above that.
   it('demo goal is long enough to bypass the single-agent short-circuit', () => {
-    const demo = readFileSync(join(TEMPLATE_DIR, 'src', 'index.ts'), 'utf8')
+    const demo = readFileSync(join(TEMPLATES_DIR, 'demo', 'src', 'index.ts'), 'utf8')
     const match = demo.match(/const goal = `([\s\S]*?)`/)
     expect(match).not.toBeNull()
     expect(match![1].length).toBeGreaterThan(200)
@@ -52,9 +71,11 @@ describe('scaffold', () => {
   // Landmine #2: a default tool preset would give the "no tools" demo agents
   // filesystem/bash access and write to disk. Assert the demo declares neither.
   it('demo agents declare no tools and set no default preset', () => {
-    const demo = readFileSync(join(TEMPLATE_DIR, 'src', 'index.ts'), 'utf8')
-    expect(demo).not.toMatch(/\btools\s*:/)
-    expect(demo).not.toMatch(/toolPreset/)
+    for (const templateId of ['demo', 'pr-review', 'security']) {
+      const template = readFileSync(join(TEMPLATES_DIR, templateId, 'src', 'index.ts'), 'utf8')
+      expect(template).not.toMatch(/\btools\s*:/)
+      expect(template).not.toMatch(/toolPreset/)
+    }
   })
 
   it('isNonEmptyDir distinguishes empty, non-empty, and missing dirs', () => {

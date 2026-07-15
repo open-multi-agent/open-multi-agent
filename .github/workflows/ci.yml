@@ -78,12 +78,13 @@ jobs:
       - name: Assert the create-oma-app template pins the current core version
         run: |
           core_version=$(jq -r .version packages/core/package.json)
-          pinned=$(jq -r '.dependencies["@open-multi-agent/core"]' packages/create-oma-app/template/package.json)
-          if [ "$pinned" != "$core_version" ]; then
-            echo "create-oma-app template pins @open-multi-agent/core@$pinned but this repo's core is $core_version."
-            echo "Bump the pin in packages/create-oma-app/template/package.json to match before release."
-            exit 1
-          fi
+          for manifest in packages/create-oma-app/templates/*/package.json; do
+            pinned=$(jq -r '.dependencies["@open-multi-agent/core"]' "$manifest")
+            if [ "$pinned" != "$core_version" ]; then
+              echo "$manifest pins @open-multi-agent/core@$pinned but this repo's core is $core_version."
+              exit 1
+            fi
+          done
       - name: Typecheck the create-oma-app template against core
         run: npm run typecheck:template -w create-oma-app
       - name: Assert the npm tarball ships exactly the expected files
@@ -111,7 +112,7 @@ jobs:
         working-directory: packages/create-oma-app
         run: |
           paths=$(npm pack --dry-run --json | jq -r '.[0].files[].path')
-          unexpected=$(echo "$paths" | grep -vE '^(dist/|template/|README\.md$|LICENSE$|package\.json$)' || true)
+          unexpected=$(echo "$paths" | grep -vE '^(dist/|template/|templates/|README\.md$|LICENSE$|package\.json$)' || true)
           if [ -n "$unexpected" ]; then
             echo "Unexpected files staged for the create-oma-app tarball:"
             echo "$unexpected"
@@ -119,7 +120,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for f in dist/index.js dist/scaffold.js template/package.json template/src/index.ts template/_env.example template/_gitignore; do
+          for f in dist/index.js dist/scaffold.js templates/demo/package.json templates/pr-review/src/index.ts templates/security/src/index.ts template/src/runtime.ts template/src/report.ts template/_env.example template/_env.ollama template/_gitignore; do
             echo "$paths" | grep -qxF "$f" || missing="$missing $f"
           done
           if [ -n "$missing" ]; then

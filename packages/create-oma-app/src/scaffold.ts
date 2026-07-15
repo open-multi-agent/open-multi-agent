@@ -6,9 +6,11 @@
 import { cpSync, existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { ProviderId, TemplateId } from './args.js'
 
-/** template/ ships alongside dist/ (and src/) one level under the package root. */
+/** Shared template base ships alongside dist/ (and src/) under the package root. */
 export const TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url))
+export const TEMPLATES_DIR = fileURLToPath(new URL('../templates', import.meta.url))
 
 /** Turn an arbitrary project name into a valid npm package name. */
 export function toPackageName(input: string): string {
@@ -29,18 +31,36 @@ export function isNonEmptyDir(dir: string): boolean {
 export interface ScaffoldOptions {
   readonly targetDir: string
   readonly projectName: string
+  readonly templateId?: TemplateId
+  readonly providerId?: ProviderId
   /** Override the template source (tests). Defaults to the bundled template. */
   readonly templateDir?: string
+  /** Override the template overlays root (tests). */
+  readonly templatesDir?: string
 }
 
-/** Copy the template into `targetDir`, restore dotfiles, stamp the name. */
-export function scaffold({ targetDir, projectName, templateDir = TEMPLATE_DIR }: ScaffoldOptions): void {
+/** Copy the shared base + selected overlay, restore dotfiles, and stamp metadata. */
+export function scaffold({
+  targetDir,
+  projectName,
+  templateId = 'demo',
+  providerId = 'cloud',
+  templateDir = TEMPLATE_DIR,
+  templatesDir = TEMPLATES_DIR,
+}: ScaffoldOptions): void {
+  const overlay = join(templatesDir, templateId)
+  if (!existsSync(overlay)) throw new Error(`Template "${templateId}" is not available.`)
   cpSync(templateDir, targetDir, { recursive: true })
+  cpSync(overlay, targetDir, { recursive: true, force: true })
+
   restoreDotfile(targetDir, '_gitignore', '.gitignore')
   restoreDotfile(targetDir, '_env.example', '.env.example')
+  restoreDotfile(targetDir, '_env.ollama', providerId === 'ollama' ? '.env' : '.env.ollama.example')
 
   const pkgPath = join(targetDir, 'package.json')
-  const stamped = readFileSync(pkgPath, 'utf8').replace(/__PROJECT_NAME__/g, toPackageName(projectName))
+  const stamped = readFileSync(pkgPath, 'utf8')
+    .replace(/__PROJECT_NAME__/g, toPackageName(projectName))
+    .replace(/__OMA_RUNTIME__/g, providerId)
   writeFileSync(pkgPath, stamped)
 }
 

@@ -1,41 +1,40 @@
 # create-oma-app
 
-Scaffold a runnable multi-agent demo on [`@open-multi-agent/core`](https://www.npmjs.com/package/@open-multi-agent/core) — one command from zero to a live agent DAG.
+Scaffold a production-oriented multi-agent starter on [`@open-multi-agent/core`](https://www.npmjs.com/package/@open-multi-agent/core).
 
 ```bash
 npm create oma-app@latest
 ```
 
-Answer one prompt (the project name) and you get a small project that, on its first run, shows a **coordinator breaking a single goal into a multi-agent DAG** — agents running in parallel and in dependency order — then opens a dashboard of the run in your browser.
+Interactive use asks for a project name, starter, and runtime. Non-interactive calls without flags retain the original `demo + cloud` behavior.
 
-## What you get
+## Starters
 
-```
-my-demo/
-├── src/index.ts     # the demo: one goal → multi-agent DAG → dashboard
-├── .env.example     # OpenAI, or any OpenAI-compatible provider
-├── package.json     # one runtime dependency: @open-multi-agent/core
-├── tsconfig.json
-└── README.md
-```
+- **PR Review Agent** — reviews a local Git diff or a GitHub PR using parallel correctness, security, and quality reviewers.
+- **Security Analysis Agent** — read-only repository analysis with secret redaction and opt-in `npm audit`.
+- **Multi-agent DAG Demo** — the original pure-reasoning onboarding-plan example.
 
-- **One runtime dependency** — `@open-multi-agent/core`; `tsx` is the only dev dependency.
-- **Provider-neutral** — OpenAI out of the box, or any OpenAI-compatible endpoint (DeepSeek, Groq, Ollama, …) via `OPENAI_BASE_URL` + `OMA_MODEL`.
-- **No tools, no filesystem writes** — the default demo is pure reasoning, so the first run is fast and robust across providers.
+All starters support cloud/OpenAI-compatible endpoints and local Ollama. Production agents receive no shell or write tools; their host process collects bounded evidence and writes Markdown, JSON, and HTML reports under `reports/`.
 
 ## Run it
 
 ```bash
-npm create oma-app@latest my-demo
-cd my-demo
+npm create oma-app@latest my-reviewer -- --template pr-review --provider cloud
+cd my-reviewer
 npm install
 cp .env.example .env   # add your key
-npm run dev
+npm run demo
+npm run dev -- --repo ../your-repo --base origin/main
 ```
 
-## Next steps
+Other combinations:
 
-Open `src/index.ts` and change the goal, add an agent, or give an agent tools. See the [examples](https://github.com/open-multi-agent/open-multi-agent/tree/main/packages/core/examples) for tool use, MCP, structured output, and providers.
+```bash
+npm create oma-app@latest my-auditor -- --template security --provider ollama
+npm create oma-app@latest my-demo -- --template demo --provider cloud
+```
+
+Ollama projects select `OMA_MODEL` when set, otherwise the first installed model. The scaffolder never installs dependencies, downloads models, or calls a model for you.
 
 ## License
 

@@ -1,14 +1,19 @@
 {
   "name": "create-oma-app",
   "version": "0.3.1",
-  "description": "Scaffold a runnable multi-agent demo on @open-multi-agent/core — one command from zero to a live agent DAG.",
+  "description": "Scaffold PR review, security analysis, and multi-agent DAG starters on @open-multi-agent/core.",
   "type": "module",
   "bin": {
     "create-oma-app": "dist/index.js"
   },
   "files": [
     "dist",
-    "template",
+    "template/_env.example",
+    "template/_env.ollama",
+    "template/_gitignore",
+    "template/src/runtime.ts",
+    "template/src/report.ts",
+    "templates",
     "README.md",
     "LICENSE"
   ],
@@ -18,7 +23,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "tsc --noEmit",
-    "typecheck:template": "tsc -p template/tsconfig.json",
+    "typecheck:template": "node scripts/typecheck-templates.mjs",
     "test": "vitest run",
     "test:scaffold": "node scripts/test-scaffold.mjs",
     "prepublishOnly": "npm run build"

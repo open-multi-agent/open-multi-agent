@@ -56,13 +56,13 @@ Lightweight core: the engine plus Anthropic, OpenAI, and any OpenAI-compatible e
 
 ## Get started
 
-One command scaffolds a project and starts a multi-agent DAG:
+One command scaffolds a production starter or the teaching DAG demo:
 
 ```bash
 npm create oma-app@latest
 ```
 
-Answer one prompt; the first run shows the coordinator turn one goal into a multi-agent DAG and opens a dashboard of the run (OpenAI or any OpenAI-compatible provider). To add the library to your own project:
+Choose a **PR Review Agent**, **Security Analysis Agent**, or the original **multi-agent DAG demo**, then run it with a cloud/OpenAI-compatible provider or fully local Ollama. Production starters emit Markdown, JSON, and an inspectable DAG dashboard while keeping agents read-only. To add the library to your own project:
 
 ```bash
 npm install @open-multi-agent/core

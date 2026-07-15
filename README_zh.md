@@ -56,13 +56,13 @@
 
 ## 快速开始
 
-一条命令即可初始化项目并启动多 agent DAG：
+一条命令即可初始化生产模板或教学用 multi-agent DAG：
 
 ```bash
 npm create oma-app@latest
 ```
 
-回答一个提示，首次运行便会展示协调者将目标拆解为多 agent DAG，并打开本次运行的 dashboard（OpenAI 或任意 OpenAI 兼容 provider）。若要将库集成到现有项目：
+可选择 **PR Review Agent**、**安全分析 Agent** 或原有的 **multi-agent DAG Demo**，并使用云端/OpenAI 兼容 provider 或完全本地的 Ollama。生产模板默认只读，同时输出 Markdown、JSON 和可审查的 DAG dashboard。若要将库集成到现有项目：
 
 ```bash
 npm install @open-multi-agent/core

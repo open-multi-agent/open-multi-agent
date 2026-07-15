@@ -1,0 +1,5 @@
+# Local-only runtime. No secret is stored here.
+OMA_RUNTIME=ollama
+OLLAMA_HOST=http://localhost:11434
+# Optional: otherwise the first model returned by Ollama is selected.
+# OMA_MODEL=llama3.1
