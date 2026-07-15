@@ -116,7 +116,9 @@ export type { RegisterBuiltInToolsOptions } from './tool/built-in/index.js'
 
 export { createAdapter } from './llm/adapter.js'
 export type { SupportedProvider } from './llm/adapter.js'
-export { TokenBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isRetryableError } from './errors.js'
+export { TokenBudgetExceededError, CostBudgetExceededError, InvalidMessageError, LLMCallTimeoutError, isRetryableError } from './errors.js'
+export { createRunIdentity, createRestoreIdentity, validateRunId } from './observability/identity.js'
+export { classifyRunFailure } from './observability/status.js'
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -170,6 +172,16 @@ export type {
   AgentConfig,
   AgentState,
   AgentRunResult,
+  RunAgentOptions,
+  RunIdentity,
+  RunIdentityLink,
+  TraceLink,
+  RunIdentityOptions,
+  RunStatus,
+  RunStatusCode,
+  RunOutcomeFields,
+  StructuredTraceError,
+  TraceErrorKind,
   AgentBackendConfig,
   AcpPermissionPolicy,
   AcpPermissionRequest,
@@ -213,6 +225,9 @@ export type {
   CoordinatorConfig,
   CheckpointOptions,
   CheckpointSnapshot,
+  CheckpointSnapshotV1,
+  CheckpointSnapshotV2,
+  CheckpointRunIdentity,
   CompletedTaskCheckpoint,
   TaskQueueSnapshot,
   TaskSnapshot,

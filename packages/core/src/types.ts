@@ -157,6 +157,98 @@ export interface TokenUsage {
   readonly output_tokens: number
 }
 
+// ---------------------------------------------------------------------------
+// Run identity and outcome
+// ---------------------------------------------------------------------------
+
+/** Stable identity for one logical run and its current execution attempt. */
+export interface RunIdentity {
+  /** Logical run identifier. Preserved across checkpoint restore. */
+  readonly runId: string
+  /** One-based execution attempt. Incremented by each restore. */
+  readonly attempt: number
+  /** W3C-compatible 32-character lowercase hexadecimal trace identifier. */
+  readonly traceId: string
+  /** W3C-compatible 16-character lowercase hexadecimal root span identifier. */
+  readonly rootSpanId: string
+  /** Continuation links, currently used by checkpoint restore. */
+  readonly links?: readonly TraceLink[]
+}
+
+/** A relationship from this execution attempt to an earlier trace. */
+export interface TraceLink {
+  readonly traceId: string
+  readonly spanId: string
+  readonly relation: 'continued_from'
+}
+
+/** Backwards-compatible identity-specific alias for {@link TraceLink}. */
+export type RunIdentityLink = TraceLink
+
+/** Caller-provided identity controls shared by all top-level execution APIs. */
+export interface RunIdentityOptions {
+  /** Optional logical run identifier (1-128 characters). */
+  readonly runId?: string
+}
+
+/** Per-call options for {@link OpenMultiAgent.runAgent}. */
+export interface RunAgentOptions extends RunIdentityOptions {
+  readonly abortSignal?: AbortSignal
+}
+
+export type RunStatusCode =
+  | 'ok'
+  | 'error'
+  | 'cancelled'
+  | 'timeout'
+  | 'budget_exhausted'
+  | 'rejected'
+  | 'skipped'
+
+/** Normalised top-level outcome. */
+export interface RunStatus {
+  readonly code: RunStatusCode
+  readonly message?: string
+}
+
+export type TraceErrorKind =
+  | 'provider'
+  | 'tool'
+  | 'framework'
+  | 'callback'
+  | 'validation'
+  | 'timeout'
+  | 'cancellation'
+  | 'budget'
+  | 'store'
+  | 'exporter'
+  | 'unknown'
+
+/** JSON-safe, redacted error details for results and future trace records. */
+export interface StructuredTraceError {
+  readonly kind: TraceErrorKind
+  readonly code?: string
+  readonly name?: string
+  readonly message?: string
+  readonly retryable?: boolean
+  readonly httpStatus?: number
+  readonly provider?: string
+  readonly attempt?: number
+}
+
+/** Additive result fields introduced by Observability v2. */
+export interface RunOutcomeFields {
+  /**
+   * Runtime results always include this field. It is optional in the first
+   * compatible 1.x type release so existing hand-written result fixtures keep
+   * compiling; it can become required in a later compatibility window.
+   */
+  readonly identity?: RunIdentity
+  /** Runtime results always include this field; see {@link identity}. */
+  readonly status?: RunStatus
+  readonly errorInfo?: StructuredTraceError
+}
+
 /** Context passed to user-supplied cost estimators. */
 export interface CostEstimateContext {
   /** Agent whose LLM usage is being costed. */
@@ -786,7 +878,7 @@ export interface ToolCallRecord {
 }
 
 /** The final result produced when an agent run completes (or fails). */
-export interface AgentRunResult {
+export interface AgentRunResult extends RunOutcomeFields {
   readonly success: boolean
   readonly output: string
   readonly messages: LLMMessage[]
@@ -890,7 +982,7 @@ export interface RunTaskSpec {
 }
 
 /** Per-call options for {@link OpenMultiAgent.runTasks}. */
-export interface RunTasksOptions {
+export interface RunTasksOptions extends RunIdentityOptions {
   readonly abortSignal?: AbortSignal
   /**
    * Opt-in durable task checkpointing. When enabled, the orchestrator writes a
@@ -976,7 +1068,7 @@ export interface RunMetrics {
 }
 
 /** Aggregated result for a full team run. */
-export interface TeamRunResult {
+export interface TeamRunResult extends RunOutcomeFields {
   readonly success: boolean
   readonly goal?: string
   readonly tasks?: readonly TaskExecutionRecord[]
@@ -1044,13 +1136,14 @@ export interface ConsensusVerifyOptions {
 }
 
 /** Options for {@link OpenMultiAgent.runConsensus}. */
-export interface ConsensusOptions extends ConsensusVerifyOptions {
+export interface ConsensusOptions extends ConsensusVerifyOptions, RunIdentityOptions {
   /** Proposer agent(s). An array runs all (N-best); usage counts against the parent budget. */
   readonly proposer: AgentConfig | readonly AgentConfig[]
+  readonly abortSignal?: AbortSignal
 }
 
 /** Result of a consensus run (or per-task `verify` hook). */
-export interface ConsensusResult {
+export interface ConsensusResult extends RunOutcomeFields {
   readonly answer: string
   /** `accepted` when quorum was reached (or `onDissent: 'keep'`); else `rejected`. */
   readonly verdict: 'accepted' | 'rejected'
@@ -1387,12 +1480,9 @@ export interface CompletedTaskCheckpoint {
   readonly result?: string
 }
 
-/** Full persisted checkpoint for a task-based run. */
-export interface CheckpointSnapshot {
-  readonly version: 1
+interface CheckpointSnapshotBase {
   readonly mode: 'runTeam' | 'runTasks'
   readonly createdAt: string
-  readonly runId?: string
   readonly goal?: string
   readonly queue: TaskQueueSnapshot
   readonly sharedMemory?: SharedMemorySnapshot
@@ -1405,6 +1495,29 @@ export interface CheckpointSnapshot {
   readonly turnCount?: number
   readonly completedTaskResults: readonly CompletedTaskCheckpoint[]
 }
+
+/** Legacy checkpoint schema, retained for read compatibility. */
+export interface CheckpointSnapshotV1 extends CheckpointSnapshotBase {
+  readonly version: 1
+  readonly runId?: string
+}
+
+/** Identity persisted by checkpoint schema v2. */
+export interface CheckpointRunIdentity {
+  readonly runId: string
+  readonly attempt: number
+  readonly lastTraceId: string
+  readonly lastRootSpanId: string
+}
+
+/** Current checkpoint schema. */
+export interface CheckpointSnapshotV2 extends CheckpointSnapshotBase {
+  readonly version: 2
+  readonly identity: CheckpointRunIdentity
+}
+
+/** Full persisted checkpoint for a task-based run. */
+export type CheckpointSnapshot = CheckpointSnapshotV1 | CheckpointSnapshotV2
 
 /**
  * Optional overrides for the temporary coordinator agent created by `runTeam`.

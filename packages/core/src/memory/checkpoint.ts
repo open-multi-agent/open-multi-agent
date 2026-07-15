@@ -46,16 +46,19 @@ export class Checkpoint {
 
   /** Persist `snapshot` as the latest checkpoint. */
   async save(snapshot: CheckpointSnapshot): Promise<void> {
-    const stored: CheckpointSnapshot = {
-      ...snapshot,
-      ...(snapshot.runId !== undefined || this.runId === undefined
-        ? {}
-        : { runId: this.runId }),
-    }
+    const stored: CheckpointSnapshot = snapshot.version === 1
+      ? {
+          ...snapshot,
+          ...(snapshot.runId !== undefined || this.runId === undefined
+            ? {}
+            : { runId: this.runId }),
+        }
+      : snapshot
+    const storedRunId = stored.version === 2 ? stored.identity.runId : stored.runId
     await this.store.set(this.key, JSON.stringify(stored), {
       namespace: 'checkpoint',
       version: stored.version,
-      ...(stored.runId !== undefined ? { runId: stored.runId } : {}),
+      ...(storedRunId !== undefined ? { runId: storedRunId } : {}),
       createdAt: stored.createdAt,
     })
   }
@@ -91,10 +94,20 @@ export class Checkpoint {
   private static isSnapshot(value: unknown): value is CheckpointSnapshot {
     if (value === null || typeof value !== 'object') return false
     const snapshot = value as Record<string, unknown>
-    if (snapshot['version'] !== 1) return false
+    if (snapshot['version'] !== 1 && snapshot['version'] !== 2) return false
     if (snapshot['mode'] !== 'runTeam' && snapshot['mode'] !== 'runTasks') return false
     if (typeof snapshot['createdAt'] !== 'string') return false
     if (!Array.isArray(snapshot['completedTaskResults'])) return false
+
+    if (snapshot['version'] === 2) {
+      const identity = snapshot['identity']
+      if (identity === null || typeof identity !== 'object') return false
+      const record = identity as Record<string, unknown>
+      if (typeof record['runId'] !== 'string') return false
+      if (!Number.isInteger(record['attempt']) || (record['attempt'] as number) < 1) return false
+      if (typeof record['lastTraceId'] !== 'string') return false
+      if (typeof record['lastRootSpanId'] !== 'string') return false
+    }
 
     const queue = snapshot['queue']
     if (queue === null || typeof queue !== 'object') return false

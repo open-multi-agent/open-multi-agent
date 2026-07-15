@@ -33,6 +33,7 @@ import type {
   LLMToolDef,
   ContextStrategy,
   ThinkingConfig,
+  RunIdentity,
 } from '../types.js'
 import { LLMCallTimeoutError, TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
@@ -165,6 +166,8 @@ export interface RunnerOptions {
  * All callbacks are optional; unused ones are simply skipped.
  */
 export interface RunOptions {
+  /** Top-level run identity. Optional for custom backend compatibility. */
+  readonly identity?: RunIdentity
   /** Fired just before each tool is dispatched. */
   readonly onToolCall?: (name: string, input: Record<string, unknown>) => void
   /** Fired after each tool result is received. */
@@ -202,6 +205,8 @@ export interface RunOptions {
 
 /** The aggregated result returned when a full run completes. */
 export interface RunResult {
+  /** Optional identity echoed by custom backends. Agent supplies it when absent. */
+  readonly identity?: RunIdentity
   /** All messages accumulated during this run (assistant + tool results). */
   readonly messages: LLMMessage[]
   /** The final text output from the last assistant turn. */
@@ -216,6 +221,8 @@ export interface RunResult {
   readonly loopDetected?: boolean
   /** True when the run was terminated due to token budget limits. */
   readonly budgetExceeded?: boolean
+  /** True when the runner stopped before its next LLM call because the signal was aborted. */
+  readonly aborted?: boolean
 }
 
 /**
@@ -790,6 +797,7 @@ export class AgentRunner implements AgentBackend {
     let finalOutput = ''
     let turns = 0
     let budgetExceeded = false
+    let aborted = false
 
     // Build the stable LLM options once; model / tokens / temp don't change.
     // resolveTools() returns LLMToolDef[] with default-deny + filtering applied.
@@ -850,6 +858,7 @@ export class AgentRunner implements AgentBackend {
       while (true) {
         // Respect abort before each LLM call.
         if (effectiveAbortSignal?.aborted) {
+          aborted = true
           break
         }
 
@@ -1211,6 +1220,7 @@ export class AgentRunner implements AgentBackend {
       turns,
       ...(loopDetected ? { loopDetected: true } : {}),
       ...(budgetExceeded ? { budgetExceeded: true } : {}),
+      ...(aborted ? { aborted: true } : {}),
     }
 
     yield { type: 'done', data: runResult } satisfies StreamEvent

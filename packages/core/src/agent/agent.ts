@@ -46,9 +46,15 @@ import type {
   StreamEvent,
   TokenUsage,
   ToolUseContext,
+  RunIdentity,
+  RunStatus,
+  TraceErrorKind,
 } from '../types.js'
-import { emitTrace, generateRunId, generateSpanId } from '../utils/trace.js'
+import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { mergeAbortSignals } from '../utils/abort.js'
+import { createRunIdentity } from '../observability/identity.js'
+import { classifyRunFailure, statusOnly } from '../observability/status.js'
+import { TokenBudgetExceededError } from '../errors.js'
 import type { ToolDefinition as FrameworkToolDefinition, ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
@@ -367,13 +373,21 @@ export class Agent {
 
     const agentStartMs = Date.now()
     let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
+    const identity = callerOptions?.identity ?? createRunIdentity(
+      callerOptions?.runId !== undefined ? { runId: callerOptions.runId } : {},
+    )
+    let timeoutSignal: AbortSignal | undefined
+    let callerAbort: AbortSignal | undefined
+    let failureKind: TraceErrorKind | undefined
 
     try {
       // --- beforeRun hook ---
       if (this.config.beforeRun) {
+        failureKind = 'callback'
         const hookCtx = this.buildBeforeRunHookContext(messages)
         const modified = await this.config.beforeRun(hookCtx)
         this.applyHookContext(messages, modified, hookCtx.prompt)
+        failureKind = undefined
       }
 
       const backend = await this.getBackend()
@@ -382,25 +396,24 @@ export class Agent {
         callerOptions?.onMessage?.(msg)
       }
       // Auto-generate trace identifiers when onTrace is provided but they are missing.
-      const effectiveRunId = callerOptions?.onTrace
-        ? callerOptions.runId || generateRunId()
-        : callerOptions?.runId
+      const effectiveRunId = identity.runId
       const effectiveSpanId = callerOptions?.onTrace
         ? callerOptions.traceSpanId || generateSpanId()
         : callerOptions?.traceSpanId
       // Create a fresh timeout signal per run (not per runner) so that
       // each run() / prompt() call gets its own timeout window.
-      const timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
+      timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
         ? AbortSignal.timeout(this.config.timeoutMs)
         : undefined
       // Merge caller-provided abortSignal with the timeout signal so that
       // either cancellation source is respected.
-      const callerAbort = callerOptions?.abortSignal
+      callerAbort = callerOptions?.abortSignal
       const effectiveAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
       const runOptions: RunOptions = {
         ...callerOptions,
+        identity,
         onMessage: internalOnMessage,
         ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
         ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
@@ -412,10 +425,26 @@ export class Agent {
       this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
 
       if (result.budgetExceeded) {
-        let budgetResult = this.toAgentRunResult(result, false)
+        const budgetError = new TokenBudgetExceededError(
+          this.name,
+          result.tokenUsage.input_tokens + result.tokenUsage.output_tokens,
+          this.config.maxTokenBudget ?? 0,
+        )
+        const classified = classifyRunFailure(budgetError)
+        let budgetResult = this.toAgentRunResult(
+          result,
+          false,
+          undefined,
+          identity,
+          classified.status,
+          classified.errorInfo,
+        )
         if (this.config.afterRun) {
+          failureKind = 'callback'
           budgetResult = await this.config.afterRun(budgetResult)
+          failureKind = undefined
         }
+        budgetResult = this.ensureAgentOutcome(budgetResult, identity)
         this.transitionTo('completed')
         this.emitAgentTrace(runOptions, agentStartMs, budgetResult)
         return budgetResult
@@ -428,21 +457,52 @@ export class Agent {
           result,
           backend,
           runOptions,
+          identity,
         )
         // --- afterRun hook ---
         if (this.config.afterRun) {
+          failureKind = 'callback'
           validated = await this.config.afterRun(validated)
+          failureKind = undefined
         }
+        validated = this.ensureAgentOutcome(validated, identity)
         this.emitAgentTrace(runOptions, agentStartMs, validated)
         return validated
       }
 
-      let agentResult = this.toAgentRunResult(result, true)
+      let agentResult: AgentRunResult
+      if (timeoutSignal?.aborted) {
+        const timeoutError = new Error(
+          `Agent "${this.name}" exceeded whole-run timeout of ${this.config.timeoutMs}ms`,
+        )
+        timeoutError.name = 'TimeoutError'
+        const classified = classifyRunFailure(timeoutError, {
+          kind: 'timeout',
+          statusCode: 'timeout',
+        })
+        agentResult = this.toAgentRunResult(
+          result, false, undefined, identity, classified.status, classified.errorInfo,
+        )
+      } else if (callerAbort?.aborted && result.aborted) {
+        const abortError = new Error('Run cancelled by caller.')
+        abortError.name = 'AbortError'
+        const classified = classifyRunFailure(abortError)
+        agentResult = this.toAgentRunResult(
+          result, false, undefined, identity, classified.status, classified.errorInfo,
+        )
+      } else {
+        agentResult = this.toAgentRunResult(
+          result, true, undefined, identity, statusOnly('ok'),
+        )
+      }
 
       // --- afterRun hook ---
       if (this.config.afterRun) {
+        failureKind = 'callback'
         agentResult = await this.config.afterRun(agentResult)
+        failureKind = undefined
       }
+      agentResult = this.ensureAgentOutcome(agentResult, identity)
 
       this.transitionTo('completed')
       this.emitAgentTrace(runOptions, agentStartMs, agentResult)
@@ -451,8 +511,20 @@ export class Agent {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
 
+      const classified = timeoutSignal?.aborted
+        ? classifyRunFailure(error, { kind: 'timeout', statusCode: 'timeout' })
+        : callerAbort?.aborted
+          ? classifyRunFailure(error, { kind: 'cancellation', statusCode: 'cancelled' })
+          : classifyRunFailure(error, {
+              ...(failureKind !== undefined ? { kind: failureKind } : {}),
+              provider: this.config.provider,
+            })
+
       const errorResult: AgentRunResult = {
         success: false,
+        identity,
+        status: classified.status,
+        errorInfo: classified.errorInfo,
         output: error.message,
         messages: [],
         tokenUsage: ZERO_USAGE,
@@ -501,6 +573,7 @@ export class Agent {
     result: RunResult,
     backend: AgentBackend,
     runOptions: RunOptions,
+    identity: RunIdentity,
   ): Promise<AgentRunResult> {
     const schema = this.config.outputSchema!
 
@@ -510,7 +583,7 @@ export class Agent {
       const parsed = extractJSON(result.output)
       const validated = validateOutput(schema, parsed)
       this.transitionTo('completed')
-      return this.toAgentRunResult(result, true, validated)
+      return this.toAgentRunResult(result, true, validated, identity, statusOnly('ok'))
     } catch (e) {
       firstAttemptError = e
     }
@@ -555,6 +628,8 @@ export class Agent {
       this.transitionTo('completed')
       return {
         success: true,
+        identity,
+        status: statusOnly('ok'),
         output: retryResult.output,
         messages: mergedMessages,
         tokenUsage: mergedTokenUsage,
@@ -565,8 +640,13 @@ export class Agent {
     } catch {
       // Retry also failed
       this.transitionTo('completed')
+      const validationError = new Error('Structured output validation failed after retry.')
+      const classified = classifyRunFailure(validationError, { kind: 'validation' })
       return {
         success: false,
+        identity,
+        status: classified.status,
+        errorInfo: classified.errorInfo,
         output: retryResult.output,
         messages: mergedMessages,
         tokenUsage: mergedTokenUsage,
@@ -584,6 +664,9 @@ export class Agent {
   private async *executeStream(messages: LLMMessage[], callerOptions?: Partial<RunOptions>): AsyncGenerator<StreamEvent> {
     this.transitionTo('running')
     const agentStartMs = Date.now()
+    const identity = callerOptions?.identity ?? createRunIdentity(
+      callerOptions?.runId !== undefined ? { runId: callerOptions.runId } : {},
+    )
     let agentTraceEmitted = false
     let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
 
@@ -604,14 +687,13 @@ export class Agent {
       const effectiveAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
-      const effectiveRunId = callerOptions?.onTrace
-        ? callerOptions.runId || generateRunId()
-        : callerOptions?.runId
+      const effectiveRunId = identity.runId
       const effectiveSpanId = callerOptions?.onTrace
         ? callerOptions.traceSpanId || generateSpanId()
         : callerOptions?.traceSpanId
       const runOptions: RunOptions = {
         ...callerOptions,
+        identity,
         ...(effectiveRunId ? { runId: effectiveRunId } : undefined),
         ...(effectiveSpanId ? { traceSpanId: effectiveSpanId } : undefined),
         ...(effectiveAbort ? { abortSignal: effectiveAbort } : undefined),
@@ -623,10 +705,14 @@ export class Agent {
           const result = event.data as RunResult
           this.state.tokenUsage = addUsage(this.state.tokenUsage, result.tokenUsage)
 
-          let agentResult = this.toAgentRunResult(result, !result.budgetExceeded)
+          const status = result.budgetExceeded ? statusOnly('budget_exhausted') : statusOnly('ok')
+          let agentResult = this.toAgentRunResult(
+            result, !result.budgetExceeded, undefined, identity, status,
+          )
           if (this.config.afterRun) {
             agentResult = await this.config.afterRun(agentResult)
           }
+          agentResult = this.ensureAgentOutcome(agentResult, identity)
           this.transitionTo('completed')
           this.emitAgentTrace(runOptions, agentStartMs, agentResult)
           agentTraceEmitted = true
@@ -639,6 +725,9 @@ export class Agent {
           this.transitionToError(error)
           this.emitAgentTrace(runOptions, agentStartMs, {
             success: false,
+            identity,
+            status: classifyRunFailure(error).status,
+            errorInfo: classifyRunFailure(error).errorInfo,
             output: error.message,
             messages: [],
             tokenUsage: ZERO_USAGE,
@@ -657,6 +746,9 @@ export class Agent {
       if (!agentTraceEmitted) {
         this.emitAgentTrace(effectiveTraceOptions, agentStartMs, {
           success: false,
+          identity,
+          status: classifyRunFailure(error).status,
+          errorInfo: classifyRunFailure(error).errorInfo,
           output: error.message,
           messages: [],
           tokenUsage: ZERO_USAGE,
@@ -733,9 +825,15 @@ export class Agent {
     result: RunResult,
     success: boolean,
     structured?: unknown,
+    identity: RunIdentity = result.identity ?? createRunIdentity(),
+    status: RunStatus = statusOnly(success ? 'ok' : 'error'),
+    errorInfo?: AgentRunResult['errorInfo'],
   ): AgentRunResult {
     return {
       success,
+      identity,
+      status,
+      ...(errorInfo !== undefined ? { errorInfo } : {}),
       output: result.output,
       messages: result.messages,
       tokenUsage: result.tokenUsage,
@@ -743,6 +841,35 @@ export class Agent {
       structured,
       ...(result.loopDetected ? { loopDetected: true } : {}),
       ...(result.budgetExceeded ? { budgetExceeded: true } : {}),
+    }
+  }
+
+  /** Restore runtime-required outcome fields after compatibility hooks run. */
+  private ensureAgentOutcome(result: AgentRunResult, identity: RunIdentity): AgentRunResult {
+    let status = result.status
+    let errorInfo = result.errorInfo
+    if (result.budgetExceeded) {
+      const budgetError = new TokenBudgetExceededError(
+        this.name,
+        result.tokenUsage.input_tokens + result.tokenUsage.output_tokens,
+        this.config.maxTokenBudget ?? 0,
+      )
+      const classified = classifyRunFailure(budgetError)
+      status = classified.status
+      errorInfo = errorInfo ?? classified.errorInfo
+    } else if (result.success && status?.code !== 'ok') {
+      status = statusOnly('ok')
+      errorInfo = undefined
+    } else if (!result.success && (status === undefined || status.code === 'ok')) {
+      status = statusOnly('error', result.output)
+    }
+    status ??= statusOnly(result.success ? 'ok' : 'error', result.success ? undefined : result.output)
+    return {
+      ...result,
+      success: status.code === 'ok',
+      identity,
+      status,
+      ...(errorInfo !== undefined ? { errorInfo } : {}),
     }
   }
 

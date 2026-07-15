@@ -2,6 +2,37 @@
 
 `open-multi-agent` exposes three telemetry layers: live progress events, structured trace spans, and a static post-run dashboard.
 
+## Run identity and outcome
+
+Every top-level execution (`runAgent`, `runTeam`, `runTasks`, `runFromPlan`,
+`runConsensus`, and `restore`) returns an identity even when `onTrace` is not
+configured:
+
+```typescript
+const result = await orchestrator.runTasks(team, tasks, { runId: 'order-42' })
+
+result.identity // { runId, attempt, traceId, rootSpanId, links? } at runtime
+result.status   // { code, message? } at runtime
+result.errorInfo // redacted, JSON-safe details on failures
+```
+
+`runId` identifies a logical run and can be supplied by the caller (1-128
+characters). `attempt` starts at 1. Each execution attempt gets a new 32-hex
+`traceId` and 16-hex `rootSpanId`. Restore preserves `runId`, increments
+`attempt`, generates new trace/root IDs, and links to the previous attempt when
+restoring a v2 checkpoint.
+
+Status codes are `ok`, `error`, `cancelled`, `timeout`, `budget_exhausted`,
+`rejected`, and `skipped`. Existing `success` fields remain available and are
+derived from `status.code === 'ok'`; cancellations and whole-run timeouts are
+therefore no longer reported as successful runs. A rejected consensus verdict
+is still an `ok` execution outcome—the verdict is a domain result, not a runtime
+failure.
+
+For source compatibility in the first 1.x release, the new result fields are
+optional in TypeScript declarations, but every runtime result from these APIs
+includes `identity` and `status`.
+
 ## Progress Events
 
 Use `onProgress` when you need lightweight lifecycle events for logs, terminal output, or a live UI.
@@ -54,7 +85,8 @@ For production runs, persist enough data to reconstruct a failure without replay
 
 - `TeamRunResult.tasks` for the executed DAG and task states.
 - `TeamRunResult.totalTokenUsage` for cost attribution.
-- `onTrace` spans for LLM calls and tool executions, keyed by `runId` + `spanId`.
+- `result.identity` and `result.status` as the stable run lookup and outcome.
+- `onTrace` spans for LLM calls and tool executions, keyed by legacy `runId` + `spanId`.
 - The rendered dashboard HTML when you need a shareable post-mortem artifact.
 
 > **Redaction scope.** The redaction noted above applies to *telemetry* — trace spans and the dashboard payload. It does **not** cover persisted run state: shared-memory writes and checkpoint saves store agent output verbatim. To scrub secrets there, wrap the durable store with [`RedactingStore`](shared-memory.md#redacting-persisted-secrets).
