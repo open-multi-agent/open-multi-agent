@@ -58,6 +58,10 @@ import type {
   OrchestratorConfig,
   OrchestratorEvent,
   RestoreOptions,
+  RunAgentOptions,
+  RunIdentity,
+  RunStatus,
+  StructuredTraceError,
   RunMetrics,
   RunTaskSpec,
   RunTasksOptions,
@@ -90,6 +94,8 @@ import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
 import { CostBudgetExceededError, TokenBudgetExceededError, isRetryableError } from '../errors.js'
 import { abortableDelay } from '../utils/abort.js'
+import { createRestoreIdentity, createRunIdentity } from '../observability/identity.js'
+import { classifyRunFailure, statusOnly } from '../observability/status.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
 
 // ---------------------------------------------------------------------------
@@ -100,6 +106,23 @@ const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 }
 const DEFAULT_MAX_CONCURRENCY = 5
 const DEFAULT_MAX_DELEGATION_DEPTH = 3
 const DEFAULT_MODEL = 'claude-opus-4-6'
+
+function identityOptionsForRun(options?: RunTasksOptions): { runId?: string } {
+  const checkpointRunId = options?.checkpoint && typeof options.checkpoint === 'object'
+    ? options.checkpoint.runId
+    : undefined
+  if (
+    options?.runId !== undefined
+    && checkpointRunId !== undefined
+    && options.runId !== checkpointRunId
+  ) {
+    throw new Error(
+      `runId conflict: run options requested "${options.runId}" but checkpoint options requested "${checkpointRunId}".`,
+    )
+  }
+  const runId = options?.runId ?? checkpointRunId
+  return runId === undefined ? {} : { runId }
+}
 
 // ---------------------------------------------------------------------------
 // Short-circuit helpers (exported for testability)
@@ -416,6 +439,9 @@ function recordRunUsage(
   if (!ctx.budgetExceededTriggered && accounting.exceeded) {
     ctx.budgetExceededTriggered = true
     ctx.budgetExceededReason = accounting.exceeded.message
+    const classified = classifyRunFailure(accounting.exceeded)
+    ctx.outcomeStatus = classified.status
+    ctx.outcomeErrorInfo = classified.errorInfo
     emitBudgetExceeded(ctx.config, accounting.exceeded, agent, task)
     return accounting.exceeded
   }
@@ -818,8 +844,10 @@ interface RunContext {
   readonly agentResults: Map<string, AgentRunResult>
   readonly config: OrchestratorConfig
   readonly checkpoint?: ActiveCheckpoint
-  /** Trace run ID, present when `onTrace` is configured. */
-  readonly runId?: string
+  /** Stable top-level execution identity, independent of trace callbacks. */
+  readonly identity: RunIdentity
+  /** Legacy trace correlation alias. */
+  readonly runId: string
   /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
   readonly abortSignal?: AbortSignal
   cumulativeUsage: TokenUsage
@@ -829,6 +857,8 @@ interface RunContext {
   readonly estimateCost?: OrchestratorConfig['estimateCost']
   budgetExceededTriggered: boolean
   budgetExceededReason?: string
+  outcomeStatus?: RunStatus
+  outcomeErrorInfo?: StructuredTraceError
   readonly taskMetrics: Map<string, TaskExecutionMetrics>
   /**
    * Present only when `runTeam` is called with `{ revealCoordinator: true }`.
@@ -976,10 +1006,15 @@ async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<voi
     }))
 
     const snapshot: CheckpointSnapshot = {
-      version: 1,
+      version: 2,
       mode: active.mode,
       createdAt: new Date().toISOString(),
-      ...(active.runId !== undefined ? { runId: active.runId } : {}),
+      identity: {
+        runId: ctx.identity.runId,
+        attempt: ctx.identity.attempt,
+        lastTraceId: ctx.identity.traceId,
+        lastRootSpanId: ctx.identity.rootSpanId,
+      },
       ...(active.goal !== undefined ? { goal: active.goal } : {}),
       queue: queue.snapshot(),
       // When the checkpoint store IS the shared-memory store, the entries are
@@ -1043,6 +1078,11 @@ async function executeQueue(
     // Check for cancellation before each dispatch round.
     if (ctx.abortSignal?.aborted) {
       queue.skipRemaining('Skipped: run aborted.')
+      const abortError = new Error('Run cancelled by caller.')
+      abortError.name = 'AbortError'
+      const classified = classifyRunFailure(abortError)
+      ctx.outcomeStatus = classified.status
+      ctx.outcomeErrorInfo = classified.errorInfo
       break
     }
 
@@ -1126,10 +1166,11 @@ async function executeQueue(
       const taskSpanId = config.onTrace ? generateSpanId() : undefined
       const agentSpanId = config.onTrace ? generateSpanId() : undefined
       const traceBase: Partial<RunOptions> = {
+        identity: ctx.identity,
+        runId: ctx.runId,
         ...(config.onTrace
           ? {
               onTrace: config.onTrace,
-              runId: ctx.runId ?? '',
               taskId: task.id,
               traceAgent: assignee,
               ...(taskSpanId ? { traceParentId: taskSpanId } : {}),
@@ -1338,10 +1379,14 @@ async function executeQueue(
         } catch (err) {
           const reason = `Skipped: approval callback error — ${err instanceof Error ? err.message : String(err)}`
           queue.skipRemaining(reason)
+          const classified = classifyRunFailure(err, { kind: 'callback' })
+          ctx.outcomeStatus = classified.status
+          ctx.outcomeErrorInfo = classified.errorInfo
           break
         }
         if (!approved) {
           queue.skipRemaining('Skipped: approval rejected.')
+          ctx.outcomeStatus = statusOnly('rejected', 'Approval rejected.')
           break
         }
       }
@@ -1566,6 +1611,8 @@ interface ConsensusCoreParams {
   readonly defaults: ConsensusAgentDefaults
   readonly onTrace?: OrchestratorConfig['onTrace']
   readonly runId?: string
+  readonly identity?: RunIdentity
+  readonly abortSignal?: AbortSignal
   readonly onUsage?: (usage: TokenUsage, effectiveConfig: AgentConfig) => void
   readonly shouldStop?: () => boolean
   /** Existing pool to reuse; a fresh one is created when omitted. */
@@ -1591,13 +1638,17 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
   const dissent: string[] = []
   let rounds = 0
   let accepted = false
+  let executionFailure: AgentRunResult | undefined
 
   const overBudget = (): boolean =>
     budget !== undefined && budgetBaseTokens + usage.input_tokens + usage.output_tokens > budget
 
   const runEphemeral = async (config: AgentConfig, text: string): Promise<AgentRunResult> => {
     const effective = applyConsensusDefaults(config, defaults)
-    const result = await pool.runEphemeral(buildAgent(effective), text)
+    const result = await pool.runEphemeral(buildAgent(effective), text, {
+      ...(params.identity ? { identity: params.identity, runId: params.identity.runId } : {}),
+      ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
+    })
     params.onUsage?.(result.tokenUsage, effective)
     return result
   }
@@ -1618,6 +1669,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
       const judgeText = buildJudgePrompt({ judge: judge.name, answer, prompt, mode, judgeIndex: j, judgePrompt })
       const r = await runEphemeral(judge, judgeText)
       usage = addUsage(usage, r.tokenUsage)
+      if (!r.success && executionFailure === undefined) executionFailure = r
       if (overBudget() || params.shouldStop?.()) { budgetHit = true; break }
 
       const verdict = parseJudgeVerdict(r.output, verdictSchema)
@@ -1658,6 +1710,7 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
     if (onDissent === 'revise' && round < maxRounds && reviseProposer) {
       const r = await runEphemeral(reviseProposer, buildRevisePrompt(prompt, answer, roundDissent))
       usage = addUsage(usage, r.tokenUsage)
+      if (!r.success && executionFailure === undefined) executionFailure = r
       if (r.success && r.output) answer = r.output
       if (overBudget() || params.shouldStop?.()) { budgetHit = true; break }
       continue
@@ -1667,7 +1720,15 @@ async function runConsensusCore(params: ConsensusCoreParams): Promise<ConsensusR
 
   const verdict: 'accepted' | 'rejected' =
     accepted || (!budgetHit && onDissent === 'keep') ? 'accepted' : 'rejected'
-  return { answer, verdict, dissent, rounds, tokenUsage: usage }
+  return {
+    answer,
+    verdict,
+    dissent,
+    rounds,
+    tokenUsage: usage,
+    ...(executionFailure?.status ? { status: executionFailure.status } : {}),
+    ...(executionFailure?.errorInfo ? { errorInfo: executionFailure.errorInfo } : {}),
+  }
 }
 
 /**
@@ -1716,7 +1777,9 @@ async function runTaskVerify(
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
     },
     onTrace: config.onTrace,
-    ...(ctx.runId ? { runId: ctx.runId } : {}),
+    runId: ctx.runId,
+    identity: ctx.identity,
+    abortSignal: ctx.abortSignal,
     onUsage: (usage, effectiveConfig) => {
       recordRunUsage(ctx, usage, buildCostEstimateContext({
         agentName: effectiveConfig.name,
@@ -1728,6 +1791,11 @@ async function runTaskVerify(
     },
     shouldStop: () => ctx.budgetExceededTriggered,
   })
+
+  if (consensus.status && consensus.status.code !== 'ok') {
+    ctx.outcomeStatus = consensus.status
+    ctx.outcomeErrorInfo = consensus.errorInfo
+  }
 
   // Surface the verdict as a task-level outcome so downstream agents and the
   // final synthesis can see whether the result survived scrutiny.
@@ -1850,8 +1918,9 @@ export class OpenMultiAgent {
   async runAgent(
     config: AgentConfig,
     prompt: string,
-    options?: { abortSignal?: AbortSignal },
+    options?: RunAgentOptions,
   ): Promise<AgentRunResult> {
+    const identity = createRunIdentity(options)
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
     const effective: AgentConfig = applyDefaultToolPreset({
       ...config,
@@ -1874,15 +1943,14 @@ export class OpenMultiAgent {
     const traceFields = this.config.onTrace
       ? {
           onTrace: this.config.onTrace,
-          runId: generateRunId(),
           traceAgent: config.name,
         }
       : null
     const abortFields = options?.abortSignal ? { abortSignal: options.abortSignal } : null
     const runOptions: Partial<RunOptions> | undefined =
       traceFields || abortFields
-        ? { ...(traceFields ?? {}), ...(abortFields ?? {}) }
-        : undefined
+        ? { identity, runId: identity.runId, ...(traceFields ?? {}), ...(abortFields ?? {}) }
+        : { identity, runId: identity.runId }
 
     const result = await agent.run(prompt, runOptions)
     let finalResult = result
@@ -1923,6 +1991,7 @@ export class OpenMultiAgent {
           ...result,
           success: false,
           budgetExceeded: true,
+          ...classifyRunFailure(accounting.exceeded),
         }
       }
     }
@@ -1970,6 +2039,7 @@ export class OpenMultiAgent {
     goal: string,
     options?: RunTeamOptions,
   ): Promise<TeamRunResult> {
+    const identity = createRunIdentity(identityOptionsForRun(options))
     const agentConfigs = team.getAgents()
     const coordinatorOverrides = options?.coordinator
 
@@ -2008,13 +2078,13 @@ export class OpenMultiAgent {
       })
 
       const traceFields = this.config.onTrace
-        ? { onTrace: this.config.onTrace, runId: generateRunId(), traceAgent: bestAgent.name }
+        ? { onTrace: this.config.onTrace, traceAgent: bestAgent.name }
         : null
       const abortFields = options?.abortSignal ? { abortSignal: options.abortSignal } : null
       const runOptions: Partial<RunOptions> | undefined =
         traceFields || abortFields
-          ? { ...(traceFields ?? {}), ...(abortFields ?? {}) }
-          : undefined
+          ? { identity, runId: identity.runId, ...(traceFields ?? {}), ...(abortFields ?? {}) }
+          : { identity, runId: identity.runId }
 
       const scStartMs = Date.now()
       const result = await agent.run(goal, runOptions)
@@ -2057,6 +2127,7 @@ export class OpenMultiAgent {
             ...result,
             success: false,
             budgetExceeded: true,
+            ...classifyRunFailure(accounting.exceeded),
           }
         }
       }
@@ -2086,7 +2157,7 @@ export class OpenMultiAgent {
           retries: 0,
         },
       }]
-      return this.buildTeamRunResult(agentResults, goal, tasks)
+      return this.buildTeamRunResult(agentResults, identity, goal, tasks)
     }
 
     // ------------------------------------------------------------------
@@ -2104,7 +2175,7 @@ export class OpenMultiAgent {
 
     const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
-    const runId = this.config.onTrace ? generateRunId() : undefined
+    const runId = identity.runId
     const coordinatorDecomposeSpanId = this.config.onTrace ? generateSpanId() : undefined
 
     this.config.onProgress?.({
@@ -2115,13 +2186,18 @@ export class OpenMultiAgent {
 
     const decompTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
       ? {
+          identity,
           onTrace: this.config.onTrace,
-          runId: runId ?? '',
+          runId,
           traceAgent: 'coordinator',
           ...(coordinatorDecomposeSpanId ? { traceSpanId: coordinatorDecomposeSpanId } : {}),
           ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
         }
-      : options?.abortSignal ? { abortSignal: options.abortSignal } : undefined
+      : {
+          identity,
+          runId,
+          ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
+        }
     const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
@@ -2146,7 +2222,10 @@ export class OpenMultiAgent {
 
     if (decompositionBudget.exceeded) {
       emitBudgetExceeded(this.config, decompositionBudget.exceeded, 'coordinator')
-      return this.buildTeamRunResult(agentResults, goal, [])
+      const classified = classifyRunFailure(decompositionBudget.exceeded)
+      return this.buildTeamRunResult(
+        agentResults, identity, goal, [], classified.status, classified.errorInfo,
+      )
     }
 
     // ------------------------------------------------------------------
@@ -2198,6 +2277,7 @@ export class OpenMultiAgent {
       config: this.config,
       ...(activeCheckpoint ? { checkpoint: activeCheckpoint } : {}),
       runId,
+      identity,
       abortSignal: options?.abortSignal,
       cumulativeUsage,
       cumulativeCost,
@@ -2223,11 +2303,13 @@ export class OpenMultiAgent {
     const planTasks = queue.list()
     const planReadyStartMs = Date.now()
     let approved = true
+    let planApprovalError: unknown
     if (this.config.onPlanReady) {
       try {
         approved = await this.config.onPlanReady(planTasks)
-      } catch {
+      } catch (error) {
         approved = false
+        planApprovalError = error
       }
     }
     if (this.config.onTrace) {
@@ -2246,7 +2328,19 @@ export class OpenMultiAgent {
       })
     }
     if (!approved) {
-      return { ...this.buildTeamRunResult(agentResults, goal, []), success: false }
+      if (planApprovalError !== undefined) {
+        const classified = classifyRunFailure(planApprovalError, { kind: 'callback' })
+        return this.buildTeamRunResult(
+          agentResults, identity, goal, [], classified.status, classified.errorInfo,
+        )
+      }
+      return this.buildTeamRunResult(
+        agentResults,
+        identity,
+        goal,
+        [],
+        statusOnly('rejected', 'Plan approval rejected.'),
+      )
     }
 
     if (options?.planOnly) {
@@ -2270,12 +2364,15 @@ export class OpenMultiAgent {
         data: decompositionResult,
       })
       return {
-        ...this.buildTeamRunResult(agentResults, goal, planOnlyTasks),
+        ...this.buildTeamRunResult(agentResults, identity, goal, planOnlyTasks),
         planOnly: true,
       }
     }
 
     await executeQueue(queue, ctx)
+    if (queue.list().every((task) => task.status === 'completed')) {
+      await saveRunCheckpoint(queue, ctx)
+    }
     cumulativeUsage = ctx.cumulativeUsage
     cumulativeCost = ctx.cumulativeCost
     const taskRecords: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
@@ -2297,6 +2394,7 @@ export class OpenMultiAgent {
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
     const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+      identity,
       modelRouting: options?.modelRouting,
       runId,
       abortSignal: options?.abortSignal,
@@ -2308,7 +2406,16 @@ export class OpenMultiAgent {
     })
     if (synthesis === null) {
       // Aborted or already over budget — return raw task outputs, no synthesis.
-      return this.buildTeamRunResult(agentResults, goal, taskRecords)
+      if (options?.abortSignal?.aborted && ctx.outcomeStatus === undefined) {
+        const abortError = new Error('Run cancelled by caller.')
+        abortError.name = 'AbortError'
+        const classified = classifyRunFailure(abortError)
+        ctx.outcomeStatus = classified.status
+        ctx.outcomeErrorInfo = classified.errorInfo
+      }
+      return this.buildTeamRunResult(
+        agentResults, identity, goal, taskRecords, ctx.outcomeStatus, ctx.outcomeErrorInfo,
+      )
     }
     agentResults.set('coordinator', synthesis.result)
     cumulativeUsage = synthesis.cumulativeUsage
@@ -2318,7 +2425,9 @@ export class OpenMultiAgent {
     // Only actual user tasks (non-coordinator keys) are counted in
     // buildTeamRunResult, so we do not increment completedTaskCount here.
 
-    return this.buildTeamRunResult(agentResults, goal, taskRecords)
+    return this.buildTeamRunResult(
+      agentResults, identity, goal, taskRecords, ctx.outcomeStatus, ctx.outcomeErrorInfo,
+    )
   }
 
   // -------------------------------------------------------------------------
@@ -2503,6 +2612,12 @@ export class OpenMultiAgent {
       team.restoreMessageBus(snapshot.messageBus)
     }
 
+    const requestedRunId = identityOptionsForRun(options).runId
+    const identity = createRestoreIdentity(
+      snapshot,
+      requestedRunId === undefined ? {} : { runId: requestedRunId },
+    )
+
     const queue = TaskQueue.fromSnapshot(snapshot.queue, { resetInProgress: true })
     const agentResults = this.agentResultsFromCheckpoint(snapshot, queue)
     const checkpointForResume: ActiveCheckpoint | undefined = activeCheckpoint
@@ -2510,7 +2625,7 @@ export class OpenMultiAgent {
           ...activeCheckpoint,
           mode: snapshot.mode,
           ...(snapshot.goal !== undefined ? { goal: snapshot.goal } : {}),
-          ...(snapshot.runId !== undefined ? { runId: snapshot.runId } : {}),
+          runId: identity.runId,
         }
       : undefined
 
@@ -2522,6 +2637,7 @@ export class OpenMultiAgent {
       agentResults,
       checkpointForResume,
       options?.coordinator,
+      identity,
     )
   }
 
@@ -2581,6 +2697,7 @@ export class OpenMultiAgent {
     prompt: string,
     options: ConsensusOptions,
   ): Promise<ConsensusResult> {
+    const identity = createRunIdentity(options)
     const proposers = Array.isArray(options.proposer) ? options.proposer : [options.proposer]
     if (proposers.length === 0) {
       throw new Error('runConsensus: at least one proposer is required.')
@@ -2611,24 +2728,51 @@ export class OpenMultiAgent {
 
     // Step 2: run proposer(s); accumulate usage and honour the budget before judging.
     const candidates: string[] = []
+    let firstFailure: AgentRunResult | undefined
     for (const proposerConfig of proposers) {
       const r = await pool.runEphemeral(
         buildAgent(applyConsensusDefaults(proposerConfig, defaults)),
         prompt,
+        {
+          identity,
+          runId: identity.runId,
+          ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
+        },
       )
       usage = addUsage(usage, r.tokenUsage)
       if (r.success && r.output) candidates.push(r.output)
+      if (!r.success && firstFailure === undefined) firstFailure = r
+      if (options.abortSignal?.aborted) {
+        const abortError = new Error('Run cancelled by caller.')
+        abortError.name = 'AbortError'
+        const classified = classifyRunFailure(abortError)
+        return {
+          identity,
+          status: classified.status,
+          errorInfo: classified.errorInfo,
+          answer: candidates.join('\n\n---\n\n'),
+          verdict: 'rejected',
+          dissent: [],
+          rounds: 0,
+          tokenUsage: usage,
+        }
+      }
       if (budget !== undefined && usage.input_tokens + usage.output_tokens > budget) {
+        const budgetError = new TokenBudgetExceededError(
+          proposerConfig.name,
+          usage.input_tokens + usage.output_tokens,
+          budget,
+        )
         this.config.onProgress?.({
           type: 'budget_exceeded',
           agent: proposerConfig.name,
-          data: new TokenBudgetExceededError(
-            proposerConfig.name,
-            usage.input_tokens + usage.output_tokens,
-            budget,
-          ),
+          data: budgetError,
         })
+        const classified = classifyRunFailure(budgetError)
         return {
+          identity,
+          status: classified.status,
+          errorInfo: classified.errorInfo,
           answer: candidates.join('\n\n---\n\n'),
           verdict: 'rejected',
           dissent: [],
@@ -2641,10 +2785,16 @@ export class OpenMultiAgent {
     // Every proposer failed or returned empty output: there is nothing to judge.
     // Bail with a rejected verdict so an empty answer can never come back accepted.
     if (candidates.length === 0) {
-      return { answer: '', verdict: 'rejected', dissent: [], rounds: 0, tokenUsage: usage }
+      const status = firstFailure?.status ?? statusOnly('error', 'All consensus proposers failed.')
+      return {
+        identity,
+        status,
+        ...(firstFailure?.errorInfo ? { errorInfo: firstFailure.errorInfo } : {}),
+        answer: '', verdict: 'rejected', dissent: [], rounds: 0, tokenUsage: usage,
+      }
     }
 
-    return runConsensusCore({
+    const result = await runConsensusCore({
       team,
       prompt,
       initialAnswer: candidates.join('\n\n---\n\n'),
@@ -2661,9 +2811,27 @@ export class OpenMultiAgent {
       reviseProposer: proposers[0],
       defaults,
       onTrace: this.config.onTrace,
-      runId: this.config.onTrace ? generateRunId() : undefined,
+      runId: identity.runId,
+      identity,
+      abortSignal: options.abortSignal,
       pool,
     })
+    if (options.abortSignal?.aborted) {
+      const abortError = new Error('Run cancelled by caller.')
+      abortError.name = 'AbortError'
+      const classified = classifyRunFailure(abortError)
+      return { ...result, identity, status: classified.status, errorInfo: classified.errorInfo }
+    }
+    if (budget !== undefined && result.tokenUsage.input_tokens + result.tokenUsage.output_tokens > budget) {
+      const budgetError = new TokenBudgetExceededError(
+        proposers[0]!.name,
+        result.tokenUsage.input_tokens + result.tokenUsage.output_tokens,
+        budget,
+      )
+      const classified = classifyRunFailure(budgetError)
+      return { ...result, identity, status: classified.status, errorInfo: classified.errorInfo }
+    }
+    return { ...result, identity, status: result.status ?? statusOnly('ok') }
   }
 
   // -------------------------------------------------------------------------
@@ -2874,6 +3042,7 @@ export class OpenMultiAgent {
     goal: string,
     coordinatorBaseConfig: AgentConfig,
     opts: {
+      readonly identity: RunIdentity
       readonly modelRouting?: ModelRoutingPolicy
       readonly runId?: string
       readonly abortSignal?: AbortSignal
@@ -2905,10 +3074,15 @@ export class OpenMultiAgent {
       routeMatches(opts.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
     )
     const synthesisAgent = buildAgent(synthesisConfig)
-    const synthTraceOptions: Partial<RunOptions> | undefined = this.config.onTrace
-      ? { onTrace: this.config.onTrace, runId: opts.runId ?? '', traceAgent: 'coordinator' }
-      : undefined
-    const result = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
+    const synthTraceOptions: Partial<RunOptions> = {
+      identity: opts.identity,
+      runId: opts.identity.runId,
+      ...(this.config.onTrace
+        ? { onTrace: this.config.onTrace, traceAgent: 'coordinator' }
+        : {}),
+      ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
+    }
+    let result = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
     const accounting = applyBudgetAccounting({
       currentUsage: opts.cumulativeUsage,
       currentCost: opts.cumulativeCost,
@@ -2926,6 +3100,12 @@ export class OpenMultiAgent {
 
     if (accounting.exceeded) {
       emitBudgetExceeded(this.config, accounting.exceeded, 'coordinator')
+      result = {
+        ...result,
+        success: false,
+        budgetExceeded: true,
+        ...classifyRunFailure(accounting.exceeded),
+      }
     }
 
     this.config.onProgress?.({
@@ -3014,7 +3194,9 @@ export class OpenMultiAgent {
     initialAgentResults?: Map<string, AgentRunResult>,
     activeCheckpoint?: ActiveCheckpoint,
     coordinatorForSynthesis?: CoordinatorConfig,
+    identity?: RunIdentity,
   ): Promise<TeamRunResult> {
+    const runIdentity = identity ?? createRunIdentity(identityOptionsForRun(options))
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler('dependency-first')
     scheduler.autoAssign(queue, agentConfigs)
@@ -3034,7 +3216,8 @@ export class OpenMultiAgent {
       agentResults,
       config: this.config,
       ...(checkpoint ? { checkpoint } : {}),
-      runId: this.config.onTrace ? generateRunId() : undefined,
+      identity: runIdentity,
+      runId: runIdentity.runId,
       abortSignal: options?.abortSignal,
       cumulativeUsage: ZERO_USAGE,
       cumulativeCost: 0,
@@ -3050,6 +3233,9 @@ export class OpenMultiAgent {
     }
 
     await executeQueue(queue, ctx)
+    if (queue.list().every((task) => task.status === 'completed')) {
+      await saveRunCheckpoint(queue, ctx)
+    }
 
     // A resumed `runTeam` re-runs the coordinator synthesis so the restored
     // result matches a fresh `runTeam` (a synthesized final answer, not raw
@@ -3060,6 +3246,7 @@ export class OpenMultiAgent {
       try {
         const coordinatorBaseConfig = this.buildCoordinatorBaseConfig(coordinatorForSynthesis, agentConfigs, false)
         const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+          identity: runIdentity,
           modelRouting: options?.modelRouting,
           runId: ctx.runId,
           abortSignal: options?.abortSignal,
@@ -3084,12 +3271,23 @@ export class OpenMultiAgent {
               error: new Error(synthesis.result.output || 'coordinator synthesis failed'),
             },
           })
+          ctx.outcomeStatus = synthesis.result.status ?? statusOnly('error', synthesis.result.output)
+          ctx.outcomeErrorInfo = synthesis.result.errorInfo
+        } else if (options?.abortSignal?.aborted && ctx.outcomeStatus === undefined) {
+          const abortError = new Error('Run cancelled by caller.')
+          abortError.name = 'AbortError'
+          const classified = classifyRunFailure(abortError)
+          ctx.outcomeStatus = classified.status
+          ctx.outcomeErrorInfo = classified.errorInfo
         }
       } catch (error) {
         this.config.onProgress?.({
           type: 'error',
           data: { kind: 'synthesis_failed', error },
         })
+        const classified = classifyRunFailure(error)
+        ctx.outcomeStatus = classified.status
+        ctx.outcomeErrorInfo = classified.errorInfo
       }
     }
 
@@ -3108,7 +3306,14 @@ export class OpenMultiAgent {
       metrics: ctx.taskMetrics.get(task.id),
     }))
 
-    return this.buildTeamRunResult(agentResults, goal, taskRecords)
+    return this.buildTeamRunResult(
+      agentResults,
+      runIdentity,
+      goal,
+      taskRecords,
+      ctx.outcomeStatus,
+      ctx.outcomeErrorInfo,
+    )
   }
 
   private createActiveCheckpoint(
@@ -3295,8 +3500,11 @@ export class OpenMultiAgent {
    */
   private buildTeamRunResult(
     agentResults: Map<string, AgentRunResult>,
+    identity: RunIdentity,
     goal?: string,
     tasks?: readonly TaskExecutionRecord[],
+    forcedStatus?: RunStatus,
+    forcedErrorInfo?: StructuredTraceError,
   ): TeamRunResult {
     let totalUsage: TokenUsage = ZERO_USAGE
     let overallSuccess = true
@@ -3317,6 +3525,13 @@ export class OpenMultiAgent {
         // Keep the latest `structured` value (last completed task wins).
         collapsed.set(agentName, {
           success: existing.success && result.success,
+          identity,
+          status: existing.success && result.success
+            ? statusOnly('ok')
+            : result.status ?? existing.status ?? statusOnly('error'),
+          ...(result.errorInfo ?? existing.errorInfo
+            ? { errorInfo: result.errorInfo ?? existing.errorInfo }
+            : {}),
           output: [existing.output, result.output].filter(Boolean).join('\n\n---\n\n'),
           messages: [...existing.messages, ...result.messages],
           tokenUsage: addUsage(existing.tokenUsage, result.tokenUsage),
@@ -3334,8 +3549,25 @@ export class OpenMultiAgent {
 
     const metrics = computeRunMetrics(tasks)
 
+    const statuses = [...agentResults.values()]
+      .map((result) => result.status)
+      .filter((status): status is RunStatus => status !== undefined)
+    const firstStatus = (code: RunStatus['code']) => statuses.find((status) => status.code === code)
+    const taskFailed = tasks?.some((task) => task.status === 'failed') ?? false
+    const status = forcedStatus
+      ?? firstStatus('budget_exhausted')
+      ?? firstStatus('timeout')
+      ?? firstStatus('cancelled')
+      ?? (overallSuccess && !taskFailed ? statusOnly('ok') : statusOnly('error'))
+    const errorInfo = forcedErrorInfo ?? [...agentResults.values()]
+      .find((result) => result.status?.code === status.code && result.errorInfo !== undefined)
+      ?.errorInfo
+
     return {
-      success: overallSuccess,
+      success: status.code === 'ok',
+      identity,
+      status,
+      ...(errorInfo !== undefined ? { errorInfo } : {}),
       goal,
       tasks,
       agentResults: collapsed,

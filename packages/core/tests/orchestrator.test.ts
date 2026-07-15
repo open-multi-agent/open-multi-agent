@@ -1027,9 +1027,10 @@ describe('OpenMultiAgent', () => {
         { title: 'Second', description: 'Do second', assignee: 'worker', dependsOn: ['First'] },
       ])
 
-      // The first task succeeded; the second was skipped (no agentResult entry).
-      // Overall success is based on agentResults only, so it's true.
-      expect(result.success).toBe(true)
+      // The first task succeeded; the second was skipped after an explicit
+      // approval rejection. OBS-1A reports the top-level run as rejected.
+      expect(result.success).toBe(false)
+      expect(result.status?.code).toBe('rejected')
       // But we should have fewer agent results than tasks
       expect(result.agentResults.size).toBeLessThanOrEqual(1)
     })

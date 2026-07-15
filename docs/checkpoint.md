@@ -106,11 +106,21 @@ await orchestrator.restore(team,        { checkpoint: { store } })  // resume-on
 
 On each successfully completed task, the orchestrator writes a `CheckpointSnapshot`:
 
+- **Execution identity (schema v2)** — `runId`, current `attempt`,
+  `lastTraceId`, and `lastRootSpanId`. Restore preserves the logical `runId`,
+  increments `attempt`, creates fresh trace/root IDs, and returns a
+  `continued_from` link to the prior attempt.
 - **Task queue state** — every task and its status partition (pending / in-progress / completed / failed / blocked / skipped).
 - **Shared memory** — the turn counter is always recorded. The full entry snapshot is embedded **only when the checkpoint store differs from the team's shared-memory store**. When they are the same store (the default for `checkpoint: true`), the entries are already durable there, so re-embedding them every task would be wasted ~O(N²) write volume across a long run; resume reads them straight from the store instead. Either way, resume rehydrates shared memory correctly.
 - **Completed task results** — `taskId`, `assignee`, and `result` for each finished task, so resumed agents see prior outputs.
 
 Snapshots are stored as JSON under a reserved namespace: `__oma_checkpoint__/<runId>/latest` (or `__oma_checkpoint__/latest` when no `runId` is set). Keys under `__oma_checkpoint__/` are reserved — shared-memory snapshot/restore deliberately skips them so one store can hold both agent memory and checkpoints.
+
+New writes use checkpoint schema v2. Schema v1 remains readable: its optional
+top-level `runId` is preserved, and restore treats the saved execution as
+attempt 1. A v1 checkpoint without `runId` receives a new logical run ID. If a
+caller-supplied restore `runId` conflicts with the snapshot, restore throws a
+validation error instead of joining unrelated runs.
 
 ### Saves are best-effort
 
