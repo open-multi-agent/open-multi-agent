@@ -106,7 +106,8 @@ const result = await orchestrator.runTeam(
   `Create a REST API for a todo list in ${process.cwd()}/.agent-workspace/todo-api/`,
 )
 
-console.log(result.success, result.totalTokenUsage.output_tokens)
+console.log(result.success, result.status?.code, result.identity?.runId)
+console.log(result.totalTokenUsage.output_tokens)
 ```
 
 ### 本地运行示例
@@ -176,9 +177,9 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **外部编码 agent（ACP）** | 把某个 agent 的 LLM 循环换成通过 [Agent Client Protocol](https://agentclientprotocol.com) 驱动的外部编码 CLI：设置 `backend: { kind: 'acp', … }`，子进程自行运行其回合，而 pool、scheduler、queue、共享记忆与预算全部与 backend 无关。([外部 agent](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)) |
-| **可观测性** | `onProgress` 事件、`onTrace` span，运行结束后渲染任务 DAG 的 HTML dashboard，外加 `TeamRunResult.metrics` 运行级指标汇总（token、重试、错误/失败计数、任务时长统计）。API key 和 token 会从 trace、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
+| **可观测性** | 每个顶层结果都包含稳定的 `identity`（`runId`、`attempt`、`traceId`、`rootSpanId`）和标准化 `status`，即使未配置 `onTrace` 也不例外；同时继续提供 `onProgress` 事件、trace span、运行后 HTML dashboard 和 `TeamRunResult.metrics`。API key 和 token 会从 trace、错误、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自有后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
-| **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。内置的零依赖 `FileStore` 让 checkpoint 无需额外后端即可持久化；存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
+| **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。Checkpoint v2 保留 `runId`、递增 `attempt`，并启动新的 trace；v1 快照仍可读取。内置的零依赖 `FileStore` 让 checkpoint 无需额外后端即可持久化；存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
 
 生产级控制（[上下文策略](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md)、任务重试退避、循环检测、工具输出截断/压缩）见 [生产级检查清单](#生产级检查清单)。
@@ -441,9 +442,9 @@ await oma.runAgent(
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — `onProgress` 事件、`onTrace` span、运行后 dashboard。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 每个顶层结果都包含稳定的运行标识（identity）与结果（outcome）语义，并提供 `onProgress`、`onTrace` 和运行后 dashboard。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
-- [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 可选的按运行快照/恢复，跑在任意 `MemoryStore` 上；崩溃、重启后可续跑。
+- [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity 规则、v1 兼容，以及基于任意 `MemoryStore` 的恢复流程。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
 - [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
 - [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) — `runConsensus` proposer→judge 原语、按任务的 `verify` 钩子，以及预算不变量。
