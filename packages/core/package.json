@@ -4,7 +4,6 @@
   "description": "TypeScript multi-agent framework: one runTeam() call from goal to result. Auto task decomposition and parallel execution for multi-step LLM jobs. Deploys anywhere Node.js runs.",
   "files": [
     "dist",
-    "benchmarks/file-trace-store.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -56,7 +55,6 @@
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",
     "test:e2e": "RUN_E2E=1 vitest run tests/e2e/",
-    "bench:file-trace-store": "node --expose-gc benchmarks/file-trace-store.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

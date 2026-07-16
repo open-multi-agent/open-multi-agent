@@ -259,10 +259,13 @@ implement the storage-medium-neutral `TraceStore` contract in a separate
 database adapter/package and migrate by replaying the committed TraceRecord
 stream. No database driver belongs in the core or this subpath.
 
-Use `npm run build -w @open-multi-agent/core` followed by
-`npm run bench:file-trace-store -w @open-multi-agent/core` for the repeatable
-1k/10k local boundary benchmark (append, fsync, reopen, query, compaction,
-heap estimate, file size, and batch-size comparison).
+From the repository root, run `npm run build -w @open-multi-agent/core`
+followed by
+`node --expose-gc packages/core/benchmarks/file-trace-store.mjs` for the
+repeatable 1k/10k local boundary benchmark (append, fsync, reopen, query,
+compaction, heap estimate, file size, and batch-size comparison). The benchmark
+is a repository development tool and is intentionally excluded from the npm
+tarball.
 
 ### Append, schema, and materialization
 
