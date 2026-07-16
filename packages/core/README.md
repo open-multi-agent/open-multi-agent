@@ -311,7 +311,7 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
 
 **vs. Mastra.** Both are TypeScript-native; the difference is who drives orchestration. Mastra has you wire the workflow by hand. OMA is goal-driven: hand its Coordinator a goal and it builds the task DAG at runtime. `runTeam(team, goal)` in one call.
 
-**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a lean runtime (three core dependencies, plus opt-in peers you install only when you use them) and direct Node.js embedding, with no separate Python service to stand up alongside your stack.
+**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a deliberately governed dependency surface and direct Node.js embedding, with no separate Python service to stand up alongside your stack. New dependencies must justify their security, size, maintenance, and compatibility cost; optional or platform-specific SDKs remain isolated when that boundary is useful.
 
 **vs. Vercel AI SDK.** AI SDK is the LLM-call layer (provider abstraction, streaming, tool calls, and structured outputs), not a multi-agent orchestrator. Use it alone for single-agent calls; reach for OMA the moment you need a coordinated team. OMA even ships an optional AI SDK bridge.
 
@@ -386,6 +386,11 @@ See [docs/providers.md](https://github.com/open-multi-agent/open-multi-agent/blo
 
 At present, `@open-multi-agent/core` directly installs `@anthropic-ai/sdk`, `openai`, and `zod`; this is an implementation detail, not a fixed dependency-count policy. Anthropic, OpenAI, and every OpenAI-compatible endpoint use those packages today.
 
+Dependency changes are governed by demonstrated value plus security, install
+size, maintenance, and compatibility cost. Optional or platform-specific
+capabilities remain isolated when that keeps unused SDKs out of the root import;
+the boundary is architectural, not a permanent numeric cap.
+
 Other provider integrations are opt-in peer dependencies that load lazily, so a project that never uses one never installs it. OpenTelemetry integration is a separately installable package: OTel APIs, SDKs, semantic-convention mappings, and exporter integrations live in `@open-multi-agent/otel`, so importing or running core does not require OpenTelemetry.
 
 | Capability | Install | Trigger |
@@ -443,7 +448,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable run identity and outcome semantics on every top-level result, plus `onProgress`, `onTrace`, and the post-run dashboard. [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) is the optional adapter for applications with an explicitly configured OpenTelemetry provider.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the post-run dashboard. Existing callbacks have a staged [`onTrace` migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md); [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) uses an application-owned provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity rules, v1 compatibility, and restore over any `MemoryStore`.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.

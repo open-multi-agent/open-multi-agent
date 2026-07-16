@@ -54,6 +54,8 @@
 
 轻量内核：编排引擎加上 Anthropic、OpenAI 及任意 OpenAI 兼容端点开箱即用；Gemini、Bedrock、MCP、Vercel AI SDK bridge 为可选 peer 依赖，按需安装。OpenTelemetry 通过独立可选包 `@open-multi-agent/otel` 集成：OTel API、SDK、semantic convention 映射和 exporter 集成均不进入 core root import，应用显式提供自己的 provider。
 
+依赖按明确价值以及安全、体积、维护和兼容成本治理，而不是永久限制依赖数量。可选或平台特定 SDK 在能避免主入口 eager import 未使用代码时继续隔离。
+
 ## 快速开始
 
 一条命令即可初始化生产模板或教学用 multi-agent DAG：
@@ -111,15 +113,13 @@ npm install @open-multi-agent/core
 
 ## 仓库结构
 
-这是一个 monorepo。发布的包为 **`@open-multi-agent/core`**，位于 [`packages/core/`](packages/core/)，即库本体、测试、示例与 npm 包页的单一事实源。
+这是一个 monorepo。主包为 **`@open-multi-agent/core`**；可选 OpenTelemetry 适配器以 **`@open-multi-agent/otel`** 独立发布。
 
 ```
 open-multi-agent/
 ├── packages/
-│   └── core/          # @open-multi-agent/core（发布的库）
-│       ├── src/       # 框架源码
-│       ├── tests/     # vitest 测试套件
-│       └── examples/  # 可直接运行的示例（npx tsx packages/core/examples/<path>.ts）
+│   ├── core/          # @open-multi-agent/core（框架、测试、示例）
+│   └── otel/          # @open-multi-agent/otel（可选适配器）
 └── docs/              # 子系统文档
 ```
 
@@ -136,7 +136,7 @@ npm test               # 运行测试套件
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 每个顶层结果都包含稳定的运行标识（identity）与结果（outcome）语义，并提供 `onProgress`、`onTrace` 和运行后 dashboard。[`@open-multi-agent/otel`](packages/otel/README.md) 是面向已显式配置 OpenTelemetry provider 的应用的可选适配器。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore 与运行后 dashboard。旧 callback 可按 [`onTrace` 分阶段迁移指南](docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](packages/otel/README.md) 使用应用自有 provider。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 在任意 `MemoryStore` 上保存可选快照；`restore()` 保留 `runId`、递增 `attempt`，并启动新的 trace。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。

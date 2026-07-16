@@ -6,9 +6,13 @@ provide. The package never reads, registers, or replaces the global
 `TracerProvider`.
 
 ```bash
-npm install @open-multi-agent/core @open-multi-agent/otel
+npm install @open-multi-agent/core@^1.11.0 @open-multi-agent/otel@^0.1.0
 # Install and configure the OpenTelemetry SDK/exporter chosen by your application.
 ```
+
+Core `1.11.0` is the first release containing the public TraceRecord v2,
+sink/exporter, and TraceStore APIs required by this package. Core `1.10.0` is
+not compatible.
 
 ## Use an application-owned provider
 
@@ -54,6 +58,23 @@ The caller owns the tracer/provider in every mode.
 
 Use a `BatchingTraceSink` directly via `createOtelTraceExporter()` when the
 application owns batching configuration itself.
+
+For a complete no-network example with the official `InMemorySpanExporter`, see
+[`otel-provider.ts`](../core/examples/integrations/observability-v2/otel-provider.ts).
+
+### Process lifecycle
+
+- **Serverless/FaaS:** call `sink.forceFlush()` with a short invocation budget;
+  do not shut down a warm shared sink/provider per invocation.
+- **CLI:** run, force-flush the sink, shut down the sink, then shut down the
+  application-owned provider before natural process exit.
+- **Long-lived server:** stop intake and await in-flight work before the sink
+  cutoff; then force-flush/shut down the sink and finally shut down the provider.
+
+This package and core register no process signal handlers. The application owns
+that integration. Keep `shutdownOnShutdown` at its default `false` when the
+provider is shared with other instrumentation; set it to `true` only when this
+adapter is the provider owner.
 
 ## Mapping
 

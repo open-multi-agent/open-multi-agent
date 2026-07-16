@@ -98,6 +98,7 @@ import { createRestoreIdentity, createRunIdentity } from '../observability/ident
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
 import {
   createTraceRuntime,
+  LEGACY_TRACE_METADATA_ONLY,
   traceRecordObserverFrom,
   type TraceRecordObserver,
   type TraceRuntime,
@@ -106,6 +107,7 @@ import {
 import { CompositeSink } from '../observability/composite.js'
 import type { TraceSink } from '../observability/sink.js'
 import { SensitiveDataProcessor } from '../observability/processors.js'
+import { LegacyCallbackTraceSink } from '../observability/legacy-callback.js'
 import { extractKeywords, keywordScore } from '../utils/keywords.js'
 
 // ---------------------------------------------------------------------------
@@ -2012,9 +2014,14 @@ export class OpenMultiAgent {
     }
 
     this.traceRecordObserver = traceRecordObserverFrom(config)
+    const hasExplicitLegacyBridge = config.observability?.sinks.some(
+      (sink) => sink instanceof LegacyCallbackTraceSink,
+    ) ?? false
     this.traceSink = config.observability && config.observability.sinks.length > 0
       ? new CompositeSink(config.observability.sinks.map((sink) =>
-          new SensitiveDataProcessor(sink, { capture: config.observability?.capture })), {
+          sink instanceof LegacyCallbackTraceSink
+            ? sink
+            : new SensitiveDataProcessor(sink, { capture: config.observability?.capture })), {
           onDiagnostic: config.observability.onDiagnostic,
           sinkName: 'OpenMultiAgent',
         })
@@ -2040,7 +2047,7 @@ export class OpenMultiAgent {
       onAgentStream: config.onAgentStream,
       onProgress: config.onProgress,
       observability: config.observability,
-      onTrace: config.onTrace,
+      onTrace: config.onTrace ?? (hasExplicitLegacyBridge ? LEGACY_TRACE_METADATA_ONLY : undefined),
       onToolCall: config.onToolCall,
     }
   }

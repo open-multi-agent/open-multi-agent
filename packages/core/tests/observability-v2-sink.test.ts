@@ -434,6 +434,32 @@ describe('OBS-2 composition, privacy, diagnostics, and compatibility', () => {
     expect(received).toEqual(events)
   })
 
+  it('supports a direct LegacyCallbackTraceSink migration without also configuring onTrace', async () => {
+    const received: TraceEvent[] = []
+    const bridge = new LegacyCallbackTraceSink((event) => { received.push(event) }, {
+      diagnostics: 'silent',
+    })
+    const adapter: LLMAdapter = {
+      name: 'legacy-migration-test',
+      async chat() {
+        return {
+          id: 'ok', content: [{ type: 'text', text: 'done' }], model: 'test',
+          stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+        }
+      },
+      async *stream() {},
+    }
+    const result = await new OpenMultiAgent({
+      defaultModel: 'test',
+      observability: { sinks: [bridge] },
+    }).runAgent({ name: 'worker', model: 'test', adapter }, 'hello')
+
+    expect(result.success).toBe(true)
+    await expect(bridge.forceFlush({ timeoutMs: 100 })).resolves.toMatchObject({ status: 'ok' })
+    expect(received.map((event) => event.type)).toEqual(['llm_call', 'agent'])
+    expect(received.every((event) => /^[0-9a-f-]{36}$/.test(event.spanId))).toBe(true)
+  })
+
   it('keeps sink failures isolated from Agent results through Orchestrator observability', async () => {
     const broken: TraceSink = {
       emit: () => { throw new Error('telemetry failed') },

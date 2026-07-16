@@ -21,6 +21,13 @@ import { CompositeSink } from './composite.js'
 
 export type TraceRecordObserver = (record: TraceRecord) => void
 
+/**
+ * Internal marker used when a public LegacyCallbackTraceSink is configured as
+ * a v2 sink. Call sites still build the unchanged legacy event metadata, while
+ * TraceRuntime avoids installing a second callback sink.
+ */
+export const LEGACY_TRACE_METADATA_ONLY = (): void => {}
+
 /** Internal-only hook used by contract tests until OBS-2 introduces TraceSink. */
 export const TRACE_RECORD_OBSERVER = Symbol('oma.traceRecordObserver')
 
@@ -84,7 +91,9 @@ export class TraceRuntime {
     sink?: TraceSink,
   ) {
     this.identity = identity
-    const legacySink = legacyCallback ? new LegacyCallbackTraceSink(legacyCallback) : undefined
+    const legacySink = legacyCallback && legacyCallback !== LEGACY_TRACE_METADATA_ONLY
+      ? new LegacyCallbackTraceSink(legacyCallback)
+      : undefined
     this.sink = sink && legacySink
       ? new CompositeSink([sink, legacySink], { diagnostics: 'silent' })
       : sink ?? legacySink

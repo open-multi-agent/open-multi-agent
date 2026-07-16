@@ -82,7 +82,7 @@ Detailed behavior is documented in `docs/` — the single source of truth, so up
 | Providers, env vars, local servers, AI SDK bridge | `llm/` | [providers.md](docs/providers.md) |
 | Shared memory + custom backends | `memory/` | [shared-memory.md](docs/shared-memory.md) |
 | Checkpoint/resume over `MemoryStore` | `memory/checkpoint.ts`, `orchestrator/orchestrator.ts` | [checkpoint.md](docs/checkpoint.md) |
-| Tracing, progress events, dashboard | `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md) |
+| Tracing, progress events, dashboard, migration, performance | `observability/`, `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md), [observability-migration.md](docs/observability-migration.md), [observability-performance.md](docs/observability-performance.md) |
 | CLI usage + JSON schemas | `cli/oma.ts` | [cli.md](docs/cli.md) |
 | External agent backends | `agent/acp-backend.ts`, `agent/process-backend.ts` | [external-agents.md](docs/external-agents.md) |
 
