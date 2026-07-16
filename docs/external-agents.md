@@ -1,15 +1,20 @@
-# External Agents (ACP)
+# External Agents
 
 OMA can orchestrate **external agents that run as local processes** alongside its
-LLM-backed agents. The first supported kind is a coding agent driven over the
-[Agent Client Protocol (ACP)](https://agentclientprotocol.com) — a JSON-RPC-over-stdio
-standard implemented by Gemini CLI, Claude Code, Codex, and others.
+LLM-backed agents. Two backend kinds are built in:
 
-An ACP agent is a first-class team member: it sits in the same task DAG, writes to
-the same shared memory, cascades failure to its dependents, and counts against the
-same token budget as any LLM agent. The motivating shape is a **hybrid team** — an
-LLM planner decomposes the goal, an external coding agent writes the code, an LLM
-reviewer audits the diff — all in one `runTeam` / `runTasks` call.
+- `process` starts a generic local command for each agent run, sends the prompt by
+  stdin or argument, and maps stdout/stderr/exit status into a normal agent result.
+- `acp` drives a coding agent over the
+  [Agent Client Protocol (ACP)](https://agentclientprotocol.com) — a
+  JSON-RPC-over-stdio standard implemented by Gemini CLI, Claude Code, Codex, and
+  others.
+
+An external agent is a first-class team member: it sits in the same task DAG,
+writes to the same shared memory, cascades failure to its dependents, and returns
+the same result shape as any LLM agent. The motivating shape is a **hybrid team**
+— an LLM planner decomposes the goal, an external coding agent writes the code,
+an LLM reviewer audits the diff — all in one `runTeam` / `runTasks` call.
 
 ## Quick start
 
@@ -29,9 +34,9 @@ const team = oma.createTeam('hybrid-dev', {
       name: 'coder',
       systemPrompt: 'Writes and edits code by running an external coding CLI.',
       backend: {
-        kind: 'acp',
-        command: 'npx',
-        args: ['-y', '@agentclientprotocol/claude-agent-acp'], // Claude Code over ACP
+        kind: 'process',
+        command: 'node',
+        args: ['scripts/code-agent.js'],
         cwd: process.cwd(),
       },
     },
@@ -44,15 +49,18 @@ const result = await oma.runTeam(team, 'Add a slugify() utility with tests, then
 ```
 
 The coordinator routes the coding work to `coder` based on its roster description; the
-ACP subprocess does the file edits; `reviewer` then reads the result from shared memory.
+subprocess does the file edits; `reviewer` then reads the result from shared memory.
 
-A runnable version is at
+A runnable ACP version is at
 [`examples/integrations/external-agent-acp.ts`](../packages/core/examples/integrations/external-agent-acp.ts).
 
 ## Installation
 
+The `process` backend has no extra dependencies. It uses Node's built-in child
+process APIs and starts whatever local command you configure.
+
 ACP support requires the optional peer dependency, loaded lazily so it never affects
-consumers that don't use it:
+consumers that don't use ACP:
 
 ```bash
 npm install @agentclientprotocol/sdk
@@ -67,22 +75,22 @@ it — any ACP agent works. Common choices:
 | Gemini CLI | `gemini --acp` | Native ACP. Note: Google is reportedly retiring the free-tier Gemini CLI (and its `--experimental-acp` flag) — verify availability before relying on it. |
 | Codex | `codex-acp` (or `codex --experimental-acp`) | Experimental ACP support. |
 
-The example below uses Claude Code, which fits OMA's Anthropic-centric default and
-needs only one key (`ANTHROPIC_API_KEY`) for the whole team.
+The ACP examples in this guide use Claude Code, which fits OMA's Anthropic-centric
+default and needs only one key (`ANTHROPIC_API_KEY`) for the whole team.
 
 ## Configuration
 
-`AgentConfig.backend` takes an `AgentBackendConfig` (a discriminated union; only
-`kind: 'acp'` exists today):
+`AgentConfig.backend` takes an `AgentBackendConfig` discriminated union:
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
-| `kind` | `'acp'` | — | Backend discriminant. |
+| `kind` | `'process' \| 'acp'` | — | Backend discriminant. |
 | `command` | `string` | — | Executable to spawn (`'npx'`, `'gemini'`, …). |
 | `args` | `string[]` | `[]` | Arguments passed to `command`. |
 | `env` | `Record<string,string>` | — | Extra env vars, merged over `process.env`. |
-| `cwd` | `string` | `process.cwd()` | Directory the agent reads and edits. |
-| `permission` | `'auto-approve' \| 'reject' \| fn` | `'auto-approve'` | How to answer permission prompts (below). |
+| `cwd` | `string` | `process.cwd()` | Working directory for the subprocess. |
+| `input` | `'stdin' \| 'argument' \| 'none'` | `'stdin'` | `process` only: how to pass the prompt to the command. |
+| `permission` | `'auto-approve' \| 'reject' \| fn` | `'auto-approve'` | `acp` only: how to answer permission prompts (below). |
 
 When `backend` is set, the LLM-specific fields (`model`, `provider`, `adapter`,
 sampling, `tools`, context strategy) do not apply — the external agent runs its own
@@ -91,7 +99,12 @@ still shapes the external agent because OMA — lacking any ACP system-prompt fi
 prepends it to the agent's first prompt (once per session), on top of seeding the
 coordinator's routing as it does for every agent.
 
-### Permissions
+For `process`, OMA starts a fresh subprocess per run. Use `input: 'stdin'` for
+commands that read a prompt from stdin, `input: 'argument'` when the command
+expects the prompt as the final argument, and `input: 'none'` for fixed adapters
+that derive their work from files or environment.
+
+### ACP permissions
 
 ACP agents ask the client to approve sensitive tool calls (editing a file, running a
 command). Because OMA runs agents autonomously inside a DAG, the default is
@@ -119,6 +132,30 @@ The callback receives a minimal, SDK-agnostic `{ title, kind, optionKinds }` and
 
 ## How it works
 
+Both built-in backends implement the same `AgentBackend` interface (`run` +
+`stream`) that `AgentRunner` already implements. The pool, scheduler, task queue,
+shared memory, and budget aggregation can therefore treat an external agent like
+an LLM agent, with no special cases.
+
+### Process backend
+
+The `process` backend starts a fresh subprocess for each run. It joins the
+configured `systemPrompt` and user prompt, passes the result to the command, and
+maps process outcomes as follows:
+
+| Process outcome | Maps to |
+|-----------------|---------|
+| stdout + exit `0` | success; stdout becomes `result.output` |
+| stderr + exit `0` | success; stderr is ignored unless the process writes it into stdout |
+| exit code / signal | task failure; stderr is redacted and included in the error output |
+| caller abort | cancellation; the child process is killed |
+| no token signal | `tokenUsage` is `{0, 0}` |
+
+Use this backend for simple local CLIs, scripts, or adapters that do not need a
+long-lived agent protocol.
+
+### ACP backend
+
 OMA takes the ACP **client** role. On the first run for an agent it spawns the
 subprocess, frames its stdio as newline-delimited JSON-RPC, `initialize`s, and opens a
 `session/new` in `cwd`. Each `agent.run(prompt)` then sends one `session/prompt` turn
@@ -134,11 +171,7 @@ and drains `session/update` notifications into a normal agent result:
 | stop `refusal` | task failure (cascades to dependents) |
 | stop `cancelled` | returns partial output (from an abort) |
 
-The seam is the `AgentBackend` interface (`run` + `stream`) that `AgentRunner` already
-implements — so the pool, scheduler, task queue, shared memory, and budget accounting
-treat an ACP agent exactly like an LLM agent, with no special cases.
-
-### Token accounting caveat
+### ACP token accounting caveat
 
 ACP reports a single **context-token** figure (`usage_update.used` — "tokens
 currently in context"), not an input/output split, and it is *cumulative* across a
@@ -153,10 +186,14 @@ budget on LLM agents, or bound the ACP agent with its own `--max-*` flags.
 ## Programmatic API
 
 Most users only touch `backend`. To construct a backend directly, import from the
-`@open-multi-agent/core/acp` subpath (this is where the optional peer is loaded):
+matching subpath:
 
 ```typescript
 import { createAcpBackend } from '@open-multi-agent/core/acp'
+import { createProcessBackend } from '@open-multi-agent/core/process'
+
+const processBackend = createProcessBackend({ command: 'node', args: ['agent.js'] })
+const processResult = await processBackend.run([{ role: 'user', content: [{ type: 'text', text: 'summarize' }] }])
 
 const backend = createAcpBackend({ command: 'npx', args: ['-y', '@agentclientprotocol/claude-agent-acp'] })
 const result = await backend.run([{ role: 'user', content: [{ type: 'text', text: 'refactor foo.ts' }] }])
@@ -173,9 +210,10 @@ of these forward):
 - **No `fs/*` proxying.** The agent does its own filesystem access within `cwd`; OMA
   does not yet proxy ACP file operations through its sandbox. Agents that require the
   client to serve files are not supported.
-- **ACP only.** Bespoke per-CLI adapters and non-coding business-system CLIs are out of
-  scope. ACP already covers the major coding agents.
+- **Process backend is stateless.** It starts one subprocess per run and maps stdout
+  to output. Use ACP or a custom backend when you need sessions, structured tool
+  events, or protocol-level permission prompts.
 - **No cost-based budgets.** Budgeting is token-based; `usage_update.cost` is ignored.
-- **Subprocess lifetime.** An orchestrated ACP agent's subprocess lives until the
+- **ACP subprocess lifetime.** An orchestrated ACP agent's subprocess lives until the
   process exits (there is no per-agent disposal hook in `runTeam` / `runTasks`).
   Use the programmatic API + `dispose()` when you need explicit teardown.

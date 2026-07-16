@@ -29,6 +29,10 @@
       "types": "./dist/acp.d.ts",
       "import": "./dist/acp.js"
     },
+    "./process": {
+      "types": "./dist/process.d.ts",
+      "import": "./dist/process.js"
+    },
     "./mcp": {
       "types": "./dist/mcp.d.ts",
       "import": "./dist/mcp.js"

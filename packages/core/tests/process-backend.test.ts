@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Agent } from '../src/agent/agent.js'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { ToolExecutor } from '../src/tool/executor.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 import type { AgentConfig } from '../src/types.js'
+
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 
 function makeAgent(script: string): Agent {
   const registry = new ToolRegistry()
@@ -147,5 +152,23 @@ describe('process backend', () => {
     expect(result.tasks?.find(task => task.title === 'Review')?.status).toBe('failed')
     expect(result.agentResults.get('coder')?.output).toContain('exited with code 3')
     expect(result.agentResults.has('reviewer')).toBe(false)
+  })
+
+  it('exposes a public process backend subpath', async () => {
+    const processExports = await import('../src/process.js')
+
+    expect(processExports.ProcessBackend).toBeDefined()
+    expect(processExports.createProcessBackend).toBeDefined()
+  })
+
+  it('declares the process backend subpath in the package exports', async () => {
+    const packageJson = JSON.parse(
+      await readFile(join(packageRoot, 'package.json'), 'utf8'),
+    ) as { exports: Record<string, unknown> }
+
+    expect(packageJson.exports['./process']).toEqual({
+      types: './dist/process.d.ts',
+      import: './dist/process.js',
+    })
   })
 })

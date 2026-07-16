@@ -72,7 +72,7 @@ jobs:
       - name: Smoke-test that the built entry points import and the CLI runs
         working-directory: packages/core
         run: |
-          node -e "Promise.all([import('./dist/index.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
+          node -e "Promise.all([import('./dist/index.js'), import('./dist/acp.js'), import('./dist/process.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
           node dist/cli/oma.js help > /dev/null
           echo "CLI help runs OK"
       - name: Assert the create-oma-app template pins the current core version
@@ -99,7 +99,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for f in dist/index.js dist/index.d.ts dist/cli/oma.js dist/mcp.js dist/mcp.d.ts dist/ai-sdk.js dist/ai-sdk.d.ts; do
+          for f in dist/index.js dist/index.d.ts dist/cli/oma.js dist/acp.js dist/acp.d.ts dist/process.js dist/process.d.ts dist/mcp.js dist/mcp.d.ts dist/ai-sdk.js dist/ai-sdk.d.ts; do
             echo "$paths" | grep -qxF "$f" || missing="$missing $f"
           done
           if [ -n "$missing" ]; then
