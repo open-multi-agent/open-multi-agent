@@ -41,6 +41,10 @@
       "types": "./dist/ai-sdk.d.ts",
       "import": "./dist/ai-sdk.js"
     },
+    "./classifiers": {
+      "types": "./dist/classifiers.d.ts",
+      "import": "./dist/classifiers.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
