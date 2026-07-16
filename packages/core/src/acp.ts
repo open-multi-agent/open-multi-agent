@@ -19,6 +19,7 @@ export type { AcpBackendOptions, AcpConnection } from './agent/acp-backend.js'
 export type { AgentBackend } from './agent/runner.js'
 export type {
   AgentBackendConfig,
+  AcpAgentBackendConfig,
   AcpPermissionPolicy,
   AcpPermissionRequest,
 } from './types.js'

@@ -538,7 +538,7 @@ export interface BeforeRunHookContext {
 
 /**
  * A minimal, SDK-agnostic view of an ACP `session/request_permission` prompt,
- * passed to a {@link AgentBackendConfig.permission} callback so callers can decide
+ * passed to a {@link AcpAgentBackendConfig.permission} callback so callers can decide
  * without importing `@agentclientprotocol/sdk`.
  */
 export interface AcpPermissionRequest {
@@ -570,11 +570,10 @@ export type AcpPermissionPolicy =
  * own agentic loop, while OMA drives it, collects its output and token usage, and
  * schedules it in the task DAG alongside LLM agents.
  *
- * A discriminated union keyed by {@link kind}; only `'acp'` exists today.
  * Requires the optional peer `@agentclientprotocol/sdk`.
  */
 export interface AgentBackendConfig {
-  /** Backend discriminant. Only `'acp'` is supported today. */
+  /** Backend discriminant. */
   readonly kind: 'acp'
   /** Executable to spawn (e.g. `'npx'`, `'gemini'`, `'codex-acp'`). */
   readonly command: string
@@ -591,6 +590,42 @@ export interface AgentBackendConfig {
   /** How to answer the agent's permission prompts. Defaults to `'auto-approve'`. */
   readonly permission?: AcpPermissionPolicy
 }
+
+/** Alias for the ACP backend config; `AgentBackendConfig` is kept for v1.10 compatibility. */
+export interface AcpAgentBackendConfig extends AgentBackendConfig {}
+
+/** How a generic process backend receives a prompt. */
+export type ProcessBackendInputMode = 'stdin' | 'argument' | 'none'
+
+/**
+ * Configuration for running a generic local process as an OMA team member.
+ *
+ * Unlike ACP, this backend does not speak an agent protocol. It starts a fresh
+ * process per run, sends the prompt by stdin or final argument, maps stdout to
+ * the agent output, and treats non-zero exits as task failures.
+ */
+export interface ProcessAgentBackendConfig {
+  /** Backend discriminant. */
+  readonly kind: 'process'
+  /** Executable to spawn (e.g. `'node'`, `'python'`, `'my-cli'`). */
+  readonly command: string
+  /** Arguments passed to `command` before the prompt argument, if any. */
+  readonly args?: readonly string[]
+  /** Extra environment variables for the subprocess, merged over `process.env`. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Working directory for the subprocess. Defaults to `process.cwd()`. */
+  readonly cwd?: string
+  /**
+   * Prompt delivery mode. Defaults to `'stdin'`.
+   * - `'stdin'`: write the prompt to stdin and close it.
+   * - `'argument'`: append the prompt as the final command argument.
+   * - `'none'`: do not send the prompt; useful for fixed command adapters.
+   */
+  readonly input?: ProcessBackendInputMode
+}
+
+/** External backend configuration keyed by `kind`. */
+export type ExternalAgentBackendConfig = AgentBackendConfig | ProcessAgentBackendConfig
 
 /** Static configuration for a single agent. */
 export interface AgentConfig {
@@ -612,15 +647,16 @@ export interface AgentConfig {
    */
   readonly adapter?: LLMAdapter
   /**
-   * Run this agent on an external {@link AgentBackendConfig} (e.g. a coding CLI
-   * over the Agent Client Protocol) instead of an LLM adapter. When set, the
+   * Run this agent on an external {@link ExternalAgentBackendConfig} instead of
+   * an LLM adapter. When set, the
    * LLM-specific fields (`model`, `provider`, `adapter`, sampling, tools, context
    * strategy) do not apply — the external agent runs its own loop — but the agent
    * still participates in the task DAG, shared memory, cascade-on-failure, and
-   * token budget like any other team member. Requires the optional peer
-   * `@agentclientprotocol/sdk`; import the backend from `@open-multi-agent/core/acp`.
+   * token budget like any other team member. ACP backends require the optional
+   * peer `@agentclientprotocol/sdk`; generic process backends use Node child
+   * processes and do not require an optional peer.
    */
-  readonly backend?: AgentBackendConfig
+  readonly backend?: ExternalAgentBackendConfig
   readonly provider?: SupportedProvider
   /**
    * Custom base URL for OpenAI-compatible APIs (Ollama, vLLM, LM Studio, etc.).

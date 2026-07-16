@@ -16,6 +16,8 @@ contributed them. Current:
   to a terminal status by deterministic code.
 - `external-agent-acp.ts`: external coding agents (Gemini CLI / Claude Code) as
   team members via the `acp` backend. See [docs/external-agents.md](../../../../docs/external-agents.md).
+- `external-agent-process.ts`: deterministic local subprocesses as team members
+  via the `process` backend.
 - `trace-observability.ts`: the `onTrace` API.
 - `with-vercel-ai-sdk/`: Next.js + AI SDK + `runTeam()`.
 - `express-customer-support/`: Express REST API + `runTasks()`. Contributed
