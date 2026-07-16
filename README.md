@@ -54,6 +54,11 @@ Graph-first frameworks make you wire every node and edge up front. OMA runs a **
 
 Lightweight core: the engine plus Anthropic, OpenAI, and any OpenAI-compatible endpoint work out of the box; Gemini, Bedrock, MCP, and the Vercel AI SDK bridge are opt-in peer dependencies. OpenTelemetry is a separately installable integration (`@open-multi-agent/otel`): OTel APIs, SDKs, semantic-convention mappings, and exporter integrations stay outside the core import, and applications explicitly supply their own provider.
 
+Dependencies are governed by demonstrated value and their security, size,
+maintenance, and compatibility cost—not by a permanent dependency-count cap.
+Optional or platform-specific SDKs remain isolated when that keeps unused code
+out of the root import.
+
 ## Get started
 
 One command scaffolds a production starter or the teaching DAG demo:
@@ -103,15 +108,13 @@ Full head-to-head on each on the package page: [How is this different?](packages
 
 ## Repository
 
-This is a monorepo. The published package is **`@open-multi-agent/core`**, and it lives in [`packages/core/`](packages/core/) — the source of truth for the library, its tests, examples, and the npm package page.
+This is a monorepo. The main package is **`@open-multi-agent/core`**; the optional OpenTelemetry adapter is published independently as **`@open-multi-agent/otel`**.
 
 ```
 open-multi-agent/
 ├── packages/
-│   └── core/          # @open-multi-agent/core — the published library
-│       ├── src/       # framework source
-│       ├── tests/     # vitest suite
-│       └── examples/  # runnable examples (npx tsx packages/core/examples/<path>.ts)
+│   ├── core/          # @open-multi-agent/core — framework, tests, examples
+│   └── otel/          # @open-multi-agent/otel — optional adapter
 └── docs/              # subsystem documentation
 ```
 
@@ -128,7 +131,7 @@ npm test               # run the test suite
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable run identity and outcome semantics on every top-level result, plus `onProgress`, `onTrace`, and the post-run dashboard. [`@open-multi-agent/otel`](packages/otel/README.md) is the optional adapter for applications with an explicitly configured OpenTelemetry provider.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the post-run dashboard. Existing callbacks have a staged [`onTrace` migration guide](docs/observability-migration.md); [`@open-multi-agent/otel`](packages/otel/README.md) uses an application-owned provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — opt-in snapshots over any `MemoryStore`; restore preserves `runId`, increments `attempt`, and starts a fresh trace.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.

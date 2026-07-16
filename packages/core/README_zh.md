@@ -311,7 +311,7 @@ await orchestrator.runTeam(team, goal, {
 
 **对比 Mastra。** 两者均为原生 TypeScript，差异在于由谁驱动编排。Mastra 需手工连接工作流；OMA 则是目标驱动：将目标交给 Coordinator，即可在运行时自动构建任务 DAG。`runTeam(team, goal)` 一行调用即可。
 
-**对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，运行时精简（三个核心依赖，外加按需安装的可选 peer），直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。
+**对比 CrewAI。** CrewAI 是 Python 生态中成熟的多智能体方案。OMA 将目标驱动的任务拆解引入 TypeScript 后端，以受治理的依赖边界直接嵌入 Node.js，无需在既有技术栈之外另行部署独立的 Python 服务。新增依赖必须证明安全、体积、维护与兼容成本合理；可选或平台特定 SDK 在边界有价值时继续隔离。
 
 **对比 Vercel AI SDK。** AI SDK 是 LLM 调用层（provider 抽象、流式、tool call、结构化输出），而非多智能体编排器。单 agent 调用单独用它即可；一旦需要协同的团队，则选用 OMA。OMA 亦提供可选的 AI SDK bridge。
 
@@ -360,6 +360,30 @@ await orchestrator.runTeam(team, goal, {
                          └──────────────────────┘
 ```
 
+可观测性是跨越所有执行模式的并行、可选数据面；即使没有配置 sink，
+稳定的 identity 与 status 仍属于运行结果契约：
+
+```
+执行运行时 (runAgent / runTeam / runTasks / restore)
+├─ RunIdentity + RunStatus ─────────────────────────► 结果 / checkpoint 延续
+├─ legacy TraceEvent ────────────────────────────► onTrace / LegacyCallbackTraceSink
+└─ TraceRecord v2 (start / event / end + links)
+   └─ metadata-only 隐私处理器（默认）
+      └─ TraceSink（快速 emit + stats / diagnostics）
+         ├─ BatchingTraceSink ─► TraceExporter
+         │                      ├─ 自定义后端
+         │                      └─ TraceStoreExporter
+         │                         ├─ InMemoryTraceStore
+         │                         └─ FileTraceStore (/observability/file)
+         └─ @open-multi-agent/otel ─► 应用自有 TracerProvider
+```
+
+这些存储的职责刻意分离：`TraceStore` 保存可查询的 telemetry，checkpoint
+store 保存可恢复的执行状态，dashboard 则渲染运行后产物。应用负责
+`forceFlush()` / `shutdown()`、文件 store 的 `flush()` / `close()`，以及关闭
+自己传入的 OpenTelemetry provider。详见[可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
+与[迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md)。
+
 ## 支持的 Provider
 
 修改 `provider`、`model`，并设置对应的环境变量。agent 配置结构不变。
@@ -385,6 +409,8 @@ const agent: AgentConfig = {
 ### 依赖
 
 目前安装 `@open-multi-agent/core` 会直接引入 `@anthropic-ai/sdk`、`openai`、`zod`；这是实现细节，而非固定依赖数量的承诺。Anthropic、OpenAI 及所有 OpenAI 兼容端点目前即由这些包支撑。
+
+依赖变更按明确价值以及安全、安装体积、维护和兼容成本治理。可选或平台特定能力在有助于避免主入口 eager import 未使用 SDK 时继续隔离；这个边界是架构选择，不是永久数字上限。
 
 其余 provider 集成均为可选 peer 依赖，按需安装；每个都是懒加载，未用到的项目不会引入。OpenTelemetry 集成是独立安装的包：OTel API、SDK、semantic convention 映射和 exporter 集成都在 `@open-multi-agent/otel` 中，导入或运行 core 不需要 OpenTelemetry。
 
@@ -434,7 +460,7 @@ await oma.runAgent(
 | token 用量封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 预估成本封顶 | `maxCostBudget` + `estimateCost`；每个模型的价格表由应用侧维护，校验发生在轮次/任务边界，而非精确到分的调用中途中止 | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
-| 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| 追踪与审计 | 保留 legacy `onTrace`，或在 `observability.sinks` 中配置 batching + exporter、TraceStore 或 OTel adapter；落盘 `renderTeamRunDashboard(result)`，并显式 flush/shutdown 应用自有 telemetry | `OrchestratorConfig` + 应用生命周期 |
 | 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
 | 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写则一个都没有。`bash` 一旦授予仍无沙箱，且每次工具结果都会发给你的模型 provider，因此读取/执行权限需刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
@@ -443,7 +469,7 @@ await oma.runAgent(
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 每个顶层结果都包含稳定的运行标识（identity）与结果（outcome）语义，并提供 `onProgress`、`onTrace` 和运行后 dashboard。[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 是面向已显式配置 OpenTelemetry provider 的应用的可选适配器。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore 与运行后 dashboard。旧 callback 可按 [`onTrace` 分阶段迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 使用应用自有 provider。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity 规则、v1 兼容，以及基于任意 `MemoryStore` 的恢复流程。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。

@@ -311,7 +311,7 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
 
 **vs. Mastra.** Both are TypeScript-native; the difference is who drives orchestration. Mastra has you wire the workflow by hand. OMA is goal-driven: hand its Coordinator a goal and it builds the task DAG at runtime. `runTeam(team, goal)` in one call.
 
-**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a lean runtime (three core dependencies, plus opt-in peers you install only when you use them) and direct Node.js embedding, with no separate Python service to stand up alongside your stack.
+**vs. CrewAI.** CrewAI is the established multi-agent option in Python. OMA brings goal-driven decomposition to TypeScript backends with a deliberately governed dependency surface and direct Node.js embedding, with no separate Python service to stand up alongside your stack. New dependencies must justify their security, size, maintenance, and compatibility cost; optional or platform-specific SDKs remain isolated when that boundary is useful.
 
 **vs. Vercel AI SDK.** AI SDK is the LLM-call layer (provider abstraction, streaming, tool calls, and structured outputs), not a multi-agent orchestrator. Use it alone for single-agent calls; reach for OMA the moment you need a coordinated team. OMA even ships an optional AI SDK bridge.
 
@@ -360,6 +360,32 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
                          └──────────────────────┘
 ```
 
+Observability is a parallel, optional data plane across every execution mode;
+stable identity and status remain part of the run result even when no sink is
+configured:
+
+```
+Execution runtime (runAgent / runTeam / runTasks / restore)
+├─ RunIdentity + RunStatus ─────────────────────────► result / checkpoint continuation
+├─ legacy TraceEvent ────────────────────────────► onTrace / LegacyCallbackTraceSink
+└─ TraceRecord v2 (start / event / end + links)
+   └─ metadata-only privacy processor (default)
+      └─ TraceSink (fast emit + stats / diagnostics)
+         ├─ BatchingTraceSink ─► TraceExporter
+         │                      ├─ custom backend
+         │                      └─ TraceStoreExporter
+         │                         ├─ InMemoryTraceStore
+         │                         └─ FileTraceStore (/observability/file)
+         └─ @open-multi-agent/otel ─► application-owned TracerProvider
+```
+
+These stores have deliberately different responsibilities: a `TraceStore`
+holds queryable telemetry, a checkpoint store holds resumable execution state,
+and the dashboard renders a post-run artifact. The application owns
+`forceFlush()` / `shutdown()`, file-store `flush()` / `close()`, and shutdown of
+any supplied OpenTelemetry provider. See the [observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
+and [migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md).
+
 ## Supported Providers
 
 Change `provider`, `model`, and set the env var. The agent config shape stays the same.
@@ -385,6 +411,11 @@ See [docs/providers.md](https://github.com/open-multi-agent/open-multi-agent/blo
 ### Dependencies
 
 At present, `@open-multi-agent/core` directly installs `@anthropic-ai/sdk`, `openai`, and `zod`; this is an implementation detail, not a fixed dependency-count policy. Anthropic, OpenAI, and every OpenAI-compatible endpoint use those packages today.
+
+Dependency changes are governed by demonstrated value plus security, install
+size, maintenance, and compatibility cost. Optional or platform-specific
+capabilities remain isolated when that keeps unused SDKs out of the root import;
+the boundary is architectural, not a permanent numeric cap.
 
 Other provider integrations are opt-in peer dependencies that load lazily, so a project that never uses one never installs it. OpenTelemetry integration is a separately installable package: OTel APIs, SDKs, semantic-convention mappings, and exporter integrations live in `@open-multi-agent/otel`, so importing or running core does not require OpenTelemetry.
 
@@ -434,7 +465,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Hard-cap token spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Cap estimated cost | `maxCostBudget` + `estimateCost`; you own the per-model price table, and checks happen at turn/task boundaries rather than cent-exact mid-call stops | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
-| Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| Trace and audit | Keep legacy `onTrace`, or configure `observability.sinks` with batching + an exporter, TraceStore, or OTel adapter; persist `renderTeamRunDashboard(result)` and explicitly flush/shut down application-owned telemetry | `OrchestratorConfig` + application lifecycle |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
 | Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
@@ -443,7 +474,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable run identity and outcome semantics on every top-level result, plus `onProgress`, `onTrace`, and the post-run dashboard. [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) is the optional adapter for applications with an explicitly configured OpenTelemetry provider.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the post-run dashboard. Existing callbacks have a staged [`onTrace` migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md); [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) uses an application-owned provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity rules, v1 compatibility, and restore over any `MemoryStore`.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.

@@ -2,6 +2,12 @@
 
 `open-multi-agent` exposes three telemetry layers: live progress events, structured trace spans, and a static post-run dashboard.
 
+For an existing callback integration, follow the staged
+[`onTrace` migration guide](./observability-migration.md). Release engineering
+and benchmark evidence are recorded in
+[`observability-performance.md`](./observability-performance.md) and
+[`observability-release-readiness.md`](./observability-release-readiness.md).
+
 ## Run identity and outcome
 
 Every top-level execution (`runAgent`, `runTeam`, `runTasks`, `runFromPlan`,
@@ -329,14 +335,18 @@ first with `runId` as the tie-breaker, and repeated application is safe.
 TraceStore retention only affects that store. It cannot delete copies already
 exported to OTel or another vendor.
 
-### TraceStore is not RunStore or CheckpointStore
+### Dashboard, TraceStore, CheckpointStore, and RunStore
 
-TraceStore is append/query telemetry and can be best-effort. A future RunStore
-is the authoritative durable state machine with CAS, lease, suspend, and resume
-semantics; TraceStore deliberately provides none of those. CheckpointStore
-persists execution state used to restore work. Losing telemetry must not roll
-back a durable run, and deleting traces must not imply deleting checkpoints or
-shared memory.
+| Data plane | Responsibility | Reliability boundary |
+|---|---|---|
+| Dashboard | static post-run task DAG, timing, token facts, and task details | derived artifact; no live delivery or authoritative state |
+| TraceStore | append/query telemetry, retention, and trace deletion | best-effort; no CAS, lease, suspend, or resume |
+| CheckpointStore | task-grained execution snapshot consumed by `restore()` | execution recovery state; not a trace query system |
+| future RunStore | authoritative durable run state machine | not implemented by Observability v2 |
+
+Losing telemetry must not roll back a durable run. Deleting traces must not
+delete checkpoints, shared memory, or remotely exported OTel data.
+
 ## Optional OpenTelemetry package
 
 `@open-multi-agent/otel` is an independent workspace/package that adapts OBS-2
@@ -432,15 +442,20 @@ return { result, telemetry: telemetry.status }
 // Short-lived CLI: finish delivery before natural process exit.
 try {
   await main()
-  await sink.forceFlush({ timeoutMs: 5_000 })
 } finally {
+  await sink.forceFlush({ timeoutMs: 5_000 })
+  await store?.flush()
   await sink.shutdown({ timeoutMs: 5_000 })
+  await store?.close()
 }
 
 // Long-lived server: application-owned graceful shutdown.
 async function stopServer() {
+  await stopAcceptingAndWaitForInflight(server)
+  await sink.forceFlush({ timeoutMs: 10_000 })
   await sink.shutdown({ timeoutMs: 10_000 })
-  await server.close()
+  await store?.close()
+  await provider?.shutdown()
 }
 // Register stopServer with your server/process framework if desired.
 ```
@@ -511,6 +526,9 @@ event object. Synchronous callback throws and asynchronous rejections remain
 isolated and cannot become unhandled rejections. `onTrace` is not marked
 deprecated in this release; the 1.x compatibility window remains open while
 users can migrate transport code to `observability.sinks` at their own pace.
+The copyable stage-by-stage path is in
+[`observability-migration.md`](./observability-migration.md), including direct
+`LegacyCallbackTraceSink`, batching, TraceStore/OTel, and lifecycle ownership.
 
 Span parentage is best-effort and uses the causal structure known to the runtime. In team runs, worker agent spans point to their task span, and LLM/tool/stream spans point to the agent span. Root spans such as top-level agent runs omit `parentId`.
 

@@ -19,6 +19,10 @@ contributed them. Current:
 - `external-agent-process.ts`: deterministic local subprocesses as team members
   via the `process` backend.
 - `trace-observability.ts`: the `onTrace` API.
+- `observability-v2/`: no-network examples for batching/custom exporters,
+  InMemory/File TraceStore, an application-owned OTel provider, and explicit
+  CLI/server/serverless lifecycle handling. The original
+  `trace-observability.ts` remains the legacy callback example.
 - `with-vercel-ai-sdk/`: Next.js + AI SDK + `runTeam()`.
 - `express-customer-support/`: Express REST API + `runTasks()`. Contributed
   by [@CodingBangboo](https://github.com/CodingBangboo) via #191.

@@ -1,0 +1,33 @@
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+
+const root = fileURLToPath(new URL('..', import.meta.url))
+const tsx = join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const directory = join(root, 'packages', 'core', 'examples', 'integrations', 'observability-v2')
+const examples = [
+  'batching-exporter.ts',
+  'in-memory-store.ts',
+  'file-trace-store.ts',
+  'otel-provider.ts',
+  'cli-lifecycle.ts',
+  'server-lifecycle.ts',
+  'serverless-lifecycle.ts',
+]
+
+for (const example of examples) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [tsx, join(directory, example)], {
+      cwd: root,
+      stdio: 'inherit',
+      env: { ...process.env, NO_COLOR: '1' },
+    })
+    child.once('error', reject)
+    child.once('exit', (code, signal) => {
+      if (code === 0) resolve()
+      else reject(new Error(`${example} failed with code ${code ?? 'null'} signal ${signal ?? 'none'}`))
+    })
+  })
+}
+
+console.log(`observability example smoke: ${examples.length} passed`)

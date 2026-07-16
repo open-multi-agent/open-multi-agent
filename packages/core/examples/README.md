@@ -85,6 +85,7 @@ Hooking the framework up to outside-the-box tooling.
 | Example | Integrates with |
 |---------|-----------------|
 | [`integrations/trace-observability`](integrations/trace-observability.ts) | `onTrace` spans for LLM calls, tools, and tasks. |
+| [`integrations/observability-v2/`](integrations/observability-v2/) | No-key runnable v2 batching, InMemory/File TraceStore, OTel in-memory provider, CLI, SIGTERM server, and FaaS lifecycle examples. |
 | [`integrations/mcp-github`](integrations/mcp-github.ts) | An MCP server's tools exposed to an agent via `connectMCPTools()`. |
 | [`integrations/mcp-bilig-workpaper`](integrations/mcp-bilig-workpaper.ts) | Bilig WorkPaper MCP tools for formula readback, recalculation, and persisted workbook JSON. |
 | [`integrations/mcp-open-design`](integrations/mcp-open-design.ts) | Batch fan-out over an MCP server's async jobs: N Open Design runs generated in parallel via `runTasks()`, each polling `get_run` to completion with code-driven orchestration. |

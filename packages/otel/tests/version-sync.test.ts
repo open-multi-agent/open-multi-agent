@@ -9,4 +9,12 @@ describe('package version constant', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version: string }
     expect(PACKAGE_VERSION).toBe(manifest.version)
   })
+
+  it('requires the first core release that actually contains Observability v2', () => {
+    const manifestPath = fileURLToPath(new URL('../package.json', import.meta.url))
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      dependencies: Record<string, string>
+    }
+    expect(manifest.dependencies['@open-multi-agent/core']).toBe('^1.11.0')
+  })
 })

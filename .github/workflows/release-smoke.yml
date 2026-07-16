@@ -27,7 +27,7 @@ jobs:
           node-version: 20
       - name: Scaffold from the published npm package and reach the run gate
         env:
-          # The tag is the core version (e.g. v1.10.0); create-oma-app has its
+          # The tag is the core version (e.g. v1.11.0); create-oma-app has its
           # own version, so we resolve the scaffolder via @latest and verify it
           # pins THIS release's core below.
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -40,7 +40,7 @@ jobs:
           npm_config_prefer_online: 'true'
         run: |
           set -euo pipefail
-          want="${RELEASE_TAG#v}"   # v1.10.0 -> 1.10.0
+          want="${RELEASE_TAG#v}"   # v1.11.0 -> 1.11.0
 
           # npm's CDN takes a moment to serve a freshly published version, and
           # BOTH create-oma-app and the core it pins may have just gone out — so
