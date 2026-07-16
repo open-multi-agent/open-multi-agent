@@ -15,43 +15,58 @@ Requires Node.js >= 18.
 ## Development Commands
 
 ```bash
-npm run build        # Compile TypeScript (packages/core/src/ → packages/core/dist/)
-npm run dev          # Watch mode compilation
-npm run lint         # Type-check (tsc --noEmit)
-npm test             # Run all tests (vitest)
-npm run test:watch   # Vitest watch mode
+npm run build          # Compile every workspace
+npm run dev            # Watch-mode compilation for @open-multi-agent/core
+npm run lint           # Type-check every workspace (tsc --noEmit)
+npm test               # Run unit tests in every workspace
+npm run test:watch     # Core Vitest watch mode
+npm run test:coverage  # Core unit tests with coverage
+npm run test:scaffold  # End-to-end create-oma-app scaffold smoke test
 ```
 
 ## Running Tests
 
-All tests live in `packages/core/tests/` and run without API keys or network access — adapter tests mock the provider SDKs, and the rest cover core modules (TaskQueue, SharedMemory, ToolExecutor, Semaphore, and more).
+Unit tests live in each workspace's `tests/` directory: currently `packages/core/tests/`, `packages/create-oma-app/tests/`, and `packages/otel/tests/`. They run without API keys or network access — provider SDKs and external processes are mocked where needed.
 
 ```bash
 npm test
 ```
 
-Every PR must pass `npm run lint && npm test`. CI runs both automatically on Node 18, 20, and 22.
+Core E2E tests are separate because they require `RUN_E2E=1` and real provider credentials:
+
+```bash
+npm run test:e2e
+```
+
+Run checks that match the surface you changed and record the commands and results in the PR description. For code changes, start with `npm run lint && npm test`; also run `npm run build` when package output or public entry points may be affected, and `npm run test:scaffold` when changing `create-oma-app` scaffolding or templates.
+
+CI is the source of truth for the full pre-merge matrix. It runs lint, unit tests on Node 18/20/22, coverage, workspace builds, package/import smoke tests, template type-checking, tarball assertions, and the scaffold E2E test.
 
 ## Making a Pull Request
 
 1. Fork the repo and create a branch from `main`
 2. Make your changes
-3. Add or update tests if you changed behavior
-4. Run `npm run lint && npm test` locally
+3. Add or update tests and user-facing documentation when behavior changes
+4. Run the checks relevant to your change and note any skipped checks with a reason
 5. Open a PR against `main`
 
 ### PR Checklist
 
-- [ ] `npm run lint` passes
-- [ ] `npm test` passes
-- [ ] New behavior has test coverage
-- [ ] Linked to a relevant issue (if one exists)
+- [ ] Tests cover changed behavior, or the PR explains why tests are not needed
+- [ ] User-facing documentation and examples are updated, or marked not applicable
+- [ ] Compatibility, breaking changes, and migration requirements are documented, or marked not applicable
+- [ ] Dependency changes are justified and follow the package-specific rules below
+- [ ] The PR links a relevant issue when one exists
 
 ## Code Style
 
 - TypeScript strict mode, ES modules (`.js` extensions in imports)
 - No additional linter/formatter configured — follow existing patterns
-- Keep dependencies minimal (currently 3 runtime deps: `@anthropic-ai/sdk`, `openai`, `zod`)
+- Keep dependency ownership explicit. Core must remain importable and runnable without optional integrations
+- Add new optional provider SDKs as peer dependencies and load them lazily with dynamic `import()`
+- Keep OpenTelemetry APIs, SDKs, semantic-convention packages, and exporters in `@open-multi-agent/otel`, never in the core root import
+- Version `@open-multi-agent/otel` independently from core and express core compatibility in its dependency range
+- Justify dependency changes to other workspaces in the PR description
 
 ## Architecture Overview
 
@@ -61,7 +76,10 @@ See the [README](../packages/core/README.md#architecture) for an architecture di
 - **Task system**: `packages/core/src/task/queue.ts`, `packages/core/src/task/task.ts` — dependency DAG
 - **Agent**: `packages/core/src/agent/runner.ts` — conversation loop
 - **Tools**: `packages/core/src/tool/framework.ts`, `packages/core/src/tool/executor.ts` — tool registry and execution
-- **LLM adapters**: `packages/core/src/llm/` — 12 built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
+- **LLM adapters**: `packages/core/src/llm/` — built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
+- **Observability**: `packages/core/src/observability/` — trace records, sinks, exporters, and stores
+- **OpenTelemetry adapter**: `packages/otel/src/` — optional OTel mapping and export integration kept outside core
+- **App scaffolder**: `packages/create-oma-app/src/` and `packages/create-oma-app/templates/` — CLI and starter templates
 
 ## Where to Contribute
 
