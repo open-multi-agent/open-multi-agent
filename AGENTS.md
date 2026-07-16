@@ -55,7 +55,7 @@ The framework's key feature. The coordinator receives goal + roster → emits a 
 | CLI | `cli/oma.ts` | Shell/CI entry; built to `dist/cli/oma.js`, exposed as the `oma` npm bin |
 | Utils | `utils/*.ts` | Semaphore, token accounting, keyword helpers, trace plumbing, secret/PII redaction |
 | Types / Errors | `types.ts`, `errors.ts` | All interfaces in one file (avoids circular deps); shared error types |
-| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts`, `acp.ts`, `process.ts` | Root + `/mcp` + `/ai-sdk` + `/acp` + `/process` subpaths so optional peers and backend-specific helpers don't break the main import |
+| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts`, `acp.ts`, `process.ts`, `classifiers.ts` | Root + `/mcp` + `/ai-sdk` + `/acp` + `/process` + `/classifiers` subpaths so optional peers, backend-specific helpers, and pattern tables don't break the main import |
 
 ### Non-obvious invariants
 
@@ -63,6 +63,7 @@ Behavior that isn't visible from any single file and will cause bugs if missed:
 
 - **Tool errors never throw** — they're caught and returned as `ToolResult(isError: true)`. Task failures cascade to dependents (independent tasks continue); LLM API errors propagate to the caller.
 - **Built-in tools are default-deny** — `resolveTools()` (`agent/runner.ts`) grants a built-in (`bash`, `file_*`, `grep`, `glob`, `delegate_to_agent`) only when `AgentConfig.tools` or `toolPreset` is set; with neither, an agent resolves to **zero** built-in tools. Custom/runtime tools (`customTools` / `addTool`) are exempt — registration is the grant — but still honor `disallowedTools`. The runner gates execution on the same granted set, so a registered-but-ungranted call returns a `"not granted"` error instead of running. `OrchestratorConfig.defaultToolPreset` restores the prior allow-all. Uniform across `runAgent` / `runTeam` / `runTasks` / short-circuit / standalone `Agent`. → [docs/tool-configuration.md](docs/tool-configuration.md)
+- **Per-call gating runs below the grant** — `onToolCall` (opt-in, on `AgentConfig` / `OrchestratorConfig`) fires in `ToolExecutor.runTool()` after Zod validation and before execute, returning `{action:'allow'|'deny'}`. Deny → error `ToolResult` (never a throw); a throwing or invalid gate fails **closed**. Grant / default-deny runs first, so ungranted tools never reach it. `AgentConfig.onToolCall` overrides `OrchestratorConfig.onToolCall`; standalone `new Agent({ onToolCall })` wires it into its own executor. Optional `classifyBashCommand` (safe/review/high) ships behind the `/classifiers` subpath. → [docs/tool-configuration.md](docs/tool-configuration.md)
 - **`delegate_to_agent` is orchestration-only and needs a grant** — registered only inside `runTeam`/`runTasks` pool workers (never in standalone `runAgent` or the `isSimpleGoal` short-circuit), and like every built-in it must be granted via `tools: ['delegate_to_agent']` to be callable. Self-delegation, cycles, unknown targets, depth > `maxDelegationDepth` (default 3), and pool-slot exhaustion are all rejected in the tool; delegated token usage counts against the parent budget. → [docs/tool-configuration.md](docs/tool-configuration.md)
 - **Filesystem tools are sandboxed, `bash` is not** — `file_read/file_write/file_edit/grep/glob` resolve every path (symlinks included) within `AgentConfig.cwd` / `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables the sandbox; `process.cwd()` widens it. → [docs/tool-configuration.md](docs/tool-configuration.md)
 - **Reasoning is dropped unless opted in** — provider-native `ReasoningBlock`s the target adapter can't echo are silently dropped unless `AgentConfig.preserveReasoningAsText` is on (then converted to inline `<thinking>` text). `<thinking>` text is never parsed back into a signed block. → [docs/context-management.md](docs/context-management.md)
@@ -77,7 +78,7 @@ Detailed behavior is documented in `docs/` — the single source of truth, so up
 | Topic | Code | Doc |
 |-------|------|-----|
 | Context strategies, summarization, reasoning round-tripping | `agent/runner.ts`, `llm/reasoning-fallback.ts` | [context-management.md](docs/context-management.md) |
-| Tool presets, custom tools, sandbox, delegation, MCP | `tool/` | [tool-configuration.md](docs/tool-configuration.md) |
+| Tool presets, custom tools, sandbox, delegation, MCP, per-call gate + risk classifier | `tool/` | [tool-configuration.md](docs/tool-configuration.md) |
 | Providers, env vars, local servers, AI SDK bridge | `llm/` | [providers.md](docs/providers.md) |
 | Shared memory + custom backends | `memory/` | [shared-memory.md](docs/shared-memory.md) |
 | Checkpoint/resume over `MemoryStore` | `memory/checkpoint.ts`, `orchestrator/orchestrator.ts` | [checkpoint.md](docs/checkpoint.md) |
