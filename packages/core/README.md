@@ -360,6 +360,32 @@ Most TypeScript teams picking a multi-agent layer are really choosing between OM
                          └──────────────────────┘
 ```
 
+Observability is a parallel, optional data plane across every execution mode;
+stable identity and status remain part of the run result even when no sink is
+configured:
+
+```
+Execution runtime (runAgent / runTeam / runTasks / restore)
+├─ RunIdentity + RunStatus ─────────────────────────► result / checkpoint continuation
+├─ legacy TraceEvent ────────────────────────────► onTrace / LegacyCallbackTraceSink
+└─ TraceRecord v2 (start / event / end + links)
+   └─ metadata-only privacy processor (default)
+      └─ TraceSink (fast emit + stats / diagnostics)
+         ├─ BatchingTraceSink ─► TraceExporter
+         │                      ├─ custom backend
+         │                      └─ TraceStoreExporter
+         │                         ├─ InMemoryTraceStore
+         │                         └─ FileTraceStore (/observability/file)
+         └─ @open-multi-agent/otel ─► application-owned TracerProvider
+```
+
+These stores have deliberately different responsibilities: a `TraceStore`
+holds queryable telemetry, a checkpoint store holds resumable execution state,
+and the dashboard renders a post-run artifact. The application owns
+`forceFlush()` / `shutdown()`, file-store `flush()` / `close()`, and shutdown of
+any supplied OpenTelemetry provider. See the [observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
+and [migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md).
+
 ## Supported Providers
 
 Change `provider`, `model`, and set the env var. The agent config shape stays the same.
@@ -439,7 +465,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Hard-cap token spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Cap estimated cost | `maxCostBudget` + `estimateCost`; you own the per-model price table, and checks happen at turn/task boundaries rather than cent-exact mid-call stops | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
-| Trace and audit | `onTrace` to your tracing backend; persist `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| Trace and audit | Keep legacy `onTrace`, or configure `observability.sinks` with batching + an exporter, TraceStore, or OTel adapter; persist `renderTeamRunDashboard(result)` and explicitly flush/shut down application-owned telemetry | `OrchestratorConfig` + application lifecycle |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
 | Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |

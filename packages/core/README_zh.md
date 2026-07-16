@@ -360,6 +360,30 @@ await orchestrator.runTeam(team, goal, {
                          └──────────────────────┘
 ```
 
+可观测性是跨越所有执行模式的并行、可选数据面；即使没有配置 sink，
+稳定的 identity 与 status 仍属于运行结果契约：
+
+```
+执行运行时 (runAgent / runTeam / runTasks / restore)
+├─ RunIdentity + RunStatus ─────────────────────────► 结果 / checkpoint 延续
+├─ legacy TraceEvent ────────────────────────────► onTrace / LegacyCallbackTraceSink
+└─ TraceRecord v2 (start / event / end + links)
+   └─ metadata-only 隐私处理器（默认）
+      └─ TraceSink（快速 emit + stats / diagnostics）
+         ├─ BatchingTraceSink ─► TraceExporter
+         │                      ├─ 自定义后端
+         │                      └─ TraceStoreExporter
+         │                         ├─ InMemoryTraceStore
+         │                         └─ FileTraceStore (/observability/file)
+         └─ @open-multi-agent/otel ─► 应用自有 TracerProvider
+```
+
+这些存储的职责刻意分离：`TraceStore` 保存可查询的 telemetry，checkpoint
+store 保存可恢复的执行状态，dashboard 则渲染运行后产物。应用负责
+`forceFlush()` / `shutdown()`、文件 store 的 `flush()` / `close()`，以及关闭
+自己传入的 OpenTelemetry provider。详见[可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
+与[迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md)。
+
 ## 支持的 Provider
 
 修改 `provider`、`model`，并设置对应的环境变量。agent 配置结构不变。
@@ -436,7 +460,7 @@ await oma.runAgent(
 | token 用量封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 预估成本封顶 | `maxCostBudget` + `estimateCost`；每个模型的价格表由应用侧维护，校验发生在轮次/任务边界，而非精确到分的调用中途中止 | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
-| 追踪与审计 | `onTrace` 接你的 tracing 后端；落盘 `renderTeamRunDashboard(result)` | `OrchestratorConfig` |
+| 追踪与审计 | 保留 legacy `onTrace`，或在 `observability.sinks` 中配置 batching + exporter、TraceStore 或 OTel adapter；落盘 `renderTeamRunDashboard(result)`，并显式 flush/shutdown 应用自有 telemetry | `OrchestratorConfig` + 应用生命周期 |
 | 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
 | 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写则一个都没有。`bash` 一旦授予仍无沙箱，且每次工具结果都会发给你的模型 provider，因此读取/执行权限需刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
