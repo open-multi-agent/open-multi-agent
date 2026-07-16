@@ -238,6 +238,18 @@ export class Agent {
           callTimeoutMs: this.config.callTimeoutMs,
         })
       }
+      case 'process': {
+        const { createProcessBackend } = await import('./process-backend.js')
+        return createProcessBackend({
+          command: backend.command,
+          args: backend.args,
+          env: backend.env,
+          cwd: backend.cwd,
+          input: backend.input,
+          systemPrompt: this.config.systemPrompt,
+          agentName: this.name,
+        })
+      }
       default:
         throw new Error(
           `Agent "${this.name}": unknown backend kind "${(backend as { kind: string }).kind}".`,

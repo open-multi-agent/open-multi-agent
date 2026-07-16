@@ -541,11 +541,10 @@ export type AcpPermissionPolicy =
  * own agentic loop, while OMA drives it, collects its output and token usage, and
  * schedules it in the task DAG alongside LLM agents.
  *
- * A discriminated union keyed by {@link kind}; only `'acp'` exists today.
  * Requires the optional peer `@agentclientprotocol/sdk`.
  */
-export interface AgentBackendConfig {
-  /** Backend discriminant. Only `'acp'` is supported today. */
+export interface AcpAgentBackendConfig {
+  /** Backend discriminant. */
   readonly kind: 'acp'
   /** Executable to spawn (e.g. `'npx'`, `'gemini'`, `'codex-acp'`). */
   readonly command: string
@@ -562,6 +561,39 @@ export interface AgentBackendConfig {
   /** How to answer the agent's permission prompts. Defaults to `'auto-approve'`. */
   readonly permission?: AcpPermissionPolicy
 }
+
+/** How a generic process backend receives a prompt. */
+export type ProcessBackendInputMode = 'stdin' | 'argument' | 'none'
+
+/**
+ * Configuration for running a generic local process as an OMA team member.
+ *
+ * Unlike ACP, this backend does not speak an agent protocol. It starts a fresh
+ * process per run, sends the prompt by stdin or final argument, maps stdout to
+ * the agent output, and treats non-zero exits as task failures.
+ */
+export interface ProcessAgentBackendConfig {
+  /** Backend discriminant. */
+  readonly kind: 'process'
+  /** Executable to spawn (e.g. `'node'`, `'python'`, `'my-cli'`). */
+  readonly command: string
+  /** Arguments passed to `command` before the prompt argument, if any. */
+  readonly args?: readonly string[]
+  /** Extra environment variables for the subprocess, merged over `process.env`. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Working directory for the subprocess. Defaults to `process.cwd()`. */
+  readonly cwd?: string
+  /**
+   * Prompt delivery mode. Defaults to `'stdin'`.
+   * - `'stdin'`: write the prompt to stdin and close it.
+   * - `'argument'`: append the prompt as the final command argument.
+   * - `'none'`: do not send the prompt; useful for fixed command adapters.
+   */
+  readonly input?: ProcessBackendInputMode
+}
+
+/** External backend configuration keyed by `kind`. */
+export type AgentBackendConfig = AcpAgentBackendConfig | ProcessAgentBackendConfig
 
 /** Static configuration for a single agent. */
 export interface AgentConfig {
