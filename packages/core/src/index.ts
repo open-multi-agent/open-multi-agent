@@ -95,7 +95,7 @@ export type { TaskQueueEvent } from './task/queue.js'
 
 export { defineTool, ToolRegistry, zodToJsonSchema } from './tool/framework.js'
 export { ToolExecutor, truncateToolOutput } from './tool/executor.js'
-export type { ToolExecutorOptions, BatchToolCall } from './tool/executor.js'
+export type { ToolExecutorExecutionOptions, ToolExecutorOptions, BatchToolCall } from './tool/executor.js'
 export {
   registerBuiltInTools,
   BUILT_IN_TOOLS,
@@ -224,6 +224,10 @@ export type {
   ToolDefinition,
   ToolResult,
   ToolUseContext,
+  ToolCallContext,
+  ToolCallDecision,
+  ToolCallGate,
+  ToolCallGateMetadata,
   AgentInfo,
   TeamInfo,
   DelegationPoolView,

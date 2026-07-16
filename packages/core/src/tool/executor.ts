@@ -10,7 +10,7 @@
  * the framework.
  */
 
-import type { ToolResult, ToolUseContext } from '../types.js'
+import type { ToolCallGate, ToolCallGateMetadata, ToolResult, ToolResultMetadata, ToolUseContext } from '../types.js'
 import type { ToolDefinition } from '../types.js'
 import { ToolRegistry } from './framework.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -31,6 +31,17 @@ export interface ToolExecutorOptions {
    * Per-tool `maxOutputChars` takes priority over this value.
    */
   maxToolOutputChars?: number
+  /**
+   * Optional per-call gate. Runs after input validation and before execution.
+   * Returning `{ action: 'deny' }` produces an error ToolResult instead of
+   * invoking the tool implementation.
+   */
+  onToolCall?: ToolCallGate
+}
+
+export interface ToolExecutorExecutionOptions {
+  /** Per-execution gate override. Takes priority over the constructor option. */
+  readonly onToolCall?: ToolCallGate
 }
 
 /** Describes one call in a batch. */
@@ -55,11 +66,13 @@ export class ToolExecutor {
   private readonly registry: ToolRegistry
   private readonly semaphore: Semaphore
   private readonly maxToolOutputChars?: number
+  private readonly onToolCall?: ToolCallGate
 
   constructor(registry: ToolRegistry, options: ToolExecutorOptions = {}) {
     this.registry = registry
     this.semaphore = new Semaphore(options.maxConcurrency ?? 4)
     this.maxToolOutputChars = options.maxToolOutputChars
+    this.onToolCall = options.onToolCall
   }
 
   // -------------------------------------------------------------------------
@@ -80,6 +93,7 @@ export class ToolExecutor {
     toolName: string,
     input: Record<string, unknown>,
     context: ToolUseContext,
+    options: ToolExecutorExecutionOptions = {},
   ): Promise<ToolResult> {
     const tool = this.registry.get(toolName)
     if (tool === undefined) {
@@ -95,7 +109,7 @@ export class ToolExecutor {
       )
     }
 
-    return this.runTool(tool, input, context)
+    return this.runTool(tool, input, context, options)
   }
 
   // -------------------------------------------------------------------------
@@ -149,6 +163,7 @@ export class ToolExecutor {
     tool: ToolDefinition<any>,
     rawInput: Record<string, unknown>,
     context: ToolUseContext,
+    options: ToolExecutorExecutionOptions,
   ): Promise<ToolResult> {
     // --- Zod validation ---
     const inputParseResult = this.runZodSchema(tool.inputSchema, rawInput)
@@ -159,10 +174,45 @@ export class ToolExecutor {
     }
 
     // --- Abort check after parse (parse can be expensive for large inputs) ---
-    if (context.abortSignal?.aborted === true) {
+    if (this.isAbortSignalAborted(context.abortSignal)) {
       return this.errorResult(
         `Tool "${tool.name}" was aborted before execution began.`,
       )
+    }
+
+    const gate = options.onToolCall ?? this.onToolCall
+    let gateMetadata: ToolCallGateMetadata | undefined
+    if (gate) {
+      let decision: unknown
+      try {
+        decision = await gate({
+          toolName: tool.name,
+          input: inputParseResult.data as Record<string, unknown>,
+          agentName: context.agent.name,
+          ...(context.runId !== undefined ? { runId: context.runId } : {}),
+          ...(context.taskId !== undefined ? { taskId: context.taskId } : {}),
+        })
+      } catch (err) {
+        return this.errorResult(`Tool "${tool.name}" onToolCall hook threw an error: ${this.errorMessage(err)}`)
+      }
+      gateMetadata = this.gateMetadataFromDecision(decision)
+      if (!gateMetadata) {
+        return this.errorResult(
+          `Tool "${tool.name}" onToolCall hook returned an invalid onToolCall decision.`,
+        )
+      }
+      if (this.isAbortSignalAborted(context.abortSignal)) {
+        return this.errorResult(
+          `Tool "${tool.name}" was aborted before execution began.`,
+          { toolCallGate: gateMetadata },
+        )
+      }
+      if (gateMetadata.action === 'deny') {
+        const suffix = gateMetadata.reason ? `: ${gateMetadata.reason}` : '.'
+        return this.errorResult(`Tool "${tool.name}" denied by onToolCall${suffix}`, {
+          toolCallGate: gateMetadata,
+        })
+      }
     }
 
     // --- Execute ---
@@ -173,18 +223,18 @@ export class ToolExecutor {
         if (!outputParseResult.success) {
           return this.errorResult(
             `Invalid output for tool "${tool.name}":\n${outputParseResult.issuesMessage}`,
+            gateMetadata ? { toolCallGate: gateMetadata } : undefined,
           )
         }
       }
-      return this.maybeTruncate(tool, result)
+      return this.withGateMetadata(this.maybeTruncate(tool, result), gateMetadata)
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string'
-            ? err
-            : JSON.stringify(err)
-      return this.maybeTruncate(tool, this.errorResult(`Tool "${tool.name}" threw an error: ${message}`))
+      return this.maybeTruncate(
+        tool,
+        this.errorResult(`Tool "${tool.name}" threw an error: ${this.errorMessage(err)}`, gateMetadata
+          ? { toolCallGate: gateMetadata }
+          : undefined),
+      )
     }
   }
 
@@ -219,11 +269,47 @@ export class ToolExecutor {
     return { ...result, data: truncateToolOutput(result.data, maxChars) }
   }
 
+  private withGateMetadata(result: ToolResult, gateMetadata: ToolCallGateMetadata | undefined): ToolResult {
+    if (!gateMetadata) return result
+    return {
+      ...result,
+      metadata: {
+        ...result.metadata,
+        toolCallGate: gateMetadata,
+      },
+    }
+  }
+
+  private gateMetadataFromDecision(decision: unknown): ToolCallGateMetadata | undefined {
+    if (decision === null || typeof decision !== 'object') return undefined
+    const action = (decision as { readonly action?: unknown }).action
+    if (action !== 'allow' && action !== 'deny') return undefined
+    const reason = (decision as { readonly reason?: unknown }).reason
+    if (reason !== undefined && typeof reason !== 'string') return undefined
+    if (action === 'deny' && reason !== undefined) {
+      return { action, reason }
+    }
+    return { action }
+  }
+
+  private isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
+    return signal?.aborted === true
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : JSON.stringify(err)
+  }
+
   /** Construct an error ToolResult. */
-  private errorResult(message: string): ToolResult {
+  private errorResult(message: string, metadata?: ToolResultMetadata): ToolResult {
     return {
       data: message,
       isError: true,
+      ...(metadata ? { metadata } : {}),
     }
   }
 }

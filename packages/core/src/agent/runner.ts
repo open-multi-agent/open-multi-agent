@@ -34,6 +34,7 @@ import type {
   ContextStrategy,
   ThinkingConfig,
   RunIdentity,
+  ToolCallGate,
 } from '../types.js'
 import { LLMCallTimeoutError, TokenBudgetExceededError } from '../errors.js'
 import { LoopDetector } from './loop-detector.js'
@@ -134,6 +135,8 @@ export interface RunnerOptions {
   readonly toolPreset?: 'readonly' | 'readwrite' | 'full'
   readonly allowedTools?: readonly string[]
   readonly disallowedTools?: readonly string[]
+  /** Optional per-call tool gate inherited from agent or orchestrator config. */
+  readonly onToolCall?: ToolCallGate
   /**
    * Root directory passed to built-in filesystem tools via `ToolUseContext.cwd`.
    * `null` disables the sandbox; `undefined` falls back to
@@ -1174,6 +1177,7 @@ export class AgentRunner implements AgentBackend {
                 block.name,
                 block.input,
                 executionContext,
+                { onToolCall: this.options.onToolCall },
               )
             } catch (err) {
               // Tool executor errors become error results — the loop continues.
@@ -1194,6 +1198,15 @@ export class AgentRunner implements AgentBackend {
               agent: options.traceAgent ?? this.options.agentName ?? 'unknown',
               tool: block.name,
               isError: result.isError ?? false,
+              ...(result.metadata?.toolCallGate
+                ? {
+                    gated: true,
+                    gateAction: result.metadata.toolCallGate.action,
+                    ...(result.metadata.toolCallGate.reason
+                      ? { gateReason: redactSensitiveText(result.metadata.toolCallGate.reason) }
+                      : {}),
+                  }
+                : {}),
               input: redactSensitiveObject(block.input),
               output: redactSensitiveText(result.data),
               startMs: startTime,
@@ -1571,6 +1584,8 @@ export class AgentRunner implements AgentBackend {
       },
       abortSignal: options.abortSignal ?? this.options.abortSignal,
       cwd: this.options.cwd === undefined ? defaultWorkspaceDir() : this.options.cwd,
+      ...(options.runId !== undefined ? { runId: options.runId } : {}),
+      ...(options.taskId !== undefined ? { taskId: options.taskId } : {}),
       ...(options.team !== undefined ? { team: options.team } : {}),
       ...(this.options.credentials !== undefined ? { credentials: this.options.credentials } : {}),
     }
