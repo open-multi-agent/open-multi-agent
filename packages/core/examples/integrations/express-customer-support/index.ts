@@ -8,8 +8,8 @@
  *   npm install && npm start
  *
  * Prerequisites:
- *   API key for the chosen provider(s) — defaults to ANTHROPIC_API_KEY.
- *   CLASSIFIER_PROVIDER / DRAFTER_PROVIDER / QA_PROVIDER (optional, default 'anthropic')
+ *   API key for the chosen provider(s) — defaults to DEEPSEEK_API_KEY.
+ *   CLASSIFIER_PROVIDER / DRAFTER_PROVIDER / QA_PROVIDER (optional, default 'deepseek')
  *   CLASSIFIER_MODEL    / DRAFTER_MODEL    / QA_MODEL    (optional, see defaults below)
  *   PORT (optional, default 3000)
  */
