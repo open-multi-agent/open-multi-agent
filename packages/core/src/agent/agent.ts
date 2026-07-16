@@ -37,7 +37,7 @@
  */
 
 import type {
-  AgentBackendConfig,
+  ExternalAgentBackendConfig,
   AgentConfig,
   AgentState,
   AgentRunResult,
@@ -220,7 +220,7 @@ export class Agent {
    * The backend module is loaded via dynamic `import()` so its optional peer SDK
    * (e.g. `@agentclientprotocol/sdk`) is only resolved when a backend is used.
    */
-  private async createExternalBackend(backend: AgentBackendConfig): Promise<AgentBackend> {
+  private async createExternalBackend(backend: ExternalAgentBackendConfig): Promise<AgentBackend> {
     switch (backend.kind) {
       case 'acp': {
         const { createAcpBackend } = await import('./acp-backend.js')

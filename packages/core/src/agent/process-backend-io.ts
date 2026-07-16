@@ -32,6 +32,7 @@ export function spawnProcess(
 
   const child = spawn(options.command, args, {
     cwd: resolvePath(options.cwd ?? process.cwd()),
+    detached: process.platform !== 'win32',
     env: { ...process.env, ...options.env },
     stdio: ['pipe', 'pipe', 'pipe'],
   })

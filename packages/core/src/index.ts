@@ -244,6 +244,8 @@ export type {
   StructuredTraceError,
   TraceErrorKind,
   AgentBackendConfig,
+  ExternalAgentBackendConfig,
+  AcpAgentBackendConfig,
   AcpPermissionPolicy,
   AcpPermissionRequest,
   BeforeRunHookContext,

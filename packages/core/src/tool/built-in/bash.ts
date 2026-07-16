@@ -5,10 +5,11 @@
  * optional timeout and a custom working directory.
  */
 
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn } from 'child_process'
 import { z } from 'zod'
 import { defineTool } from '../framework.js'
 import { isSensitiveName, redactSensitiveText } from '../../utils/redaction.js'
+import { killProcessTree } from '../../utils/process-tree.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -191,43 +192,6 @@ function runCommand(
       }
     })
   })
-}
-
-/**
- * Kill the child and any descendants spawned through `&` / job-control.
- *
- * POSIX: we rely on `detached: true` at spawn time, which puts the bash
- * shell in its own process group; sending SIGKILL to the negated PID
- * delivers to every member of that group.
- *
- * Windows: there are no POSIX process groups, and `child.kill()` terminates
- * only the direct child — orphaned descendants would both survive and hold
- * the stdio pipes open, delaying the `close` event until they exit. Use
- * `taskkill /T /F` (always present in System32) to terminate the whole tree.
- */
-function killProcessTree(child: ChildProcess): void {
-  if (child.pid === undefined) {
-    child.kill('SIGKILL')
-    return
-  }
-  if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-    })
-    // taskkill fails when the tree already exited; direct kill is then a no-op.
-    killer.on('error', () => child.kill('SIGKILL'))
-    killer.on('exit', (code) => {
-      if (code !== 0) child.kill('SIGKILL')
-    })
-    return
-  }
-  try {
-    process.kill(-child.pid, 'SIGKILL')
-  } catch {
-    // The child may already have exited; fall through to a direct kill,
-    // which is a no-op in that case.
-    child.kill('SIGKILL')
-  }
 }
 
 function buildSafeShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -2,7 +2,7 @@
  * @fileoverview `@open-multi-agent/core/process` — run generic local processes
  * as OMA agent backends.
  *
- * Most users never import this module: set {@link AgentBackendConfig} on an
+ * Most users never import this module: set {@link ExternalAgentBackendConfig} on an
  * agent's `backend` field and OMA loads the backend for you. Import from here
  * only to construct a backend directly (advanced / programmatic use):
  *
@@ -16,7 +16,7 @@ export { ProcessBackend, createProcessBackend } from './agent/process-backend.js
 export type { ProcessBackendOptions } from './agent/process-backend.js'
 export type { AgentBackend } from './agent/runner.js'
 export type {
-  AgentBackendConfig,
+  ExternalAgentBackendConfig,
   ProcessAgentBackendConfig,
   ProcessBackendInputMode,
 } from './types.js'

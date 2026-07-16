@@ -82,7 +82,7 @@ default and needs only one key (`ANTHROPIC_API_KEY`) for the whole team.
 
 ## Configuration
 
-`AgentConfig.backend` takes an `AgentBackendConfig` discriminated union:
+`AgentConfig.backend` takes an `ExternalAgentBackendConfig` discriminated union:
 
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
@@ -128,9 +128,11 @@ backend: {
 The callback receives a minimal, SDK-agnostic `{ title, kind, optionKinds }` and returns
 `true` to approve / `false` to reject.
 
-> **Security.** Unlike OMA's filesystem-tool sandbox, an ACP agent accesses `cwd`
-> directly — it is a local subprocess with your permissions. Scope `cwd` to a project
-> you trust the agent with, and use `permission` to gate destructive actions.
+> **Security.** Unlike OMA's filesystem-tool sandbox, external backends access
+> `cwd` directly — they are local subprocesses with your permissions. Scope `cwd`
+> to a project you trust the backend with. ACP backends can use `permission` to
+> gate protocol permission prompts; process backends do not have protocol-level
+> permission prompts, so constrain the configured command, args, env, and cwd.
 
 ## How it works
 

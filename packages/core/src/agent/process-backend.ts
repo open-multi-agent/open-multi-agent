@@ -8,7 +8,9 @@
  * semantics without introducing a new runtime dependency.
  */
 
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { LLMMessage, StreamEvent } from '../types.js'
+import { killProcessTree, killProcessTreeAndWait } from '../utils/process-tree.js'
 import type { AgentBackend, RunOptions, RunResult } from './runner.js'
 import {
   ZERO_PROCESS_USAGE,
@@ -71,9 +73,7 @@ export class ProcessBackend implements AgentBackend {
     }
 
     const abort = options.abortSignal
-    const onAbort = () => {
-      if (!child.killed) child.kill()
-    }
+    const onAbort = () => killProcessTree(child)
     abort?.addEventListener('abort', onAbort, { once: true })
 
     let stdout = ''
@@ -97,6 +97,11 @@ export class ProcessBackend implements AgentBackend {
     })
 
     const exit = waitForExit(child)
+    let exited = false
+    void exit.then(
+      () => { exited = true },
+      () => { exited = true },
+    )
 
     try {
       while (true) {
@@ -147,7 +152,9 @@ export class ProcessBackend implements AgentBackend {
     } finally {
       abort?.removeEventListener('abort', onAbort)
       wakeReader()
+      if (!exited) {
+        await killProcessTreeAndWait(child, exit)
+      }
     }
   }
 }
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
