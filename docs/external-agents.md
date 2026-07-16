@@ -51,6 +51,8 @@ const result = await oma.runTeam(team, 'Add a slugify() utility with tests, then
 The coordinator routes the coding work to `coder` based on its roster description; the
 subprocess does the file edits; `reviewer` then reads the result from shared memory.
 
+A runnable `process` version is at
+[`examples/integrations/external-agent-process.ts`](../packages/core/examples/integrations/external-agent-process.ts).
 A runnable ACP version is at
 [`examples/integrations/external-agent-acp.ts`](../packages/core/examples/integrations/external-agent-acp.ts).
 
