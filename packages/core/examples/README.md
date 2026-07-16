@@ -57,6 +57,7 @@ Reusable shapes for common multi-agent problems.
 | [`patterns/research-aggregation`](patterns/research-aggregation.ts) | Multi-source research collated by a synthesis agent. |
 | [`patterns/cost-tiered-pipeline`](patterns/cost-tiered-pipeline.ts) | Run the same four-stage pipeline twice to compare flagship vs tiered model cost. |
 | [`patterns/agent-handoff`](patterns/agent-handoff.ts) | Synchronous sub-agent delegation via `delegate_to_agent`. |
+| [`patterns/risk-gated-bash`](patterns/risk-gated-bash.ts) | Per-call `onToolCall` gate + `classifyBashCommand`: auto-pass read-only bash, human-review ambiguous, block destructive. |
 | [`patterns/plan-replay`](patterns/plan-replay.ts) | Pin a coordinator plan with `createPlanArtifact`, then replay it with `runFromPlan`, no coordinator re-run. |
 | [`patterns/consensus`](patterns/consensus.ts) | Proposer→judge refutation loop via `runConsensus()`: default judge prompt and per-judge `judgePrompt` function. |
 | [`patterns/cross-provider-reasoning`](patterns/cross-provider-reasoning.ts) | Preserve a reasoning model's thought stream across providers via `preserveReasoningAsText`. |

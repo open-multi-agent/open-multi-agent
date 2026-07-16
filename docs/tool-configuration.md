@@ -79,6 +79,66 @@ const customAgent: AgentConfig = {
 
 **Resolution order:** default-deny (no preset _and_ no allowlist ⇒ zero built-in tools) → preset → allowlist → denylist → framework safety rails. Custom / runtime tools bypass the grant step (registration is the grant) but still honor the denylist.
 
+## Per-call gating with `onToolCall`
+
+The layers above answer **"which tools are reachable?"** by operating on tool _names_. The `onToolCall` gate answers a different question one layer down: **"should _this specific invocation_ run right now?"** `bash` is a single allowed name that covers `ls -la` and `rm -rf /` equally; the gate inspects the actual arguments and can veto individual calls.
+
+The hook is **opt-in and off by default**. It runs once per tool invocation, after Zod input validation and before the tool implementation, and returns a decision:
+
+```typescript
+import type { ToolCallContext, ToolCallDecision } from '@open-multi-agent/core'
+
+const orchestrator = new OpenMultiAgent({
+  // Orchestrator-level default, inherited by any agent that sets no gate of its own.
+  onToolCall: async (ctx: ToolCallContext): Promise<ToolCallDecision> => {
+    // ctx: { toolName, input (post-validation), agentName, runId?, taskId? }
+    if (ctx.toolName !== 'bash') return { action: 'allow' }
+    if (/^\s*rm\b/.test(String(ctx.input.command))) {
+      return { action: 'deny', reason: 'rm is blocked' }
+    }
+    return { action: 'allow' }
+  },
+})
+```
+
+Key semantics:
+
+- **`deny` returns a structured error `ToolResult`; it never throws.** The model sees the `reason` as a normal tool error and can adapt (try a safer command, ask the user, stop) rather than crashing the run. A gate that throws or returns an invalid decision is turned into an error result too (fail closed).
+- **Human-in-the-loop lives inside your callback.** `await` your own CLI prompt, Slack button, or web dialog, then return `allow` or `deny`. The framework prescribes no review channel, keeping the surface small.
+- **Agent overrides orchestrator.** `AgentConfig.onToolCall` beats `OrchestratorConfig.onToolCall` for that agent, so a team can set a default policy while one specialist tightens or relaxes it. A standalone `new Agent({ ..., onToolCall })` wires the gate straight into its executor.
+- **Runs after the name-based grant.** Default-deny / allowlist / denylist resolution runs **first**; a tool that is not granted is refused before the gate is reached, so the gate only ever sees calls to already-reachable tools. Custom tools and MCP tools route through the same executor, so they are gated too.
+- **Orthogonal to `onApproval`.** `OrchestratorConfig.onApproval` gates whole task batches between orchestration rounds; `onToolCall` gates a single tool invocation during execution. They operate at different layers and compose.
+- **Observability.** When a gate runs, the `tool_call` trace event carries `gated: true`, `gateAction: 'allow' | 'deny'`, and (on deny) a `gateReason` that is redacted like other sensitive trace text, so `onTrace` consumers can audit every decision.
+
+> **Not a security boundary.** A gate that returns `deny` still relies on cooperating code; it is a coordination layer, not containment. `bash` remains un-sandboxed (see the callout below). For an actually-untrusted shell, use process-level isolation (a container / VM / seccomp); the gate is for *policy*, not *isolation*.
+
+### Shell risk classifier
+
+Writing regex tables by hand is tedious, so an optional, dependency-free classifier ships behind a subpath export. It scores a bash command as `safe | review | high`; you decide what each level means:
+
+```typescript
+import { classifyBashCommand } from '@open-multi-agent/core/classifiers'
+
+const orchestrator = new OpenMultiAgent({
+  onToolCall: async (ctx) => {
+    if (ctx.toolName !== 'bash') return { action: 'allow' }
+    const risk = classifyBashCommand(String(ctx.input.command))
+    if (risk.level === 'safe') return { action: 'allow' }
+    if (risk.level === 'high') return { action: 'deny', reason: risk.reason }
+    // 'review' → ask a human
+    return (await myUi.confirm(ctx, risk)) ? { action: 'allow' } : { action: 'deny', reason: risk.reason }
+  },
+})
+```
+
+- **`safe`**: read-only inspection (`ls`, `cat`, `pwd`, `grep`/`rg` with a path, `git status|log|diff|show`, ...).
+- **`review`**: context-heavy or ambiguous: `ls -R`, `find /` / `find ~` without `-maxdepth`, `grep -r` / `rg -r` without a scoped path, `tree`, `du`, and any unrecognised command (default: "don't run blind").
+- **`high`**: destructive / sensitive: `rm`, `sudo`, `curl ... | bash`, `dd`, `mkfs`, `chmod 777`/`-R`, `git push --force`, `npm publish`, writes to system paths.
+
+Compound commands are segmented on shell separators (`&&`, `||`, `;`, `|`, substitutions) and the **highest** risk found wins, so a safe prefix cannot smuggle a destructive suffix (`ls && rm -rf /` becomes `high`). Quoted spans are stripped first, so `echo "rm -rf /"` stays `safe`.
+
+The classifier is a **shallow heuristic, not a parser**; it can be fooled by obfuscation (variable indirection, base64-decode-then-exec, exotic quoting). It is convenience only: extend the tables, wrap it, or replace it entirely. See [`examples/patterns/risk-gated-bash.ts`](../packages/core/examples/patterns/risk-gated-bash.ts) for an end-to-end demo.
+
 ## Filesystem Working Directory
 
 Built-in filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) are sandboxed to a per-agent working directory. Paths must be absolute and resolve inside that directory; symlinks are resolved before the check so they cannot escape the configured root.
