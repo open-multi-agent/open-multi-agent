@@ -9,7 +9,7 @@
 ## Scope and impact
 
 <!--
-Affected areas: core / create-oma-app / docs and examples / CI and release.
+Name the affected workspace(s) or areas, including docs and examples, CI, or release.
 Call out public API or behavior changes, compatibility or migration impact,
 security or privacy considerations, and intentional non-goals. Write "None"
 where a category does not apply.
@@ -31,4 +31,4 @@ that was not run. Common checks include:
 - [ ] Tests were added or updated for changed behavior, or a rationale is provided
 - [ ] User-facing documentation and examples were updated, or this is not applicable
 - [ ] Compatibility, breaking changes, and migration requirements are documented, or this is not applicable
-- [ ] Dependency changes are justified; core provider SDKs remain optional and lazily loaded
+- [ ] Dependency changes are justified and preserve the package ownership boundaries documented in CONTRIBUTING

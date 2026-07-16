@@ -26,7 +26,7 @@ npm run test:scaffold  # End-to-end create-oma-app scaffold smoke test
 
 ## Running Tests
 
-Unit tests live in `packages/core/tests/` and `packages/create-oma-app/tests/`. They run without API keys or network access — provider SDKs and external processes are mocked where needed.
+Unit tests live in each workspace's `tests/` directory: currently `packages/core/tests/`, `packages/create-oma-app/tests/`, and `packages/otel/tests/`. They run without API keys or network access — provider SDKs and external processes are mocked where needed.
 
 ```bash
 npm test
@@ -62,8 +62,10 @@ CI is the source of truth for the full pre-merge matrix. It runs lint, unit test
 
 - TypeScript strict mode, ES modules (`.js` extensions in imports)
 - No additional linter/formatter configured — follow existing patterns
-- Keep dependencies minimal. Core has three direct runtime dependencies: `@anthropic-ai/sdk`, `openai`, and `zod`
-- Add provider SDKs to core as optional peer dependencies and load them lazily with dynamic `import()`
+- Keep dependency ownership explicit. Core must remain importable and runnable without optional integrations
+- Add new optional provider SDKs as peer dependencies and load them lazily with dynamic `import()`
+- Keep OpenTelemetry APIs, SDKs, semantic-convention packages, and exporters in `@open-multi-agent/otel`, never in the core root import
+- Version `@open-multi-agent/otel` independently from core and express core compatibility in its dependency range
 - Justify dependency changes to other workspaces in the PR description
 
 ## Architecture Overview
@@ -76,6 +78,7 @@ See the [README](../packages/core/README.md#architecture) for an architecture di
 - **Tools**: `packages/core/src/tool/framework.ts`, `packages/core/src/tool/executor.ts` — tool registry and execution
 - **LLM adapters**: `packages/core/src/llm/` — built-in providers + OpenAI-compatible + AI SDK bridge (see [docs/providers.md](../docs/providers.md))
 - **Observability**: `packages/core/src/observability/` — trace records, sinks, exporters, and stores
+- **OpenTelemetry adapter**: `packages/otel/src/` — optional OTel mapping and export integration kept outside core
 - **App scaffolder**: `packages/create-oma-app/src/` and `packages/create-oma-app/templates/` — CLI and starter templates
 
 ## Where to Contribute
