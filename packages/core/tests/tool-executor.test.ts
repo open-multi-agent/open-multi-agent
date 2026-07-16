@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { ToolRegistry, defineTool } from '../src/tool/framework.js'
 import { ToolExecutor, truncateToolOutput } from '../src/tool/executor.js'
-import type { ToolUseContext } from '../src/types.js'
+import type { ToolCallDecision, ToolUseContext } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,6 +36,12 @@ function makeExecutor(...tools: ReturnType<typeof defineTool>[]) {
   const registry = new ToolRegistry()
   for (const t of tools) registry.register(t)
   return { executor: new ToolExecutor(registry), registry }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => { resolve = r })
+  return { promise, resolve }
 }
 
 function jsonPayloadStringSchema() {
@@ -129,6 +135,64 @@ describe('ToolExecutor', () => {
     expect(execute).not.toHaveBeenCalled()
     expect(result.isError).toBe(true)
     expect(result.data).toContain('requires human approval')
+  })
+
+  it('does not execute the tool when aborted while onToolCall is pending', async () => {
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN', isError: false }))
+    const gateStarted = deferred<void>()
+    const gateDecision = deferred<{ action: 'allow' }>()
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'slow_gate',
+      description: 'Runs after a delayed gate.',
+      inputSchema: z.object({}),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, {
+      onToolCall: vi.fn(() => {
+        gateStarted.resolve()
+        return gateDecision.promise
+      }),
+    })
+    const controller = new AbortController()
+
+    const resultPromise = executor.execute(
+      'slow_gate',
+      {},
+      { ...dummyContext, abortSignal: controller.signal },
+    )
+    await gateStarted.promise
+    controller.abort()
+    gateDecision.resolve({ action: 'allow' })
+
+    const result = await resultPromise
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('aborted')
+  })
+
+  it.each([
+    ['null', null],
+    ['unknown action', { action: 'maybe' }],
+  ])('returns an error result when onToolCall returns a malformed decision: %s', async (_name, decision) => {
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN', isError: false }))
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'malformed_gate',
+      description: 'Uses a malformed gate decision.',
+      inputSchema: z.object({}),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, {
+      onToolCall: vi.fn(async () => decision as unknown as ToolCallDecision),
+    })
+
+    const result = await executor.execute('malformed_gate', {}, dummyContext)
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('invalid onToolCall decision')
   })
 
   it('catches tool execution errors and returns them as error results', async () => {
@@ -513,6 +577,27 @@ describe('ToolExecutor outputSchema validation', () => {
     const result = await executor.execute('json-truncated', {}, dummyContext)
     expect(result.isError).toBe(true)
     expect(result.data).toContain('Invalid output for tool "json-truncated"')
+  })
+
+  it('preserves gate metadata when output schema validation fails', async () => {
+    const tool = defineTool({
+      name: 'json-gated-invalid',
+      description: 'Returns invalid JSON output after the gate allows it.',
+      inputSchema: z.object({}),
+      outputSchema: jsonPayloadStringSchema(),
+      execute: async () => ({ data: 'not-json' }),
+    })
+    const registry = new ToolRegistry()
+    registry.register(tool)
+    const executor = new ToolExecutor(registry, {
+      onToolCall: async () => ({ action: 'allow' }),
+    })
+
+    const result = await executor.execute('json-gated-invalid', {}, dummyContext)
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('Invalid output for tool "json-gated-invalid"')
+    expect(result.metadata?.toolCallGate).toEqual({ action: 'allow' })
   })
 
   it('missing outputSchema is a no-op', async () => {

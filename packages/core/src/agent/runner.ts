@@ -1203,7 +1203,7 @@ export class AgentRunner implements AgentBackend {
                     gated: true,
                     gateAction: result.metadata.toolCallGate.action,
                     ...(result.metadata.toolCallGate.reason
-                      ? { gateReason: result.metadata.toolCallGate.reason }
+                      ? { gateReason: redactSensitiveText(result.metadata.toolCallGate.reason) }
                       : {}),
                   }
                 : {}),

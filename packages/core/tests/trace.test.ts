@@ -389,6 +389,45 @@ describe('AgentRunner trace events', () => {
     expect(tool.gateReason).toBe('blocked by policy')
   })
 
+  it('redacts sensitive gateReason values in tool_call traces', async () => {
+    const traces: TraceEvent[] = []
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN' }))
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'bash',
+        description: 'runs shell',
+        inputSchema: z.object({ command: z.string() }),
+        execute,
+      }),
+    )
+    const executor = new ToolExecutor(registry, {
+      onToolCall: async () => ({ action: 'deny', reason: 'password=hunter2' }),
+    })
+    const adapter = mockAdapter([
+      toolUseResponse('bash', { command: 'echo ok' }),
+      textResponse('Handled'),
+    ])
+
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'test-model',
+      agentName: 'tooler',
+      allowedTools: ['bash'],
+    })
+
+    await runner.run(
+      [{ role: 'user', content: [{ type: 'text', text: 'test' }] }],
+      { onTrace: (e) => { traces.push(e) }, runId: 'run-redacted-gate', traceAgent: 'tooler' },
+    )
+
+    expect(execute).not.toHaveBeenCalled()
+    const tool = traces.find((t): t is Extract<TraceEvent, { type: 'tool_call' }> => t.type === 'tool_call')!
+    expect(tool.gated).toBe(true)
+    expect(tool.gateAction).toBe('deny')
+    expect(tool.gateReason).toBe('password=[redacted]')
+    expect(tool.gateReason).not.toContain('hunter2')
+  })
+
   it('tool_call trace.output reflects executor truncation', async () => {
     // Pins the jsdoc contract on `ToolCallTrace.output`: whatever truncation
     // ToolExecutor applies (per-tool maxOutputChars or agent-level maxToolOutputChars)

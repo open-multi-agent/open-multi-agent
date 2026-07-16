@@ -174,7 +174,7 @@ export class ToolExecutor {
     }
 
     // --- Abort check after parse (parse can be expensive for large inputs) ---
-    if (context.abortSignal?.aborted === true) {
+    if (this.isAbortSignalAborted(context.abortSignal)) {
       return this.errorResult(
         `Tool "${tool.name}" was aborted before execution began.`,
       )
@@ -183,7 +183,7 @@ export class ToolExecutor {
     const gate = options.onToolCall ?? this.onToolCall
     let gateMetadata: ToolCallGateMetadata | undefined
     if (gate) {
-      let decision: Awaited<ReturnType<ToolCallGate>>
+      let decision: unknown
       try {
         decision = await gate({
           toolName: tool.name,
@@ -195,9 +195,17 @@ export class ToolExecutor {
       } catch (err) {
         return this.errorResult(`Tool "${tool.name}" onToolCall hook threw an error: ${this.errorMessage(err)}`)
       }
-      gateMetadata = {
-        action: decision.action,
-        ...(decision.action === 'deny' && decision.reason !== undefined ? { reason: decision.reason } : {}),
+      gateMetadata = this.gateMetadataFromDecision(decision)
+      if (!gateMetadata) {
+        return this.errorResult(
+          `Tool "${tool.name}" onToolCall hook returned an invalid onToolCall decision.`,
+        )
+      }
+      if (this.isAbortSignalAborted(context.abortSignal)) {
+        return this.errorResult(
+          `Tool "${tool.name}" was aborted before execution began.`,
+          { toolCallGate: gateMetadata },
+        )
       }
       if (gateMetadata.action === 'deny') {
         const suffix = gateMetadata.reason ? `: ${gateMetadata.reason}` : '.'
@@ -215,6 +223,7 @@ export class ToolExecutor {
         if (!outputParseResult.success) {
           return this.errorResult(
             `Invalid output for tool "${tool.name}":\n${outputParseResult.issuesMessage}`,
+            gateMetadata ? { toolCallGate: gateMetadata } : undefined,
           )
         }
       }
@@ -269,6 +278,22 @@ export class ToolExecutor {
         toolCallGate: gateMetadata,
       },
     }
+  }
+
+  private gateMetadataFromDecision(decision: unknown): ToolCallGateMetadata | undefined {
+    if (decision === null || typeof decision !== 'object') return undefined
+    const action = (decision as { readonly action?: unknown }).action
+    if (action !== 'allow' && action !== 'deny') return undefined
+    const reason = (decision as { readonly reason?: unknown }).reason
+    if (reason !== undefined && typeof reason !== 'string') return undefined
+    if (action === 'deny' && reason !== undefined) {
+      return { action, reason }
+    }
+    return { action }
+  }
+
+  private isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
+    return signal?.aborted === true
   }
 
   private errorMessage(err: unknown): string {
