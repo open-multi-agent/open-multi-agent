@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "..",
+    "paths": {
+      "@open-multi-agent/core": ["../core/src/index.ts"]
+    }
+  }
+}

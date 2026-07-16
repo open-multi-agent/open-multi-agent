@@ -52,7 +52,7 @@
 
 Graph-first frameworks make you wire every node and edge up front. OMA runs a **dynamic workflow**: a coordinator turns the goal into a task DAG at runtime, parallelizes independent tasks, and synthesizes the result. That plan is emitted as data for a deterministic scheduler to run, so it stays inspectable and replayable. It is the same bet Anthropic made with Claude Code's [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code); OMA offers it as an open library that runs on any provider, in your own backend.
 
-Lightweight core: the engine plus Anthropic, OpenAI, and any OpenAI-compatible endpoint work out of the box; Gemini, Bedrock, MCP, and the Vercel AI SDK bridge are opt-in peer dependencies.
+Lightweight core: the engine plus Anthropic, OpenAI, and any OpenAI-compatible endpoint work out of the box; Gemini, Bedrock, MCP, and the Vercel AI SDK bridge are opt-in peer dependencies. OpenTelemetry is a separately installable integration (`@open-multi-agent/otel`): OTel APIs, SDKs, semantic-convention mappings, and exporter integrations stay outside the core import, and applications explicitly supply their own provider.
 
 ## Contents
 
@@ -384,9 +384,9 @@ See [docs/providers.md](https://github.com/open-multi-agent/open-multi-agent/blo
 
 ### Dependencies
 
-Installing `@open-multi-agent/core` pulls in three runtime dependencies: `@anthropic-ai/sdk`, `openai`, and `zod`. That is the entire core: Anthropic, OpenAI, and every OpenAI-compatible endpoint run on these three alone.
+At present, `@open-multi-agent/core` directly installs `@anthropic-ai/sdk`, `openai`, and `zod`; this is an implementation detail, not a fixed dependency-count policy. Anthropic, OpenAI, and every OpenAI-compatible endpoint use those packages today.
 
-Everything else is an opt-in peer dependency you install only when you reach for it. Each loads lazily, so a project that never uses one never installs it.
+Other provider integrations are opt-in peer dependencies that load lazily, so a project that never uses one never installs it. OpenTelemetry integration is a separately installable package: OTel APIs, SDKs, semantic-convention mappings, and exporter integrations live in `@open-multi-agent/otel`, so importing or running core does not require OpenTelemetry.
 
 | Capability | Install | Trigger |
 |------------|---------|---------|
@@ -394,6 +394,7 @@ Everything else is an opt-in peer dependency you install only when you reach for
 | Bedrock provider | `npm i @aws-sdk/client-bedrock-runtime` | `provider: 'bedrock'` |
 | MCP tools | `npm i @modelcontextprotocol/sdk` | `connectMCPTools()` |
 | Vercel AI SDK bridge | `npm i ai @ai-sdk/<provider>` | `new AISdkAdapter(...)` |
+| OpenTelemetry traces | `npm i @open-multi-agent/otel` plus your application-selected OTel SDK/exporter | `createOtelTraceSink(...)` |
 
 ### Vercel AI SDK (optional)
 
@@ -442,7 +443,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable run identity and outcome semantics on every top-level result, plus `onProgress`, `onTrace`, and the post-run dashboard.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable run identity and outcome semantics on every top-level result, plus `onProgress`, `onTrace`, and the post-run dashboard. [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) is the optional adapter for applications with an explicitly configured OpenTelemetry provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity rules, v1 compatibility, and restore over any `MemoryStore`.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.

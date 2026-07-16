@@ -207,6 +207,73 @@ semantics; TraceStore deliberately provides none of those. CheckpointStore
 persists execution state used to restore work. Losing telemetry must not roll
 back a durable run, and deleting traces must not imply deleting checkpoints or
 shared memory.
+## Optional OpenTelemetry package
+
+`@open-multi-agent/otel` is an independent workspace/package that adapts OBS-2
+`TraceRecord` batches to OpenTelemetry spans. It is not imported by core, so a
+core-only installation has no OpenTelemetry runtime dependency or import path.
+
+```typescript
+import { OpenMultiAgent } from '@open-multi-agent/core'
+import { createOtelTraceSink } from '@open-multi-agent/otel'
+
+// The application has already constructed and configured this OTel provider.
+const sink = createOtelTraceSink({
+  tracerProvider: provider,
+  metadata: { environment: 'production', release: '2026.07.15' },
+})
+const orchestrator = new OpenMultiAgent({ observability: { sinks: [sink] } })
+```
+
+Pass exactly one application-owned `tracer` or `tracerProvider`; supplying
+neither is a configuration error. The adapter never reads, initializes, or
+replaces the global provider. `forceFlush()` delegates to a supplied provider
+when it supports that operation. Provider shutdown is skipped by default, even
+when available: set `shutdownOnShutdown: true` only when the adapter owns that
+provider's lifecycle. Rejection/timeout maps to the OBS-2 exporter result and
+diagnostics, never to an Agent/Task/Run failure.
+
+OMA run/agent/task/LLM/tool/consensus/checkpoint records become spans;
+retry, verdict, first-chunk, and stream records become `oma.*` events. DAG,
+delegation, consumed-synthesis, and restore-continuation relations become OTel
+links. The adapter keeps `schemaVersion: 2`, run/attempt, OMA trace/span IDs,
+record ID, and sequence as stable `oma.*` attributes. It maps `error`,
+`timeout`, and `budget_exhausted` to OTel `Error`; all remaining OMA statuses
+remain OTel `Unset` and are preserved in `oma.status`.
+
+Links whose targets were observed by the same adapter use the target span's
+actual SDK-generated OTel context. Each link records `oma.link.resolved` plus
+the stable OMA target trace/span IDs. A same-process restore resolves through a
+bounded cache of the 256 most recent root contexts. After a process restart the
+previous SDK context is unavailable, so `continued_from` falls back to a remote
+unsampled context built from the OMA IDs and marks itself unresolved; the OMA
+target attributes remain available for correlation.
+
+Completed OTel `Span` objects are released immediately. Lightweight contexts
+live only until their root span closes, at which point the trace-local registry
+is cleared. Root close and adapter shutdown end any remaining open spans as
+incomplete before clearing state, so telemetry loss cannot produce an unbounded
+live-span registry.
+
+For LLM/tool spans it also emits a bounded compatibility subset of the current
+development-status GenAI conventions (provider/model, token/cache/reasoning
+counts, tool name, and TTFT). Every span records
+`oma.otel.mapping.version` and `oma.otel.gen_ai_semconv.version`; the stable
+contract is `oma.*`, not the evolving GenAI field names. It emits no metrics,
+so no high-cardinality run/task/tenant/request fields become metric labels.
+
+The adapter exports no prompt, completion, tool arguments/results, raw payload,
+credential, chain-of-thought, or reasoning content. Numeric token counts remain
+eligible. It forwards only an explicit low-sensitivity `oma.*` allowlist rather
+than arbitrary record attributes. `contentCapture` is a reserved disabled-only extension point; there
+is no content-capture switch in this release.
+
+The first release intentionally provides no OTLP convenience subpath. The
+application selects its own OTel SDK and OTLP/exporter implementation, avoiding
+eager OTLP imports, implicit global-provider configuration, and a second
+SDK/exporter compatibility matrix. See
+[`packages/otel/README.md`](../packages/otel/README.md) for the full API and
+mapping table.
 
 ## Flush and shutdown
 

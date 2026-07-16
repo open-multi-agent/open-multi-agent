@@ -5,8 +5,7 @@
  *
  * {@link InMemoryStore} lives in a `Map` and dies with the process, so the
  * checkpoint it holds does not outlive a crash. `FileStore` closes that gap
- * using only Node built-ins (no new runtime dependency), keeping the
- * three-dependency promise intact.
+ * using only Node built-ins, so it adds no runtime dependency to core.
  *
  * **Design.** One JSON file holds the whole store. An in-memory `Map` mirrors
  * it, so reads (`get`/`list`) are served from memory and match

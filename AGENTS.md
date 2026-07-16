@@ -23,12 +23,12 @@ Tests live in `tests/` (vitest), E2E under `tests/e2e/`. Standalone `examples/` 
 
 - **ESM imports need `.js` extensions**: `import { X } from './foo.js'` even though the source is `foo.ts`. TypeScript strict; no eslint/prettier, so match existing patterns.
 - **After a change**, run `npm run lint` (typecheck) + the relevant tests. `tests/` need no API keys; `examples/` and `tests/e2e/` do.
-- **Keep runtime deps at three** (`@anthropic-ai/sdk`, `openai`, `zod`); new SDKs enter as lazy optional peers.
+- **Keep dependency ownership explicit** — there is no fixed runtime-dependency count. OpenTelemetry-specific APIs, SDKs, semantic-convention packages, and exporters belong in `@open-multi-agent/otel`; `@open-multi-agent/core` must remain importable and runnable without them. New optional provider SDKs should continue to load lazily.
 - **PRs** must pass `npm run lint && npm test` (CI on Node 18/20/22). Conventional commits, reference PR/issue #. Full flow: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 ## Architecture
 
-ES module TypeScript framework for multi-agent orchestration. **Three runtime dependencies only**: `@anthropic-ai/sdk`, `openai`, `zod`. Optional peers (`@aws-sdk/client-bedrock-runtime`, `@google/genai`, `@modelcontextprotocol/sdk`, `ai`) load lazily via dynamic `import()` so unused SDKs never resolve; the three-dependency promise covers `dependencies` only.
+ES module TypeScript framework for multi-agent orchestration. Core owns the dependencies required by its native provider contracts; optional peers (`@aws-sdk/client-bedrock-runtime`, `@google/genai`, `@modelcontextprotocol/sdk`, `ai`) load lazily via dynamic `import()` so unused SDKs never resolve. OpenTelemetry APIs, SDKs, semantic conventions, and exporters are owned by the separately installable `@open-multi-agent/otel` package, never by the core root import.
 
 **`OpenMultiAgent`** (`src/orchestrator/orchestrator.ts`) is the top-level public API with three execution modes:
 

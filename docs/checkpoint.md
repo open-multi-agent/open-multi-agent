@@ -44,7 +44,7 @@ const orchestrator = new OpenMultiAgent({ checkpoint: true }) // default for all
 
 ## Durable persistence: `FileStore`
 
-`InMemoryStore` is a plain `Map` — it dies with the process, so a checkpoint held there does not survive a restart. For durability out of the box, use the bundled **`FileStore`**: a zero-dependency, filesystem-backed `MemoryStore` (Node built-ins only, so the three-dependency promise holds). Each write lands atomically — temp file → `fsync` → `rename` — so a reader never sees a half-written file, even across a power loss, not just a process crash.
+`InMemoryStore` is a plain `Map` — it dies with the process, so a checkpoint held there does not survive a restart. For durability out of the box, use the bundled **`FileStore`**: a zero-dependency, filesystem-backed `MemoryStore` that uses only Node built-ins and adds no runtime dependency to core. Each write lands atomically — temp file → `fsync` → `rename` — so a reader never sees a half-written file, even across a power loss, not just a process crash.
 
 ```typescript
 import { OpenMultiAgent, Team, InMemoryStore, FileStore } from '@open-multi-agent/core'

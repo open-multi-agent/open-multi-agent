@@ -52,7 +52,7 @@
 
 图优先的框架要求你预先列出每个节点与每条边。OMA 是**动态工作流**（dynamic workflow）：协调者在运行时把目标拆成任务 DAG，并行执行独立任务并合成结果；这份计划以数据形式交给确定性调度器执行，因此始终可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一押注；OMA 以开源库的形式把它带到任意 provider、你自己的后端。
 
-轻量内核：编排引擎加上 Anthropic、OpenAI 及任意 OpenAI 兼容端点开箱即用；Gemini、Bedrock、MCP、Vercel AI SDK bridge 为可选 peer 依赖，按需安装。
+轻量内核：编排引擎加上 Anthropic、OpenAI 及任意 OpenAI 兼容端点开箱即用；Gemini、Bedrock、MCP、Vercel AI SDK bridge 为可选 peer 依赖，按需安装。OpenTelemetry 通过独立可选包 `@open-multi-agent/otel` 集成：OTel API、SDK、semantic convention 映射和 exporter 集成均不进入 core root import，应用显式提供自己的 provider。
 
 ## 快速开始
 
@@ -136,7 +136,7 @@ npm test               # 运行测试套件
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 每个顶层结果都包含稳定的运行标识（identity）与结果（outcome）语义，并提供 `onProgress`、`onTrace` 和运行后 dashboard。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 每个顶层结果都包含稳定的运行标识（identity）与结果（outcome）语义，并提供 `onProgress`、`onTrace` 和运行后 dashboard。[`@open-multi-agent/otel`](packages/otel/README.md) 是面向已显式配置 OpenTelemetry provider 的应用的可选适配器。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 在任意 `MemoryStore` 上保存可选快照；`restore()` 保留 `runId`、递增 `attempt`，并启动新的 trace。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
