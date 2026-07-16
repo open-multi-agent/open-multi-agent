@@ -137,6 +137,133 @@ intended for unit tests, local inspection, and short-lived processes. It has no
 filesystem or database dependency, and it returns copies rather than mutable
 references to its internal records.
 
+### FileTraceStore: persistent single-process reference
+
+`FileTraceStore` is the Node-only reference implementation for local
+development, tests, CLIs, and modest single-process services. It ships in the
+core package—there is no extra dependency to install—but it must be imported
+from the explicit Node-only subpath:
+
+```typescript
+import { FileTraceStore } from '@open-multi-agent/core/observability/file'
+import {
+  BatchingTraceSink,
+  TraceStoreExporter,
+} from '@open-multi-agent/core/observability'
+
+const store = await FileTraceStore.open('./.oma/traces.ndjson')
+const sink = new BatchingTraceSink(new TraceStoreExporter(store))
+
+try {
+  const orchestrator = new OpenMultiAgent({ observability: { sinks: [sink] } })
+  await orchestrator.runAgent(agent, prompt)
+  await sink.forceFlush({ timeoutMs: 5_000 }) // exporter → FileTraceStore
+  await store.flush()                         // fsync the trace file
+} finally {
+  await sink.shutdown({ timeoutMs: 5_000 })
+  await store.close()
+}
+```
+
+Neither `@open-multi-agent/core` nor
+`@open-multi-agent/core/observability` exports or imports this implementation.
+Only `@open-multi-agent/core/observability/file` loads its Node filesystem
+code. Importing any of these modules performs no file I/O; `FileTraceStore.open`
+is the explicit creation/recovery boundary.
+
+`FileTraceStore` and `InMemoryTraceStore` run the same TraceStore contract.
+The in-memory store has no lifecycle or persistence and its state disappears
+with the process. The file store scans its log on open, rebuilds the same
+in-memory indexes, serializes every read/mutation on one instance, and exposes
+`flush`, `close`, and `compact`. Query cursors remain store-instance-specific:
+a cursor from a closed instance is intentionally invalid after reopen; start a
+fresh pagination walk.
+
+#### Disk envelope and recovery
+
+The append-only file is UTF-8 NDJSON with this versioned envelope:
+
+```text
+file_header(format="oma.file_trace_store", formatVersion=1, traceSchemaMajor=2)
+batch_start(batchId, operation, itemCount, payloadSha256)
+batch_item(batchId, index, payload)  # one TraceRecord or delete tombstone
+...
+batch_commit(batchId, itemCount, payloadSha256)
+```
+
+The format version belongs to the file envelope; each trace payload still has
+its own `schemaVersion: 2`. Recovery does not infer either version from memory.
+Unknown additive fields inside supported TraceRecord v2 payloads round-trip
+unchanged.
+
+An append/delete batch becomes visible only when its commit marker is a
+complete NDJSON line and its id, contiguous item count, and SHA-256 checksum
+match the start marker and payloads. On open, the store scans in file order and
+replays only committed batches. A final truncated line or trailing uncommitted
+batch produces a structured, payload-free diagnostic and is truncated back to
+the last committed byte boundary. Thus one API batch is entirely visible or
+entirely absent after restart. A malformed complete line, corruption before
+the tail, invalid committed payload, unsupported file format, or unsupported
+trace schema fails open loudly; it is never skipped.
+
+Delete and retention operations append committed tombstone batches containing
+the exact logical run IDs removed. Reopen therefore cannot resurrect deleted
+records, and it does not re-evaluate retention against a different clock.
+
+#### Write, flush, close, and failure semantics
+
+- A successful `append` means the complete committed envelope was accepted by
+  the operating system's file write and the descriptor was closed. It does
+  **not** mean `fsync` completed.
+- `flush()` waits behind all operations accepted before it and `fsync`s the
+  target file. Repeat calls are safe. It is the explicit boundary for surviving
+  an OS crash/power loss to the extent promised by the local filesystem.
+- `close()` stops accepting new operations, waits for already accepted work,
+  performs the same file `fsync`, and is idempotent. Calls other than repeated
+  `close()` reject afterward with a structured `CLOSED` error.
+- Graceful CLI/server shutdown should flush the batching sink first, then close
+  the store. On an abrupt process exit, fully written but not fsynced batches
+  may be lost by an OS/power failure; a process crash alone normally leaves
+  writes already accepted by the kernel recoverable.
+- Write, permission, disk-full, fsync, and rename failures reject with
+  `FileTraceStoreError`. They are never reported as successful. Error and
+  diagnostic messages contain no TraceRecord or telemetry payload.
+
+New files request mode `0600`. Platforms without POSIX mode enforcement emit a
+diagnostic and rely on their native access controls. The store registers no
+signal handlers and never calls `process.exit()`.
+
+#### Crash-safe compaction
+
+`await store.compact()` writes only the current effective records, in stable
+query/record order, to `<path>.compact.tmp` in the same directory. It sets mode
+`0600`, flushes/fsyncs the temp file, atomically renames it over the target, and
+fsyncs the parent directory when the platform/filesystem supports directory
+fsync. A rename failure leaves the original target authoritative and usable.
+An interrupted temp beside an existing target is diagnosed as stale and is
+ignored until the next compaction overwrites it. A temp without its target is
+treated as ambiguous possible data and open fails rather than creating an
+empty store. Repeated compaction of unchanged state is byte-deterministic.
+
+Compaction does not change query results. Deleted/retention-cleaned records and
+their tombstones disappear from the compacted file.
+
+#### Scope and migration boundary
+
+This is a reference store, not a database. It deliberately provides no
+cross-process lock, multi-process writer coordination, network-filesystem
+consistency, high-concurrency tuning, full-text search, advanced analytics,
+tenant authentication, or RBAC. Do not let two instances write one path, and
+do not use it as a shared NFS/SMB trace backend. For those requirements,
+implement the storage-medium-neutral `TraceStore` contract in a separate
+database adapter/package and migrate by replaying the committed TraceRecord
+stream. No database driver belongs in the core or this subpath.
+
+Use `npm run build -w @open-multi-agent/core` followed by
+`npm run bench:file-trace-store -w @open-multi-agent/core` for the repeatable
+1k/10k local boundary benchmark (append, fsync, reopen, query, compaction,
+heap estimate, file size, and batch-size comparison).
+
 ### Append, schema, and materialization
 
 `append(records)` accepts a batch atomically: validation failure leaves the
