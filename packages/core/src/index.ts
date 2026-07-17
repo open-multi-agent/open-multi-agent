@@ -59,6 +59,24 @@ export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 
 export { renderTeamRunDashboard } from './dashboard/render-team-run-dashboard.js'
+export { renderRunViewer } from './dashboard/render-run-viewer.js'
+export { RunViewerInputError, buildRunViewerModel } from './dashboard/run-viewer-model.js'
+export type {
+  RunViewerDagLayout,
+  RunViewerEvent,
+  RunViewerFact,
+  RunViewerInput,
+  RunViewerInputErrorCode,
+  RunViewerLink,
+  RunViewerModel,
+  RunViewerOptions,
+  RunViewerSourceMode,
+  RunViewerSpan,
+  RunViewerStatus,
+  RunViewerSummary,
+  RunViewerTask,
+  RunViewerWarning,
+} from './dashboard/run-viewer-model.js'
 
 // ---------------------------------------------------------------------------
 // Agent layer

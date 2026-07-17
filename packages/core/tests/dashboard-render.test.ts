@@ -36,7 +36,7 @@ describe('renderTeamRunDashboard', () => {
     expect(beforeData.toLowerCase()).not.toMatch(/\sonerror\s*=/)
   })
 
-  it('keeps task description text in JSON payload', () => {
+  it('excludes task description text from the JSON payload', () => {
     const description = 'danger: </script><svg onload=alert(1)>'
     const html = renderTeamRunDashboard({
       success: true,
@@ -57,13 +57,12 @@ describe('renderTeamRunDashboard', () => {
     const start = html.indexOf('id="oma-data">')
     const contentStart = start + 'id="oma-data">'.length
     const end = html.indexOf('</script>', contentStart)
-    const parsed = JSON.parse(html.slice(contentStart, end)) as {
-      tasks: Array<{ description?: string }>
-    }
-    expect(parsed.tasks[0]!.description).toBe(description)
+    const parsed = JSON.parse(html.slice(contentStart, end)) as { tasks: Array<{ description?: string }> }
+    expect(parsed.tasks[0]!.description).toBeUndefined()
+    expect(html).not.toContain('svg onload')
   })
 
-  it('keeps task result text in JSON payload', () => {
+  it('excludes task result text from the JSON payload', () => {
     const result = 'final output </script><img src=x onerror=alert(1)>'
     const html = renderTeamRunDashboard({
       success: true,
@@ -84,10 +83,9 @@ describe('renderTeamRunDashboard', () => {
     const start = html.indexOf('id="oma-data">')
     const contentStart = start + 'id="oma-data">'.length
     const end = html.indexOf('</script>', contentStart)
-    const parsed = JSON.parse(html.slice(contentStart, end)) as {
-      tasks: Array<{ result?: string }>
-    }
-    expect(parsed.tasks[0]!.result).toBe(result)
+    const parsed = JSON.parse(html.slice(contentStart, end)) as { tasks: Array<{ result?: string }> }
+    expect(parsed.tasks[0]!.result).toBeUndefined()
+    expect(html).not.toContain('final output')
   })
 
   it('does not reference remote dashboard assets', () => {
@@ -105,7 +103,7 @@ describe('renderTeamRunDashboard', () => {
     expect(html).not.toContain('fonts.googleapis.com')
   })
 
-  it('redacts sensitive-looking values from the embedded JSON payload', () => {
+  it('redacts safe display fields and excludes sensitive source fields from the embedded payload', () => {
     const secret = 'sk-dashboardsecretvalue1234567890'
     const html = renderTeamRunDashboard({
       success: true,
@@ -113,7 +111,7 @@ describe('renderTeamRunDashboard', () => {
       tasks: [
         {
           id: 't1',
-          title: 'task',
+          title: `task OPENAI_API_KEY=${secret}`,
           description: `OPENAI_API_KEY=${secret}`,
           result: `Authorization: Bearer ${secret}`,
           status: 'completed',
@@ -128,13 +126,27 @@ describe('renderTeamRunDashboard', () => {
     const contentStart = start + 'id="oma-data">'.length
     const end = html.indexOf('</script>', contentStart)
     const parsed = JSON.parse(html.slice(contentStart, end)) as {
-      goal: string
-      tasks: Array<{ description?: string; result?: string }>
+      tasks: Array<{ title: string; description?: string; result?: string }>
     }
 
     expect(html).not.toContain(secret)
-    expect(parsed.goal).toBe('password=[redacted]')
-    expect(parsed.tasks[0]!.description).toBe('OPENAI_API_KEY=[redacted]')
-    expect(parsed.tasks[0]!.result).toBe('Authorization: [redacted]')
+    expect(parsed.tasks[0]!.title).toBe('task OPENAI_API_KEY=[redacted]')
+    expect(parsed.tasks[0]!.description).toBeUndefined()
+    expect(parsed.tasks[0]!.result).toBeUndefined()
+    expect(html).not.toContain('hunter2')
+  })
+
+  it('emits a restrictive offline CSP and the unified viewer controls', () => {
+    const html = renderTeamRunDashboard({
+      success: true,
+      tasks: [],
+      agentResults: new Map(),
+      totalTokenUsage: { input_tokens: 0, output_tokens: 0 },
+    })
+
+    expect(html).toContain("default-src 'none'")
+    expect(html).toContain('id="waterfallTab"')
+    expect(html).toContain('id="dagTab"')
+    expect(html).toContain('id="details"')
   })
 })
