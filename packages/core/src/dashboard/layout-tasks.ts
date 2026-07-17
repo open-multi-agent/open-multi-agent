@@ -15,6 +15,9 @@ export interface LayoutTasksResult {
   readonly nodeH: number
 }
 
+export const DAG_NODE_WIDTH = 292
+export const DAG_NODE_HEIGHT = 148
+
 /**
  * Assigns each task to a column by longest path from roots (topological level),
  * then stacks rows within each column. Used by the dashboard canvas sizing.
@@ -72,10 +75,10 @@ export function layoutTasks<T extends LayoutTaskInput>(taskList: readonly T[]): 
   }
 
   const sortedLevels = Array.from(cols.keys()).sort((a, b) => a - b)
-  const nodeW = 256
-  const nodeH = 142
-  const colGap = 96
-  const rowGap = 72
+  const nodeW = DAG_NODE_WIDTH
+  const nodeH = DAG_NODE_HEIGHT
+  const colGap = 104
+  const rowGap = 76
   const padX = 120
   const padY = 100
   const positions = new Map<string, { x: number; y: number }>()
@@ -92,7 +95,7 @@ export function layoutTasks<T extends LayoutTaskInput>(taskList: readonly T[]): 
     })
   }
 
-  const width = Math.max(1600, padX * 2 + sortedLevels.length * (nodeW + colGap))
+  const width = Math.max(1200, padX * 2 + sortedLevels.length * (nodeW + colGap))
   const height = Math.max(700, padY * 2 + maxRows * (nodeH + rowGap))
   return { positions, width, height, nodeW, nodeH }
 }

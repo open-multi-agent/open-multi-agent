@@ -1,6 +1,7 @@
 /** Pure, self-contained HTML renderer for one OMA run (no filesystem or network I/O). */
 
 import { redactSensitiveObject } from '../utils/redaction.js'
+import { DAG_NODE_HEIGHT, DAG_NODE_WIDTH } from './layout-tasks.js'
 import { layoutWaterfall } from './layout-waterfall.js'
 import {
   buildRunViewerModel,
@@ -119,7 +120,7 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     .dag-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
     .dag-nodes { position: absolute; inset: 0; }
     .dag-node {
-      position: absolute; width: 256px; min-height: 126px; padding: 13px 14px 12px;
+      position: absolute; width: ${DAG_NODE_WIDTH}px; min-height: ${DAG_NODE_HEIGHT}px; padding: 16px 17px 14px;
       text-align: left; color: var(--ink); border: 1px solid var(--line);
       background: linear-gradient(145deg, rgba(23,31,43,.98), rgba(12,16,23,.98));
       box-shadow: 0 12px 28px rgba(0,0,0,.24); cursor: pointer; border-radius: var(--radius);
@@ -127,10 +128,10 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     .dag-node:hover { border-color: var(--line-strong); transform: translateY(-1px); }
     .dag-node.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), 0 15px 35px rgba(0,0,0,.4); }
     .node-top { display: flex; justify-content: space-between; gap: 10px; }
-    .node-id { font: 700 9px/1 var(--mono); letter-spacing: .08em; color: var(--cyan); }
-    .status-pill { padding: 3px 6px; border: 1px solid currentColor; font: 700 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-    .node-title { margin: 17px 0 15px; font: 750 15px/1.18 var(--display); letter-spacing: .015em; }
-    .node-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 10px/1 var(--mono); }
+    .node-id { font: 700 10px/1 var(--mono); letter-spacing: .08em; color: var(--cyan); }
+    .status-pill { padding: 4px 7px; border: 1px solid currentColor; font: 700 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .node-title { margin: 19px 0 17px; font: 750 16px/1.2 var(--display); letter-spacing: .015em; }
+    .node-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 11px/1 var(--mono); }
     .waterfall { height: 100%; overflow: auto; scrollbar-color: var(--line-strong) transparent; }
     .waterfall-head {
       position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: minmax(270px,34%) 1fr 82px;
@@ -348,7 +349,7 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
         if (!tasks.length) { els.dagNodes.appendChild(text('div', 'No matching tasks. Reset filters or inspect the Waterfall.', 'empty')); return; }
         var positions = (payload.dag && payload.dag.positions) || {};
         var width = (payload.dag && payload.dag.width) || 1200; var height = (payload.dag && payload.dag.height) || 520;
-        var nodeW = (payload.dag && payload.dag.nodeW) || 272; var nodeH = (payload.dag && payload.dag.nodeH) || 132;
+        var nodeW = (payload.dag && payload.dag.nodeW) || ${DAG_NODE_WIDTH}; var nodeH = (payload.dag && payload.dag.nodeH) || ${DAG_NODE_HEIGHT};
         els.dagCanvas.style.width = width + 'px'; els.dagCanvas.style.height = height + 'px'; els.dagEdges.setAttribute('viewBox', '0 0 ' + width + ' ' + height); els.dagEdges.setAttribute('width', width); els.dagEdges.setAttribute('height', height);
         var ns = 'http://www.w3.org/2000/svg'; var defs = document.createElementNS(ns, 'defs'); var marker = document.createElementNS(ns, 'marker'); marker.setAttribute('id','dag-arrow'); marker.setAttribute('markerWidth','8'); marker.setAttribute('markerHeight','8'); marker.setAttribute('refX','7'); marker.setAttribute('refY','4'); marker.setAttribute('orient','auto'); var arrow = document.createElementNS(ns,'path'); arrow.setAttribute('d','M0 0 L8 4 L0 8 z'); arrow.setAttribute('fill','#3b495d'); marker.appendChild(arrow); defs.appendChild(marker); els.dagEdges.appendChild(defs);
         var visible = new Set(tasks.map(function (task) { return task.id; }));

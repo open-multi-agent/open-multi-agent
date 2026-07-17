@@ -13,6 +13,14 @@ describe('layoutTasks', () => {
     expect(positions.get('b')!.x).toBeLessThan(positions.get('c')!.x)
   })
 
+  it('uses the readable default card dimensions for layout and edge anchors', () => {
+    const { nodeW, nodeH, width } = layoutTasks([{ id: 'a', dependsOn: [] as const }])
+
+    expect(nodeW).toBe(292)
+    expect(nodeH).toBe(148)
+    expect(width).toBe(1200)
+  })
+
   it('places a merge node after all of its dependencies (diamond)', () => {
     const tasks = [
       { id: 'root', dependsOn: [] as const },

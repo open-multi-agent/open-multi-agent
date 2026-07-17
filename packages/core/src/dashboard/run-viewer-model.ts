@@ -9,7 +9,7 @@ import type {
 import type { MaterializedSpan, StoredRun } from '../observability/store.js'
 import type { SpanEndRecord } from '../observability/records.js'
 import { TRACE_STORE_SCHEMA_MAJOR } from '../observability/store.js'
-import { layoutTasks } from './layout-tasks.js'
+import { DAG_NODE_HEIGHT, DAG_NODE_WIDTH, layoutTasks } from './layout-tasks.js'
 
 export type RunViewerInputErrorCode =
   | 'MISSING_SOURCE'
@@ -398,7 +398,14 @@ function resultTasks(result: TeamRunResult, spans: readonly RunViewerSpan[]): Ru
 
 function dagLayout(tasks: readonly RunViewerTask[], warnings: RunViewerWarning[]): RunViewerDagLayout {
   if (tasks.length === 0) {
-    return { positions: {}, width: 1200, height: 520, nodeW: 272, nodeH: 132, degraded: false }
+    return {
+      positions: {},
+      width: 1200,
+      height: 520,
+      nodeW: DAG_NODE_WIDTH,
+      nodeH: DAG_NODE_HEIGHT,
+      degraded: false,
+    }
   }
   try {
     const layout = layoutTasks(tasks)
@@ -415,12 +422,13 @@ function dagLayout(tasks: readonly RunViewerTask[], warnings: RunViewerWarning[]
       code: 'DAG_LAYOUT_FAILED',
       message: 'Task dependencies could not be laid out as a DAG; a stable list is shown instead.',
     })
-    const nodeW = 272
-    const nodeH = 132
+    const nodeW = DAG_NODE_WIDTH
+    const nodeH = DAG_NODE_HEIGHT
+    const rowStep = nodeH + 32
     return {
-      positions: Object.fromEntries(tasks.map((task, index) => [task.id, { x: 80, y: 64 + index * 160 }])),
+      positions: Object.fromEntries(tasks.map((task, index) => [task.id, { x: 80, y: 64 + index * rowStep }])),
       width: 1200,
-      height: Math.max(520, 128 + tasks.length * 160),
+      height: Math.max(520, 128 + tasks.length * rowStep),
       nodeW,
       nodeH,
       degraded: true,
