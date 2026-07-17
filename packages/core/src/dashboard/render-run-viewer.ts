@@ -67,21 +67,36 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     }
     .shell { height: 100vh; display: grid; grid-template-rows: auto auto auto minmax(0,1fr); }
     .masthead {
-      min-height: 72px; padding: 14px 22px; display: flex; align-items: center;
-      gap: 22px; border-bottom: 1px solid var(--line); background: rgba(7,10,14,.93);
+      min-width: 0; display: grid; border-bottom: 1px solid var(--line); background: rgba(7,10,14,.93);
     }
-    .brand { min-width: 215px; }
+    .masthead-primary {
+      min-height: 70px; padding: 13px 22px; display: flex; align-items: center;
+      justify-content: space-between; gap: 28px;
+    }
+    .brand { min-width: 260px; }
     .eyebrow, .metric-label, .control-label, .detail-label, .attempt-label {
       font: 700 10px/1.1 var(--mono); letter-spacing: .13em; text-transform: uppercase;
       color: var(--muted);
     }
     .brand h1 { margin: 4px 0 0; font: 800 25px/.95 var(--display); letter-spacing: .05em; text-transform: uppercase; }
     .brand h1::before { content: "//"; color: var(--mint); margin-right: 8px; }
-    .summary-grid { display: flex; flex: 1; gap: 9px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
-    .metric { min-width: 108px; max-width: 220px; flex: 1 0 108px; padding: 8px 11px; border-left: 1px solid var(--line-strong); }
-    .metric-value { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; font: 700 14px/1 var(--mono); white-space: nowrap; }
-    .run-id-box { min-width: 190px; display: flex; align-items: center; gap: 8px; }
-    .run-id { overflow: hidden; text-overflow: ellipsis; font: 11px/1.3 var(--mono); color: var(--muted); }
+    .summary-grid {
+      min-width: 0; display: grid; grid-template-columns: repeat(10, minmax(120px, 1fr));
+      overflow-x: auto; scrollbar-width: thin; border-top: 1px solid var(--line);
+    }
+    .metric { min-width: 120px; min-height: 56px; display: grid; align-content: center; padding: 9px 14px; border-right: 1px solid var(--line); }
+    .metric:last-child { border-right: 0; }
+    .metric-value { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; font: 700 13px/1 var(--mono); white-space: nowrap; }
+    .run-context {
+      min-width: 320px; max-width: min(48vw, 620px); display: grid;
+      grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px;
+    }
+    .run-id-label { white-space: nowrap; }
+    .run-id-box {
+      min-width: 0; display: flex; align-items: center; gap: 8px; padding: 5px 5px 5px 10px;
+      border: 1px solid var(--line); background: rgba(18,24,35,.72);
+    }
+    .run-id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px/1.3 var(--mono); color: #b6c0cf; white-space: nowrap; }
     .icon-btn, .fit-btn, .load-more {
       border: 1px solid var(--line-strong); background: var(--panel); border-radius: var(--radius);
       cursor: pointer; min-height: 32px; padding: 6px 10px; font: 700 10px/1 var(--mono);
@@ -202,10 +217,10 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     @media (max-width: 940px) {
       body { overflow: auto; }
       .shell { min-height: 100vh; height: auto; grid-template-rows: auto auto auto auto; }
-      .masthead { min-width: 0; max-width: 100vw; align-items: flex-start; flex-wrap: wrap; }
-      .brand { flex: 1 1 190px; }
-      .summary-grid { order: 3; width: 100%; flex: 1 0 100%; }
-      .run-id-box { margin-left: auto; }
+      .masthead { max-width: 100vw; }
+      .masthead-primary { align-items: flex-start; flex-wrap: wrap; }
+      .brand { flex: 1 1 260px; }
+      .run-context { margin-left: auto; max-width: 440px; }
       .toolbar { align-items: center; flex-wrap: wrap; overflow: visible; }
       .tabs { height: 42px; width: 100%; }
       .control.search { min-width: 100%; max-width: none; }
@@ -215,10 +230,10 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
       .details { border-left: 0; border-top: 1px solid var(--line); min-height: 320px; max-height: none; }
     }
     @media (max-width: 520px) {
-      .masthead { padding: 12px 14px; gap: 10px; }
+      .masthead-primary { padding: 12px 14px; gap: 14px; }
       .brand { min-width: 0; }
       .brand h1 { font-size: 20px; }
-      .run-id-box { min-width: 0; max-width: none; flex: 1 1 140px; }
+      .run-context { min-width: 0; max-width: none; width: 100%; margin-left: 0; grid-template-columns: 1fr; gap: 6px; }
       .toolbar { padding: 8px 10px; }
       .tab { min-width: 0; flex: 1; }
       .workspace { grid-template-rows: 520px auto; }
@@ -234,9 +249,14 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
 <body>
   <div class="shell">
     <header class="masthead">
-      <div class="brand"><span class="eyebrow">Open Multi Agent / Post-run artifact</span><h1 id="viewerTitle">OMA Run Viewer</h1></div>
+      <div class="masthead-primary">
+        <div class="brand"><span class="eyebrow">Open Multi Agent / Post-run artifact</span><h1 id="viewerTitle">OMA Run Viewer</h1></div>
+        <div class="run-context">
+          <span class="metric-label run-id-label">Run ID</span>
+          <div class="run-id-box"><span id="runId" class="run-id">No run ID</span><button id="copyRunId" class="icon-btn" type="button">Copy</button><span id="copyStatus" class="sr-only" aria-live="polite"></span></div>
+        </div>
+      </div>
       <div id="summaryGrid" class="summary-grid" aria-label="Run summary"></div>
-      <div class="run-id-box"><span id="runId" class="run-id">No run ID</span><button id="copyRunId" class="icon-btn" type="button">Copy</button><span id="copyStatus" class="sr-only" aria-live="polite"></span></div>
     </header>
     <div id="warningStrip" class="warning-strip" role="status"></div>
     <div class="toolbar">

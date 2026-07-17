@@ -148,5 +148,7 @@ describe('renderTeamRunDashboard', () => {
     expect(html).toContain('id="waterfallTab"')
     expect(html).toContain('id="dagTab"')
     expect(html).toContain('id="details"')
+    expect(html).toContain('class="masthead-primary"')
+    expect(html).toContain('class="run-context"')
   })
 })
