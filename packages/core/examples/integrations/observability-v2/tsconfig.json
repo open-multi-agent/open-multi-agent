@@ -11,5 +11,6 @@
       "@open-multi-agent/otel": ["packages/otel/src/index.ts"]
     }
   },
-  "include": ["./*.ts"]
+  "include": ["./*.ts"],
+  "exclude": []
 }

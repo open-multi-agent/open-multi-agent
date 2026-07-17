@@ -1,6 +1,6 @@
 # Command-line interface (`oma`)
 
-The package ships a small binary **`oma`** that exposes the same primitives as the TypeScript API: `runTeam`, `runTasks`, plus a static provider reference. It is meant for **shell scripts and CI** (JSON on stdout, stable exit codes).
+The package ships a small binary **`oma`** that exposes the same primitives as the TypeScript API: `runTeam`, `runTasks`, single-run dashboard export, plus a static provider reference. It is meant for **shell scripts and CI** (JSON on stdout, stable exit codes).
 
 It does **not** provide an interactive REPL, working-directory injection into tools, human approval gates, or session persistence. Those stay in application code.
 
@@ -32,7 +32,17 @@ OpenRouter works through the OpenAI-compatible adapter: set `provider` to `opena
 
 Runs **`OpenMultiAgent.runTeam(team, goal)`**: coordinator decomposition, task queue, optional synthesis.
 
-When invoked with `--dashboard`, the **`oma` CLI** writes a static post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html` under the current working directory (the library does not write files itself; if you want this outside the CLI, call `renderTeamRunDashboard(result)` in application code — see `packages/core/src/dashboard/render-team-run-dashboard.ts`).
+When invoked with `--dashboard`, the CLI captures structured trace records for
+that run in addition to any configured sinks, combines them with the exact
+`TeamRunResult`, and writes a static Run Viewer to
+`oma-dashboards/runTeam-<timestamp>.html`. The generated page includes the task
+DAG, hierarchy-aware span Waterfall, filters, and safe evidence details.
+
+The dashboard path is printed to stderr. The normal run JSON and exit status on
+stdout are unchanged. If trace capture cannot be materialized, the CLI emits
+`DASHBOARD_TRACE_CAPTURE_FAILED` on stderr and falls back to a result-only
+Viewer. Render or write failures use `DASHBOARD_RENDER_FAILED` or
+`DASHBOARD_WRITE_FAILED` and do not change the completed run result.
 
 The dashboard page is self-contained: it does not load remote scripts, stylesheets, or fonts, and sensitive-looking values in the embedded run payload are redacted before rendering.
 
@@ -42,9 +52,32 @@ The dashboard page is self-contained: it does not load remote scripts, styleshee
 | `--team` | Yes | Path to JSON (see [Team file](#team-file)). |
 | `--orchestrator` | No | Path to JSON merged into `new OpenMultiAgent(...)` after any orchestrator fragment from the team file. |
 | `--coordinator` | No | Path to JSON passed as `runTeam(..., { coordinator })` (`CoordinatorConfig`). |
-| `--dashboard` | No | Write a post-execution DAG dashboard HTML to `oma-dashboards/runTeam-<timestamp>.html`. |
+| `--dashboard` | No | Write a post-execution Run Viewer HTML to `oma-dashboards/runTeam-<timestamp>.html`; the output path and any dashboard-only warning go to stderr. |
 
 Global flags: [`--pretty`](#output-flags), [`--include-messages`](#output-flags).
+
+### `oma dashboard`
+
+Exports exactly one existing `FileTraceStore` run without invoking a model,
+coordinator, agent, tool, or OpenTelemetry provider:
+
+```bash
+oma dashboard \
+  --trace-store ./.oma/traces.ndjson \
+  --run-id <runId> \
+  [--output ./oma-dashboards/run.html] \
+  [--pretty]
+```
+
+`--trace-store` and `--run-id` are required. The source file must already
+exist. The command opens it with the documented `FileTraceStore` recovery
+rules, reads one run with its records, renders the Viewer, and closes the store
+on both success and failure. It does not append, delete, compact, or apply
+retention.
+
+Without `--output`, the CLI creates a timestamped file under
+`oma-dashboards/`. An explicit destination is never overwritten: an existing
+file returns `dashboard_output_exists` with exit code 2.
 
 ### `oma task`
 
@@ -213,6 +246,16 @@ Every invocation prints **one JSON document** to stdout, followed by a newline.
 
 `agentResults` keys are agent names. When an agent ran multiple tasks, the library merges results; the CLI mirrors the merged `AgentRunResult` fields.
 
+**Successful historical dashboard export**
+
+```json
+{
+  "command": "dashboard",
+  "runId": "run-01",
+  "dashboard": "/absolute/path/to/oma-dashboards/run-2026-07-18.html"
+}
+```
+
 **Errors (usage, validation, I/O, runtime)**
 
 ```json
@@ -224,7 +267,11 @@ Every invocation prints **one JSON document** to stdout, followed by a newline.
 }
 ```
 
-`kind` is one of: `usage`, `validation`, `io`, `runtime`, or `internal` (uncaught errors in the outer handler).
+For existing commands, `kind` remains one of `usage`, `validation`, `io`,
+`runtime`, or `internal`. Dashboard export additionally uses stable categories
+such as `trace_store_not_found`, `run_not_found`, `dashboard_output_exists`,
+`trace_store_close_failed`, and lower-case `FileTraceStoreError` codes (for
+example `corrupt_file`). Error messages never include trace payloads.
 
 ### Output flags
 
@@ -233,7 +280,9 @@ Every invocation prints **one JSON document** to stdout, followed by a newline.
 | `--pretty` | Pretty-print JSON with indentation. |
 | `--include-messages` | Include each agent’s full `messages` array in `agentResults`. **Very large** for long runs; default is omit. |
 
-There is no separate progress stream; for rich telemetry use the TypeScript API with `onProgress` / `onTrace`.
+Dashboard paths and dashboard-only diagnostics go to stderr. There is no
+separate progress stream; for live telemetry use the TypeScript API with
+`onProgress` or `observability.sinks`.
 
 ---
 
@@ -241,7 +290,7 @@ There is no separate progress stream; for rich telemetry use the TypeScript API 
 
 | Code | Meaning |
 |------|---------|
-| **0** | Success: `run`/`task` finished with `success === true`, or help / `provider` completed normally. |
+| **0** | Success: `run`/`task` finished with `success === true`, dashboard export completed, or help / `provider` completed normally. |
 | **1** | Run finished but **`success === false`** (agent or task failure as reported by the library). |
 | **2** | Usage, validation, readable JSON errors, or file access issues (e.g. missing file). |
 | **3** | Unexpected error, including typical LLM/API failures surfaced as thrown errors. |

@@ -177,7 +177,7 @@ Route orchestration phases to different models with an opt-in `modelRouting` pol
 | **Lifecycle hooks + cancellation** | `beforeRun` rewrites the prompt, `afterRun` post-processes or rejects the result; pass an `AbortSignal` to cancel a run in flight. |
 | **Configurable coordinator** | Override the coordinator's model, provider, adapter, system prompt, or tools via `runTeam(team, goal, { coordinator })`. |
 | **External coding agents (ACP)** | Swap an agent's LLM loop for an external coding CLI over the [Agent Client Protocol](https://agentclientprotocol.com): set `backend: { kind: 'acp', … }` and the subprocess runs its own turns, while the pool, scheduler, queue, shared memory, and budget stay backend-agnostic. ([external agents](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)) |
-| **Observability** | Every top-level result carries stable `identity` (`runId`, `attempt`, `traceId`, `rootSpanId`) and normalized `status`, even without `onTrace`; `onProgress` events, trace spans, a post-run HTML dashboard, and `TeamRunResult.metrics` remain available. API keys and tokens are redacted from traces, errors, bash output, and the dashboard. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
+| **Observability** | Every top-level result carries stable `identity` (`runId`, `attempt`, `traceId`, `rootSpanId`) and normalized `status`, even without `onTrace`; `onProgress` events, trace spans, the offline single-run DAG/Waterfall Viewer, and `TeamRunResult.metrics` remain available. API keys and tokens are redacted from traces, errors, bash output, and Viewer payloads. ([observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **Pluggable shared memory** | Default in-process KV; swap in Redis / Postgres / your own backend by implementing `MemoryStore`. ([shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
 | **Checkpoint & resume** | Opt-in per-run checkpointing over any `MemoryStore`: snapshot on each completed task, then `restore()` skips finished tasks to continue after a crash or restart. Checkpoint v2 preserves `runId`, increments `attempt`, and starts a fresh trace; v1 snapshots remain readable. The bundled zero-dependency `FileStore` makes checkpoints durable out of the box; best-effort saves never take the run down. ([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **Sandboxed filesystem workspace** | Built-in filesystem tools are sandboxed to `<cwd>/.agent-workspace` by default; agents sharing the default configuration share this root. For per-agent isolation, set `AgentConfig.cwd`; for a different shared root, set `OrchestratorConfig.defaultCwd`; pass `null` to disable. ([sandbox config](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
@@ -291,6 +291,7 @@ End-to-end scenarios you can run today. Each one is a complete, opinionated work
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts): synchronous sub-agent delegation via `delegate_to_agent`.
 - [`patterns/plan-replay`](examples/patterns/plan-replay.ts): decompose a goal once with `planOnly`, serialize it with `createPlanArtifact`, then replay the same DAG via `runFromPlan` without re-running the coordinator.
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts): `onTrace` spans for LLM calls, tools, and tasks.
+- [`integrations/observability-v2/run-viewer`](examples/integrations/observability-v2/run-viewer.ts): deterministic no-network `FileTraceStore` data exported as an offline single-run Viewer.
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts): expose an MCP server's tools to an agent via `connectMCPTools()`.
 - **Provider examples**: scripts under [`examples/providers/`](examples/providers/) covering hosted providers, OpenAI-compatible endpoints, and local models.
 
@@ -381,7 +382,10 @@ Execution runtime (runAgent / runTeam / runTasks / restore)
 
 These stores have deliberately different responsibilities: a `TraceStore`
 holds queryable telemetry, a checkpoint store holds resumable execution state,
-and the dashboard renders a post-run artifact. The application owns
+and the Run Viewer renders an offline post-run task DAG plus hierarchical span
+Waterfall. Use `renderRunViewer({ result, run })`, `oma run --dashboard`, or
+`oma dashboard --trace-store <path> --run-id <id>` for current or historical
+single-run artifacts. `renderTeamRunDashboard(result)` remains compatible. The application owns
 `forceFlush()` / `shutdown()`, file-store `flush()` / `close()`, and shutdown of
 any supplied OpenTelemetry provider. See the [observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
 and [migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md).
@@ -465,7 +469,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Hard-cap token spend | `maxTokenBudget` on the orchestrator | `OrchestratorConfig` |
 | Cap estimated cost | `maxCostBudget` + `estimateCost`; you own the per-model price table, and checks happen at turn/task boundaries rather than cent-exact mid-call stops | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
-| Trace and audit | Keep legacy `onTrace`, or configure `observability.sinks` with batching + an exporter, TraceStore, or OTel adapter; persist `renderTeamRunDashboard(result)` and explicitly flush/shut down application-owned telemetry | `OrchestratorConfig` + application lifecycle |
+| Trace and audit | Configure `observability.sinks` with batching + an exporter, TraceStore, or OTel adapter; render one run with `renderRunViewer({ result, run })`, `oma run --dashboard`, or historical `oma dashboard --trace-store … --run-id …`; explicitly flush/shut down application-owned telemetry | `OrchestratorConfig` + application lifecycle |
 | Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
 | Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
@@ -474,7 +478,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the post-run dashboard. Existing callbacks have a staged [`onTrace` migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md); [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) uses an application-owned provider.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the offline single-run DAG/Waterfall Viewer. Existing callbacks have a staged [`onTrace` migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md); [`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) uses an application-owned provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity rules, v1 compatibility, and restore over any `MemoryStore`.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.

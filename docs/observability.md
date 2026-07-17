@@ -1,6 +1,7 @@
 # Observability
 
-`open-multi-agent` exposes three telemetry layers: live progress events, structured trace spans, and a static post-run dashboard.
+`open-multi-agent` exposes three telemetry layers: live progress events,
+structured trace spans, and an offline single-run DAG/Waterfall Viewer.
 
 For an existing callback integration, follow the staged
 [`onTrace` migration guide](./observability-migration.md). Release engineering
@@ -339,7 +340,7 @@ exported to OTel or another vendor.
 
 | Data plane | Responsibility | Reliability boundary |
 |---|---|---|
-| Dashboard | static post-run task DAG, timing, token facts, and task details | derived artifact; no live delivery or authoritative state |
+| Run Viewer | static post-run task DAG plus span Waterfall, timing, token/cost facts, and safe details | derived artifact; no live delivery or authoritative state |
 | TraceStore | append/query telemetry, retention, and trace deletion | best-effort; no CAS, lease, suspend, or resume |
 | CheckpointStore | task-grained execution snapshot consumed by `restore()` | execution recovery state; not a trace query system |
 | future RunStore | authoritative durable run state machine | not implemented by Observability v2 |
@@ -532,21 +533,71 @@ The copyable stage-by-stage path is in
 
 Span parentage is best-effort and uses the causal structure known to the runtime. In team runs, worker agent spans point to their task span, and LLM/tool/stream spans point to the agent span. Root spans such as top-level agent runs omit `parentId`.
 
-## Post-Run Dashboard
+## Post-Run Run Viewer
 
-`renderTeamRunDashboard(result)` returns a static HTML page that visualizes the executed task DAG with timing, token usage, per-task status, and task details.
+`renderRunViewer()` returns a self-contained static HTML page for one run. It
+accepts a `TeamRunResult`, a materialized `StoredRun`, or both:
 
 ```typescript
 import { writeFileSync } from 'node:fs'
-import { renderTeamRunDashboard } from '@open-multi-agent/core'
+import { renderRunViewer } from '@open-multi-agent/core'
 
 const result = await orchestrator.runTeam(team, goal)
-writeFileSync('run.html', renderTeamRunDashboard(result))
+writeFileSync('run.html', renderRunViewer({ result }))
 ```
 
-The library does not write files by itself. The CLI can write dashboard HTML for you with `oma run --dashboard`; see [docs/cli.md](./cli.md).
+Result-only mode renders the exact task graph and explicitly labels missing
+trace detail. Trace-only mode derives task dependencies from `depends_on`
+links and provides every materialized span kind in an attempt-grouped,
+expandable, proportional Waterfall. Combined mode uses the result graph as the
+authority and links its tasks to richer trace evidence.
 
-The generated dashboard is self-contained and does not load remote scripts, stylesheets, or fonts. Sensitive-looking values in the embedded run payload are redacted before rendering.
+```typescript
+const run = await traceStore.getRun(result.identity!.runId, { includeRecords: true })
+if (run) writeFileSync('run.html', renderRunViewer({ result, run }))
+```
+
+`renderTeamRunDashboard(result)` remains source-compatible and delegates to
+`renderRunViewer({ result })`; it does not maintain a separate renderer.
+
+The library renderer performs no filesystem or network I/O. The CLI owns file
+output:
+
+```bash
+# Capture and render the run being executed
+oma run --goal "..." --team team.json --dashboard
+
+# Export one previously persisted FileTraceStore run
+oma dashboard --trace-store ./.oma/traces.ndjson --run-id <runId> --output run.html
+```
+
+The historical command is read-only at the logical store layer and always
+closes the store. See [docs/cli.md](./cli.md) for overwrite, stdout, stderr, and
+exit-code behavior.
+
+The Viewer renders status, completeness, run identity, duration, attempts,
+tokens, costs, agents, models, and providers when recorded. DAG and Waterfall
+selection are synchronized by task ID; search and kind/status/agent/task
+filters preserve ancestor context. Cyclic or missing hierarchy/dependency data
+degrades to visible warnings instead of being silently treated as success.
+
+The generated HTML contains its CSS, JavaScript, and allowlisted data and loads
+no remote scripts, stylesheets, fonts, images, telemetry, or runtime API. It
+does not embed prompts, completions, arbitrary attributes, tool arguments/tool
+results, messages, task descriptions/results, or reasoning content. Safe
+display fields are redacted again before serialization. This is a developer
+inspection artifact, not a live dashboard, multi-run browser, or authoritative
+run-state store.
+
+Generate a representative no-network artifact after building the package:
+
+```bash
+npx tsx packages/core/examples/integrations/observability-v2/run-viewer.ts
+```
+
+The example writes `oma-dashboards/run-viewer-demo.html` through a real
+`FileTraceStore` historical export. Its records are explicitly fictional,
+deterministic demo data, not a live provider run.
 
 ## What to Persist
 
@@ -555,8 +606,8 @@ For production runs, persist enough data to reconstruct a failure without replay
 - `TeamRunResult.tasks` for the executed DAG and task states.
 - `TeamRunResult.totalTokenUsage` for cost attribution.
 - `result.identity` and `result.status` as the stable run lookup and outcome.
-- `onTrace` spans for LLM calls and tool executions, keyed by legacy `runId` + `spanId`.
-- The rendered dashboard HTML when you need a shareable post-mortem artifact.
+- `TraceRecord` v2 data in a TraceStore for LLM, tool, task, retry/event, link, and attempt evidence.
+- The rendered Run Viewer HTML when you need a shareable post-mortem artifact.
 
 > **Redaction scope.** The redaction noted above applies to *telemetry* — trace spans and the dashboard payload. It does **not** cover persisted run state: shared-memory writes and checkpoint saves store agent output verbatim. To scrub secrets there, wrap the durable store with [`RedactingStore`](shared-memory.md#redacting-persisted-secrets).
 

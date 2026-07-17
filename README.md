@@ -67,7 +67,7 @@ One command scaffolds a production starter or the teaching DAG demo:
 npm create oma-app@latest
 ```
 
-When creating a project, choose a **PR Review Agent**, **Security Analysis Agent**, or **multi-agent DAG starter demo**, then select a cloud/OpenAI-compatible provider or fully local Ollama. Production starters emit Markdown, JSON, and an inspectable DAG dashboard while keeping agents read-only. To add the library to your own project:
+When creating a project, choose a **PR Review Agent**, **Security Analysis Agent**, or **multi-agent DAG starter demo**, then select a cloud/OpenAI-compatible provider or fully local Ollama. Production starters emit Markdown, JSON, and an inspectable offline Run Viewer while keeping agents read-only. To add the library to your own project:
 
 ```bash
 npm install @open-multi-agent/core
@@ -131,7 +131,7 @@ npm test               # run the test suite
 
 - [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — env vars, model examples, local tool-calling, timeouts, troubleshooting.
 - [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — tool presets, custom tools, the filesystem sandbox, and MCP.
-- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the post-run dashboard. Existing callbacks have a staged [`onTrace` migration guide](docs/observability-migration.md); [`@open-multi-agent/otel`](packages/otel/README.md) uses an application-owned provider.
+- [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — stable identity/status, TraceRecord v2, bounded sink/exporter lifecycle, InMemory/File TraceStore, and the offline single-run DAG/Waterfall Viewer. Existing callbacks have a staged [`onTrace` migration guide](docs/observability-migration.md); [`@open-multi-agent/otel`](packages/otel/README.md) uses an application-owned provider.
 - [Shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — the default store and custom `MemoryStore` backends.
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — opt-in snapshots over any `MemoryStore`; restore preserves `runId`, increments `attempt`, and starts a fresh trace.
 - [Context management](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — sliding window, summarization, compaction, and custom compressors.
