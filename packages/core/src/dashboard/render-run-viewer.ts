@@ -188,6 +188,7 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     .detail-empty { display: grid; place-items: center; min-height: 100%; padding: 30px; text-align: center; color: var(--muted); font: 12px/1.5 var(--mono); }
     .detail-content { padding: 18px; }
     .detail-head { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+    .detail-head > .status-pill { display: grid; place-items: center; text-align: center; }
     .detail-title { margin: 4px 0 0; font: 800 20px/1.05 var(--display); letter-spacing: .02em; }
     .detail-section { padding: 15px 0; border-bottom: 1px solid var(--line); }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
