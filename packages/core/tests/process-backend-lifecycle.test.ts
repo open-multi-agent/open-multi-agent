@@ -34,6 +34,22 @@ async function waitForFile(path: string, timeoutMs = 1_000): Promise<void> {
   }
 }
 
+async function waitForProcessExit(pid: number, timeoutMs = 1_000): Promise<void> {
+  const start = Date.now()
+  while (true) {
+    try {
+      process.kill(pid, 0)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ESRCH') return
+      throw err
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting for process ${pid} to exit`)
+    }
+    await delay(10)
+  }
+}
+
 function descendantMarkerScript(
   markerPath: string,
   options: { readyPath?: string; writeReady?: boolean } = {},
@@ -56,6 +72,25 @@ function descendantMarkerScript(
     ${options.readyPath ? `fs.writeFileSync(${JSON.stringify(options.readyPath)}, 'ready')` : ''}
     ${options.writeReady ? "process.stdout.write('ready\\n')" : ''}
     setTimeout(() => {}, 10_000)
+  `
+}
+
+function exitedParentDescendantScript(markerPath: string): string {
+  const childScript = `
+    const fs = require('node:fs')
+    process.on('SIGHUP', () => {})
+    process.on('SIGTERM', () => {})
+    setTimeout(() => fs.writeFileSync(${JSON.stringify(markerPath)}, 'alive'), 350)
+    setTimeout(() => {}, 10_000)
+  `
+  return `
+    const { spawn } = require('node:child_process')
+    const child = spawn(process.execPath, [
+      '-e',
+      ${JSON.stringify(childScript)}
+    ], { stdio: 'ignore' })
+    child.unref()
+    process.stdout.write(String(process.pid) + '\\n')
   `
 }
 
@@ -96,5 +131,23 @@ describe('process backend lifecycle cleanup', () => {
 
     expect(existsSync(marker)).toBe(false)
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'kills descendants after the direct child exits before stream closure',
+    async () => {
+      const marker = join(tmpdir(), `oma-process-exited-parent-${process.pid}-${Date.now()}`)
+      await rm(marker, { force: true })
+      const agent = makeAgent(exitedParentDescendantScript(marker))
+
+      for await (const event of agent.stream('wait')) {
+        if (event.type !== 'text') continue
+        await waitForProcessExit(Number(event.data.trim()))
+        break
+      }
+      await delay(700)
+
+      expect(existsSync(marker)).toBe(false)
+    },
+  )
 
 })

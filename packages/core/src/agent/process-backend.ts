@@ -97,11 +97,7 @@ export class ProcessBackend implements AgentBackend {
     })
 
     const exit = waitForExit(child)
-    let exited = false
-    void exit.then(
-      () => { exited = true },
-      () => { exited = true },
-    )
+    let completed = false
 
     try {
       while (true) {
@@ -119,6 +115,7 @@ export class ProcessBackend implements AgentBackend {
         while (chunks.length > 0) {
           yield { type: 'text', data: chunks.shift()! }
         }
+        completed = true
 
         if (abort?.aborted) {
           yield { type: 'done', data: cancelledResult(label, stdout) }
@@ -152,8 +149,12 @@ export class ProcessBackend implements AgentBackend {
     } finally {
       abort?.removeEventListener('abort', onAbort)
       wakeReader()
-      if (!exited) {
-        await killProcessTreeAndWait(child, exit)
+      if (!completed) {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          killProcessTree(child)
+        } else {
+          await killProcessTreeAndWait(child, exit)
+        }
       }
     }
   }
