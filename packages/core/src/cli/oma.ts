@@ -11,13 +11,18 @@
  *   3 — unexpected runtime error (including LLM errors)
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { OpenMultiAgent } from '../orchestrator/orchestrator.js'
-import { renderTeamRunDashboard } from '../dashboard/render-team-run-dashboard.js'
+import { renderRunViewer } from '../dashboard/render-run-viewer.js'
+import { materializeRun } from '../observability/materialize.js'
+import type { TraceRecord } from '../observability/records.js'
+import type { StoredRun } from '../observability/store.js'
+import { FileTraceStore, FileTraceStoreError } from '../observability/file-store.js'
+import { emptyTraceSinkStats, type FlushResult, type TraceSink } from '../observability/sink.js'
 import type { SupportedProvider } from '../llm/adapter.js'
 import type { AgentRunResult, CoordinatorConfig, OrchestratorConfig, TeamConfig, TeamRunResult } from '../types.js'
 
@@ -36,6 +41,112 @@ class OmaValidationError extends Error {
   override readonly name = 'OmaValidationError'
   constructor(message: string) {
     super(message)
+  }
+}
+
+export type DashboardCliErrorCode =
+  | 'trace_store_not_found'
+  | 'run_not_found'
+  | 'dashboard_output_exists'
+  | 'trace_store_close_failed'
+
+export class DashboardCliError extends Error {
+  readonly name = 'DashboardCliError'
+
+  constructor(
+    readonly code: DashboardCliErrorCode,
+    message: string,
+    readonly exit: number = EXIT.USAGE,
+  ) {
+    super(message)
+  }
+}
+
+export class DashboardTraceCaptureSink implements TraceSink {
+  private readonly captured: TraceRecord[] = []
+  private closed = false
+
+  emit(record: TraceRecord): void {
+    if (!this.closed) this.captured.push(record)
+  }
+
+  records(): readonly TraceRecord[] {
+    return [...this.captured]
+  }
+
+  forceFlush(): Promise<FlushResult> {
+    return Promise.resolve(this.flushResult())
+  }
+
+  shutdown(): Promise<FlushResult> {
+    this.closed = true
+    return Promise.resolve(this.flushResult())
+  }
+
+  getStats() {
+    return { ...emptyTraceSinkStats(), accepted: this.captured.length, exported: this.captured.length }
+  }
+
+  private flushResult(): FlushResult {
+    return {
+      status: 'ok',
+      accepted: this.captured.length,
+      exported: this.captured.length,
+      dropped: 0,
+      failed: 0,
+    }
+  }
+}
+
+export function renderCapturedRunDashboard(
+  result: TeamRunResult,
+  records: readonly TraceRecord[],
+): { readonly html: string; readonly captureWarning?: string } {
+  let run: StoredRun | null = null
+  let captureWarning: string | undefined
+  try {
+    if (!result.identity?.runId) {
+      captureWarning = 'DASHBOARD_TRACE_CAPTURE_FAILED: run identity was not recorded; using result-only data.'
+    } else {
+      run = materializeRun(records.filter((record) => record.runId === result.identity!.runId), true)
+      if (!run) {
+        captureWarning = 'DASHBOARD_TRACE_CAPTURE_FAILED: no trace records were captured; using result-only data.'
+      }
+    }
+  } catch (error) {
+    captureWarning = `DASHBOARD_TRACE_CAPTURE_FAILED: ${error instanceof Error ? error.message : String(error)}; using result-only data.`
+  }
+  return {
+    html: renderRunViewer({ result, ...(run ? { run } : {}) }),
+    ...(captureWarning ? { captureWarning } : {}),
+  }
+}
+
+export async function exportCurrentRunDashboard(
+  result: TeamRunResult,
+  records: readonly TraceRecord[],
+  dependencies: {
+    readonly render?: typeof renderCapturedRunDashboard
+    readonly write?: typeof writeDashboardFile
+  } = {},
+): Promise<{ readonly dashboard?: string; readonly warnings: readonly string[] }> {
+  const warnings: string[] = []
+  let html: string
+  try {
+    const rendered = (dependencies.render ?? renderCapturedRunDashboard)(result, records)
+    html = rendered.html
+    if (rendered.captureWarning) warnings.push(rendered.captureWarning)
+  } catch (error) {
+    warnings.push(`DASHBOARD_RENDER_FAILED: ${error instanceof Error ? error.message : String(error)}`)
+    return { warnings }
+  }
+
+  try {
+    const dashboard = await (dependencies.write ?? writeDashboardFile)(html)
+    return { dashboard, warnings }
+  } catch (error) {
+    warnings.push(`DASHBOARD_WRITE_FAILED: ${error instanceof Error ? error.message : String(error)}`)
+    return { warnings }
   }
 }
 
@@ -268,12 +379,16 @@ function help(): string {
     'Usage:',
     '  oma run --goal <text> --team <team.json> [--orchestrator <orch.json>] [--coordinator <coord.json>]',
     '  oma task --file <tasks.json> [--team <team.json>]',
+    '  oma dashboard --trace-store <traces.ndjson> --run-id <id> [--output <run.html>]',
     '  oma provider [list | template <provider>]',
     '',
     'Flags:',
     '  --pretty              Pretty-print JSON to stdout',
     '  --include-messages    Include full LLM message arrays in run output (large)',
-    '  --dashboard           Write team-run DAG HTML dashboard to oma-dashboards/',
+    '  --dashboard           Write a current-run HTML Viewer to oma-dashboards/',
+    '  --trace-store <path>  Existing FileTraceStore used by `oma dashboard`',
+    '  --run-id <id>         Logical run to export from FileTraceStore',
+    '  --output <path>       Explicit HTML destination (must not already exist)',
     '',
     'team.json may be a TeamConfig object, or { "team": TeamConfig, "orchestrator": { ... } }.',
     'tasks.json: { "team": TeamConfig, "tasks": [ ... ], "orchestrator"?: { ... } }.',
@@ -350,13 +465,118 @@ function mergeOrchestrator(base: OrchestratorConfig, ...partials: OrchestratorCo
   return o
 }
 
-async function writeRunTeamDashboardFile(html: string): Promise<string> {
-  const directory = join(process.cwd(), 'oma-dashboards')
+export async function writeDashboardFile(
+  html: string,
+  options: { readonly output?: string; readonly prefix?: string; readonly directory?: string } = {},
+): Promise<string> {
+  const explicit = options.output !== undefined
+  const directory = explicit
+    ? dirname(resolve(options.output!))
+    : resolve(options.directory ?? join(process.cwd(), 'oma-dashboards'))
   await mkdir(directory, { recursive: true })
+  if (explicit) {
+    const filePath = resolve(options.output!)
+    try {
+      await writeFile(filePath, html, { encoding: 'utf8', flag: 'wx' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      throw new DashboardCliError(
+        'dashboard_output_exists',
+        `dashboard_output_exists: destination already exists: ${filePath}`,
+      )
+    }
+    return filePath
+  }
+
   const stamp = new Date().toISOString().replaceAll(':', '-').replace('.', '-')
-  const filePath = join(directory, `runTeam-${stamp}.html`)
-  await writeFile(filePath, html, 'utf8')
-  return filePath
+  const baseName = `${options.prefix ?? 'runTeam'}-${stamp}`
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const filePath = join(directory, `${baseName}${suffix ? `-${suffix}` : ''}.html`)
+    try {
+      await writeFile(filePath, html, { encoding: 'utf8', flag: 'wx' })
+      return filePath
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+  }
+  throw new Error('Unable to allocate a collision-free dashboard output path after 100 attempts.')
+}
+
+function withDashboardCapture(
+  config: OrchestratorConfig,
+  capture: DashboardTraceCaptureSink,
+): OrchestratorConfig {
+  return {
+    ...config,
+    observability: {
+      ...config.observability,
+      sinks: [...(config.observability?.sinks ?? []), capture],
+    },
+  }
+}
+
+async function existingFile(path: string): Promise<void> {
+  try {
+    await stat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new DashboardCliError(
+        'trace_store_not_found',
+        `trace_store_not_found: FileTraceStore does not exist: ${path}`,
+      )
+    }
+    throw error
+  }
+}
+
+export async function exportStoredRunDashboard(options: {
+  readonly traceStore: string
+  readonly runId: string
+  readonly output?: string
+}, dependencies: {
+  readonly ensureExisting?: (path: string) => Promise<void>
+  readonly openStore?: (path: string) => Promise<Pick<FileTraceStore, 'getRun' | 'close'>>
+  readonly render?: (run: StoredRun) => string
+  readonly write?: (
+    html: string,
+    options: { readonly output?: string; readonly prefix?: string },
+  ) => Promise<string>
+} = {}): Promise<{ readonly runId: string; readonly dashboard: string }> {
+  const traceStore = resolve(options.traceStore)
+  await (dependencies.ensureExisting ?? existingFile)(traceStore)
+  let store: Pick<FileTraceStore, 'getRun' | 'close'> | undefined
+  let value: { readonly runId: string; readonly dashboard: string } | undefined
+  let failure: unknown
+  try {
+    store = await (dependencies.openStore ?? FileTraceStore.open)(traceStore)
+    const run = await store.getRun(options.runId, { includeRecords: true })
+    if (!run) {
+      throw new DashboardCliError('run_not_found', `run_not_found: ${options.runId}`)
+    }
+    const html = dependencies.render ? dependencies.render(run) : renderRunViewer({ run })
+    const dashboard = await (dependencies.write ?? writeDashboardFile)(html, {
+      ...(options.output !== undefined ? { output: options.output } : {}),
+      prefix: 'run',
+    })
+    value = { runId: run.runId, dashboard }
+  } catch (error) {
+    failure = error
+  }
+  if (store) {
+    try {
+      await store.close()
+    } catch (error) {
+      if (!failure) {
+        failure = new DashboardCliError(
+          'trace_store_close_failed',
+          'trace_store_close_failed: FileTraceStore did not close cleanly.',
+          EXIT.INTERNAL,
+        )
+      }
+    }
+  }
+  if (failure) throw failure
+  return value!
 }
 
 async function main(): Promise<number> {
@@ -378,6 +598,23 @@ async function main(): Promise<number> {
   const jsonOpts: CliJsonOptions = { pretty, includeMessages }
 
   try {
+    if (cmd === 'dashboard') {
+      const traceStore = getOpt(argv.kv, argv.flags, 'trace-store')
+      const runId = getOpt(argv.kv, argv.flags, 'run-id')
+      const output = getOpt(argv.kv, argv.flags, 'output')
+      if (!traceStore || !runId) {
+        throw new OmaValidationError('oma dashboard requires --trace-store and --run-id')
+      }
+      if (output === '') throw new OmaValidationError('--output requires a non-empty path')
+      const exported = await exportStoredRunDashboard({
+        traceStore,
+        runId,
+        ...(output !== undefined ? { output } : {}),
+      })
+      printJson({ command: 'dashboard', ...exported }, pretty)
+      return EXIT.SUCCESS
+    }
+
     if (cmd === 'run') {
       const goal = getOpt(argv.kv, argv.flags, 'goal')
       const teamPath = getOpt(argv.kv, argv.flags, 'team')
@@ -403,7 +640,11 @@ async function main(): Promise<number> {
         orchParts.push(asOrchestratorPartial(readJson(orchPath), 'orchestrator file'))
       }
 
-      const orchestrator = new OpenMultiAgent(mergeOrchestrator({}, ...orchParts))
+      const capture = dashboard ? new DashboardTraceCaptureSink() : undefined
+      const mergedConfig = mergeOrchestrator({}, ...orchParts)
+      const orchestrator = new OpenMultiAgent(capture
+        ? withDashboardCapture(mergedConfig, capture)
+        : mergedConfig)
       const team = orchestrator.createTeam(teamCfg.name, teamCfg)
       let coordinator: CoordinatorConfig | undefined
       if (coordPath) {
@@ -411,14 +652,9 @@ async function main(): Promise<number> {
       }
       const result = await orchestrator.runTeam(team, goal, coordinator ? { coordinator } : undefined)
       if (dashboard) {
-        const html = renderTeamRunDashboard(result)
-        try {
-          await writeRunTeamDashboardFile(html)
-        } catch (err) {
-          process.stderr.write(
-            `oma: failed to write runTeam dashboard: ${err instanceof Error ? err.message : String(err)}\n`,
-          )
-        }
+        const exported = await exportCurrentRunDashboard(result, capture?.records() ?? [])
+        for (const warning of exported.warnings) process.stderr.write(`oma: ${warning}\n`)
+        if (exported.dashboard) process.stderr.write(`oma: dashboard written to ${exported.dashboard}\n`)
       }
       await orchestrator.shutdown()
       const payload = { command: 'run' as const, ...serializeTeamRunResult(result, jsonOpts) }
@@ -470,6 +706,8 @@ async function main(): Promise<number> {
 }
 
 function classifyCliError(e: unknown, message: string): { kind: string; exit: number } {
+  if (e instanceof DashboardCliError) return { kind: e.code, exit: e.exit }
+  if (e instanceof FileTraceStoreError) return { kind: e.code.toLowerCase(), exit: EXIT.USAGE }
   if (e instanceof OmaValidationError) return { kind: 'validation', exit: EXIT.USAGE }
   if (message.includes('Invalid JSON')) return { kind: 'validation', exit: EXIT.USAGE }
   if (message.includes('ENOENT') || message.includes('EACCES')) return { kind: 'io', exit: EXIT.USAGE }
