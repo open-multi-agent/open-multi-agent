@@ -4,15 +4,22 @@
  * Skipped by default. Run with: npm run test:e2e
  * Requires: GEMINI_API_KEY or GOOGLE_API_KEY environment variable
  */
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { GeminiAdapter } from '../../src/llm/gemini.js'
 import type { LLMResponse, StreamEvent, ToolUseBlock } from '../../src/types.js'
 
-const describeE2E = process.env['RUN_E2E'] ? describe : describe.skip
+const hasGeminiCredentials = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_API_KEY']
+const describeE2E = process.env['RUN_E2E'] && hasGeminiCredentials
+  ? describe
+  : describe.skip
 
 describeE2E('GeminiAdapter E2E', () => {
-  const adapter = new GeminiAdapter()
+  let adapter: GeminiAdapter
   const model = 'gemini-2.0-flash'
+
+  beforeAll(() => {
+    adapter = new GeminiAdapter()
+  })
 
   const weatherTool = {
     name: 'get_weather',

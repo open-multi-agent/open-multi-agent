@@ -32,11 +32,16 @@ Unit tests live in each workspace's `tests/` directory: currently `packages/core
 npm test
 ```
 
-Core E2E tests are separate because they require `RUN_E2E=1` and real provider credentials:
+Core E2E tests are separate because they require `RUN_E2E=1` and real provider credentials. Each provider suite runs only when its matching credential is present, so a single-key canary does not fail on unrelated providers:
 
 ```bash
+# Runs only the suites whose credentials are set.
+# Supported keys: OPENAI_API_KEY, ANTHROPIC_API_KEY,
+# GEMINI_API_KEY / GOOGLE_API_KEY, and DEEPSEEK_API_KEY.
 npm run test:e2e
 ```
+
+Set `DEEPSEEK_E2E_MODEL` to override the DeepSeek canary model; it defaults to `deepseek-v4-flash`.
 
 Run checks that match the surface you changed and record the commands and results in the PR description. For code changes, start with `npm run lint && npm test`; also run `npm run build` when package output or public entry points may be affected, and `npm run test:scaffold` when changing `create-oma-app` scaffolding or templates.
 

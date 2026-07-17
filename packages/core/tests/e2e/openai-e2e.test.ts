@@ -4,15 +4,21 @@
  * Skipped by default. Run with: npm run test:e2e
  * Requires: OPENAI_API_KEY environment variable
  */
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { OpenAIAdapter } from '../../src/llm/openai.js'
 import type { LLMResponse, StreamEvent, ToolUseBlock } from '../../src/types.js'
 
-const describeE2E = process.env['RUN_E2E'] ? describe : describe.skip
+const describeE2E = process.env['RUN_E2E'] && process.env['OPENAI_API_KEY']
+  ? describe
+  : describe.skip
 
 describeE2E('OpenAIAdapter E2E', () => {
-  const adapter = new OpenAIAdapter()
+  let adapter: OpenAIAdapter
   const model = 'gpt-4o-mini'
+
+  beforeAll(() => {
+    adapter = new OpenAIAdapter()
+  })
 
   const weatherTool = {
     name: 'get_weather',

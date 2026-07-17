@@ -25,7 +25,9 @@ import { describe, it, expect } from 'vitest'
 import { OpenMultiAgent } from '../../src/orchestrator/orchestrator.js'
 import type { AgentConfig, TeamConfig } from '../../src/types.js'
 
-const describeE2E = process.env['RUN_E2E'] ? describe : describe.skip
+const describeE2E = process.env['RUN_E2E'] && process.env['ANTHROPIC_API_KEY']
+  ? describe
+  : describe.skip
 
 // Match the model used in the original reproducer.
 const MODEL = 'claude-sonnet-4-6'

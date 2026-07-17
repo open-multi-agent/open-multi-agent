@@ -4,15 +4,21 @@
  * Skipped by default. Run with: npm run test:e2e
  * Requires: ANTHROPIC_API_KEY environment variable
  */
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { AnthropicAdapter } from '../../src/llm/anthropic.js'
 import type { LLMResponse, StreamEvent, ToolUseBlock } from '../../src/types.js'
 
-const describeE2E = process.env['RUN_E2E'] ? describe : describe.skip
+const describeE2E = process.env['RUN_E2E'] && process.env['ANTHROPIC_API_KEY']
+  ? describe
+  : describe.skip
 
 describeE2E('AnthropicAdapter E2E', () => {
-  const adapter = new AnthropicAdapter()
+  let adapter: AnthropicAdapter
   const model = 'claude-haiku-4-5-20251001'
+
+  beforeAll(() => {
+    adapter = new AnthropicAdapter()
+  })
 
   const weatherTool = {
     name: 'get_weather',
