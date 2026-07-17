@@ -120,15 +120,12 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
     .dag-nodes { position: absolute; inset: 0; }
     .dag-node {
       position: absolute; width: 256px; min-height: 126px; padding: 13px 14px 12px;
-      text-align: left; color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--faint);
+      text-align: left; color: var(--ink); border: 1px solid var(--line);
       background: linear-gradient(145deg, rgba(23,31,43,.98), rgba(12,16,23,.98));
       box-shadow: 0 12px 28px rgba(0,0,0,.24); cursor: pointer; border-radius: var(--radius);
     }
     .dag-node:hover { border-color: var(--line-strong); transform: translateY(-1px); }
     .dag-node.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), 0 15px 35px rgba(0,0,0,.4); }
-    .dag-node.status-ok, .dag-node.status-completed { border-left-color: var(--mint); }
-    .dag-node.status-error, .dag-node.status-failed, .dag-node.status-timeout, .dag-node.status-budget_exhausted { border-left-color: var(--coral); }
-    .dag-node.status-in_progress { border-left-color: var(--amber); }
     .node-top { display: flex; justify-content: space-between; gap: 10px; }
     .node-id { font: 700 9px/1 var(--mono); letter-spacing: .08em; color: var(--cyan); }
     .status-pill { padding: 3px 6px; border: 1px solid currentColor; font: 700 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
