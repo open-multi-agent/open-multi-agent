@@ -1,7 +1,9 @@
 import type {
   AgentRunResult,
   ConsensusResult,
+  CostEstimateContext,
   TeamRunResult,
+  TokenUsage,
   TraceAttributeValue,
 } from '../types.js'
 import type { StoredRun } from '../observability/store.js'
@@ -32,6 +34,41 @@ export interface Scorer {
   readonly version?: string
   readonly timeoutMs?: number
   score(context: ScorerContext): Promise<ScoreResult> | ScoreResult
+}
+
+const SCORE_COST_INPUTS = Symbol('oma.eval.score_cost_inputs')
+
+/** Internal usage detail attached non-enumerably by framework-backed scorers. */
+export interface ScoreCostInput {
+  readonly usage: TokenUsage
+  readonly context: CostEstimateContext
+}
+
+type ValueWithCost = {
+  readonly [SCORE_COST_INPUTS]?: readonly ScoreCostInput[]
+}
+
+/** Attach scorer-side model usage without expanding the serialized ScoreResult contract. */
+export function attachScoreCostInputs<T extends object>(
+  result: T,
+  inputs: readonly ScoreCostInput[],
+): T {
+  if (inputs.length === 0) return result
+  Object.defineProperty(result, SCORE_COST_INPUTS, {
+    value: Object.freeze(inputs.map((input) => Object.freeze({
+      usage: Object.freeze({ ...input.usage }),
+      context: Object.freeze({ ...input.context }),
+    }))),
+    enumerable: false,
+    configurable: true,
+  })
+  return result
+}
+
+/** Read framework-owned scorer usage for online cost budgeting. */
+export function scoreCostInputs(value: unknown): readonly ScoreCostInput[] {
+  if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return []
+  return (value as ValueWithCost)[SCORE_COST_INPUTS] ?? []
 }
 
 function isTraceAttributeValue(value: unknown): value is TraceAttributeValue {

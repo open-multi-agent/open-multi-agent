@@ -27,6 +27,13 @@ export type {
 export { runEvalSet } from './runner.js'
 export type { EvalProgressEvent, RunEvalOptions } from './runner.js'
 export type { EvalRunReport, ScorerAggregate } from './report.js'
+export type {
+  EvalDiagnostic,
+  OnlineEvaluationConfig,
+  OnlineEvaluationLifecycle,
+  OnlineEvaluationStats,
+  OnlineSampleContext,
+} from './online.js'
 export { evaluateGate } from './gate.js'
 export type {
   GateFailure,

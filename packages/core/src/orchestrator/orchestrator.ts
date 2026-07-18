@@ -130,6 +130,13 @@ import {
 import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
 import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults } from './consensus.js'
+import {
+  createOnlineEvaluator,
+  NOOP_ONLINE_EVALUATION,
+  type OnlineEvaluationInput,
+  type OnlineEvaluationLifecycle,
+  type OnlineEvaluator,
+} from '../eval/online.js'
 
 import {
   parseTaskSpecs,
@@ -151,6 +158,11 @@ export { computeRetryDelay, executeWithRetry } from './retry.js'
 // OpenMultiAgent
 // ---------------------------------------------------------------------------
 
+interface PendingOnlineEvaluation {
+  readonly input: unknown
+  readonly startedAtMs: number
+}
+
 /**
  * Top-level orchestrator for the open-multi-agent framework.
  *
@@ -159,14 +171,17 @@ export { computeRetryDelay, executeWithRetry } from './retry.js'
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
   private completedTaskCount = 0
   private readonly traceRecordObserver?: TraceRecordObserver
   private readonly traceSink?: TraceSink
+  private readonly onlineEvaluator?: OnlineEvaluator
+  /** Online evaluation lifecycle. A shared no-op facade is returned when disabled. */
+  readonly evaluation: OnlineEvaluationLifecycle
 
   /**
    * @param config - Optional top-level configuration.
@@ -183,6 +198,8 @@ export class OpenMultiAgent {
     }
 
     this.traceRecordObserver = traceRecordObserverFrom(config)
+    this.onlineEvaluator = createOnlineEvaluator(config.evaluation, config.estimateCost)
+    this.evaluation = this.onlineEvaluator ?? NOOP_ONLINE_EVALUATION
     const hasExplicitLegacyBridge = config.observability?.sinks.some(
       (sink) => sink instanceof LegacyCallbackTraceSink,
     ) ?? false
@@ -215,10 +232,28 @@ export class OpenMultiAgent {
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
       onProgress: config.onProgress,
+      evaluation: config.evaluation,
       observability: config.observability,
       onTrace: config.onTrace ?? (hasExplicitLegacyBridge ? LEGACY_TRACE_METADATA_ONLY : undefined),
       onToolCall: config.onToolCall,
     }
+  }
+
+  private beginOnlineEvaluation(input: unknown): PendingOnlineEvaluation | undefined {
+    if (this.onlineEvaluator === undefined) return undefined
+    return { input, startedAtMs: Date.now() }
+  }
+
+  private completeOnlineEvaluation(
+    pending: PendingOnlineEvaluation | undefined,
+    result: OnlineEvaluationInput['result'],
+  ): void {
+    if (pending === undefined || this.onlineEvaluator === undefined) return
+    this.onlineEvaluator.enqueue({
+      input: pending.input,
+      result,
+      durationMs: Date.now() - pending.startedAtMs,
+    })
   }
 
   private startTrace(
@@ -280,6 +315,7 @@ export class OpenMultiAgent {
     prompt: string,
     options?: RunAgentOptions,
   ): Promise<AgentRunResult> {
+    const pendingEvaluation = this.beginOnlineEvaluation(prompt)
     const { identity, metadata } = createRunFacts(options)
     const traceRuntime = this.startTrace(identity, metadata)
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
@@ -382,6 +418,7 @@ export class OpenMultiAgent {
       status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
       ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
     })
+    this.completeOnlineEvaluation(pendingEvaluation, completedResult)
     return completedResult
   }
 
@@ -415,6 +452,7 @@ export class OpenMultiAgent {
     goal: string,
     options?: RunTeamOptions,
   ): Promise<TeamRunResult> {
+    const pendingEvaluation = this.beginOnlineEvaluation(goal)
     const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
     const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
@@ -426,6 +464,7 @@ export class OpenMultiAgent {
         status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
         ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
       })
+      this.completeOnlineEvaluation(pendingEvaluation, completedResult)
       return completedResult
     }
     const agentConfigs = team.getAgents()
@@ -902,6 +941,7 @@ export class OpenMultiAgent {
     plan: PlanArtifact,
     options?: RunTasksOptions,
   ): Promise<TeamRunResult> {
+    const pendingEvaluation = this.beginOnlineEvaluation(plan)
     if (plan.version !== 1) {
       throw new Error(`Unsupported plan artifact version: ${String(plan.version)}`)
     }
@@ -914,7 +954,18 @@ export class OpenMultiAgent {
     }
     queue.addBatch(tasks)
 
-    return this.executeExplicitTaskQueue(team, queue, options, plan.goal)
+    return this.executeExplicitTaskQueue(
+      team,
+      queue,
+      options,
+      plan.goal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pendingEvaluation,
+    )
   }
 
   /**
@@ -953,6 +1004,7 @@ export class OpenMultiAgent {
     tasksOrOptions?: ReadonlyArray<RunTaskSpec> | PlanArtifact | RestoreOptions,
     maybeOptions?: RestoreOptions,
   ): Promise<TeamRunResult> {
+    const evaluationStartedAtMs = this.onlineEvaluator === undefined ? undefined : Date.now()
     const hasTaskSource = Array.isArray(tasksOrOptions) || this.isPlanArtifact(tasksOrOptions)
     const options = hasTaskSource ? maybeOptions : tasksOrOptions as RestoreOptions | undefined
     validateRunMetadata(options?.metadata)
@@ -991,6 +1043,13 @@ export class OpenMultiAgent {
           options?.goal,
           undefined,
           activeCheckpoint,
+          undefined,
+          undefined,
+          undefined,
+          evaluationStartedAtMs === undefined ? undefined : {
+            input: tasksOrOptions,
+            startedAtMs: evaluationStartedAtMs,
+          },
         )
       }
       if (this.isPlanArtifact(tasksOrOptions)) {
@@ -1008,6 +1067,13 @@ export class OpenMultiAgent {
           tasksOrOptions.goal ?? options?.goal,
           undefined,
           activeCheckpoint,
+          undefined,
+          undefined,
+          undefined,
+          evaluationStartedAtMs === undefined ? undefined : {
+            input: tasksOrOptions,
+            startedAtMs: evaluationStartedAtMs,
+          },
         )
       }
 
@@ -1019,6 +1085,13 @@ export class OpenMultiAgent {
         options?.goal,
         undefined,
         activeCheckpoint,
+        undefined,
+        undefined,
+        undefined,
+        evaluationStartedAtMs === undefined ? undefined : {
+          input: { kind: 'restore', goal: options?.goal },
+          startedAtMs: evaluationStartedAtMs,
+        },
       )
     }
 
@@ -1059,6 +1132,10 @@ export class OpenMultiAgent {
       options?.coordinator,
       identity,
       restoreMetadata,
+      evaluationStartedAtMs === undefined ? undefined : {
+        input: { kind: 'restore', goal: snapshot.goal ?? options?.goal },
+        startedAtMs: evaluationStartedAtMs,
+      },
     )
   }
 
@@ -1077,6 +1154,7 @@ export class OpenMultiAgent {
     tasks: ReadonlyArray<RunTaskSpec>,
     options?: RunTasksOptions,
   ): Promise<TeamRunResult> {
+    const pendingEvaluation = this.beginOnlineEvaluation(tasks)
     const agentConfigs = team.getAgents()
     const queue = new TaskQueue()
 
@@ -1098,7 +1176,18 @@ export class OpenMultiAgent {
       queue,
     )
 
-    return this.executeExplicitTaskQueue(team, queue, options)
+    return this.executeExplicitTaskQueue(
+      team,
+      queue,
+      options,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pendingEvaluation,
+    )
   }
 
   // -------------------------------------------------------------------------
@@ -1118,6 +1207,7 @@ export class OpenMultiAgent {
     prompt: string,
     options: ConsensusOptions,
   ): Promise<ConsensusResult> {
+    const pendingEvaluation = this.beginOnlineEvaluation(prompt)
     const { identity, metadata } = createRunFacts(options)
     const proposers = Array.isArray(options.proposer) ? options.proposer : [options.proposer]
     if (proposers.length === 0) {
@@ -1152,6 +1242,7 @@ export class OpenMultiAgent {
         status,
         ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
       })
+      this.completeOnlineEvaluation(pendingEvaluation, completedResult)
       return completedResult
     }
 
@@ -1364,6 +1455,7 @@ export class OpenMultiAgent {
     coordinatorForSynthesis?: CoordinatorConfig,
     identity?: RunIdentity,
     restoreMetadata?: RestoreMetadataResolution,
+    pendingEvaluation?: PendingOnlineEvaluation,
   ): Promise<TeamRunResult> {
     const newRunFacts = identity === undefined
       ? createRunFacts(identityOptionsForRun(options))
@@ -1500,6 +1592,7 @@ export class OpenMultiAgent {
       status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
       ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
     })
+    this.completeOnlineEvaluation(pendingEvaluation, completedResult)
     return completedResult
   }
 

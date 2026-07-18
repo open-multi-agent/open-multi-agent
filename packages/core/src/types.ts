@@ -1421,6 +1421,8 @@ export interface OrchestratorConfig {
    */
   readonly defaultCwd?: string | null
   readonly onProgress?: (event: OrchestratorEvent) => void
+  /** Best-effort online scoring of settled top-level runs. Disabled unless configured. */
+  readonly evaluation?: import('./eval/online.js').OnlineEvaluationConfig
   /** Observability v2 sinks. User code owns forceFlush/shutdown lifecycle. */
   readonly observability?: import('./observability/sink.js').ObservabilityConfig
   readonly onTrace?: (event: TraceEvent) => void | Promise<void>

@@ -1,11 +1,18 @@
 import { z, type ZodSchema } from 'zod'
-import type { AgentConfig } from '../types.js'
+import type { AgentConfig, CostEstimateContext, TokenUsage } from '../types.js'
 import {
   buildStructuredOutputInstruction,
   extractJSON,
   validateOutput,
 } from '../agent/structured-output.js'
-import { defineScorer, type Scorer, type ScorerContext } from './scorer.js'
+import {
+  attachScoreCostInputs,
+  defineScorer,
+  scoreCostInputs,
+  type ScoreCostInput,
+  type Scorer,
+  type ScorerContext,
+} from './scorer.js'
 
 export interface JudgeScorerOptions {
   readonly name: string
@@ -115,6 +122,7 @@ function createDeadline(
     error.name = 'TimeoutError'
     controller.abort(error)
   }, timeoutMs)
+  timer?.unref?.()
 
   return {
     signal: controller.signal,
@@ -146,16 +154,43 @@ async function runJudge(
   prompt: string,
   schema: ZodSchema,
   signal: AbortSignal,
-): Promise<JudgeVerdict> {
+): Promise<{
+  readonly verdict: JudgeVerdict
+  readonly usage: TokenUsage
+  readonly costContext: CostEstimateContext
+}> {
   // Keep the eval barrel browser-safe to import. The Node-capable Agent path is
   // loaded only when a judge scorer actually executes.
   const { buildAgent } = await import('../orchestrator/agent-config.js')
   const result = await buildAgent(judge).run(prompt, { abortSignal: signal })
-  if (!result.success) {
-    if (result.error instanceof Error) throw result.error
-    throw new Error(result.errorInfo?.message ?? `Judge "${judge.name}" failed.`)
+  const model = judge.model ?? (judge.backend ? `${judge.backend.kind}-backend` : 'unknown')
+  const costInput: ScoreCostInput = {
+    usage: result.tokenUsage,
+    context: {
+      agentName: judge.name,
+      model,
+      phase: 'agent',
+      ...(judge.provider !== undefined ? { provider: judge.provider } : {}),
+    },
   }
-  return parseVerdict(result.output, schema, judge)
+  if (!result.success) {
+    const error = result.error instanceof Error
+      ? result.error
+      : new Error(result.errorInfo?.message ?? `Judge "${judge.name}" failed.`)
+    throw attachScoreCostInputs(error, [costInput])
+  }
+  let verdict: JudgeVerdict
+  try {
+    verdict = parseVerdict(result.output, schema, judge)
+  } catch (error) {
+    if (error instanceof Error) attachScoreCostInputs(error, [costInput])
+    throw error
+  }
+  return {
+    verdict,
+    usage: result.tokenUsage,
+    costContext: costInput.context,
+  }
 }
 
 /** Create an OMA-agent-backed scorer with mean-score and quorum aggregation. */
@@ -191,11 +226,21 @@ export function createJudgeScorer(options: JudgeScorerOptions): Scorer {
 
       try {
         const verdicts: JudgeVerdict[] = []
-        for (const judge of judges) {
-          verdicts.push(await raceWithAbort(
-            runJudge(judge, prompt, schema, deadline.signal),
-            deadline.signal,
-          ))
+        const costInputs: ScoreCostInput[] = []
+        try {
+          for (const judge of judges) {
+            const judged = await raceWithAbort(
+              runJudge(judge, prompt, schema, deadline.signal),
+              deadline.signal,
+            )
+            verdicts.push(judged.verdict)
+            costInputs.push({ usage: judged.usage, context: judged.costContext })
+          }
+        } catch (error) {
+          if (error instanceof Error) {
+            attachScoreCostInputs(error, [...costInputs, ...scoreCostInputs(error)])
+          }
+          throw error
         }
 
         const score = verdicts.reduce((sum, verdict) => sum + verdict.score, 0) / verdicts.length
@@ -205,7 +250,7 @@ export function createJudgeScorer(options: JudgeScorerOptions): Scorer {
           .filter((verdict) => verdict.reason)
           .map((verdict) => `${verdict.judge}: ${verdict.reason}`)
 
-        return {
+        return attachScoreCostInputs({
           score,
           ...(hasPass ? { pass: passVotes >= quorum } : {}),
           ...(reasons.length > 0 ? { reason: reasons.join('\n') } : {}),
@@ -216,7 +261,7 @@ export function createJudgeScorer(options: JudgeScorerOptions): Scorer {
             models: verdicts.map((verdict) => verdict.model),
             scores: verdicts.map((verdict) => verdict.score),
           },
-        }
+        }, costInputs)
       } finally {
         deadline.dispose()
       }

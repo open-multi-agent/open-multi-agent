@@ -84,6 +84,149 @@ Each case/repeat target runs once, then that sample's scorers run serially. Diff
 
 Report percentiles use the nearest-rank method. For two sorted scores, p50 is the lower score and p95 is the higher score. `passRate` only includes scored records that explicitly contain `pass`; scorer errors are excluded from every score denominator. `byTag` repeats the same aggregation for each case tag. Target token usage is counted once per sample, even when multiple scorers run, and costs are summed only within the same currency.
 
+## Sample production runs online
+
+Online evaluation is opt-in on `OpenMultiAgent`. A settled top-level run only
+performs a synchronous sampling decision and bounded queue admission; scorers
+and store writes run later and never change the business result.
+
+```ts
+import { OpenMultiAgent } from '@open-multi-agent/core'
+import {
+  InMemoryEvalStore,
+  defineScorer,
+} from '@open-multi-agent/core/eval'
+
+const onlineStore = new InMemoryEvalStore()
+const lengthScorer = defineScorer({
+  name: 'length',
+  version: '1',
+  score({ output }) {
+    const length = String(output).length
+    return { score: Math.min(1, length / 200), pass: length >= 40 }
+  },
+})
+
+const orchestrator = new OpenMultiAgent({
+  evaluation: {
+    scorers: [lengthScorer],
+    sample: 0.05,
+    maxConcurrent: 1,
+    maxQueueLength: 100,
+    budget: { maxEvaluationsPerMinute: 30 },
+    store: onlineStore,
+  },
+})
+
+const run = await orchestrator.runAgent(agent, prompt)
+// The business result does not wait for lengthScorer or onlineStore.
+console.log(run.success)
+
+await orchestrator.evaluation.forceFlush({ timeoutMs: 1_000 })
+const page = await onlineStore.query({ runId: [run.identity!.runId] })
+console.log(page.items[0]?.source) // online
+```
+
+`runAgent`, `runTeam`, `runTasks`, `runFromPlan`, `runConsensus`, and `restore`
+all use the same evaluator owned by the `OpenMultiAgent` instance. Its
+`evalRunId` therefore remains stable for that instance lifetime. Each sampled
+run produces one `EvalRecord` per scorer with `source: 'online'`, no EvalSet or
+case ID, and a `runRef` containing the exact logical run and attempt.
+
+Numeric sampling uses `Math.random() < sample`. A rule can select by normalized
+status and validated run metadata without implementing tail sampling:
+
+```ts
+const failuresOnly = new OpenMultiAgent({
+  evaluation: {
+    scorers: [lengthScorer],
+    sample: (context) =>
+      context.status.code !== 'ok'
+      && context.metadata['deployment'] === 'canary',
+    store: onlineStore,
+  },
+})
+```
+
+A throwing sampling rule is treated as `false` and diagnosed. A scorer throw,
+rejection, or timeout produces a `scorer_error` record. A rejected store append
+drops that sample's record batch. Queue overflow, exhausted budgets, callbacks,
+and all evaluation failures are isolated from the original run result.
+
+Online defaults are deliberately conservative: evaluation is off when the
+configuration is omitted or `sample` is `0`; `maxConcurrent` is `1`,
+`maxQueueLength` is `100`, payload persistence is `none`, diagnostics warn at
+most once per code per 60 seconds, and there is no implicit rate or cost cap.
+`diagnostics: 'silent'` must be explicit. `getStats()` returns cumulative
+`sampled`, `enqueued`, `completed`, `dropped`, `failed`, and `storeFailed`
+counts.
+
+`maxEvaluationsPerMinute` counts scorer evaluations, so one sampled run with
+three scorers consumes three units. `maxCostPerHour` uses the caller's existing
+`OrchestratorConfig.estimateCost` function and the model usage surfaced by
+framework-backed scorers such as `createJudgeScorer`. The cap uses the same
+caller-defined unit returned by `estimateCost`, can overshoot by currently
+running scorer work, and resumes as the rolling hour advances. Rule scorers
+without model usage cost zero. Custom model-backed scorers cannot be costed
+unless they use a framework scorer that reports its internal usage. Configuring
+`maxCostPerHour` without `estimateCost` leaves the cap inactive and emits one
+payload-free warning; it never silently blocks runs.
+
+`storePayloads: 'none'` gives scorers a content-free run-input description and
+does not persist input or output. `'redacted'` gives scorers and the record a
+bounded, redacted input string and persists a bounded, redacted output;
+`'full'` does the same without redaction and must be an explicit privacy
+decision. Scorers always receive the candidate output in memory so they can
+score it. In particular, a judge scorer sends that output to its configured
+model provider; do not enable an external judge for data that may not leave its
+trust boundary.
+
+### Lifecycle ownership
+
+The application owns evaluator lifecycle. OMA installs no signal handlers and
+does not call `process.exit()`. All evaluator timers are unreferenced, so they
+do not keep a CLI or serverless process alive. This also means a process crash
+or natural exit can lose queued work: the first implementation is in-process,
+best-effort, and intentionally not durable. A durable or cross-process scoring
+queue is a separate future integration, not an `EvalStore` guarantee.
+
+```ts
+// Serverless/FaaS: flush this invocation; keep a shared singleton usable.
+const result = await orchestrator.runAgent(agent, prompt)
+const evaluation = await orchestrator.evaluation.forceFlush({ timeoutMs: 1_500 })
+return { result, evaluation: evaluation.status }
+
+// Short-lived CLI: settle accepted samples before natural process exit.
+try {
+  await main()
+} finally {
+  await orchestrator.evaluation.forceFlush({ timeoutMs: 5_000 })
+  await orchestrator.evaluation.shutdown({ timeoutMs: 5_000 })
+}
+
+// Long-lived server: stop traffic, then drain and close on graceful shutdown.
+async function stopServer() {
+  await stopAcceptingAndWaitForInflight(server)
+  await orchestrator.evaluation.forceFlush({ timeoutMs: 10_000 })
+  await orchestrator.evaluation.shutdown({ timeoutMs: 10_000 })
+  await provider?.shutdown()
+}
+// Register stopServer with your server/process framework if desired.
+```
+
+`forceFlush()` waits for the samples accepted before its watermark and returns
+`ok`, `partial`, `timeout`, or `error` plus cumulative counts. `shutdown()`
+atomically rejects new samples, flushes its cutoff, and is idempotent: repeated
+or concurrent calls share the first result. `OpenMultiAgent.shutdown()` remains
+the existing team-registry reset; evaluator shutdown is explicit through
+`orchestrator.evaluation`.
+
+On the online-evaluation maintainer benchmark (Node 22, 50,000 same-process direct
+admissions), sampling plus bounded enqueue measured approximately `0.42 µs`
+p95 (`0.30 µs` mean) on the implementation host. Absolute microseconds vary by
+host; CI additionally retains the existing observability same-host regression
+gate for the unconfigured path.
+
 ## Persist evaluation records
 
 Use `InMemoryEvalStore` for short-lived local runs, tests, or an adapter
