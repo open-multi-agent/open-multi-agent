@@ -22,4 +22,11 @@ describe('subpath export barrels', () => {
     const mod = await import('../src/ai-sdk.js')
     expect(typeof mod.AISdkAdapter).toBe('function')
   })
+
+  it('/eval exposes EvalSet and offline runner entry points', async () => {
+    const mod = await import('../src/eval/index.js')
+    expect(typeof mod.defineEvalSet).toBe('function')
+    expect(typeof mod.runEvalSet).toBe('function')
+    expect(typeof mod.targetFromAgent).toBe('function')
+  })
 })

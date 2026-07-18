@@ -6,3 +6,15 @@ export { EVAL_STORE_SCHEMA_MAJOR } from './record.js'
 export type { EvalRecord } from './record.js'
 export type { EvalCase } from './evalcase.js'
 export type { MemoryExtractionSample, MemoryRetrievalSample } from './memory-types.js'
+export { defineEvalSet } from './evalset.js'
+export type { EvalSet } from './evalset.js'
+export { targetFromAgent, targetFromPlan, targetFromTeam } from './target.js'
+export type {
+  EvalTarget,
+  EvalTargetContext,
+  TargetFromRunOptions,
+  TargetOutput,
+} from './target.js'
+export { runEvalSet } from './runner.js'
+export type { EvalProgressEvent, RunEvalOptions } from './runner.js'
+export type { EvalRunReport, ScorerAggregate } from './report.js'
