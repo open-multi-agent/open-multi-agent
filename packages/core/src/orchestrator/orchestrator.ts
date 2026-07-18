@@ -50,8 +50,6 @@ import type {
   ConsensusResult,
   ConsensusVerifyOptions,
   CoordinatorConfig,
-  CostEstimateContext,
-  ModelRouteConfig,
   ModelRoutingPolicy,
   PlanArtifact,
   PlanTaskArtifact,
@@ -60,10 +58,8 @@ import type {
   RestoreOptions,
   RunAgentOptions,
   RunIdentity,
-  RunIdentityOptions,
   RunStatus,
   StructuredTraceError,
-  RunMetrics,
   RunTaskSpec,
   RunTasksOptions,
   RunTeamOptions,
@@ -76,16 +72,12 @@ import type {
   TeamInfo,
   TeamRunResult,
   TokenUsage,
-  TraceAttributeValue,
 } from '../types.js'
 import type { ZodSchema } from 'zod'
 import type { RunOptions } from '../agent/runner.js'
 import { Agent } from '../agent/agent.js'
 import { AgentPool } from '../agent/pool.js'
-import { emitTrace, generateRunId, generateSpanId } from '../utils/trace.js'
-import { ToolRegistry } from '../tool/framework.js'
-import { ToolExecutor } from '../tool/executor.js'
-import { registerBuiltInTools } from '../tool/built-in/index.js'
+import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
@@ -94,11 +86,9 @@ import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
 import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
-import { CostBudgetExceededError, TokenBudgetExceededError, isRetryableError } from '../errors.js'
-import { abortableDelay } from '../utils/abort.js'
+import { CostBudgetExceededError, TokenBudgetExceededError } from '../errors.js'
 import {
   createRestoreIdentity,
-  createRunIdentity,
   resolveRestoreMetadata,
   validateRunMetadata,
   type RestoreMetadataResolution,
@@ -116,554 +106,49 @@ import { CompositeSink } from '../observability/composite.js'
 import type { TraceSink } from '../observability/sink.js'
 import { SensitiveDataProcessor } from '../observability/processors.js'
 import { LegacyCallbackTraceSink } from '../observability/legacy-callback.js'
-import { extractKeywords, keywordScore } from '../utils/keywords.js'
+import {
+  ZERO_USAGE,
+  DEFAULT_MAX_CONCURRENCY,
+  DEFAULT_MAX_DELEGATION_DEPTH,
+  DEFAULT_MODEL,
+  addUsage,
+  totalTokens,
+  errorMessage,
+  createRunFacts,
+  identityOptionsForRun,
+  metadataAttributes,
+  buildRevealCoordinatorLines,
+  prependRevealCoordinatorContext,
+  type RunMetadata,
+  type RunContext,
+  type ActiveCheckpoint,
+  type RevealCoordinatorContext,
+} from './run-context.js'
+import {
+  computeRunMetrics,
+  resolveTokenBudget,
+  buildCostEstimateContext,
+  applyBudgetAccounting,
+  emitBudgetExceeded,
+  recordRunUsage,
+} from './budget.js'
+import {
+  buildAgent,
+  applyDefaultToolPreset,
+  routeMatches,
+  withModelRoute,
+  isLeafTask,
+} from './agent-config.js'
+import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
+import { executeWithRetry } from './retry.js'
 
 // ---------------------------------------------------------------------------
-// Internal constants
+// Re-exports — keep the public import surface stable after the split so callers
+// (index.ts barrel and tests) can continue importing these from this module.
 // ---------------------------------------------------------------------------
 
-const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0 }
-const DEFAULT_MAX_CONCURRENCY = 5
-const DEFAULT_MAX_DELEGATION_DEPTH = 3
-const DEFAULT_MODEL = 'claude-opus-4-6'
-
-type RunMetadata = Readonly<Record<string, TraceAttributeValue>>
-
-interface RunFacts {
-  readonly identity: RunIdentity
-  readonly metadata?: RunMetadata
-}
-
-function identityOptionsForRun(options?: RunTasksOptions): RunIdentityOptions {
-  const checkpointRunId = options?.checkpoint && typeof options.checkpoint === 'object'
-    ? options.checkpoint.runId
-    : undefined
-  if (
-    options?.runId !== undefined
-    && checkpointRunId !== undefined
-    && options.runId !== checkpointRunId
-  ) {
-    throw new Error(
-      `runId conflict: run options requested "${options.runId}" but checkpoint options requested "${checkpointRunId}".`,
-    )
-  }
-  const runId = options?.runId ?? checkpointRunId
-  return {
-    ...(runId !== undefined ? { runId } : {}),
-    ...(options?.metadata !== undefined ? { metadata: options.metadata } : {}),
-  }
-}
-
-function createRunFacts(options: RunIdentityOptions = {}): RunFacts {
-  const metadata = validateRunMetadata(options.metadata)
-  return {
-    identity: createRunIdentity(options),
-    ...(metadata !== undefined ? { metadata } : {}),
-  }
-}
-
-function metadataAttributes(
-  metadata: RunMetadata | undefined,
-  overridden = false,
-): Readonly<Record<string, TraceAttributeValue>> {
-  const attributes: Record<string, TraceAttributeValue> = {}
-  for (const [key, value] of Object.entries(metadata ?? {})) {
-    attributes[`oma.meta.${key}`] = value
-  }
-  if (overridden) attributes['oma.meta._overridden'] = true
-  return attributes
-}
-
-// ---------------------------------------------------------------------------
-// Short-circuit helpers (exported for testability)
-// ---------------------------------------------------------------------------
-
-/**
- * Regex patterns that indicate a goal requires multi-agent coordination.
- *
- * Each pattern targets a distinct complexity signal:
- * - Sequencing:     "first … then", "step 1 / step 2", numbered lists
- * - Coordination:   "collaborate", "coordinate", "review each other"
- * - Parallel work:  "in parallel", "at the same time", "concurrently"
- * - Multi-phase:    "phase", "stage", multiple distinct action verbs joined by connectives
- */
-const COMPLEXITY_PATTERNS: RegExp[] = [
-  // Explicit sequencing
-  /\bfirst\b.{3,60}\bthen\b/i,
-  /\bstep\s*\d/i,
-  /\bphase\s*\d/i,
-  /\bstage\s*\d/i,
-  /^\s*\d+[\.\)]/m,                       // numbered list items ("1. …", "2) …")
-
-  // Coordination language — must be an imperative directive aimed at the agents
-  // ("collaborate with X", "coordinate the team", "agents should coordinate"),
-  // not a descriptive use ("how does X coordinate with Y" / "what does collaboration mean").
-  // Match either an explicit preposition or a noun-phrase that names a group.
-  /\bcollaborat(?:e|ing)\b\s+(?:with|on|to)\b/i,
-  /\bcoordinat(?:e|ing)\b\s+(?:with|on|across|between|the\s+(?:team|agents?|workers?|effort|work))\b/i,
-  /\breview\s+each\s+other/i,
-  /\bwork\s+together\b/i,
-
-  // Parallel execution
-  /\bin\s+parallel\b/i,
-  /\bconcurrently\b/i,
-  /\bat\s+the\s+same\s+time\b/i,
-
-  // Multiple deliverables joined by connectives
-  // Matches patterns like "build X, then deploy Y and test Z"
-  /\b(?:build|create|implement|design|write|develop)\b.{5,80}\b(?:and|then)\b.{5,80}\b(?:build|create|implement|design|write|develop|test|review|deploy)\b/i,
-]
-
-
-/**
- * Maximum goal length (in characters) below which a goal *may* be simple.
- *
- * Goals longer than this threshold almost always contain enough detail to
- * warrant multi-agent decomposition. The value is generous — short-circuit
- * is meant for genuinely simple, single-action goals.
- */
-const SIMPLE_GOAL_MAX_LENGTH = 200
-
-/**
- * Determine whether a goal is simple enough to skip coordinator decomposition.
- *
- * A goal is considered "simple" when ALL of the following hold:
- *   1. Its length is ≤ {@link SIMPLE_GOAL_MAX_LENGTH}.
- *   2. It does not match any {@link COMPLEXITY_PATTERNS}.
- *
- * The complexity patterns are deliberately conservative — they only fire on
- * imperative coordination directives (e.g. "collaborate with the team",
- * "coordinate the workers"), so descriptive uses ("how do pods coordinate
- * state", "explain microservice collaboration") remain classified as simple.
- *
- * Exported for unit testing.
- */
-export function isSimpleGoal(goal: string): boolean {
-  if (goal.length > SIMPLE_GOAL_MAX_LENGTH) return false
-  return !COMPLEXITY_PATTERNS.some((re) => re.test(goal))
-}
-
-/**
- * Select the best-matching agent for a goal using keyword affinity scoring.
- *
- * The scoring logic mirrors {@link Scheduler}'s `capability-match` strategy
- * exactly, including its asymmetric use of the agent's `model` field:
- *
- *  - `agentKeywords` is computed from `name + systemPrompt + model` so that
- *    a goal which mentions a model name (e.g. "haiku") can boost an agent
- *    bound to that model.
- *  - `agentText` (used for the reverse direction) is computed from
- *    `name + systemPrompt` only — model names should not bias the
- *    text-vs-goal-keywords match.
- *
- * The two-direction sum (`scoreA + scoreB`) ensures both "agent describes
- * goal" and "goal mentions agent capability" contribute to the final score.
- *
- * Exported for unit testing.
- */
-export function selectBestAgent(goal: string, agents: AgentConfig[]): AgentConfig {
-  if (agents.length <= 1) return agents[0]!
-
-  const goalKeywords = extractKeywords(goal)
-
-  let bestAgent = agents[0]!
-  let bestScore = -1
-
-  for (const agent of agents) {
-    const agentText = `${agent.name} ${agent.systemPrompt ?? ''}`
-    // Mirror Scheduler.capability-match: include `model` here only.
-    const agentKeywords = extractKeywords(`${agent.name} ${agent.systemPrompt ?? ''} ${agent.model}`)
-
-    const scoreA = keywordScore(agentText, goalKeywords)
-    const scoreB = keywordScore(goal, agentKeywords)
-    const score = scoreA + scoreB
-
-    if (score > bestScore) {
-      bestScore = score
-      bestAgent = agent
-    }
-  }
-
-  return bestAgent
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
-  return {
-    input_tokens: a.input_tokens + b.input_tokens,
-    output_tokens: a.output_tokens + b.output_tokens,
-  }
-}
-
-function computeRunMetrics(
-  tasks?: readonly TaskExecutionRecord[],
-): RunMetrics | undefined {
-  if (!tasks || tasks.length === 0) return undefined
-
-  let inputTokens = 0
-  let outputTokens = 0
-  let totalRetries = 0
-  let errorCount = 0
-  let failureCount = 0
-  let completedCount = 0
-  let minTaskDurationMs: number | undefined
-  let maxTaskDurationMs: number | undefined
-  let totalDurationMs = 0
-
-  for (const task of tasks) {
-    if (task.status === 'failed') {
-      failureCount++
-    }
-    if (task.status === 'failed' || task.status === 'skipped' || task.status === 'blocked') {
-      errorCount++
-    }
-    if (task.status === 'completed') {
-      completedCount++
-    }
-
-    const metrics = task.metrics
-    if (metrics) {
-      inputTokens += metrics.tokenUsage.input_tokens
-      outputTokens += metrics.tokenUsage.output_tokens
-      totalRetries += metrics.retries
-    }
-
-    if (task.status === 'completed' && metrics) {
-      totalDurationMs += metrics.durationMs
-      if (minTaskDurationMs === undefined || metrics.durationMs < minTaskDurationMs) {
-        minTaskDurationMs = metrics.durationMs
-      }
-      if (maxTaskDurationMs === undefined || metrics.durationMs > maxTaskDurationMs) {
-        maxTaskDurationMs = metrics.durationMs
-      }
-    }
-  }
-
-  return {
-    totalTokens: { input_tokens: inputTokens, output_tokens: outputTokens },
-    totalRetries,
-    errorCount,
-    failureCount,
-    completedCount,
-    minTaskDurationMs,
-    maxTaskDurationMs,
-    avgTaskDurationMs: completedCount > 0 ? Math.round(totalDurationMs / completedCount) : undefined,
-    totalDurationMs,
-  }
-}
-
-function resolveTokenBudget(primary?: number, fallback?: number): number | undefined {
-  if (primary === undefined) return fallback
-  if (fallback === undefined) return primary
-  return Math.min(primary, fallback)
-}
-
-type BudgetExceededError = TokenBudgetExceededError | CostBudgetExceededError
-
-function totalTokens(usage: TokenUsage): number {
-  return usage.input_tokens + usage.output_tokens
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function buildCostEstimateContext(params: {
-  readonly agentName: string
-  readonly model: string
-  readonly provider?: AgentConfig['provider']
-  readonly phase: CostEstimateContext['phase']
-  readonly taskId?: string
-}): CostEstimateContext {
-  return {
-    agentName: params.agentName,
-    model: params.model,
-    phase: params.phase,
-    ...(params.provider !== undefined ? { provider: params.provider } : {}),
-    ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
-  }
-}
-
-function estimateIncrementalCost(
-  usage: TokenUsage,
-  context: CostEstimateContext,
-  estimateCost: NonNullable<OrchestratorConfig['estimateCost']>,
-): number {
-  const cost = estimateCost(usage, context)
-  if (!Number.isFinite(cost) || cost < 0) {
-    throw new Error(
-      `Cost estimator returned invalid cost for agent "${context.agentName}": ${String(cost)}`,
-    )
-  }
-  return cost
-}
-
-function applyBudgetAccounting(params: {
-  readonly currentUsage: TokenUsage
-  readonly currentCost: number
-  readonly usage: TokenUsage
-  readonly maxTokenBudget?: number
-  readonly maxCostBudget?: number
-  readonly estimateCost?: OrchestratorConfig['estimateCost']
-  readonly costContext: CostEstimateContext
-}): {
-  readonly cumulativeUsage: TokenUsage
-  readonly cumulativeCost: number
-  readonly exceeded?: BudgetExceededError
-} {
-  const cumulativeUsage = addUsage(params.currentUsage, params.usage)
-  const cumulativeCost = params.estimateCost
-    ? params.currentCost + estimateIncrementalCost(params.usage, params.costContext, params.estimateCost)
-    : params.currentCost
-
-  if (
-    params.maxTokenBudget !== undefined
-    && totalTokens(cumulativeUsage) > params.maxTokenBudget
-  ) {
-    return {
-      cumulativeUsage,
-      cumulativeCost,
-      exceeded: new TokenBudgetExceededError(
-        params.costContext.agentName,
-        totalTokens(cumulativeUsage),
-        params.maxTokenBudget,
-      ),
-    }
-  }
-
-  if (
-    params.maxCostBudget !== undefined
-    && params.estimateCost !== undefined
-    && cumulativeCost > params.maxCostBudget
-  ) {
-    return {
-      cumulativeUsage,
-      cumulativeCost,
-      exceeded: new CostBudgetExceededError(
-        params.costContext.agentName,
-        cumulativeCost,
-        params.maxCostBudget,
-      ),
-    }
-  }
-
-  return { cumulativeUsage, cumulativeCost }
-}
-
-function emitBudgetExceeded(
-  config: OrchestratorConfig,
-  error: BudgetExceededError,
-  agent: string,
-  task?: string,
-): void {
-  config.onProgress?.({
-    type: 'budget_exceeded',
-    agent,
-    ...(task !== undefined ? { task } : {}),
-    data: error,
-  } satisfies OrchestratorEvent)
-}
-
-function recordRunUsage(
-  ctx: RunContext,
-  usage: TokenUsage,
-  costContext: CostEstimateContext,
-  agent: string = costContext.agentName,
-  task?: string,
-): BudgetExceededError | undefined {
-  const accounting = applyBudgetAccounting({
-    currentUsage: ctx.cumulativeUsage,
-    currentCost: ctx.cumulativeCost,
-    usage,
-    maxTokenBudget: ctx.maxTokenBudget,
-    maxCostBudget: ctx.maxCostBudget,
-    estimateCost: ctx.estimateCost,
-    costContext,
-  })
-  ctx.cumulativeUsage = accounting.cumulativeUsage
-  ctx.cumulativeCost = accounting.cumulativeCost
-
-  if (!ctx.budgetExceededTriggered && accounting.exceeded) {
-    ctx.budgetExceededTriggered = true
-    ctx.budgetExceededReason = accounting.exceeded.message
-    const classified = classifyRunFailure(accounting.exceeded)
-    ctx.outcomeStatus = classified.status
-    ctx.outcomeErrorInfo = classified.errorInfo
-    emitBudgetExceeded(ctx.config, accounting.exceeded, agent, task)
-    return accounting.exceeded
-  }
-
-  return undefined
-}
-
-/**
- * Build a minimal {@link Agent} with its own fresh registry/executor.
- * Pool workers pass `includeDelegateTool` so `delegate_to_agent` is available during `runTeam` / `runTasks`.
- */
-function buildAgent(
-  config: AgentConfig,
-  toolRegistration?: { readonly includeDelegateTool?: boolean },
-): Agent {
-  const registry = new ToolRegistry()
-  registerBuiltInTools(registry, toolRegistration)
-  if (config.customTools) {
-    for (const tool of config.customTools) {
-      registry.register(tool, { runtimeAdded: true })
-    }
-  }
-  const executor = new ToolExecutor(registry, {
-    ...(config.maxToolOutputChars !== undefined
-      ? { maxToolOutputChars: config.maxToolOutputChars }
-      : {}),
-  })
-  return new Agent(config, registry, executor)
-}
-
-/**
- * Apply the orchestrator's {@link OrchestratorConfig.defaultToolPreset} as a
- * fallback grant for an agent that declares neither `tools` nor `toolPreset`.
- *
- * Built-in tools are opt-in (default-deny): an agent with no grant resolves to
- * zero built-in tools. This fills that gap when the orchestrator opts in to a
- * default. Per-agent grants always win — the default never widens an agent that
- * already declares `tools` or `toolPreset`.
- */
-function applyDefaultToolPreset(
-  config: AgentConfig,
-  defaultToolPreset: OrchestratorConfig['defaultToolPreset'],
-): AgentConfig {
-  if (
-    defaultToolPreset === undefined
-    || config.tools !== undefined
-    || config.toolPreset !== undefined
-  ) {
-    return config
-  }
-  return { ...config, toolPreset: defaultToolPreset }
-}
-
-/** Maximum delay cap to prevent runaway exponential backoff (30 seconds). */
-const MAX_RETRY_DELAY_MS = 30_000
-
-/**
- * Compute the retry delay for a given attempt, capped at {@link MAX_RETRY_DELAY_MS}.
- */
-export function computeRetryDelay(
-  baseDelay: number,
-  backoff: number,
-  attempt: number,
-): number {
-  return Math.min(baseDelay * backoff ** (attempt - 1), MAX_RETRY_DELAY_MS)
-}
-
-/**
- * Execute an agent task with optional retry and exponential backoff.
- *
- * Exported for testability — called internally by {@link executeQueue}.
- *
- * Retry is off by default (`maxRetries: 0`). When enabled it is error-aware:
- * provably-terminal failures (auth/validation errors, aborted calls, 4xx client
- * errors other than 408/409/429) skip retries instead of wasting attempts;
- * backoff is jittered to avoid lockstep re-collision against a rate-limited
- * provider; and `abortSignal` is honored between attempts so a cancelled run
- * neither sleeps a full backoff nor fires one more attempt.
- *
- * @param run      - The function that executes the task (typically `pool.run`).
- * @param task     - The task to execute (retry config read from its fields).
- * @param onRetry  - Called before each retry sleep with the (post-jitter) delay.
- * @param delayFn  - Injectable delay function (defaults to `abortableDelay`).
- * @param opts     - Optional `abortSignal` (checked between attempts) and `rng`
- *                   (injectable `Math.random` for deterministic jitter in tests).
- * @returns The final {@link AgentRunResult} from the last attempt.
- */
-export async function executeWithRetry(
-  run: (attempt: number) => Promise<AgentRunResult>,
-  task: Task,
-  onRetry?: (data: { attempt: number; maxAttempts: number; error: string; nextDelayMs: number }) => void,
-  delayFn: (ms: number, signal?: AbortSignal) => Promise<void> = abortableDelay,
-  opts?: { abortSignal?: AbortSignal; rng?: () => number },
-): Promise<AgentRunResult> {
-  const abortSignal = opts?.abortSignal
-  const rng = opts?.rng ?? Math.random
-  const rawRetries = Number.isFinite(task.maxRetries) ? task.maxRetries! : 0
-  const maxAttempts = Math.max(0, rawRetries) + 1
-  const baseDelay = Math.max(0, Number.isFinite(task.retryDelayMs) ? task.retryDelayMs! : 1000)
-  const backoff = Math.max(1, Number.isFinite(task.retryBackoff) ? task.retryBackoff! : 2)
-
-  let lastError: string = ''
-  // Accumulate token usage across all attempts so billing/observability
-  // reflects the true cost of retries.
-  let totalUsage: TokenUsage = { input_tokens: 0, output_tokens: 0 }
-
-  const failure = (output: string): AgentRunResult => ({
-    success: false,
-    output,
-    messages: [],
-    tokenUsage: totalUsage,
-    toolCalls: [],
-  })
-
-  // Compute the jittered backoff, report it, and sleep. Equal jitter over
-  // [nominal/2, nominal] decorrelates tasks retrying in lockstep while keeping a
-  // floor so a rate-limited provider isn't hammered instantly. Applied to the
-  // already-capped nominal, so the sleep never exceeds MAX_RETRY_DELAY_MS.
-  const backoffSleep = async (attempt: number): Promise<void> => {
-    const nominal = computeRetryDelay(baseDelay, backoff, attempt)
-    const jittered = Math.round(nominal / 2 + rng() * (nominal / 2))
-    onRetry?.({ attempt, maxAttempts, error: lastError, nextDelayMs: jittered })
-    await delayFn(jittered, abortSignal)
-  }
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Honor abort before every attempt — this turns an abort that landed during
-    // a prior backoff sleep into an early return instead of one more attempt.
-    if (abortSignal?.aborted) {
-      return failure(lastError || 'Run aborted')
-    }
-
-    try {
-      const result = await run(attempt)
-      totalUsage = {
-        input_tokens: totalUsage.input_tokens + result.tokenUsage.input_tokens,
-        output_tokens: totalUsage.output_tokens + result.tokenUsage.output_tokens,
-      }
-
-      if (result.success) {
-        return { ...result, tokenUsage: totalUsage }
-      }
-      lastError = result.output
-
-      // Non-streaming path carries the structured error on the result; a
-      // provably-terminal one (e.g. a 401) is not worth retrying.
-      const terminal = result.error !== undefined && !isRetryableError(result.error)
-      if (!terminal && attempt < maxAttempts && !abortSignal?.aborted) {
-        await backoffSleep(attempt)
-        continue
-      }
-
-      return { ...result, tokenUsage: totalUsage }
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err)
-
-      // Streaming path: the structured error is in scope here. Skip retries on
-      // terminal errors (auth/validation/abort) so they don't waste attempts.
-      const terminal = !isRetryableError(err)
-      if (!terminal && attempt < maxAttempts && !abortSignal?.aborted) {
-        await backoffSleep(attempt)
-        continue
-      }
-
-      // Terminal, aborted, or retries exhausted — return a failure result.
-      return failure(lastError)
-    }
-  }
-
-  // Should not be reached, but TypeScript needs a return.
-  return failure(lastError)
-}
+export { isSimpleGoal, selectBestAgent } from './short-circuit.js'
+export { computeRetryDelay, executeWithRetry } from './retry.js'
 
 // ---------------------------------------------------------------------------
 // Parsed task spec (result of coordinator decomposition)
@@ -802,142 +287,9 @@ function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
   }
 }
 
-interface ModelRoutingSelection {
-  readonly phase: 'coordinator' | 'synthesis' | 'short-circuit' | 'worker' | 'delegated'
-  readonly agent: string
-  readonly task?: Task
-  readonly leaf?: boolean
-}
-
-function routeMatches(
-  policy: ModelRoutingPolicy | undefined,
-  selection: ModelRoutingSelection,
-): ModelRouteConfig | undefined {
-  if (!policy) return undefined
-  const task = selection.task
-  for (const rule of policy.rules) {
-    const match = rule.match
-    if (match.phase !== undefined && match.phase !== selection.phase) continue
-    if (match.agent !== undefined && match.agent !== selection.agent) continue
-    if (match.taskRole !== undefined && match.taskRole !== task?.role) continue
-    if (match.taskPriority !== undefined && match.taskPriority !== task?.priority) continue
-    if (match.leaf !== undefined && match.leaf !== selection.leaf) continue
-    if (match.hasDependencies !== undefined && match.hasDependencies !== ((task?.dependsOn?.length ?? 0) > 0)) continue
-    return rule.route
-  }
-  return undefined
-}
-
-function withModelRoute(config: AgentConfig, route: ModelRouteConfig | undefined): AgentConfig {
-  if (!route) return config
-  return {
-    ...config,
-    model: route.model,
-    provider: route.provider ?? config.provider,
-    baseURL: route.baseURL ?? config.baseURL,
-    apiKey: route.apiKey ?? config.apiKey,
-    region: route.region ?? config.region,
-  }
-}
-
-function isLeafTask(task: Task, tasks: readonly Task[]): boolean {
-  for (const candidate of tasks) {
-    if (candidate.dependsOn?.includes(task.id)) return false
-  }
-  return true
-}
-
 // ---------------------------------------------------------------------------
 // Orchestration loop
 // ---------------------------------------------------------------------------
-
-/**
- * Team-level context optionally injected into every worker prompt when
- * `RunTeamOptions.revealCoordinator` is true.
- */
-interface RevealCoordinatorContext {
-  readonly goal: string
-  readonly rosterNames: readonly string[]
-}
-
-function buildRevealCoordinatorLines(
-  revealContext: RevealCoordinatorContext,
-  assignee: string,
-): string[] {
-  return [
-    '## Team context',
-    `Goal: ${revealContext.goal}`,
-    `Team: ${revealContext.rosterNames.join(', ')}`,
-    `Your role in this team: ${assignee}`,
-    'Assignment: You are responsible for the prompt below in this team run.',
-    '',
-  ]
-}
-
-function prependRevealCoordinatorContext(
-  prompt: string,
-  revealContext: RevealCoordinatorContext | undefined,
-  assignee: string,
-): string {
-  return revealContext
-    ? [...buildRevealCoordinatorLines(revealContext, assignee), prompt].join('\n')
-    : prompt
-}
-
-/**
- * Internal execution context assembled once per `runTeam` / `runTasks` call.
- */
-interface RunContext {
-  readonly team: Team
-  readonly pool: AgentPool
-  readonly scheduler: Scheduler
-  readonly agentResults: Map<string, AgentRunResult>
-  readonly config: OrchestratorConfig
-  readonly checkpoint?: ActiveCheckpoint
-  /** Stable top-level execution identity, independent of trace callbacks. */
-  readonly identity: RunIdentity
-  /** Validated facts echoed on the result and persisted with checkpoints. */
-  readonly metadata?: RunMetadata
-  /** Legacy trace correlation alias. */
-  readonly runId: string
-  readonly traceRuntime?: TraceRuntime
-  readonly taskSpans: Map<string, TraceSpan>
-  /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
-  readonly abortSignal?: AbortSignal
-  cumulativeUsage: TokenUsage
-  cumulativeCost: number
-  readonly maxTokenBudget?: number
-  readonly maxCostBudget?: number
-  readonly estimateCost?: OrchestratorConfig['estimateCost']
-  budgetExceededTriggered: boolean
-  budgetExceededReason?: string
-  outcomeStatus?: RunStatus
-  outcomeErrorInfo?: StructuredTraceError
-  readonly taskMetrics: Map<string, TaskExecutionMetrics>
-  /**
-   * Present only when `runTeam` is called with `{ revealCoordinator: true }`.
-   * `runTasks` omits this entirely (no goal concept).
-   */
-  readonly revealCoordinatorContext?: RevealCoordinatorContext
-  readonly modelRouting?: ModelRoutingPolicy
-  readonly taskById: ReadonlyMap<string, Task>
-  readonly taskLeafById: ReadonlyMap<string, boolean>
-}
-
-interface ActiveCheckpoint {
-  readonly manager: Checkpoint
-  readonly mode: CheckpointSnapshot['mode']
-  readonly goal?: string
-  readonly runId?: string
-  /**
-   * True when the checkpoint store is the same object as the team's
-   * shared-memory store. In that case the memory entries are already durable
-   * in the store, so the checkpoint omits the full shared-memory snapshot
-   * (avoids ~O(N^2) write volume) and persists only the turn counter.
-   */
-  readonly reusesSharedMemoryStore: boolean
-  saveChain: Promise<void>
-}
 
 /**
  * Build {@link TeamInfo} for tool context, including nested `runDelegatedAgent`
