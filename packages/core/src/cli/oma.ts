@@ -6,7 +6,7 @@
  *
  * Exit codes:
  *   0 — finished; team run succeeded
- *   1 — finished; team run reported failure (agents/tasks)
+ *   1 — finished; run, eval targets, or an eval gate reported failure
  *   2 — invalid usage, I/O, or JSON validation
  *   3 — unexpected runtime error (including LLM errors)
  */
@@ -18,7 +18,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { OpenMultiAgent } from '../orchestrator/orchestrator.js'
 import { renderRunViewer } from '../dashboard/render-run-viewer.js'
-import { loadEvalSet, writeEvalReport, type EvalReportFormat } from '../eval/file.js'
+import {
+  loadEvalReport,
+  loadEvalSet,
+  loadGatePolicy,
+  writeEvalReport,
+  type EvalReportFormat,
+} from '../eval/file.js'
+import { evaluateGate, type GateVerdict } from '../eval/gate.js'
 import { runEvalSet } from '../eval/runner.js'
 import type { Scorer } from '../eval/scorer.js'
 import type { EvalTarget } from '../eval/target.js'
@@ -366,12 +373,19 @@ export async function runEvalCli(argv: {
   const scorersPath = getOpt(argv.kv, argv.flags, 'scorers')
   const tags = getOpt(argv.kv, argv.flags, 'tags')
   const out = getOpt(argv.kv, argv.flags, 'out')
+  const gatePath = getOpt(argv.kv, argv.flags, 'gate')
+  const baselinePath = getOpt(argv.kv, argv.flags, 'baseline')
   if (!setPath || !targetPath) {
     throw new OmaValidationError('oma eval run requires --set and --target')
   }
   if (scorersPath === '') throw new OmaValidationError('--scorers requires a non-empty path')
   if (tags === '') throw new OmaValidationError('--tags requires a comma-separated value')
   if (out === '') throw new OmaValidationError('--out requires a non-empty path')
+  if (gatePath === '') throw new OmaValidationError('--gate requires a non-empty path')
+  if (baselinePath === '') throw new OmaValidationError('--baseline requires a non-empty path')
+  if (baselinePath !== undefined && gatePath === undefined) {
+    throw new OmaValidationError('--baseline requires --gate')
+  }
 
   let set
   try {
@@ -381,6 +395,12 @@ export async function runEvalCli(argv: {
     if (code === 'ENOENT' || code === 'EACCES') throw error
     throw new OmaValidationError(error instanceof Error ? error.message : String(error))
   }
+  const gatePolicy = gatePath === undefined
+    ? undefined
+    : await loadEvalCliFile(gatePath, loadGatePolicy)
+  const baseline = baselinePath === undefined
+    ? undefined
+    : await loadEvalCliFile(baselinePath, loadEvalReport)
   const targetModule = await loadEvalTarget(targetPath)
   const explicitScorers = scorersPath === undefined
     ? []
@@ -417,9 +437,17 @@ export async function runEvalCli(argv: {
   ])) as Partial<Record<EvalReportFormat, string>>
   await Promise.all(formats.map((format) =>
     writeEvalReport(report, { format, path: reports[format]! })))
+  const verdict = gatePolicy === undefined
+    ? undefined
+    : evaluateGate(report, gatePolicy, baseline)
+  const verdictPath = verdict === undefined ? undefined : join(outputDirectory, 'verdict.json')
+  if (verdict !== undefined) {
+    await writeFile(verdictPath!, JSON.stringify(verdict, null, 2), 'utf8')
+  }
   const sampleCount = report.caseCount * report.repeats
   return {
-    exit: sampleCount > 0 && report.totals.targetErrors === sampleCount
+    exit: verdict?.pass === false
+      || (sampleCount > 0 && report.totals.targetErrors === sampleCount)
       ? EXIT.RUN_FAILED
       : EXIT.SUCCESS,
     summary: {
@@ -437,7 +465,46 @@ export async function runEvalCli(argv: {
         errorCount: aggregate.errorCount,
       })),
       reports,
+      ...(verdict !== undefined ? { verdict, verdictPath } : {}),
     },
+  }
+}
+
+async function loadEvalCliFile<T>(
+  filePath: string,
+  loader: (path: string) => Promise<T>,
+): Promise<T> {
+  try {
+    return await loader(filePath)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'EACCES') throw error
+    throw new OmaValidationError(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export async function runEvalGateCli(argv: {
+  readonly _: readonly string[]
+  readonly flags: ReadonlySet<string>
+  readonly kv: ReadonlyMap<string, string>
+}): Promise<{ readonly exit: number; readonly verdict: GateVerdict }> {
+  const reportPath = getOpt(argv.kv, argv.flags, 'report')
+  const gatePath = getOpt(argv.kv, argv.flags, 'gate')
+  const baselinePath = getOpt(argv.kv, argv.flags, 'baseline')
+  if (!reportPath || !gatePath) {
+    throw new OmaValidationError('oma eval gate requires --report and --gate')
+  }
+  if (baselinePath === '') throw new OmaValidationError('--baseline requires a non-empty path')
+
+  const report = await loadEvalCliFile(reportPath, loadEvalReport)
+  const gatePolicy = await loadEvalCliFile(gatePath, loadGatePolicy)
+  const baseline = baselinePath === undefined
+    ? undefined
+    : await loadEvalCliFile(baselinePath, loadEvalReport)
+  const verdict = evaluateGate(report, gatePolicy, baseline)
+  return {
+    exit: verdict.pass ? EXIT.SUCCESS : EXIT.RUN_FAILED,
+    verdict,
   }
 }
 
@@ -593,6 +660,8 @@ function help(): string {
     '  oma eval run --set <evalset.json> --target <target.mjs> [--scorers <scorers.mjs>]',
     '               [--repeats <n>] [--concurrency <n>] [--tags <a,b>]',
     '               [--report <json|markdown|junit>]... [--out <dir>] [--meta key=value]...',
+    '               [--gate <gate.json>] [--baseline <report.json>]',
+    '  oma eval gate --report <report.json> --gate <gate.json> [--baseline <report.json>]',
     '  oma provider [list | template <provider>]',
     '',
     'Flags:',
@@ -607,7 +676,7 @@ function help(): string {
     'tasks.json: { "team": TeamConfig, "tasks": [ ... ], "orchestrator"?: { ... } }.',
     '  Optional --team overrides the embedded team object.',
     '',
-    'Exit codes: 0 success, 1 run/all eval targets failed, 2 usage/validation, 3 internal',
+    'Exit codes: 0 success, 1 run/eval gate failed, 2 usage/validation, 3 internal',
   ].join('\n')
 }
 
@@ -812,20 +881,27 @@ async function main(): Promise<number> {
 
   try {
     if (cmd === 'eval') {
-      if (argv._[1] !== 'run') {
+      if (argv._[1] === 'run') {
+        const evaluated = await runEvalCli(argv)
+        printJson(evaluated.summary, pretty)
+        return evaluated.exit
+      }
+      if (argv._[1] === 'gate') {
+        const gated = await runEvalGateCli(argv)
+        printJson(gated.verdict, pretty)
+        return gated.exit
+      }
+      if (argv._[1] !== 'run' && argv._[1] !== 'gate') {
         printJson({
           error: {
             kind: 'usage',
             message: argv._[1] === undefined
-              ? 'usage: oma eval run --set <evalset.json> --target <target.mjs>'
+              ? 'usage: oma eval <run|gate>'
               : `unknown eval subcommand: ${argv._[1]}`,
           },
         }, pretty)
         return EXIT.USAGE
       }
-      const evaluated = await runEvalCli(argv)
-      printJson(evaluated.summary, pretty)
-      return evaluated.exit
     }
 
     if (cmd === 'dashboard') {

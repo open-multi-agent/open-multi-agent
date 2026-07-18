@@ -4,7 +4,12 @@ import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { loadEvalSet, writeEvalReport } from '../src/eval/file.js'
+import {
+  loadEvalReport,
+  loadEvalSet,
+  loadGatePolicy,
+  writeEvalReport,
+} from '../src/eval/file.js'
 import type { EvalRunReport } from '../src/eval/report.js'
 
 async function temporaryDirectory(): Promise<string> {
@@ -170,6 +175,74 @@ describe('loadEvalSet', () => {
 
     await expect(loadEvalSet(path)).rejects.toThrow(
       `Invalid EvalSet in ${resolve(path)}: EvalSet case id "a" must be unique.`,
+    )
+  })
+})
+
+describe('loadGatePolicy', () => {
+  it('loads, validates, and freezes a gate policy', async () => {
+    const path = join(await temporaryDirectory(), 'gate.json')
+    await writeFile(path, JSON.stringify({
+      schemaVersion: 1,
+      thresholds: [{ scorer: 'exact', metric: 'passRate', min: 1 }],
+      baseline: { maxRegression: 0.05 },
+    }), 'utf8')
+
+    const policy = await loadGatePolicy(path)
+
+    expect(policy).toEqual({
+      schemaVersion: 1,
+      thresholds: [{ scorer: 'exact', metric: 'passRate', min: 1 }],
+      baseline: { maxRegression: 0.05 },
+    })
+    expect(Object.isFrozen(policy)).toBe(true)
+    expect(Object.isFrozen(policy.thresholds)).toBe(true)
+  })
+
+  it('rejects malformed JSON and reports schema issue paths', async () => {
+    const directory = await temporaryDirectory()
+    const broken = join(directory, 'broken-gate.json')
+    const invalid = join(directory, 'invalid-gate.json')
+    await writeFile(broken, '{', 'utf8')
+    await writeFile(invalid, JSON.stringify({
+      schemaVersion: 1,
+      thresholds: [{ scorer: 'exact', metric: 'avg' }],
+    }), 'utf8')
+
+    await expect(loadGatePolicy(broken)).rejects.toThrow(
+      `Invalid GatePolicy JSON in ${resolve(broken)}`,
+    )
+    await expect(loadGatePolicy(invalid)).rejects.toThrow(
+      `Invalid GatePolicy in ${resolve(invalid)}: thresholds.0:`,
+    )
+  })
+})
+
+describe('loadEvalReport', () => {
+  it('round-trips and freezes an authoritative report', async () => {
+    const path = join(await temporaryDirectory(), 'report.json')
+    const fixture = reportFixture()
+    await writeFile(path, JSON.stringify(fixture), 'utf8')
+
+    const loaded = await loadEvalReport(path)
+
+    expect(loaded).toEqual(fixture)
+    expect(Object.isFrozen(loaded)).toBe(true)
+    expect(Object.isFrozen(loaded.records)).toBe(true)
+  })
+
+  it('rejects malformed JSON and unsupported schema versions', async () => {
+    const directory = await temporaryDirectory()
+    const broken = join(directory, 'broken-report.json')
+    const invalid = join(directory, 'invalid-report.json')
+    await writeFile(broken, '{', 'utf8')
+    await writeFile(invalid, JSON.stringify({ ...reportFixture(), schemaVersion: 2 }), 'utf8')
+
+    await expect(loadEvalReport(broken)).rejects.toThrow(
+      `Invalid EvalRunReport JSON in ${resolve(broken)}`,
+    )
+    await expect(loadEvalReport(invalid)).rejects.toThrow(
+      `Invalid EvalRunReport in ${resolve(invalid)}: schemaVersion:`,
     )
   })
 })

@@ -18,3 +18,11 @@ export type {
 export { runEvalSet } from './runner.js'
 export type { EvalProgressEvent, RunEvalOptions } from './runner.js'
 export type { EvalRunReport, ScorerAggregate } from './report.js'
+export { evaluateGate } from './gate.js'
+export type {
+  GateFailure,
+  GateMetric,
+  GatePolicy,
+  GateThreshold,
+  GateVerdict,
+} from './gate.js'

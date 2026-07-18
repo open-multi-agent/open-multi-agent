@@ -74,7 +74,31 @@ jobs:
         run: |
           node -e "Promise.all([import('./dist/index.js'), import('./dist/observability/index.js'), import('./dist/observability/file.js'), import('./dist/acp.js'), import('./dist/process.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js'), import('./dist/eval/index.js'), import('./dist/eval/file.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
           node dist/cli/oma.js help | grep -q "oma eval run"
+          node dist/cli/oma.js help | grep -q "oma eval gate"
           echo "CLI help runs OK"
+      - name: Run the no-network evaluation gate pass and fail paths
+        working-directory: packages/core
+        run: |
+          eval_gate_out=$(mktemp -d)
+          node dist/cli/oma.js eval run \
+            --set tests/fixtures/eval/set.json \
+            --target tests/fixtures/eval/target.mjs \
+            --gate tests/fixtures/eval/gate.json \
+            --baseline tests/fixtures/eval/baseline.json \
+            --out "$eval_gate_out/pass" > "$eval_gate_out/pass-summary.json"
+          jq -e '.verdict.pass == true' "$eval_gate_out/pass-summary.json"
+
+          set +e
+          node dist/cli/oma.js eval run \
+            --set tests/fixtures/eval/set.json \
+            --target tests/fixtures/eval/target-gate-fail.mjs \
+            --gate tests/fixtures/eval/gate.json \
+            --baseline tests/fixtures/eval/baseline.json \
+            --out "$eval_gate_out/fail" > "$eval_gate_out/fail-summary.json"
+          eval_gate_status=$?
+          set -e
+          test "$eval_gate_status" -eq 1
+          jq -e '.verdict.pass == false' "$eval_gate_out/fail-summary.json"
       - name: Assert the create-oma-app template pins the current core version
         run: |
           core_version=$(jq -r .version packages/core/package.json)

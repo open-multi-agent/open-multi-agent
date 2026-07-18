@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "thresholds": [
+    {
+      "scorer": "exact",
+      "metric": "passRate",
+      "min": 1
+    }
+  ],
+  "maxScorerErrorRate": 0,
+  "maxTargetErrorRate": 0,
+  "baseline": {
+    "maxRegression": 0
+  }
+}
