@@ -49,6 +49,10 @@
       "types": "./dist/classifiers.d.ts",
       "import": "./dist/classifiers.js"
     },
+    "./eval": {
+      "types": "./dist/eval/index.d.ts",
+      "import": "./dist/eval/index.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
