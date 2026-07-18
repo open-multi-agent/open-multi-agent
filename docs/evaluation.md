@@ -115,6 +115,67 @@ Agent and team targets convert non-string input with `String(input)` and use it 
 
 Record metadata merges in this order, with later values winning: case metadata, `runEvalSet()` metadata, then metadata echoed by a convenience target (including its configuration fingerprint).
 
+## Load EvalSets and write reports
+
+File I/O is isolated in the Node-only `@open-multi-agent/core/eval/file`
+subpath. The root package and `@open-multi-agent/core/eval` do not import this
+entry point.
+
+```ts
+import {
+  loadEvalSet,
+  writeEvalReport,
+} from '@open-multi-agent/core/eval/file'
+
+const setFromJson = await loadEvalSet('./evals/greetings.json')
+const fileReport = await runEvalSet(setFromJson, target, { scorers: [exact] })
+
+await writeEvalReport(fileReport, { format: 'json', path: './report.json' })
+await writeEvalReport(fileReport, { format: 'markdown', path: './report.md' })
+await writeEvalReport(fileReport, { format: 'junit', path: './report.junit.xml' })
+```
+
+`loadEvalSet()` parses JSON, applies the same validation and deep freezing as
+`defineEvalSet()`, and includes the resolved file path plus the first schema
+issue in validation errors. `writeEvalReport()` creates parent directories as
+needed and supports:
+
+- `json`: the authoritative, pretty-printed `EvalRunReport` representation.
+- `markdown`: metadata, scorer and tag aggregates, failed samples, and totals
+  for human review. Long failure reasons are truncated.
+- `junit`: one testcase per record. `pass: false` becomes `<failure>`;
+  `scorer_error` and `target_error` become `<error>`; records without `pass`
+  and without an error are successful testcases. XML names and messages are
+  fully escaped.
+
+## Run evaluations from the CLI
+
+After building or installing the package, a no-network target can be evaluated
+from a shell or CI job:
+
+```bash
+oma eval run --set ./evals/greetings.json --target ./evals/target.mjs \
+  --report json --report junit --out ./eval-results \
+  --meta prompt_version=v2
+```
+
+The target module must default-export an `EvalTarget` function or
+`{ target, scorers? }`. An optional `--scorers` module default-exports a
+`Scorer[]`; scorer names must be unique across both sources. The CLI dynamically
+imports and executes these user modules with the current process permissions,
+so they must be trusted.
+
+Reports are written below `<out>/<evalRunId>/`; `--out` defaults to
+`./eval-results`. `--report` is repeatable and defaults to JSON. `--meta
+key=value` is also repeatable and all values are strings. See
+[the CLI reference](cli.md#oma-eval-run) for the complete argument and exit-code
+contract.
+
+Low scores and `pass: false` records do not change the exit code in this
+command. A normal completed evaluation exits 0, every selected target failing
+exits 1, and usage/file/module errors exit 2. Baseline comparison and quality
+gates are intentionally separate from this command.
+
 ## Payload privacy
 
 EvalSet cases may contain private user data. `storePayloads` therefore defaults to `'none'`, so records contain scores, reasons, metadata, and run references but no input/output snapshots. `'redacted'` serializes each payload field, caps it at 8 KiB, and applies OMA's existing secret redaction. `'full'` keeps the serialized text without redaction but still applies the 8 KiB cap; opt into it only for data you are prepared to retain. A model-based judge necessarily sends the evaluated output to the configured judge model regardless of record payload storage.

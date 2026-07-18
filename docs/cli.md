@@ -1,6 +1,6 @@
 # Command-line interface (`oma`)
 
-The package ships a small binary **`oma`** that exposes the same primitives as the TypeScript API: `runTeam`, `runTasks`, single-run dashboard export, plus a static provider reference. It is meant for **shell scripts and CI** (JSON on stdout, stable exit codes).
+The package ships a small binary **`oma`** that exposes the same primitives as the TypeScript API: `runTeam`, `runTasks`, offline EvalSet execution, single-run dashboard export, plus a static provider reference. It is meant for **shell scripts and CI** (JSON on stdout, stable exit codes).
 
 It does **not** provide an interactive REPL, working-directory injection into tools, human approval gates, or session persistence. Those stay in application code.
 
@@ -89,6 +89,60 @@ Runs **`OpenMultiAgent.runTasks(team, tasks)`** with a fixed task list (no coord
 | `--team` | No | Path to JSON `TeamConfig`. When set, overrides the `team` object inside `--file`. |
 
 Global flags: [`--pretty`](#output-flags), [`--include-messages`](#output-flags).
+
+### `oma eval run`
+
+Runs a versioned EvalSet against a user-supplied target and writes one or more
+offline reports without invoking a built-in gate:
+
+```bash
+oma eval run --set ./evals/greetings.json --target ./evals/target.mjs \
+  [--scorers ./evals/scorers.mjs] \
+  [--repeats 3] [--concurrency 2] [--tags smoke,regression] \
+  [--report json] [--report markdown] [--report junit] \
+  [--out ./eval-results] [--meta prompt_version=v2] [--pretty]
+```
+
+`--set` and `--target` are required. The EvalSet file is parsed as JSON and
+validated by the same `defineEvalSet()` contract used by the TypeScript API.
+`--repeats`, `--concurrency`, and `--tags` override the matching runner
+options. Repeat `--meta key=value` to attach string metadata to every record.
+
+The target path is dynamically imported as an ES module. Its default export is
+either an `EvalTarget` function or an object containing `{ target, scorers? }`:
+
+```js
+const target = async (input) => ({ output: String(input).toUpperCase() })
+
+const exact = {
+  name: 'exact',
+  score({ output, evalCase }) {
+    const pass = output === evalCase.expected
+    return { score: pass ? 1 : 0, pass }
+  },
+}
+
+export default { target, scorers: [exact] }
+```
+
+When `--scorers` is set, that ES module must default-export a `Scorer[]`.
+Explicit scorers are appended to any embedded scorers. Every scorer name must
+be unique, and an evaluation with no scorers is a usage error. Dynamic import
+executes the supplied modules with the current process permissions; only load
+code you trust. The CLI does not sandbox target or scorer modules.
+
+Repeat `--report` to request any combination of `json`, `markdown`, and
+`junit`; JSON is the default. The output root defaults to `./eval-results`.
+Every invocation writes into `<out>/<evalRunId>/`, using `report.json`,
+`report.md`, and `report.junit.xml` respectively. JSON is the authoritative
+`EvalRunReport` representation. Markdown contains human-readable aggregates
+and failure details. JUnit maps `pass: false` to `<failure>` and target/scorer
+errors to `<error>`.
+
+A completed evaluation exits 0 even when it contains low or failing scores.
+It exits 1 only when every selected case/repeat target invocation failed. File,
+module, argument, and contract errors exit 2. Score gates and baseline
+comparison are not part of `oma eval run`.
 
 ### `oma provider`
 
@@ -256,6 +310,25 @@ Every invocation prints **one JSON document** to stdout, followed by a newline.
 }
 ```
 
+**Successful offline evaluation**
+
+```json
+{
+  "command": "eval",
+  "subcommand": "run",
+  "evalRunId": "eval_run_...",
+  "caseCount": 2,
+  "repeats": 1,
+  "targetErrors": 0,
+  "scorers": [
+    { "name": "exact", "avg": 1, "passRate": 1, "errorCount": 0 }
+  ],
+  "reports": {
+    "json": "/workspace/eval-results/eval_run_.../report.json"
+  }
+}
+```
+
 **Errors (usage, validation, I/O, runtime)**
 
 ```json
@@ -290,9 +363,9 @@ separate progress stream; for live telemetry use the TypeScript API with
 
 | Code | Meaning |
 |------|---------|
-| **0** | Success: `run`/`task` finished with `success === true`, dashboard export completed, or help / `provider` completed normally. |
-| **1** | Run finished but **`success === false`** (agent or task failure as reported by the library). |
-| **2** | Usage, validation, readable JSON errors, or file access issues (e.g. missing file). |
+| **0** | Success: `run`/`task` succeeded; dashboard export completed; eval completed without every target failing; or help / `provider` completed normally. Low eval scores alone still exit 0. |
+| **1** | `run`/`task` reported failure, or every selected eval target invocation failed. |
+| **2** | Usage, validation, readable JSON errors, module-load errors, or file access issues (e.g. missing file). |
 | **3** | Unexpected error, including typical LLM/API failures surfaced as thrown errors. |
 
 In scripts:
@@ -314,6 +387,7 @@ esac
 
 - Long options only: `--goal`, `--team`, `--file`, etc.
 - Values may be attached with `=`: `--team=./team.json`.
+- `oma eval run` accepts repeated `--report` and `--meta` options in either attached or separate-value form.
 - Boolean-style flags (`--pretty`, `--include-messages`) take no value; if the next token does not start with `--`, it is treated as the value of the previous option (standard `getopt`-style pairing).
 
 ---

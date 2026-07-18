@@ -53,6 +53,10 @@
       "types": "./dist/eval/index.d.ts",
       "import": "./dist/eval/index.js"
     },
+    "./eval/file": {
+      "types": "./dist/eval/file.d.ts",
+      "import": "./dist/eval/file.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
