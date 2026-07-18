@@ -92,15 +92,16 @@ Global flags: [`--pretty`](#output-flags), [`--include-messages`](#output-flags)
 
 ### `oma eval run`
 
-Runs a versioned EvalSet against a user-supplied target and writes one or more
-offline reports without invoking a built-in gate:
+Runs a versioned EvalSet against a user-supplied target, writes one or more
+offline reports, and optionally applies a quality gate:
 
 ```bash
 oma eval run --set ./evals/greetings.json --target ./evals/target.mjs \
   [--scorers ./evals/scorers.mjs] \
   [--repeats 3] [--concurrency 2] [--tags smoke,regression] \
   [--report json] [--report markdown] [--report junit] \
-  [--out ./eval-results] [--meta prompt_version=v2] [--pretty]
+  [--out ./eval-results] [--meta prompt_version=v2] \
+  [--gate ./evals/gate.json] [--baseline ./evals/baseline.json] [--pretty]
 ```
 
 `--set` and `--target` are required. The EvalSet file is parsed as JSON and
@@ -139,10 +140,33 @@ Every invocation writes into `<out>/<evalRunId>/`, using `report.json`,
 and failure details. JUnit maps `pass: false` to `<failure>` and target/scorer
 errors to `<error>`.
 
-A completed evaluation exits 0 even when it contains low or failing scores.
-It exits 1 only when every selected case/repeat target invocation failed. File,
-module, argument, and contract errors exit 2. Score gates and baseline
-comparison are not part of `oma eval run`.
+A completed evaluation without `--gate` exits 0 even when it contains low or
+failing scores. With `--gate`, the CLI loads a validated `GatePolicy`, applies
+threshold, scorer/target-health, and optional baseline-regression checks, adds
+`verdict` and `verdictPath` to the stdout summary, and writes the exact verdict
+to `<out>/<evalRunId>/verdict.json`. A failed gate or every selected target
+failing exits 1. File, module, argument, and contract errors exit 2.
+
+`--baseline` loads a prior JSON `EvalRunReport` and requires `--gate`. A policy
+with baseline rules but no `--baseline` still runs threshold and health checks,
+then reports a warning that regression checks were skipped.
+
+### `oma eval gate`
+
+Applies a gate to an existing authoritative JSON report without rerunning the
+target:
+
+```bash
+oma eval gate --report ./candidate/report.json --gate ./evals/gate.json \
+  [--baseline ./evals/baseline.json] [--pretty]
+```
+
+`--report` and `--gate` are required. The command prints the exact
+`GateVerdict` JSON (`pass`, `failures`, and `warnings`) to stdout. It exits 0
+when the verdict passes, 1 when it fails, and 2 when a report, policy, baseline,
+or argument is invalid. See [Evaluation](evaluation.md#gate-quality-in-ci) for
+the GatePolicy reference, baseline workflow, deterministic gate example, and
+GitHub Actions wiring.
 
 ### `oma provider`
 
@@ -363,8 +387,8 @@ separate progress stream; for live telemetry use the TypeScript API with
 
 | Code | Meaning |
 |------|---------|
-| **0** | Success: `run`/`task` succeeded; dashboard export completed; eval completed without every target failing; or help / `provider` completed normally. Low eval scores alone still exit 0. |
-| **1** | `run`/`task` reported failure, or every selected eval target invocation failed. |
+| **0** | Success: `run`/`task` succeeded; dashboard export completed; eval completed without every target failing and any configured gate passed; or help / `provider` completed normally. Low eval scores alone still exit 0 when no gate is configured. |
+| **1** | `run`/`task` reported failure, every selected eval target invocation failed, or an eval gate failed. |
 | **2** | Usage, validation, readable JSON errors, module-load errors, or file access issues (e.g. missing file). |
 | **3** | Unexpected error, including typical LLM/API failures surfaced as thrown errors. |
 
@@ -387,7 +411,7 @@ esac
 
 - Long options only: `--goal`, `--team`, `--file`, etc.
 - Values may be attached with `=`: `--team=./team.json`.
-- `oma eval run` accepts repeated `--report` and `--meta` options in either attached or separate-value form.
+- `oma eval run` accepts repeated `--report` and `--meta` options in either attached or separate-value form. Gate, baseline, and report-file options accept one path each.
 - Boolean-style flags (`--pretty`, `--include-messages`) take no value; if the next token does not start with `--`, it is treated as the value of the previous option (standard `getopt`-style pairing).
 
 ---

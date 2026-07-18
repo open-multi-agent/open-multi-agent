@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "evalRunId": "baseline-uppercase-1",
+  "startedAtUnixMs": 1784332800000,
+  "durationMs": 1,
+  "evalSet": {
+    "name": "uppercase",
+    "version": "1.0.0"
+  },
+  "metadata": {},
+  "caseCount": 2,
+  "repeats": 1,
+  "records": [
+    {
+      "schemaVersion": 1,
+      "recordId": "baseline-hello-exact",
+      "evalRunId": "baseline-uppercase-1",
+      "source": "offline",
+      "timestampUnixMs": 1784332800000,
+      "evalSet": {
+        "name": "uppercase",
+        "version": "1.0.0"
+      },
+      "caseId": "hello",
+      "repeat": 1,
+      "scorer": {
+        "name": "exact",
+        "version": "1"
+      },
+      "status": "scored",
+      "score": 1,
+      "pass": true,
+      "metadata": {}
+    },
+    {
+      "schemaVersion": 1,
+      "recordId": "baseline-world-exact",
+      "evalRunId": "baseline-uppercase-1",
+      "source": "offline",
+      "timestampUnixMs": 1784332800001,
+      "evalSet": {
+        "name": "uppercase",
+        "version": "1.0.0"
+      },
+      "caseId": "world",
+      "repeat": 1,
+      "scorer": {
+        "name": "exact",
+        "version": "1"
+      },
+      "status": "scored",
+      "score": 1,
+      "pass": true,
+      "metadata": {}
+    }
+  ],
+  "aggregates": [
+    {
+      "scorer": {
+        "name": "exact",
+        "version": "1"
+      },
+      "scoredCount": 2,
+      "errorCount": 0,
+      "avg": 1,
+      "p50": 1,
+      "p95": 1,
+      "min": 1,
+      "max": 1,
+      "passRate": 1,
+      "byTag": {
+        "upper": {
+          "scorer": {
+            "name": "exact",
+            "version": "1"
+          },
+          "scoredCount": 2,
+          "errorCount": 0,
+          "avg": 1,
+          "p50": 1,
+          "p95": 1,
+          "min": 1,
+          "max": 1,
+          "passRate": 1
+        }
+      }
+    }
+  ],
+  "totals": {
+    "targetErrors": 0
+  }
+}

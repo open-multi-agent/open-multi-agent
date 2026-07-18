@@ -28,11 +28,14 @@ describe('subpath export barrels', () => {
     expect(typeof mod.defineEvalSet).toBe('function')
     expect(typeof mod.runEvalSet).toBe('function')
     expect(typeof mod.targetFromAgent).toBe('function')
+    expect(typeof mod.evaluateGate).toBe('function')
   })
 
   it('/eval/file exposes Node-only EvalSet and report file helpers', async () => {
     const mod = await import('../src/eval/file.js')
     expect(typeof mod.loadEvalSet).toBe('function')
+    expect(typeof mod.loadEvalReport).toBe('function')
+    expect(typeof mod.loadGatePolicy).toBe('function')
     expect(typeof mod.writeEvalReport).toBe('function')
   })
 })
