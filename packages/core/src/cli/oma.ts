@@ -14,10 +14,14 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { OpenMultiAgent } from '../orchestrator/orchestrator.js'
 import { renderRunViewer } from '../dashboard/render-run-viewer.js'
+import { loadEvalSet, writeEvalReport, type EvalReportFormat } from '../eval/file.js'
+import { runEvalSet } from '../eval/runner.js'
+import type { Scorer } from '../eval/scorer.js'
+import type { EvalTarget } from '../eval/target.js'
 import { materializeRun } from '../observability/materialize.js'
 import type { TraceRecord } from '../observability/records.js'
 import type { StoredRun } from '../observability/store.js'
@@ -226,9 +230,215 @@ export function parseArgs(argv: string[]): {
   return { _, flags, kv }
 }
 
-function getOpt(kv: Map<string, string>, flags: Set<string>, key: string): string | undefined {
+function getOpt(
+  kv: ReadonlyMap<string, string>,
+  flags: ReadonlySet<string>,
+  key: string,
+): string | undefined {
   if (flags.has(key)) return ''
   return kv.get(key)
+}
+
+function getRepeatedOpts(args: readonly string[], key: string): readonly string[] {
+  const option = `--${key}`
+  const values: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index]!
+    if (token === '--') break
+    if (token === option) {
+      const value = args[index + 1]
+      if (value === undefined || value.startsWith('--')) {
+        throw new OmaValidationError(`${option} requires a value`)
+      }
+      values.push(value)
+      index += 1
+    } else if (token.startsWith(`${option}=`)) {
+      values.push(token.slice(option.length + 1))
+    }
+  }
+  return values
+}
+
+function positiveIntegerOption(value: string | undefined, option: string): number | undefined {
+  if (value === undefined) return undefined
+  if (!/^\d+$/.test(value) || Number(value) < 1) {
+    throw new OmaValidationError(`${option} must be a positive integer`)
+  }
+  return Number(value)
+}
+
+function evalMetadata(values: readonly string[]): Readonly<Record<string, string>> {
+  const metadata: Record<string, string> = {}
+  for (const entry of values) {
+    const separator = entry.indexOf('=')
+    if (separator < 1) throw new OmaValidationError('--meta must use key=value')
+    metadata[entry.slice(0, separator)] = entry.slice(separator + 1)
+  }
+  return Object.freeze(metadata)
+}
+
+function evalReportFormats(values: readonly string[]): readonly EvalReportFormat[] {
+  const requested = values.length === 0 ? ['json'] : values
+  const formats: EvalReportFormat[] = []
+  for (const value of requested) {
+    if (value !== 'json' && value !== 'markdown' && value !== 'junit') {
+      throw new OmaValidationError('--report must be one of json, markdown, or junit')
+    }
+    if (!formats.includes(value)) formats.push(value)
+  }
+  return formats
+}
+
+function asScorers(value: unknown, label: string): readonly Scorer[] {
+  if (!Array.isArray(value)) throw new OmaValidationError(`${label} must default-export a Scorer[]`)
+  for (const scorer of value) {
+    if (!isObject(scorer) || typeof scorer['name'] !== 'string' || scorer['name'].trim().length === 0
+      || typeof scorer['score'] !== 'function') {
+      throw new OmaValidationError(`${label} contains an invalid Scorer`)
+    }
+  }
+  return value as unknown as readonly Scorer[]
+}
+
+async function importDefault(modulePath: string, label: string): Promise<unknown> {
+  const absolutePath = resolve(modulePath)
+  try {
+    const imported = await import(pathToFileURL(absolutePath).href) as { readonly default?: unknown }
+    if (!('default' in imported)) {
+      throw new Error('module has no default export')
+    }
+    return imported.default
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new OmaValidationError(`Unable to load ${label} module ${absolutePath}: ${message}`)
+  }
+}
+
+async function loadEvalTarget(modulePath: string): Promise<{
+  readonly target: EvalTarget
+  readonly scorers: readonly Scorer[]
+}> {
+  const exported = await importDefault(modulePath, 'target')
+  if (typeof exported === 'function') {
+    return { target: exported as EvalTarget, scorers: [] }
+  }
+  if (!isObject(exported) || typeof exported['target'] !== 'function') {
+    throw new OmaValidationError(
+      'Target module must default-export an EvalTarget function or { target, scorers? }',
+    )
+  }
+  const scorers = exported['scorers'] === undefined
+    ? []
+    : asScorers(exported['scorers'], 'target module scorers')
+  return { target: exported['target'] as EvalTarget, scorers }
+}
+
+function mergeEvalScorers(
+  embedded: readonly Scorer[],
+  explicit: readonly Scorer[],
+): readonly Scorer[] {
+  const merged: Scorer[] = []
+  const names = new Set<string>()
+  for (const scorer of [...embedded, ...explicit]) {
+    if (names.has(scorer.name)) {
+      throw new OmaValidationError(`Duplicate scorer name: ${scorer.name}`)
+    }
+    names.add(scorer.name)
+    merged.push(scorer)
+  }
+  if (merged.length === 0) throw new OmaValidationError('At least one scorer is required')
+  return merged
+}
+
+const EVAL_REPORT_FILENAMES: Readonly<Record<EvalReportFormat, string>> = {
+  json: 'report.json',
+  markdown: 'report.md',
+  junit: 'report.junit.xml',
+}
+
+export async function runEvalCli(argv: {
+  readonly _: readonly string[]
+  readonly flags: ReadonlySet<string>
+  readonly kv: ReadonlyMap<string, string>
+}): Promise<{ readonly exit: number; readonly summary: Readonly<Record<string, unknown>> }> {
+  const setPath = getOpt(argv.kv, argv.flags, 'set')
+  const targetPath = getOpt(argv.kv, argv.flags, 'target')
+  const scorersPath = getOpt(argv.kv, argv.flags, 'scorers')
+  const tags = getOpt(argv.kv, argv.flags, 'tags')
+  const out = getOpt(argv.kv, argv.flags, 'out')
+  if (!setPath || !targetPath) {
+    throw new OmaValidationError('oma eval run requires --set and --target')
+  }
+  if (scorersPath === '') throw new OmaValidationError('--scorers requires a non-empty path')
+  if (tags === '') throw new OmaValidationError('--tags requires a comma-separated value')
+  if (out === '') throw new OmaValidationError('--out requires a non-empty path')
+
+  let set
+  try {
+    set = await loadEvalSet(setPath)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'EACCES') throw error
+    throw new OmaValidationError(error instanceof Error ? error.message : String(error))
+  }
+  const targetModule = await loadEvalTarget(targetPath)
+  const explicitScorers = scorersPath === undefined
+    ? []
+    : asScorers(await importDefault(scorersPath, 'scorers'), 'Scorers module')
+  const scorers = mergeEvalScorers(targetModule.scorers, explicitScorers)
+  const repeats = positiveIntegerOption(
+    getOpt(argv.kv, argv.flags, 'repeats'),
+    '--repeats',
+  )
+  const concurrency = positiveIntegerOption(
+    getOpt(argv.kv, argv.flags, 'concurrency'),
+    '--concurrency',
+  )
+  const filterTags = tags === undefined
+    ? undefined
+    : tags.split(',').map((tag) => tag.trim()).filter((tag) => tag.length > 0)
+  if (tags !== undefined && filterTags?.length === 0) {
+    throw new OmaValidationError('--tags requires at least one non-empty tag')
+  }
+  const metadata = evalMetadata(getRepeatedOpts(argv._, 'meta'))
+  const formats = evalReportFormats(getRepeatedOpts(argv._, 'report'))
+  const report = await runEvalSet(set, targetModule.target, {
+    scorers,
+    ...(repeats !== undefined ? { repeats } : {}),
+    ...(concurrency !== undefined ? { concurrency } : {}),
+    ...(filterTags !== undefined ? { filterTags } : {}),
+    metadata,
+  })
+
+  const outputDirectory = resolve(out ?? 'eval-results', report.evalRunId)
+  const reports = Object.fromEntries(formats.map((format) => [
+    format,
+    join(outputDirectory, EVAL_REPORT_FILENAMES[format]),
+  ])) as Partial<Record<EvalReportFormat, string>>
+  await Promise.all(formats.map((format) =>
+    writeEvalReport(report, { format, path: reports[format]! })))
+  const sampleCount = report.caseCount * report.repeats
+  return {
+    exit: sampleCount > 0 && report.totals.targetErrors === sampleCount
+      ? EXIT.RUN_FAILED
+      : EXIT.SUCCESS,
+    summary: {
+      command: 'eval',
+      subcommand: 'run',
+      evalRunId: report.evalRunId,
+      caseCount: report.caseCount,
+      repeats: report.repeats,
+      targetErrors: report.totals.targetErrors,
+      scorers: report.aggregates.map((aggregate) => ({
+        name: aggregate.scorer.name,
+        ...(aggregate.scorer.version !== undefined ? { version: aggregate.scorer.version } : {}),
+        avg: aggregate.avg,
+        ...(aggregate.passRate !== undefined ? { passRate: aggregate.passRate } : {}),
+        errorCount: aggregate.errorCount,
+      })),
+      reports,
+    },
+  }
 }
 
 function readJson(path: string): unknown {
@@ -380,6 +590,9 @@ function help(): string {
     '  oma run --goal <text> --team <team.json> [--orchestrator <orch.json>] [--coordinator <coord.json>]',
     '  oma task --file <tasks.json> [--team <team.json>]',
     '  oma dashboard --trace-store <traces.ndjson> --run-id <id> [--output <run.html>]',
+    '  oma eval run --set <evalset.json> --target <target.mjs> [--scorers <scorers.mjs>]',
+    '               [--repeats <n>] [--concurrency <n>] [--tags <a,b>]',
+    '               [--report <json|markdown|junit>]... [--out <dir>] [--meta key=value]...',
     '  oma provider [list | template <provider>]',
     '',
     'Flags:',
@@ -394,7 +607,7 @@ function help(): string {
     'tasks.json: { "team": TeamConfig, "tasks": [ ... ], "orchestrator"?: { ... } }.',
     '  Optional --team overrides the embedded team object.',
     '',
-    'Exit codes: 0 success, 1 run failed, 2 usage/validation, 3 internal',
+    'Exit codes: 0 success, 1 run/all eval targets failed, 2 usage/validation, 3 internal',
   ].join('\n')
 }
 
@@ -598,6 +811,23 @@ async function main(): Promise<number> {
   const jsonOpts: CliJsonOptions = { pretty, includeMessages }
 
   try {
+    if (cmd === 'eval') {
+      if (argv._[1] !== 'run') {
+        printJson({
+          error: {
+            kind: 'usage',
+            message: argv._[1] === undefined
+              ? 'usage: oma eval run --set <evalset.json> --target <target.mjs>'
+              : `unknown eval subcommand: ${argv._[1]}`,
+          },
+        }, pretty)
+        return EXIT.USAGE
+      }
+      const evaluated = await runEvalCli(argv)
+      printJson(evaluated.summary, pretty)
+      return evaluated.exit
+    }
+
     if (cmd === 'dashboard') {
       const traceStore = getOpt(argv.kv, argv.flags, 'trace-store')
       const runId = getOpt(argv.kv, argv.flags, 'run-id')

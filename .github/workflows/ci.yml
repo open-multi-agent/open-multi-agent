@@ -72,8 +72,8 @@ jobs:
       - name: Smoke-test that the built entry points import and the CLI runs
         working-directory: packages/core
         run: |
-          node -e "Promise.all([import('./dist/index.js'), import('./dist/observability/index.js'), import('./dist/observability/file.js'), import('./dist/acp.js'), import('./dist/process.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js'), import('./dist/eval/index.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
-          node dist/cli/oma.js help > /dev/null
+          node -e "Promise.all([import('./dist/index.js'), import('./dist/observability/index.js'), import('./dist/observability/file.js'), import('./dist/acp.js'), import('./dist/process.js'), import('./dist/mcp.js'), import('./dist/ai-sdk.js'), import('./dist/eval/index.js'), import('./dist/eval/file.js')]).then(() => console.log('entry points import OK')).catch((e) => { console.error(e); process.exit(1); })"
+          node dist/cli/oma.js help | grep -q "oma eval run"
           echo "CLI help runs OK"
       - name: Assert the create-oma-app template pins the current core version
         run: |
@@ -99,7 +99,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for f in dist/index.js dist/index.d.ts dist/observability/index.js dist/observability/index.d.ts dist/observability/file.js dist/observability/file.d.ts dist/cli/oma.js dist/acp.js dist/acp.d.ts dist/process.js dist/process.d.ts dist/mcp.js dist/mcp.d.ts dist/ai-sdk.js dist/ai-sdk.d.ts dist/eval/index.js dist/eval/index.d.ts; do
+          for f in dist/index.js dist/index.d.ts dist/observability/index.js dist/observability/index.d.ts dist/observability/file.js dist/observability/file.d.ts dist/cli/oma.js dist/acp.js dist/acp.d.ts dist/process.js dist/process.d.ts dist/mcp.js dist/mcp.d.ts dist/ai-sdk.js dist/ai-sdk.d.ts dist/eval/index.js dist/eval/index.d.ts dist/eval/file.js dist/eval/file.d.ts; do
             echo "$paths" | grep -qxF "$f" || missing="$missing $f"
           done
           if [ -n "$missing" ]; then
