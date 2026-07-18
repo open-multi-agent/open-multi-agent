@@ -123,7 +123,7 @@ export function renderRunViewer(input: RunViewerInput, options: RunViewerOptions
       border-radius: var(--radius); padding: 0 10px; color: var(--ink); font: 12px/1 var(--mono);
     }
     .result-count { margin-left: auto; padding-bottom: 8px; white-space: nowrap; font: 11px/1 var(--mono); color: var(--muted); }
-    .workspace { min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 360px; }
+    .workspace { grid-row: 4; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 360px; }
     .stage { min-width: 0; min-height: 0; position: relative; background: rgba(7,10,14,.58); }
     .view { position: absolute; inset: 0; min-height: 0; }
     .view[hidden] { display: none; }
