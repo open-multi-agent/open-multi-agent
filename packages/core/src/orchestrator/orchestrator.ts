@@ -48,9 +48,7 @@ import type {
   CheckpointSnapshot,
   ConsensusOptions,
   ConsensusResult,
-  ConsensusVerifyOptions,
   CoordinatorConfig,
-  ModelRoutingPolicy,
   PlanArtifact,
   PlanTaskArtifact,
   OrchestratorConfig,
@@ -96,7 +94,6 @@ import {
   traceRecordObserverFrom,
   type TraceRecordObserver,
   type TraceRuntime,
-  type TraceSpan,
 } from '../observability/runtime.js'
 import { CompositeSink } from '../observability/composite.js'
 import type { TraceSink } from '../observability/sink.js'
@@ -108,7 +105,6 @@ import {
   DEFAULT_MAX_DELEGATION_DEPTH,
   DEFAULT_MODEL,
   addUsage,
-  totalTokens,
   createRunFacts,
   identityOptionsForRun,
   metadataAttributes,
@@ -134,6 +130,14 @@ import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
 import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults } from './consensus.js'
 
+import {
+  parseTaskSpecs,
+  buildCoordinatorBaseConfig,
+  buildDecompositionPrompt,
+  runCoordinatorSynthesis,
+  loadSpecsIntoQueue,
+} from './coordinator.js'
+
 // ---------------------------------------------------------------------------
 // Re-exports — keep the public import surface stable after the split so callers
 // (index.ts barrel and tests) can continue importing these from this module.
@@ -141,143 +145,6 @@ import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults }
 
 export { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 export { computeRetryDelay, executeWithRetry } from './retry.js'
-
-// ---------------------------------------------------------------------------
-// Parsed task spec (result of coordinator decomposition)
-// ---------------------------------------------------------------------------
-
-/**
- * Partial verify config that the coordinator can emit in task JSON.
- * Contains only fields that are safe to include in LLM output — `judges`
- * (full AgentConfig objects) are always supplied by the caller via
- * {@link RunTeamOptions.verifyJudges} and are never in coordinator JSON.
- */
-interface CoordinatorVerifySpec {
-  readonly mode?: 'refute' | 'lens'
-  readonly quorum?: number
-  readonly maxRounds?: number
-  readonly onDissent?: 'revise' | 'reject' | 'keep'
-}
-
-interface ParsedTaskSpec {
-  title: string
-  description: string
-  assignee?: string
-  dependsOn?: string[]
-  memoryScope?: 'dependencies' | 'all'
-  maxRetries?: number
-  retryDelayMs?: number
-  retryBackoff?: number
-  role?: string
-  priority?: 'low' | 'normal' | 'high' | 'critical'
-  /**
-   * Full verify options (used by explicit `runTasks` specs that already
-   * include judges) OR a coordinator-emitted partial spec / boolean `true`
-   * (resolved into full options by `loadSpecsIntoQueue` when
-   * `verifyJudges` is available).
-   */
-  verify?: ConsensusVerifyOptions | CoordinatorVerifySpec | true
-}
-
-/**
- * Resolve a parsed task spec's `verify` field into a full
- * {@link ConsensusVerifyOptions} (or `undefined` when no verify should run).
- *
- * - Full `ConsensusVerifyOptions` (already has `judges`): used as-is.
- * - `true` or `CoordinatorVerifySpec` (no `judges`): merged with
- *   `verifyJudges` when provided; ignored when `verifyJudges` is absent.
- * - `undefined`: no verify.
- */
-function resolveVerify(
-  spec: ConsensusVerifyOptions | CoordinatorVerifySpec | true | undefined,
-  verifyJudges?: readonly AgentConfig[],
-): ConsensusVerifyOptions | undefined {
-  if (spec === undefined) return undefined
-  if (spec !== true && 'judges' in spec) return spec as ConsensusVerifyOptions
-  if (!verifyJudges || verifyJudges.length === 0) return undefined
-  const partial: CoordinatorVerifySpec = spec === true ? {} : spec
-  return {
-    judges: verifyJudges,
-    ...(partial.mode !== undefined ? { mode: partial.mode } : {}),
-    ...(partial.quorum !== undefined ? { quorum: partial.quorum } : {}),
-    ...(partial.maxRounds !== undefined ? { maxRounds: partial.maxRounds } : {}),
-    ...(partial.onDissent !== undefined ? { onDissent: partial.onDissent } : {}),
-  }
-}
-
-/**
- * Parse the coordinator-emitted `verify` field on a task JSON object.
- * Accepts `true` (use all defaults) or a partial object with `mode`,
- * `quorum`, `maxRounds`, and/or `onDissent`. Returns `undefined` for any
- * other value so missing / null / unrecognised values are ignored safely.
- */
-function parseCoordinatorVerify(raw: unknown): CoordinatorVerifySpec | true | undefined {
-  if (raw === true) return true
-  if (typeof raw !== 'object' || raw === null) return undefined
-  const obj = raw as Record<string, unknown>
-  const mode = obj['mode'] === 'refute' || obj['mode'] === 'lens' ? obj['mode'] : undefined
-  const quorum = typeof obj['quorum'] === 'number' && obj['quorum'] >= 1 ? Math.floor(obj['quorum']) : undefined
-  const maxRounds = typeof obj['maxRounds'] === 'number' && obj['maxRounds'] >= 1 ? Math.floor(obj['maxRounds']) : undefined
-  const onDissent = obj['onDissent'] === 'revise' || obj['onDissent'] === 'reject' || obj['onDissent'] === 'keep'
-    ? obj['onDissent']
-    : undefined
-  if (mode === undefined && quorum === undefined && maxRounds === undefined && onDissent === undefined) return true
-  return { mode, quorum, maxRounds, onDissent }
-}
-
-/**
- * Attempt to extract a JSON array of task specs from the coordinator's raw
- * output. The coordinator is prompted to emit JSON inside a ```json … ``` fence
- * or as a bare array. Returns `null` when no valid array can be extracted.
- */
-function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
-  // Strategy 1: look for a fenced JSON block
-  const fenceMatch = raw.match(/```json\s*([\s\S]*?)```/)
-  const candidate = fenceMatch ? fenceMatch[1]! : raw
-
-  // Strategy 2: find the first '[' and last ']'
-  const arrayStart = candidate.indexOf('[')
-  const arrayEnd = candidate.lastIndexOf(']')
-  if (arrayStart === -1 || arrayEnd === -1 || arrayEnd <= arrayStart) {
-    return null
-  }
-
-  const jsonSlice = candidate.slice(arrayStart, arrayEnd + 1)
-  try {
-    const parsed: unknown = JSON.parse(jsonSlice)
-    if (!Array.isArray(parsed)) return null
-
-    const specs: ParsedTaskSpec[] = []
-    for (const item of parsed) {
-      if (typeof item !== 'object' || item === null) continue
-      const obj = item as Record<string, unknown>
-      if (typeof obj['title'] !== 'string') continue
-      if (typeof obj['description'] !== 'string') continue
-
-      specs.push({
-        title: obj['title'],
-        description: obj['description'],
-        assignee: typeof obj['assignee'] === 'string' ? obj['assignee'] : undefined,
-        dependsOn: Array.isArray(obj['dependsOn'])
-          ? (obj['dependsOn'] as unknown[]).filter((x): x is string => typeof x === 'string')
-          : undefined,
-        memoryScope: obj['memoryScope'] === 'all' ? 'all' : undefined,
-        maxRetries: typeof obj['maxRetries'] === 'number' ? obj['maxRetries'] : undefined,
-        retryDelayMs: typeof obj['retryDelayMs'] === 'number' ? obj['retryDelayMs'] : undefined,
-        retryBackoff: typeof obj['retryBackoff'] === 'number' ? obj['retryBackoff'] : undefined,
-        role: typeof obj['role'] === 'string' ? obj['role'] : undefined,
-        priority: obj['priority'] === 'low' || obj['priority'] === 'normal' || obj['priority'] === 'high' || obj['priority'] === 'critical'
-          ? obj['priority']
-          : undefined,
-        verify: parseCoordinatorVerify(obj['verify']),
-      })
-    }
-
-    return specs.length > 0 ? specs : null
-  } catch {
-    return null
-  }
-}
 
 // ---------------------------------------------------------------------------
 // OpenMultiAgent
@@ -702,7 +569,8 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 1: Coordinator decomposes goal into tasks
     // ------------------------------------------------------------------
-    const coordinatorBaseConfig = this.buildCoordinatorBaseConfig(
+    const coordinatorBaseConfig = buildCoordinatorBaseConfig(
+      this.config,
       coordinatorOverrides,
       agentConfigs,
       (options?.verifyJudges?.length ?? 0) > 0,
@@ -712,7 +580,7 @@ export class OpenMultiAgent {
       routeMatches(options?.modelRouting, { phase: 'coordinator', agent: 'coordinator' }),
     )
 
-    const decompositionPrompt = this.buildDecompositionPrompt(goal, agentConfigs)
+    const decompositionPrompt = buildDecompositionPrompt(goal, agentConfigs)
     const coordinatorAgent = buildAgent(coordinatorConfig)
     const runId = identity.runId
     const coordinatorDecomposeSpanId = this.config.onTrace ? generateSpanId() : undefined
@@ -783,7 +651,7 @@ export class OpenMultiAgent {
     if (taskSpecs && taskSpecs.length > 0) {
       // Map title-based dependsOn references to real task IDs so we can
       // build the dependency graph before adding tasks to the queue.
-      this.loadSpecsIntoQueue(taskSpecs, agentConfigs, queue, options?.verifyJudges)
+      loadSpecsIntoQueue(taskSpecs, agentConfigs, queue, options?.verifyJudges)
     } else {
       // Coordinator failed to produce structured output — fall back to
       // one task per agent using the goal as the description.
@@ -956,7 +824,7 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 5: Coordinator synthesises final result
     // ------------------------------------------------------------------
-    const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+    const synthesis = await runCoordinatorSynthesis(this.config, team, queue, goal, coordinatorBaseConfig, {
       identity,
       modelRouting: options?.modelRouting,
       runId,
@@ -1110,7 +978,7 @@ export class OpenMultiAgent {
     if (!snapshot) {
       if (Array.isArray(tasksOrOptions)) {
         const queue = new TaskQueue()
-        this.loadSpecsIntoQueue(
+        loadSpecsIntoQueue(
           tasksOrOptions.map((t) => ({
             title: t.title,
             description: t.description,
@@ -1223,7 +1091,7 @@ export class OpenMultiAgent {
     const agentConfigs = team.getAgents()
     const queue = new TaskQueue()
 
-    this.loadSpecsIntoQueue(
+    loadSpecsIntoQueue(
       tasks.map((t) => ({
         title: t.title,
         description: t.description,
@@ -1478,310 +1346,6 @@ export class OpenMultiAgent {
   // Private helpers
   // -------------------------------------------------------------------------
 
-  /** Build the system prompt given to the coordinator agent. */
-  private buildCoordinatorSystemPrompt(agents: AgentConfig[], hasVerifyJudges?: boolean): string {
-    return [
-      'You are a task coordinator responsible for decomposing high-level goals',
-      'into concrete, actionable tasks and assigning them to the right team members.',
-      '',
-      this.buildCoordinatorRosterSection(agents),
-      '',
-      this.buildCoordinatorOutputFormatSection(hasVerifyJudges),
-      '',
-      this.buildCoordinatorSynthesisSection(),
-    ].join('\n')
-  }
-
-  /** Build coordinator system prompt with optional caller overrides. */
-  private buildCoordinatorPrompt(agents: AgentConfig[], config?: CoordinatorConfig, hasVerifyJudges?: boolean): string {
-    if (config?.systemPrompt) {
-      return [
-        config.systemPrompt,
-        '',
-        this.buildCoordinatorRosterSection(agents),
-        '',
-        this.buildCoordinatorOutputFormatSection(hasVerifyJudges),
-        '',
-        this.buildCoordinatorSynthesisSection(),
-      ].join('\n')
-    }
-
-    const base = this.buildCoordinatorSystemPrompt(agents, hasVerifyJudges)
-    if (!config?.instructions) {
-      return base
-    }
-
-    return [
-      base,
-      '',
-      '## Additional Instructions',
-      config.instructions,
-    ].join('\n')
-  }
-
-  /** Build the coordinator team roster section. */
-  private buildCoordinatorRosterSection(agents: AgentConfig[]): string {
-    const roster = agents
-      .map(
-        (a) =>
-          `- **${a.name}** (${a.model}): ${a.systemPrompt ?? 'general purpose agent'}`,
-      )
-      .join('\n')
-
-    return [
-      '## Team Roster',
-      roster,
-    ].join('\n')
-  }
-
-  /** Build the coordinator JSON output-format section. */
-  private buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): string {
-    const lines = [
-      '## Output Format',
-      'When asked to decompose a goal, respond ONLY with a JSON array of task objects.',
-      'Each task must have:',
-      '  - "title":       Short descriptive title (string)',
-      '  - "description": Full task description with context and expected output (string)',
-      '  - "assignee":    One of the agent names listed in the roster (string)',
-      '  - "dependsOn":   Array of titles of tasks this task depends on (string[], may be empty).',
-    ]
-    if (hasVerifyJudges) {
-      lines.push(
-        '  - "verify":      (optional) Set to true to apply consensus judge verification on this task\'s result.',
-        '                   Or set to an object with any of: "mode" ("refute"|"lens"), "quorum" (number),',
-        '                   "maxRounds" (number), "onDissent" ("revise"|"reject"|"keep").',
-        '                   Omit for tasks where a single agent\'s answer is sufficient.',
-      )
-    }
-    lines.push(
-      '',
-      '## Dependency Guidance',
-      'Prefer the minimum set of upstream tasks each assignee needs. When deciding dependsOn for agent X:',
-      '  1. Use X\'s system prompt as the primary signal for what inputs it consumes.',
-      '  2. Lean toward including a task as a dependency only when X\'s system prompt names or describes needing that kind of input.',
-      '  3. Avoid adding a dependency just because the information "would be useful" or matches general best practice; if X\'s system prompt gives no indication it consumes that input, prefer to leave it out.',
-      '  4. When uncertain, prefer fewer dependencies over more — extra parents cost parallelism and tokens.',
-      '',
-      'Wrap the JSON in a ```json code fence.',
-      'Do not include any text outside the code fence.',
-    )
-    return lines.join('\n')
-  }
-
-  /** Build the coordinator synthesis guidance section. */
-  private buildCoordinatorSynthesisSection(): string {
-    return [
-      '## When synthesising results',
-      'You will be given completed task outputs and asked to synthesise a final answer.',
-      'Write a clear, comprehensive response that addresses the original goal.',
-    ].join('\n')
-  }
-
-  /** Build the decomposition prompt for the coordinator. */
-  private buildDecompositionPrompt(goal: string, agents: AgentConfig[]): string {
-    const names = agents.map((a) => a.name).join(', ')
-    return [
-      `Decompose the following goal into tasks for your team (${names}).`,
-      '',
-      `## Goal`,
-      goal,
-      '',
-      'Return ONLY the JSON task array in a ```json code fence.',
-    ].join('\n')
-  }
-
-  /**
-   * Build the base coordinator {@link AgentConfig} shared by the decomposition
-   * and synthesis passes. Falls back to orchestrator defaults for any field the
-   * caller's {@link CoordinatorConfig} leaves unset.
-   */
-  private buildCoordinatorBaseConfig(
-    coordinatorOverrides: CoordinatorConfig | undefined,
-    agentConfigs: AgentConfig[],
-    hasVerifyJudges: boolean,
-  ): AgentConfig {
-    return {
-      name: 'coordinator',
-      model: coordinatorOverrides?.model ?? this.config.defaultModel,
-      ...(coordinatorOverrides?.adapter !== undefined ? { adapter: coordinatorOverrides.adapter } : {}),
-      provider: coordinatorOverrides?.provider ?? this.config.defaultProvider,
-      baseURL: coordinatorOverrides?.baseURL ?? this.config.defaultBaseURL,
-      apiKey: coordinatorOverrides?.apiKey ?? this.config.defaultApiKey,
-      systemPrompt: this.buildCoordinatorPrompt(agentConfigs, coordinatorOverrides, hasVerifyJudges),
-      maxTurns: coordinatorOverrides?.maxTurns ?? 3,
-      maxTokens: coordinatorOverrides?.maxTokens,
-      temperature: coordinatorOverrides?.temperature,
-      topP: coordinatorOverrides?.topP,
-      topK: coordinatorOverrides?.topK,
-      minP: coordinatorOverrides?.minP,
-      parallelToolCalls: coordinatorOverrides?.parallelToolCalls,
-      frequencyPenalty: coordinatorOverrides?.frequencyPenalty,
-      presencePenalty: coordinatorOverrides?.presencePenalty,
-      extraBody: coordinatorOverrides?.extraBody,
-      toolPreset: coordinatorOverrides?.toolPreset,
-      tools: coordinatorOverrides?.tools,
-      disallowedTools: coordinatorOverrides?.disallowedTools,
-      onToolCall: coordinatorOverrides?.onToolCall ?? this.config.onToolCall,
-      cwd: coordinatorOverrides?.cwd === undefined
-        ? this.config.defaultCwd
-        : coordinatorOverrides.cwd,
-      loopDetection: coordinatorOverrides?.loopDetection,
-      timeoutMs: coordinatorOverrides?.timeoutMs,
-      callTimeoutMs: coordinatorOverrides?.callTimeoutMs,
-    }
-  }
-
-  /**
-   * Run the coordinator synthesis pass over completed task results. Returns the
-   * synthesis result plus updated cumulative usage, or `null` when synthesis is
-   * skipped (run aborted, or the token budget was already exhausted before the
-   * pass). Emits `budget_exceeded` (when synthesis tips over budget) and
-   * `agent_complete`, mirroring the inline `runTeam` path. Does not mutate
-   * `agentResults` — the caller records the `'coordinator'` entry.
-   */
-  private async runCoordinatorSynthesis(
-    team: Team,
-    queue: TaskQueue,
-    goal: string,
-    coordinatorBaseConfig: AgentConfig,
-    opts: {
-      readonly identity: RunIdentity
-      readonly modelRouting?: ModelRoutingPolicy
-      readonly runId?: string
-      readonly abortSignal?: AbortSignal
-      readonly cumulativeUsage: TokenUsage
-      readonly cumulativeCost: number
-      readonly maxTokenBudget?: number
-      readonly maxCostBudget?: number
-      readonly estimateCost?: OrchestratorConfig['estimateCost']
-      readonly traceRuntime?: TraceRuntime
-      readonly consumedTaskSpans?: readonly TraceSpan[]
-    },
-  ): Promise<{ readonly result: AgentRunResult; readonly cumulativeUsage: TokenUsage; readonly cumulativeCost: number } | null> {
-    if (opts.abortSignal?.aborted) return null
-    if (
-      opts.maxTokenBudget !== undefined
-      && totalTokens(opts.cumulativeUsage) > opts.maxTokenBudget
-    ) {
-      return null
-    }
-    if (
-      opts.maxCostBudget !== undefined
-      && opts.estimateCost !== undefined
-      && opts.cumulativeCost > opts.maxCostBudget
-    ) {
-      return null
-    }
-
-    const synthesisPrompt = await this.buildSynthesisPrompt(goal, queue.list(), team)
-    const synthesisConfig = withModelRoute(
-      coordinatorBaseConfig,
-      routeMatches(opts.modelRouting, { phase: 'synthesis', agent: 'coordinator' }),
-    )
-    const synthesisAgent = buildAgent(synthesisConfig)
-    const synthTraceOptions: Partial<RunOptions> = {
-      identity: opts.identity,
-      runId: opts.identity.runId,
-      ...(opts.traceRuntime ? {
-        traceRuntime: opts.traceRuntime,
-        traceSpan: opts.traceRuntime.root,
-        tracePhase: 'synthesis',
-        traceLinks: (opts.consumedTaskSpans ?? []).map((span) => ({
-          traceId: opts.identity.traceId,
-          spanId: span.spanId,
-          relation: 'consumed' as const,
-        })),
-      } : {}),
-      ...(this.config.onTrace
-        ? { onTrace: this.config.onTrace, traceAgent: 'coordinator' }
-        : {}),
-      ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
-    }
-    let result = await synthesisAgent.run(synthesisPrompt, synthTraceOptions)
-    const accounting = applyBudgetAccounting({
-      currentUsage: opts.cumulativeUsage,
-      currentCost: opts.cumulativeCost,
-      usage: result.tokenUsage,
-      maxTokenBudget: opts.maxTokenBudget,
-      maxCostBudget: opts.maxCostBudget,
-      estimateCost: opts.estimateCost,
-      costContext: buildCostEstimateContext({
-        agentName: 'coordinator',
-        model: synthesisConfig.model ?? this.config.defaultModel,
-        provider: synthesisConfig.provider,
-        phase: 'synthesis',
-      }),
-    })
-
-    if (accounting.exceeded) {
-      emitBudgetExceeded(this.config, accounting.exceeded, 'coordinator')
-      result = {
-        ...result,
-        success: false,
-        budgetExceeded: true,
-        ...classifyRunFailure(accounting.exceeded),
-      }
-    }
-
-    this.config.onProgress?.({
-      type: 'agent_complete',
-      agent: 'coordinator',
-      data: result,
-    })
-
-    return {
-      result,
-      cumulativeUsage: accounting.cumulativeUsage,
-      cumulativeCost: accounting.cumulativeCost,
-    }
-  }
-
-  /** Build the synthesis prompt shown to the coordinator after all tasks complete. */
-  private async buildSynthesisPrompt(
-    goal: string,
-    tasks: Task[],
-    team: Team,
-  ): Promise<string> {
-    const completedTasks = tasks.filter((t) => t.status === 'completed')
-    const failedTasks = tasks.filter((t) => t.status === 'failed')
-    const skippedTasks = tasks.filter((t) => t.status === 'skipped')
-
-    const resultSections = completedTasks.map((t) => {
-      const assignee = t.assignee ?? 'unknown'
-      return `### ${t.title} (completed by ${assignee})\n${t.result ?? '(no output)'}`
-    })
-
-    const failureSections = failedTasks.map(
-      (t) => `### ${t.title} (FAILED)\nError: ${t.result ?? 'unknown error'}`,
-    )
-
-    const skippedSections = skippedTasks.map(
-      (t) => `### ${t.title} (SKIPPED)\nReason: ${t.result ?? 'approval rejected'}`,
-    )
-
-    // Also include shared memory summary for additional context
-    let memorySummary = ''
-    const sharedMem = team.getSharedMemoryInstance()
-    if (sharedMem) {
-      memorySummary = await sharedMem.getSummary()
-    }
-
-    return [
-      `## Original Goal`,
-      goal,
-      '',
-      `## Task Results`,
-      ...resultSections,
-      ...(failureSections.length > 0 ? ['', '## Failed Tasks', ...failureSections] : []),
-      ...(skippedSections.length > 0 ? ['', '## Skipped Tasks', ...skippedSections] : []),
-      ...(memorySummary ? ['', memorySummary] : []),
-      '',
-      '## Your Task',
-      'Synthesise the above results into a comprehensive final answer that addresses the original goal.',
-      'If some tasks failed or were skipped, note any gaps in the result.',
-    ].join('\n')
-  }
-
   private tasksFromPlan(plan: PlanArtifact): Task[] {
     const now = new Date()
     return plan.tasks.map((task): Task => ({
@@ -1868,8 +1432,8 @@ export class OpenMultiAgent {
     // we surface `synthesis_failed` and fall back to raw outputs.
     if (checkpoint?.mode === 'runTeam' && goal !== undefined) {
       try {
-        const coordinatorBaseConfig = this.buildCoordinatorBaseConfig(coordinatorForSynthesis, agentConfigs, false)
-        const synthesis = await this.runCoordinatorSynthesis(team, queue, goal, coordinatorBaseConfig, {
+        const coordinatorBaseConfig = buildCoordinatorBaseConfig(this.config, coordinatorForSynthesis, agentConfigs, false)
+        const synthesis = await runCoordinatorSynthesis(this.config, team, queue, goal, coordinatorBaseConfig, {
           identity: runIdentity,
           modelRouting: options?.modelRouting,
           runId: ctx.runId,
@@ -2013,100 +1577,6 @@ export class OpenMultiAgent {
     return artifact['version'] === 1 && Array.isArray(artifact['tasks'])
   }
 
-  /**
-   * Load a list of task specs into a queue.
-   *
-   * Handles title-based `dependsOn` references by building a title→id map first,
-   * then resolving them to real IDs before adding tasks to the queue.
-   */
-  private loadSpecsIntoQueue(
-    specs: ReadonlyArray<ParsedTaskSpec & {
-      memoryScope?: 'dependencies' | 'all'
-      maxRetries?: number
-      retryDelayMs?: number
-      retryBackoff?: number
-      role?: string
-      priority?: 'low' | 'normal' | 'high' | 'critical'
-    }>,
-    agentConfigs: AgentConfig[],
-    queue: TaskQueue,
-    verifyJudges?: readonly AgentConfig[],
-  ): void {
-    const agentNames = new Set(agentConfigs.map((a) => a.name))
-    const normalizeTitle = (title: string): string => title.toLowerCase().trim()
-    const titleCounts = new Map<string, number>()
-    for (const spec of specs) {
-      const key = normalizeTitle(spec.title)
-      titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1)
-    }
-
-    // First pass: create tasks (without dependencies) to get stable IDs.
-    const titleToId = new Map<string, string>()
-    const createdTasks: Task[] = []
-
-    for (const spec of specs) {
-      const task = createTask({
-        title: spec.title,
-        description: spec.description,
-        assignee: spec.assignee && agentNames.has(spec.assignee)
-          ? spec.assignee
-          : undefined,
-        memoryScope: spec.memoryScope,
-        maxRetries: spec.maxRetries,
-        retryDelayMs: spec.retryDelayMs,
-        retryBackoff: spec.retryBackoff,
-        role: spec.role,
-        priority: spec.priority,
-        verify: resolveVerify(spec.verify, verifyJudges),
-      })
-      const titleKey = normalizeTitle(spec.title)
-      if ((titleCounts.get(titleKey) ?? 0) === 1) {
-        titleToId.set(titleKey, task.id)
-      }
-      createdTasks.push(task)
-    }
-
-    // Second pass: resolve title-based dependsOn to IDs.
-    for (let i = 0; i < createdTasks.length; i++) {
-      const spec = specs[i]!
-      const task = createdTasks[i]!
-
-      if (!spec.dependsOn || spec.dependsOn.length === 0) {
-        queue.add(task)
-        continue
-      }
-
-      const resolvedDeps: string[] = []
-      const unresolvedDeps: string[] = []
-      for (const depRef of spec.dependsOn) {
-        // Accept both raw IDs and title strings
-        const byId = createdTasks.find((t) => t.id === depRef)
-        const depTitleKey = normalizeTitle(depRef)
-        const byTitle = titleToId.get(depTitleKey)
-        const resolvedId = byId?.id ?? byTitle
-        if (resolvedId) {
-          resolvedDeps.push(resolvedId)
-        } else {
-          const count = titleCounts.get(depTitleKey) ?? 0
-          unresolvedDeps.push(count > 1 ? `${depRef} (ambiguous duplicate title)` : depRef)
-        }
-      }
-
-      const taskWithDeps: Task = {
-        ...task,
-        dependsOn: resolvedDeps.length > 0 ? resolvedDeps : undefined,
-      }
-      queue.add(taskWithDeps)
-      if (unresolvedDeps.length > 0) {
-        queue.fail(
-          task.id,
-          `Unresolved dependency reference(s): ${unresolvedDeps.join(', ')}`,
-        )
-      }
-    }
-  }
-
-  /** Build an {@link AgentPool} from a list of agent configurations. */
   private buildPool(agentConfigs: AgentConfig[]): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
