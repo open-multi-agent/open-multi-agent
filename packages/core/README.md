@@ -68,7 +68,7 @@ The fastest way to see a multi-agent run — scaffold a project and start it in 
 npm create oma-app@latest
 ```
 
-The first run shows the coordinator decompose one goal into a multi-agent DAG, then opens a dashboard of the run. To add the library to an existing project instead:
+The first run shows the coordinator decompose one goal into a multi-agent DAG, then opens the offline Run Viewer for that run. To add the library to an existing project instead:
 
 ```bash
 npm install @open-multi-agent/core
@@ -470,7 +470,7 @@ Before going live, wire up the controls that protect token spend, recover from f
 | Cap estimated cost | `maxCostBudget` + `estimateCost`; you own the per-model price table, and checks happen at turn/task boundaries rather than cent-exact mid-call stops | `OrchestratorConfig` |
 | Catch stuck agents | `loopDetection` with `onLoopDetected: 'terminate'` (or a custom handler) | `AgentConfig` |
 | Trace and audit | Configure `observability.sinks` with batching + an exporter, TraceStore, or OTel adapter; render one run with `renderRunViewer({ result, run })`, `oma run --dashboard`, or historical `oma dashboard --trace-store … --run-id …`; explicitly flush/shut down application-owned telemetry | `OrchestratorConfig` + application lifecycle |
-| Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and dashboard payloads | built-in (on by default) |
+| Redact secrets | Automatic — API keys, tokens, and Authorization headers stripped from traces, bash output, and Viewer payloads | built-in (on by default) |
 | Grant tools deliberately | Built-in tools are opt-in (default-deny): an agent gets only what it lists in `tools` / `toolPreset`; list neither and it gets none. `bash` stays unsandboxed once granted, and every tool result is sent to your model provider — so grant read/exec access on purpose. `defaultToolPreset` restores the old "all tools" behavior in one line | `AgentConfig` / `OrchestratorConfig` |
 | Bound filesystem reach | `cwd` / `defaultCwd` (default `.agent-workspace` subdir; widen with `process.cwd()`, disable with `null`) | `AgentConfig` / `OrchestratorConfig` |
 

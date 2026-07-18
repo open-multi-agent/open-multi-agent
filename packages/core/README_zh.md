@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Post-run dashboard replaying a completed team run: task DAG with per-node assignee, status, token breakdown, and agent output log" width="960" height="456" loading="eager">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="运行后任务 DAG 回放：展示每个节点的负责人、状态、token 明细和 agent 输出日志" width="960" height="456" loading="eager">
 </p>
 
 <br />
@@ -68,7 +68,7 @@
 npm create oma-app@latest
 ```
 
-首次运行便会展示协调者将目标拆解为多 agent DAG，并打开本次运行的 dashboard。若要将库集成到现有项目：
+首次运行便会展示协调者将目标拆解为多 agent DAG，并打开本次运行的离线 Run Viewer。若要将库集成到现有项目：
 
 ```bash
 npm install @open-multi-agent/core
@@ -177,7 +177,7 @@ const result = await orchestrator.runFromPlan(team, plan)
 | **生命周期钩子 + 取消** | `beforeRun` 改写 prompt，`afterRun` 后处理或拒绝结果；传入 `AbortSignal` 即可中途取消运行。 |
 | **可配置协调者** | 通过 `runTeam(team, goal, { coordinator })` 覆盖协调者的 model、provider、adapter、system prompt 或工具。 |
 | **外部编码 agent（ACP）** | 把某个 agent 的 LLM 循环换成通过 [Agent Client Protocol](https://agentclientprotocol.com) 驱动的外部编码 CLI：设置 `backend: { kind: 'acp', … }`，子进程自行运行其回合，而 pool、scheduler、queue、共享记忆与预算全部与 backend 无关。([外部 agent](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)) |
-| **可观测性** | 每个顶层结果都包含稳定的 `identity`（`runId`、`attempt`、`traceId`、`rootSpanId`）和标准化 `status`，即使未配置 `onTrace` 也不例外；同时继续提供 `onProgress` 事件、trace span、运行后 HTML dashboard 和 `TeamRunResult.metrics`。API key 和 token 会从 trace、错误、bash 输出和 dashboard 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
+| **可观测性** | 每个顶层结果都包含稳定的 `identity`（`runId`、`attempt`、`traceId`、`rootSpanId`）和标准化 `status`，即使未配置 `onTrace` 也不例外；同时继续提供 `onProgress` 事件、trace span、离线单次运行 DAG/Waterfall Viewer 和 `TeamRunResult.metrics`。API key 和 token 会从 trace、错误、bash 输出和 Viewer payload 中自动脱敏。([可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)) |
 | **可插拔共享记忆** | 默认进程内 KV；实现 `MemoryStore` 接口即可换 Redis / Postgres / 自有后端。([共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md)) |
 | **Checkpoint & resume** | 可选的按运行 checkpoint，运行于任意 `MemoryStore` 之上：每个任务完成时快照，`restore()` 跳过已完成任务，崩溃或重启后可恢复运行。Checkpoint v2 保留 `runId`、递增 `attempt`，并启动新的 trace；v1 快照仍可读取。内置的零依赖 `FileStore` 让 checkpoint 无需额外后端即可持久化；存盘 best-effort，不会拖慢运行。([checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md)) |
 | **沙箱化文件系统工作目录** | 内置文件系统工具默认沙箱化在 `<cwd>/.agent-workspace`；继承默认配置的 agent 共享同一根目录。需要 per-agent 隔离时显式设置 `AgentConfig.cwd`；改换共享根目录用 `OrchestratorConfig.defaultCwd`；传 `null` 关闭沙箱。([沙箱配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)) |
@@ -291,6 +291,7 @@ await orchestrator.runTeam(team, goal, {
 - [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts)：`delegate_to_agent` 同步子智能体委派。
 - [`patterns/plan-replay`](examples/patterns/plan-replay.ts)：用 `planOnly` 将目标拆解一次，用 `createPlanArtifact` 序列化，再用 `runFromPlan` 重放同一张 DAG，不再调用协调者。
 - [`integrations/trace-observability`](examples/integrations/trace-observability.ts)：`onTrace` 回调，给 LLM 调用、工具、任务发结构化 span。
+- [`integrations/observability-v2/run-viewer`](examples/integrations/observability-v2/run-viewer.ts)：用确定性、无需联网的 `FileTraceStore` 数据导出离线单次运行 Viewer。
 - [`integrations/mcp-github`](examples/integrations/mcp-github.ts)：用 `connectMCPTools()` 把 MCP 服务器的工具暴露给 agent。
 - **Provider 示例**：[`examples/providers/`](examples/providers/) 下的脚本，覆盖托管 provider、OpenAI 兼容端点和本地模型。
 
@@ -379,7 +380,10 @@ await orchestrator.runTeam(team, goal, {
 ```
 
 这些存储的职责刻意分离：`TraceStore` 保存可查询的 telemetry，checkpoint
-store 保存可恢复的执行状态，dashboard 则渲染运行后产物。应用负责
+store 保存可恢复的执行状态，Run Viewer 则渲染离线的运行后任务 DAG 和分层 span
+Waterfall。当前或历史单次运行可分别使用 `renderRunViewer({ result, run })`、
+`oma run --dashboard` 或 `oma dashboard --trace-store <path> --run-id <id>`；
+`renderTeamRunDashboard(result)` 保持兼容。应用负责
 `forceFlush()` / `shutdown()`、文件 store 的 `flush()` / `close()`，以及关闭
 自己传入的 OpenTelemetry provider。详见[可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)
 与[迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md)。
@@ -460,8 +464,8 @@ await oma.runAgent(
 | token 用量封顶 | orchestrator 上设 `maxTokenBudget` | `OrchestratorConfig` |
 | 预估成本封顶 | `maxCostBudget` + `estimateCost`；每个模型的价格表由应用侧维护，校验发生在轮次/任务边界，而非精确到分的调用中途中止 | `OrchestratorConfig` |
 | 卡死检测 | `loopDetection` + `onLoopDetected: 'terminate'`（或自定义 handler） | `AgentConfig` |
-| 追踪与审计 | 保留 legacy `onTrace`，或在 `observability.sinks` 中配置 batching + exporter、TraceStore 或 OTel adapter；落盘 `renderTeamRunDashboard(result)`，并显式 flush/shutdown 应用自有 telemetry | `OrchestratorConfig` + 应用生命周期 |
-| 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出、dashboard payload 中剥除 | 内置（默认开启） |
+| 追踪与审计 | 在 `observability.sinks` 中配置 batching + exporter、TraceStore 或 OTel adapter；用 `renderRunViewer({ result, run })`、`oma run --dashboard`，或历史查询 `oma dashboard --trace-store … --run-id …` 渲染单次运行；显式 flush/shutdown 应用自有 telemetry | `OrchestratorConfig` + 应用生命周期 |
+| 脱敏密钥 | 自动：API key、token、Authorization header 从 trace、bash 输出和 Viewer payload 中剥除 | 内置（默认开启） |
 | 按需授予工具 | 内置工具默认拒绝（default-deny）：agent 只拿到自己在 `tools` / `toolPreset` 里列出的工具，都不写则一个都没有。`bash` 一旦授予仍无沙箱，且每次工具结果都会发给你的模型 provider，因此读取/执行权限需刻意授予。`defaultToolPreset` 可一行恢复旧的「全部工具」行为 | `AgentConfig` / `OrchestratorConfig` |
 | 限定 agent 文件操作范围 | `cwd` / `defaultCwd`（默认 `.agent-workspace` 子目录；用 `process.cwd()` 放宽、`null` 关闭） | `AgentConfig` / `OrchestratorConfig` |
 
@@ -469,7 +473,7 @@ await oma.runAgent(
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore 与运行后 dashboard。旧 callback 可按 [`onTrace` 分阶段迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 使用应用自有 provider。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore，以及离线单次运行 DAG/Waterfall Viewer。旧 callback 可按 [`onTrace` 分阶段迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 使用应用自有 provider。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — checkpoint v2 identity 规则、v1 兼容，以及基于任意 `MemoryStore` 的恢复流程。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。

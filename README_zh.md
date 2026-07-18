@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="Post-run dashboard replaying a completed team run: task DAG with per-node assignee, status, token breakdown, and agent output log" width="960" height="456" loading="eager">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="运行后任务 DAG 回放：展示每个节点的负责人、状态、token 明细和 agent 输出日志" width="960" height="456" loading="eager">
 </p>
 
 <br />
@@ -64,7 +64,7 @@
 npm create oma-app@latest
 ```
 
-创建项目时可选择 **PR Review Agent**、**安全分析 Agent** 或 **multi-agent DAG 入门 Demo**，并选择云端/OpenAI 兼容 provider 或完全本地的 Ollama。生产模板默认只读，同时输出 Markdown、JSON 和可审查的 DAG dashboard。若要将库集成到现有项目：
+创建项目时可选择 **PR Review Agent**、**安全分析 Agent** 或 **multi-agent DAG 入门 Demo**，并选择云端/OpenAI 兼容 provider 或完全本地的 Ollama。生产模板默认只读，同时输出 Markdown、JSON 和可离线审查的单次运行 DAG/Waterfall Viewer。若要将库集成到现有项目：
 
 ```bash
 npm install @open-multi-agent/core
@@ -136,7 +136,7 @@ npm test               # 运行测试套件
 
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore 与运行后 dashboard。旧 callback 可按 [`onTrace` 分阶段迁移指南](docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](packages/otel/README.md) 使用应用自有 provider。
+- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore，以及离线单次运行 DAG/Waterfall Viewer。旧 callback 可按 [`onTrace` 分阶段迁移指南](docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](packages/otel/README.md) 使用应用自有 provider。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 在任意 `MemoryStore` 上保存可选快照；`restore()` 保留 `runId`、递增 `attempt`，并启动新的 trace。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。

@@ -67,7 +67,7 @@ One command scaffolds a production starter or the teaching DAG demo:
 npm create oma-app@latest
 ```
 
-When creating a project, choose a **PR Review Agent**, **Security Analysis Agent**, or **multi-agent DAG starter demo**, then select a cloud/OpenAI-compatible provider or fully local Ollama. Production starters emit Markdown, JSON, and an inspectable offline Run Viewer while keeping agents read-only. To add the library to your own project:
+When creating a project, choose a **PR Review Agent**, **Security Analysis Agent**, or **multi-agent DAG starter demo**, then select a cloud/OpenAI-compatible provider or fully local Ollama. Production starters emit Markdown, JSON, and an inspectable offline single-run DAG/Waterfall Viewer while keeping agents read-only. To add the library to your own project:
 
 ```bash
 npm install @open-multi-agent/core
