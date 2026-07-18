@@ -44,7 +44,7 @@ The framework's key feature. The coordinator receives goal + roster → emits a 
 
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
-| Orchestrator | `orchestrator/orchestrator.ts`, `scheduler.ts` | Top-level API, task decomposition, retry/backoff, coordinator |
+| Orchestrator | `orchestrator/orchestrator.ts` (facade) plus `run-context.ts`, `budget.ts`, `retry.ts`, `short-circuit.ts`, `agent-config.ts`, `task-execution.ts`, `consensus.ts`, `coordinator.ts`, `scheduler.ts` | Top-level API facade; run context/identity, budget accounting, retry/backoff, short-circuit, agent build + model routing, task-execution loop, consensus verification, coordinator decomposition/synthesis, scheduling |
 | Team | `team/team.ts`, `messaging.ts` | Agent roster, MessageBus (point-to-point + broadcast), SharedMemory binding |
 | Agent | `agent/agent.ts`, `runner.ts`, `pool.ts`, `structured-output.ts`, `loop-detector.ts`, `acp-backend.ts`, `process-backend.ts` | Lifecycle (idle→running→completed/error), conversation loop, concurrency pool + per-agent mutex, structured-output validation, loop detection; `AgentBackend` seam so an `Agent` runs on either an LLM `AgentRunner` or an external backend |
 | Task | `task/queue.ts`, `task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
