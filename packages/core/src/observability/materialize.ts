@@ -17,6 +17,8 @@ const CACHE_CREATE_KEYS = ['oma.usage.cache_creation_input_tokens']
 const REASONING_KEYS = ['oma.usage.reasoning_output_tokens', 'oma.reasoning.output_tokens']
 const MODEL_KEYS = ['oma.llm.model', 'oma.model', 'gen_ai.request.model', 'gen_ai.response.model']
 const PROVIDER_KEYS = ['oma.llm.provider', 'oma.provider', 'gen_ai.provider.name', 'gen_ai.system']
+const RUN_METADATA_PREFIX = 'oma.meta.'
+const RUN_METADATA_OVERRIDE_ATTRIBUTE = 'oma.meta._overridden'
 
 function numberAttribute(
   attributes: Readonly<Record<string, TraceAttributeValue>>,
@@ -168,6 +170,27 @@ export function materializeRun(recordsInput: readonly TraceRecord[], includeReco
   }
   attempts.sort((a, b) => a.attempt - b.attempt || a.traceId.localeCompare(b.traceId))
   const latest = attempts.at(-1)!
+  const latestRootStart = records.find((record): record is SpanStartRecord =>
+    record.traceId === latest.traceId
+    && record.recordType === 'span_start'
+    && record.kind === 'run'
+    && !record.parentSpanId)
+  const latestRootEnd = records.find((record): record is SpanEndRecord =>
+    record.traceId === latest.traceId
+    && record.recordType === 'span_end'
+    && record.kind === 'run'
+    && !record.parentSpanId)
+  const rootAttributes = { ...latestRootStart?.attributes, ...latestRootEnd?.attributes }
+  const metadataEntries: Array<readonly [string, TraceAttributeValue]> = []
+  for (const [key, value] of Object.entries(rootAttributes)) {
+    if (!key.startsWith(RUN_METADATA_PREFIX) || key === RUN_METADATA_OVERRIDE_ATTRIBUTE) continue
+    const metadataKey = key.slice(RUN_METADATA_PREFIX.length)
+    metadataEntries.push([
+      metadataKey,
+      Array.isArray(value) ? [...value] as TraceAttributeValue : value,
+    ])
+  }
+  const metadata = Object.fromEntries(metadataEntries) as Record<string, TraceAttributeValue>
   const startedAtMs = Math.min(...attempts.map((attempt) => Date.parse(attempt.startedAt)))
   const endedAttempts = attempts.filter((attempt) => attempt.endedAt !== undefined)
   const endedAtMs = endedAttempts.length > 0
@@ -194,6 +217,7 @@ export function materializeRun(recordsInput: readonly TraceRecord[], includeReco
       durationMs: Math.max(0, endedAtMs - startedAtMs),
     } : {}),
     ...(latest.status ? { status: latest.status } : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     agents: sorted(agents),
     taskIds: sorted(tasks),
     models: sorted(models),

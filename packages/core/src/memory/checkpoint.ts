@@ -7,6 +7,7 @@
  */
 
 import type { CheckpointOptions, CheckpointSnapshot, MemoryStore } from '../types.js'
+import { validateRunMetadata } from '../observability/identity.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,6 +99,13 @@ export class Checkpoint {
     if (snapshot['mode'] !== 'runTeam' && snapshot['mode'] !== 'runTasks') return false
     if (typeof snapshot['createdAt'] !== 'string') return false
     if (!Array.isArray(snapshot['completedTaskResults'])) return false
+    if (snapshot['metadata'] !== undefined) {
+      try {
+        validateRunMetadata(snapshot['metadata'] as CheckpointSnapshot['metadata'])
+      } catch {
+        return false
+      }
+    }
 
     if (snapshot['version'] === 2) {
       const identity = snapshot['identity']

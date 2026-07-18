@@ -40,6 +40,47 @@ For source compatibility in the first 1.x release, the new result fields are
 optional in TypeScript declarations, but every runtime result from these APIs
 includes `identity` and `status`.
 
+### Per-run metadata
+
+Use `metadata` on any top-level execution to attach bounded evaluation or
+correlation facts to that run, such as a prompt version, experiment arm, or
+dataset tag:
+
+```typescript
+const result = await orchestrator.runTasks(team, tasks, {
+  metadata: {
+    prompt_version: 'v3',
+    experiment: 'routing_ab',
+    dataset_tag: 'support_holdout',
+  },
+})
+
+result.metadata // the validated metadata, even without observability sinks
+```
+
+Metadata keys must match `[a-z0-9_.]{1,64}`, each run may contain at most 32
+keys, and the `oma.` prefix is reserved for the framework. Values use the
+`TraceAttributeValue` contract: a string, finite number, boolean, or a
+homogeneous array of one of those scalar types. Strings, including strings in
+arrays, are truncated to 1,024 characters. Invalid metadata rejects the call
+before execution starts. The framework also reserves the exact `_overridden`
+key for restore provenance.
+
+When tracing is active, metadata is written on the root span as
+`oma.meta.<key>` and is echoed from the top-level result after validation. A v2
+checkpoint persists it; `restore()` inherits the checkpoint metadata unless
+the caller supplies a different set. An explicit difference wins and the new
+attempt's root span records `oma.meta._overridden=true`. Existing checkpoints
+without metadata remain readable.
+
+`TraceStore` materializes the latest attempt's root metadata into
+`RunSummary.metadata`, so `getRun()` and `queryRuns()` results expose it.
+`TraceQuery` intentionally does not provide metadata filtering.
+
+This per-run channel is distinct from `ObservabilityResource`: use resource
+fields for instance-level facts such as service, release, and deployment
+environment; use run metadata for dimensions that may change on every call.
+
 ## TraceRecord schema v2
 
 The core package exports the `TraceRecord` schema used by the internal

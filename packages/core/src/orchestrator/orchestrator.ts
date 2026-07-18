@@ -60,6 +60,7 @@ import type {
   RestoreOptions,
   RunAgentOptions,
   RunIdentity,
+  RunIdentityOptions,
   RunStatus,
   StructuredTraceError,
   RunMetrics,
@@ -75,6 +76,7 @@ import type {
   TeamInfo,
   TeamRunResult,
   TokenUsage,
+  TraceAttributeValue,
 } from '../types.js'
 import type { ZodSchema } from 'zod'
 import type { RunOptions } from '../agent/runner.js'
@@ -94,7 +96,13 @@ import { extractJSON, validateOutput } from '../agent/structured-output.js'
 import { Scheduler } from './scheduler.js'
 import { CostBudgetExceededError, TokenBudgetExceededError, isRetryableError } from '../errors.js'
 import { abortableDelay } from '../utils/abort.js'
-import { createRestoreIdentity, createRunIdentity } from '../observability/identity.js'
+import {
+  createRestoreIdentity,
+  createRunIdentity,
+  resolveRestoreMetadata,
+  validateRunMetadata,
+  type RestoreMetadataResolution,
+} from '../observability/identity.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
 import {
   createTraceRuntime,
@@ -119,7 +127,14 @@ const DEFAULT_MAX_CONCURRENCY = 5
 const DEFAULT_MAX_DELEGATION_DEPTH = 3
 const DEFAULT_MODEL = 'claude-opus-4-6'
 
-function identityOptionsForRun(options?: RunTasksOptions): { runId?: string } {
+type RunMetadata = Readonly<Record<string, TraceAttributeValue>>
+
+interface RunFacts {
+  readonly identity: RunIdentity
+  readonly metadata?: RunMetadata
+}
+
+function identityOptionsForRun(options?: RunTasksOptions): RunIdentityOptions {
   const checkpointRunId = options?.checkpoint && typeof options.checkpoint === 'object'
     ? options.checkpoint.runId
     : undefined
@@ -133,7 +148,30 @@ function identityOptionsForRun(options?: RunTasksOptions): { runId?: string } {
     )
   }
   const runId = options?.runId ?? checkpointRunId
-  return runId === undefined ? {} : { runId }
+  return {
+    ...(runId !== undefined ? { runId } : {}),
+    ...(options?.metadata !== undefined ? { metadata: options.metadata } : {}),
+  }
+}
+
+function createRunFacts(options: RunIdentityOptions = {}): RunFacts {
+  const metadata = validateRunMetadata(options.metadata)
+  return {
+    identity: createRunIdentity(options),
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+}
+
+function metadataAttributes(
+  metadata: RunMetadata | undefined,
+  overridden = false,
+): Readonly<Record<string, TraceAttributeValue>> {
+  const attributes: Record<string, TraceAttributeValue> = {}
+  for (const [key, value] of Object.entries(metadata ?? {})) {
+    attributes[`oma.meta.${key}`] = value
+  }
+  if (overridden) attributes['oma.meta._overridden'] = true
+  return attributes
 }
 
 // ---------------------------------------------------------------------------
@@ -858,6 +896,8 @@ interface RunContext {
   readonly checkpoint?: ActiveCheckpoint
   /** Stable top-level execution identity, independent of trace callbacks. */
   readonly identity: RunIdentity
+  /** Validated facts echoed on the result and persisted with checkpoints. */
+  readonly metadata?: RunMetadata
   /** Legacy trace correlation alias. */
   readonly runId: string
   readonly traceRuntime?: TraceRuntime
@@ -1044,6 +1084,7 @@ async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Promise<voi
       version: 2,
       mode: active.mode,
       createdAt: new Date().toISOString(),
+      ...(ctx.metadata !== undefined ? { metadata: ctx.metadata } : {}),
       identity: {
         runId: ctx.identity.runId,
         attempt: ctx.identity.attempt,
@@ -2052,8 +2093,18 @@ export class OpenMultiAgent {
     }
   }
 
-  private startTrace(identity: RunIdentity): TraceRuntime | undefined {
-    return createTraceRuntime(identity, this.config.onTrace, this.traceRecordObserver, this.traceSink)
+  private startTrace(
+    identity: RunIdentity,
+    metadata?: RunMetadata,
+    metadataOverridden = false,
+  ): TraceRuntime | undefined {
+    return createTraceRuntime(
+      identity,
+      this.config.onTrace,
+      this.traceRecordObserver,
+      this.traceSink,
+      metadataAttributes(metadata, metadataOverridden),
+    )
   }
 
   // -------------------------------------------------------------------------
@@ -2101,8 +2152,8 @@ export class OpenMultiAgent {
     prompt: string,
     options?: RunAgentOptions,
   ): Promise<AgentRunResult> {
-    const identity = createRunIdentity(options)
-    const traceRuntime = this.startTrace(identity)
+    const { identity, metadata } = createRunFacts(options)
+    const traceRuntime = this.startTrace(identity, metadata)
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
     const effective: AgentConfig = applyDefaultToolPreset({
       ...config,
@@ -2201,11 +2252,15 @@ export class OpenMultiAgent {
       this.completedTaskCount++
     }
 
+    const completedResult: AgentRunResult = {
+      ...finalResult,
+      ...(metadata !== undefined ? { metadata } : {}),
+    }
     traceRuntime?.close({
-      status: finalResult.status ?? statusOnly(finalResult.success ? 'ok' : 'error'),
-      ...(finalResult.errorInfo ? { error: finalResult.errorInfo } : {}),
+      status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
+      ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
     })
-    return finalResult
+    return completedResult
   }
 
   // -------------------------------------------------------------------------
@@ -2238,14 +2293,18 @@ export class OpenMultiAgent {
     goal: string,
     options?: RunTeamOptions,
   ): Promise<TeamRunResult> {
-    const identity = createRunIdentity(identityOptionsForRun(options))
-    const traceRuntime = this.startTrace(identity)
+    const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
+    const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
+      const completedResult: TeamRunResult = {
+        ...result,
+        ...(metadata !== undefined ? { metadata } : {}),
+      }
       traceRuntime?.close({
-        status: result.status ?? statusOnly(result.success ? 'ok' : 'error'),
-        ...(result.errorInfo ? { error: result.errorInfo } : {}),
+        status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
+        ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
       })
-      return result
+      return completedResult
     }
     const agentConfigs = team.getAgents()
     const coordinatorOverrides = options?.coordinator
@@ -2502,6 +2561,7 @@ export class OpenMultiAgent {
       ...(activeCheckpoint ? { checkpoint: activeCheckpoint } : {}),
       runId,
       identity,
+      ...(metadata !== undefined ? { metadata } : {}),
       ...(traceRuntime ? { traceRuntime } : {}),
       taskSpans: new Map(),
       abortSignal: options?.abortSignal,
@@ -2778,6 +2838,7 @@ export class OpenMultiAgent {
   ): Promise<TeamRunResult> {
     const hasTaskSource = Array.isArray(tasksOrOptions) || this.isPlanArtifact(tasksOrOptions)
     const options = hasTaskSource ? maybeOptions : tasksOrOptions as RestoreOptions | undefined
+    validateRunMetadata(options?.metadata)
     const activeCheckpoint = this.createActiveCheckpoint(
       team,
       options?.checkpoint ?? this.config.checkpoint ?? true,
@@ -2856,11 +2917,9 @@ export class OpenMultiAgent {
       team.restoreMessageBus(snapshot.messageBus)
     }
 
-    const requestedRunId = identityOptionsForRun(options).runId
-    const identity = createRestoreIdentity(
-      snapshot,
-      requestedRunId === undefined ? {} : { runId: requestedRunId },
-    )
+    const restoreIdentityOptions = identityOptionsForRun(options)
+    const restoreMetadata = resolveRestoreMetadata(snapshot, restoreIdentityOptions)
+    const identity = createRestoreIdentity(snapshot, restoreIdentityOptions)
 
     const queue = TaskQueue.fromSnapshot(snapshot.queue, { resetInProgress: true })
     const agentResults = this.agentResultsFromCheckpoint(snapshot, queue)
@@ -2882,6 +2941,7 @@ export class OpenMultiAgent {
       checkpointForResume,
       options?.coordinator,
       identity,
+      restoreMetadata,
     )
   }
 
@@ -2941,7 +3001,7 @@ export class OpenMultiAgent {
     prompt: string,
     options: ConsensusOptions,
   ): Promise<ConsensusResult> {
-    const identity = createRunIdentity(options)
+    const { identity, metadata } = createRunFacts(options)
     const proposers = Array.isArray(options.proposer) ? options.proposer : [options.proposer]
     if (proposers.length === 0) {
       throw new Error('runConsensus: at least one proposer is required.')
@@ -2950,7 +3010,7 @@ export class OpenMultiAgent {
       throw new Error('runConsensus: at least one judge is required.')
     }
 
-    const traceRuntime = this.startTrace(identity)
+    const traceRuntime = this.startTrace(identity, metadata)
     const consensusSpan = traceRuntime?.startSpan({
       kind: 'consensus',
       name: 'verify_consensus',
@@ -2958,20 +3018,24 @@ export class OpenMultiAgent {
       attributes: { 'oma.consensus.scope': 'top_level' },
     })
     const finish = (result: ConsensusResult): ConsensusResult => {
-      const status = result.status ?? statusOnly('ok')
+      const completedResult: ConsensusResult = {
+        ...result,
+        ...(metadata !== undefined ? { metadata } : {}),
+      }
+      const status = completedResult.status ?? statusOnly('ok')
       consensusSpan?.end({
         status,
-        ...(result.errorInfo ? { error: result.errorInfo } : {}),
+        ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
         attributes: {
-          'oma.consensus.verdict': result.verdict,
-          'oma.consensus.rounds': result.rounds,
+          'oma.consensus.verdict': completedResult.verdict,
+          'oma.consensus.rounds': completedResult.rounds,
         },
       })
       traceRuntime?.close({
         status,
-        ...(result.errorInfo ? { error: result.errorInfo } : {}),
+        ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
       })
-      return result
+      return completedResult
     }
 
     const mode = options.mode ?? 'refute'
@@ -3486,9 +3550,14 @@ export class OpenMultiAgent {
     activeCheckpoint?: ActiveCheckpoint,
     coordinatorForSynthesis?: CoordinatorConfig,
     identity?: RunIdentity,
+    restoreMetadata?: RestoreMetadataResolution,
   ): Promise<TeamRunResult> {
-    const runIdentity = identity ?? createRunIdentity(identityOptionsForRun(options))
-    const traceRuntime = this.startTrace(runIdentity)
+    const newRunFacts = identity === undefined
+      ? createRunFacts(identityOptionsForRun(options))
+      : undefined
+    const runIdentity = identity ?? newRunFacts!.identity
+    const metadata = restoreMetadata?.metadata ?? newRunFacts?.metadata
+    const traceRuntime = this.startTrace(runIdentity, metadata, restoreMetadata?.overridden)
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler('dependency-first')
     scheduler.autoAssign(queue, agentConfigs)
@@ -3509,6 +3578,7 @@ export class OpenMultiAgent {
       config: this.config,
       ...(checkpoint ? { checkpoint } : {}),
       identity: runIdentity,
+      ...(metadata !== undefined ? { metadata } : {}),
       runId: runIdentity.runId,
       ...(traceRuntime ? { traceRuntime } : {}),
       taskSpans: new Map(),
@@ -3609,11 +3679,15 @@ export class OpenMultiAgent {
       ctx.outcomeStatus,
       ctx.outcomeErrorInfo,
     )
+    const completedResult: TeamRunResult = {
+      ...result,
+      ...(metadata !== undefined ? { metadata } : {}),
+    }
     traceRuntime?.close({
-      status: result.status ?? statusOnly(result.success ? 'ok' : 'error'),
-      ...(result.errorInfo ? { error: result.errorInfo } : {}),
+      status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
+      ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
     })
-    return result
+    return completedResult
   }
 
   private createActiveCheckpoint(

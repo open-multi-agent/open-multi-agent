@@ -113,6 +113,8 @@ export interface RunSummary {
   readonly durationMs?: number
   /** Absent when no terminal run record exists. Never inferred as ok. */
   readonly status?: RunStatusCode
+  /** Validated per-run metadata materialized from the latest attempt's root span. */
+  readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
   readonly agents: readonly string[]
   readonly taskIds: readonly string[]
   readonly models: readonly string[]

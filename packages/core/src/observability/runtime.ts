@@ -89,6 +89,7 @@ export class TraceRuntime {
     private readonly observer?: TraceRecordObserver,
     legacyCallback?: (event: TraceEvent) => void | Promise<void>,
     sink?: TraceSink,
+    rootAttributes: Readonly<Record<string, TraceAttributeValue>> = {},
   ) {
     this.identity = identity
     const legacySink = legacyCallback && legacyCallback !== LEGACY_TRACE_METADATA_ONLY
@@ -105,6 +106,7 @@ export class TraceRuntime {
       attributes: {
         'oma.run.id': identity.runId,
         'oma.run.attempt': identity.attempt,
+        ...rootAttributes,
       },
     })
   }
@@ -255,8 +257,9 @@ export function createTraceRuntime(
   legacyCallback?: (event: TraceEvent) => void | Promise<void>,
   observer?: TraceRecordObserver,
   sink?: TraceSink,
+  rootAttributes?: Readonly<Record<string, TraceAttributeValue>>,
 ): TraceRuntime | undefined {
   return legacyCallback || observer || sink
-    ? new TraceRuntime(identity, observer, legacyCallback, sink)
+    ? new TraceRuntime(identity, observer, legacyCallback, sink, rootAttributes)
     : undefined
 }

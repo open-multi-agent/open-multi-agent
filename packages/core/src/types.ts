@@ -199,6 +199,12 @@ export type RunIdentityLink = TraceLink
 export interface RunIdentityOptions {
   /** Optional logical run identifier (1-128 characters). */
   readonly runId?: string
+  /**
+   * Per-run metadata, e.g. promptVersion / experiment / datasetTag.
+   * Validated, written to root span attributes as `oma.meta.<key>`,
+   * and echoed on the run result.
+   */
+  readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
 }
 
 /** Per-call options for {@link OpenMultiAgent.runAgent}. */
@@ -257,6 +263,8 @@ export interface RunOutcomeFields {
   /** Runtime results always include this field; see {@link identity}. */
   readonly status?: RunStatus
   readonly errorInfo?: StructuredTraceError
+  /** Echo of validated metadata; present at runtime whenever the caller provided it. */
+  readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
 }
 
 /** Context passed to user-supplied cost estimators. */
@@ -1577,6 +1585,8 @@ export interface CompletedTaskCheckpoint {
 interface CheckpointSnapshotBase {
   readonly mode: 'runTeam' | 'runTasks'
   readonly createdAt: string
+  /** Validated per-run metadata inherited by future restore attempts. */
+  readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
   readonly goal?: string
   readonly queue: TaskQueueSnapshot
   readonly sharedMemory?: SharedMemorySnapshot
