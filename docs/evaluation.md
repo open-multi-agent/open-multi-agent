@@ -84,6 +84,108 @@ Each case/repeat target runs once, then that sample's scorers run serially. Diff
 
 Report percentiles use the nearest-rank method. For two sorted scores, p50 is the lower score and p95 is the higher score. `passRate` only includes scored records that explicitly contain `pass`; scorer errors are excluded from every score denominator. `byTag` repeats the same aggregation for each case tag. Target token usage is counted once per sample, even when multiple scorers run, and costs are summed only within the same currency.
 
+## Persist evaluation records
+
+Use `InMemoryEvalStore` for short-lived local runs, tests, or an adapter
+prototype. Pass it to `runEvalSet()` to persist one atomic batch per completed
+case/repeat sample:
+
+```ts
+import {
+  InMemoryEvalStore,
+  runEvalSet,
+} from '@open-multi-agent/core/eval'
+
+const store = new InMemoryEvalStore()
+const storedReport = await runEvalSet(set, target, {
+  scorers: [exact],
+  store,
+})
+
+const first = await store.query({
+  evalRunId: storedReport.evalRunId,
+  scorer: ['exact'],
+  order: 'time_asc',
+  limit: 100,
+})
+```
+
+`EvalStore.append()` is atomic per batch and idempotent by `recordId`. Queries
+can filter by evaluation run, referenced OMA run, EvalSet name, scorer, source,
+status, and inclusive `after` / exclusive `before` timestamps. Results use the
+stable `(timestampUnixMs, recordId)` order. The default page limit is 100 and
+the maximum is 1,000.
+
+Cursors are opaque snapshots. Appends after the first page do not create gaps
+or duplicates in that pagination sequence. A cursor is valid only for the same
+store instance and normalized query; changing filters, deleting records, or
+reopening a file store invalidates it. Do not parse or persist cursors as data.
+
+The optional `InMemoryEvalStore({ maxRecords })` capacity is a hard limit. A
+batch that would exceed it is rejected atomically. Use retention explicitly
+when eviction is intended:
+
+```ts
+await store.applyRetention({
+  maxAgeMs: 30 * 24 * 60 * 60 * 1_000,
+  maxRecords: 10_000,
+  sources: ['offline'],
+})
+
+await store.delete({
+  evalSetName: 'greetings',
+  before: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+})
+```
+
+Deletion and retention are idempotent. In their shared `DeleteResult`,
+`runIds` contains affected `evalRunId` values, `runsDeleted` counts distinct
+affected evaluation runs, and `recordsDeleted` counts records. A `sources`
+retention scope applies both age and count limits only to those sources; when it
+is the only field, all records in the selected sources are deleted.
+
+For durable local storage, import the Node-only implementation separately:
+
+```ts
+import { FileEvalStore } from '@open-multi-agent/core/eval/file'
+
+const fileStore = await FileEvalStore.open('./eval-results/history.ndjson', {
+  onDiagnostic(diagnostic) {
+    console.warn(diagnostic.code, diagnostic.message)
+  },
+})
+
+await fileStore.append(storedReport.records)
+await fileStore.flush()
+await fileStore.compact()
+await fileStore.close()
+```
+
+`FileEvalStore` is a single-process reference implementation, not a production
+database or a cross-process coordination layer. It keeps an append-only,
+schema-versioned NDJSON mutation log and rebuilds its in-memory index on open.
+A committed batch is visible in full or not at all; a process or machine crash
+can lose at most the last, not-yet-durable batch. `flush()` is the explicit
+fsync boundary. Recovery truncates only an incomplete final line or batch and
+emits a diagnostic; complete corruption fails loudly.
+
+Compaction writes `<file>.compact.tmp`, fsyncs it, atomically renames it over the
+target, and then fsyncs the parent directory where supported. A stale temp file
+never overrides an existing target. Use a database-backed `EvalStore` adapter
+when multiple processes, large data volumes, or server-side aggregation are
+required.
+
+Stores preserve unknown fields within the supported schema major so future
+minor additions survive a round trip. A higher `schemaVersion` major is
+rejected rather than downgraded. There is intentionally no aggregation method
+on `EvalStore`: calculate trends from queried records in memory. Needing
+aggregation pushdown is a signal to introduce a database adapter, not to add
+file-specific concepts to the interface.
+
+Persistence is fail-open for the evaluation run. If a sample batch cannot be
+stored, `runEvalSet()` still returns its complete records and aggregates and
+adds one payload-free entry to `report.warnings` for that sample.
+
 ## Evaluate OMA runs
 
 Use the convenience targets when the system under evaluation is an OMA agent, team, or fixed plan:

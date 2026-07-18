@@ -4,6 +4,15 @@ export { createJudgeScorer } from './judge.js'
 export type { JudgeScorerOptions } from './judge.js'
 export { EVAL_STORE_SCHEMA_MAJOR } from './record.js'
 export type { EvalRecord } from './record.js'
+export { EvalStoreError, InMemoryEvalStore } from './store.js'
+export type {
+  EvalDeleteQuery,
+  EvalQuery,
+  EvalRetentionPolicy,
+  EvalStore,
+  EvalStoreErrorCode,
+  InMemoryEvalStoreOptions,
+} from './store.js'
 export type { EvalCase } from './evalcase.js'
 export type { MemoryExtractionSample, MemoryRetrievalSample } from './memory-types.js'
 export { defineEvalSet } from './evalset.js'

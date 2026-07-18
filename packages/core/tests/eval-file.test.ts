@@ -26,6 +26,7 @@ function reportFixture(): EvalRunReport {
     metadata: { prompt_version: 'v2' },
     caseCount: 4,
     repeats: 1,
+    warnings: ['Evaluation records for case "failed" repeat 1 were not persisted.'],
     records: [
       {
         schemaVersion: 1,
@@ -269,6 +270,8 @@ describe('writeEvalReport', () => {
     expect(markdown).toContain('## Scorer aggregates')
     expect(markdown).toContain('## Aggregates by tag')
     expect(markdown).toContain('## Failed samples')
+    expect(markdown).toContain('## Warnings')
+    expect(markdown).toContain('were not persisted')
     expect(markdown).toContain('mismatch <&"\'')
     expect(markdown).toContain('- Target errors: 1')
     expect(markdown).toContain('- Tokens: 10 input, 5 output')

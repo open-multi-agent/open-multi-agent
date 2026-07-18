@@ -28,6 +28,8 @@ export interface EvalRunReport {
   readonly caseCount: number
   readonly repeats: number
   readonly aborted?: boolean
+  /** Non-fatal evaluation infrastructure failures, such as persistence errors. */
+  readonly warnings?: readonly string[]
   readonly records: readonly EvalRecord[]
   readonly aggregates: readonly ScorerAggregate[]
   readonly totals: {

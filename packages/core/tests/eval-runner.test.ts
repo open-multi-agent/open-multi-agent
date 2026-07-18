@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   defineEvalSet,
   defineScorer,
+  InMemoryEvalStore,
   runEvalSet,
 } from '../src/eval/index.js'
 import type {
@@ -352,5 +353,57 @@ describe('runEvalSet', () => {
     expect(contextMetadata).toEqual(expected)
     expect(report.records[0]?.metadata).toEqual(expected)
     expect(report.metadata).toEqual({ shared: 'runner', runner_only: true })
+  })
+
+  it('persists one atomic record batch per completed sample', async () => {
+    const set = defineEvalSet({
+      name: 'stored', version: '1',
+      cases: [
+        { id: 'a', input: 'a', expected: 'a' },
+        { id: 'b', input: 'b', expected: 'b' },
+      ],
+    })
+    const store = new InMemoryEvalStore()
+    const append = vi.spyOn(store, 'append')
+    const report = await runEvalSet(set, async (input) => ({ output: input }), {
+      scorers: [exact, defineScorer({ name: 'second', score: () => ({ score: 1 }) })],
+      store,
+      concurrency: 2,
+    })
+
+    expect(append).toHaveBeenCalledTimes(2)
+    expect(append.mock.calls.map(([records]) => records.length)).toEqual([2, 2])
+    expect((await store.query({ evalRunId: report.evalRunId })).items.map((record) => record.recordId).sort())
+      .toEqual(report.records.map((record) => record.recordId).sort())
+    expect(report.warnings).toBeUndefined()
+  })
+
+  it('keeps the full report and adds deterministic warnings when store batches fail', async () => {
+    const set = defineEvalSet({
+      name: 'store-failure', version: '1',
+      cases: [
+        { id: 'slow', input: 'slow', expected: 'slow' },
+        { id: 'fast', input: 'fast', expected: 'fast' },
+      ],
+    })
+    const append = vi.fn().mockRejectedValue(new Error('store unavailable'))
+    const store = {
+      append,
+      query: vi.fn(),
+      delete: vi.fn(),
+      applyRetention: vi.fn(),
+    }
+    const report = await runEvalSet(set, async (input) => {
+      if (input === 'slow') await new Promise((resolve) => setTimeout(resolve, 10))
+      return { output: input }
+    }, { scorers: [exact], store, concurrency: 2 })
+
+    expect(append).toHaveBeenCalledTimes(2)
+    expect(report.records).toHaveLength(2)
+    expect(report.aggregates[0]).toMatchObject({ scoredCount: 2, avg: 1 })
+    expect(report.warnings).toEqual([
+      'Evaluation records for case "slow" repeat 1 were not persisted.',
+      'Evaluation records for case "fast" repeat 1 were not persisted.',
+    ])
   })
 })

@@ -8,6 +8,20 @@ import { gatePolicySchema, type GatePolicy } from './gate.js'
 import type { EvalRunReport, ScorerAggregate } from './report.js'
 import type { EvalRecord } from './record.js'
 
+export {
+  FILE_EVAL_STORE_FORMAT,
+  FILE_EVAL_STORE_FORMAT_VERSION,
+  FileEvalStore,
+  FileEvalStoreError,
+} from './file-store.js'
+export type {
+  FileEvalStoreCompactionResult,
+  FileEvalStoreDiagnostic,
+  FileEvalStoreDiagnosticCode,
+  FileEvalStoreErrorCode,
+  FileEvalStoreOptions,
+} from './file-store.js'
+
 export type EvalReportFormat = 'json' | 'markdown' | 'junit'
 
 const REASON_MAX_CHARS = 200
@@ -122,6 +136,7 @@ const evalRunReportSchema = z.object({
   caseCount: z.number().int().nonnegative(),
   repeats: z.number().int().positive(),
   aborted: z.boolean().optional(),
+  warnings: z.array(z.string()).optional(),
   records: z.array(evalRecordSchema),
   aggregates: z.array(scorerAggregateSchema),
   totals: z.object({
@@ -253,6 +268,9 @@ function recordFailureReason(record: EvalRecord): string {
 }
 
 function markdownReport(report: EvalRunReport): string {
+  const warningLines = report.warnings === undefined || report.warnings.length === 0
+    ? []
+    : ['## Warnings', '', ...report.warnings.map((warning) => `- ${warning}`), '']
   const lines = [
     `# Evaluation Report: ${report.evalSet.name}@${report.evalSet.version}`,
     '',
@@ -269,6 +287,7 @@ function markdownReport(report: EvalRunReport): string {
     JSON.stringify(report.metadata, null, 2),
     '```',
     '',
+    ...warningLines,
     '## Scorer aggregates',
     '',
     '| Scorer | Version | Scored | Avg | P50 | P95 | Min | Max | Pass rate | Errors |',

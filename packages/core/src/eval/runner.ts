@@ -15,6 +15,7 @@ import { aggregateEvalRecords } from './report.js'
 import type { EvalRunReport } from './report.js'
 import type { EvalRecord } from './record.js'
 import type { ScoreResult, Scorer, ScorerContext } from './scorer.js'
+import type { EvalStore } from './store.js'
 import type { EvalTarget, TargetOutput } from './target.js'
 
 const DEFAULT_REPEATS = 1
@@ -36,6 +37,8 @@ export interface RunEvalOptions {
   readonly filterTags?: readonly string[]
   readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
   readonly traceStore?: TraceStore
+  /** Optional persistence. Failures are reported as warnings and never fail the run. */
+  readonly store?: EvalStore
   readonly evalRunId?: string
   readonly storePayloads?: 'none' | 'redacted' | 'full'
   readonly signal?: AbortSignal
@@ -386,6 +389,7 @@ export async function runEvalSet(
     Array.from({ length: repeats }, (_, index) => ({ evalCase, repeat: index + 1 })))
   const signal = options.signal ?? new AbortController().signal
   const samples = new Array<SampleResult | undefined>(jobs.length)
+  const storeWarnings = new Array<string | undefined>(jobs.length)
   let cursor = 0
 
   const worker = async (): Promise<void> => {
@@ -393,7 +397,7 @@ export async function runEvalSet(
       const index = cursor++
       const job = jobs[index]
       if (job === undefined) return
-      samples[index] = await runSample(
+      const sample = await runSample(
         set,
         job.evalCase,
         job.repeat,
@@ -402,6 +406,14 @@ export async function runEvalSet(
         evalRunId,
         signal,
       )
+      samples[index] = sample
+      if (options.store !== undefined) {
+        try {
+          await options.store.append(sample.records)
+        } catch {
+          storeWarnings[index] = `Evaluation records for case "${job.evalCase.id}" repeat ${job.repeat} were not persisted.`
+        }
+      }
     }
   }
 
@@ -415,6 +427,7 @@ export async function runEvalSet(
   const tagsByCase = new Map(cases.map((evalCase) => [evalCase.id, evalCase.tags ?? []]))
   const tokens = sumTokens(completed)
   const costs = sumCosts(completed)
+  const warnings = storeWarnings.filter((warning): warning is string => warning !== undefined)
 
   return {
     schemaVersion: 1,
@@ -426,6 +439,7 @@ export async function runEvalSet(
     caseCount: cases.length,
     repeats,
     ...(signal.aborted ? { aborted: true } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
     records,
     aggregates: aggregateEvalRecords(records, options.scorers, tagsByCase),
     totals: {
