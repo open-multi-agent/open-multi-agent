@@ -18,6 +18,28 @@ import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
 
+export interface AgentDefaultsSource {
+  readonly defaultModel?: OrchestratorConfig['defaultModel']
+  readonly defaultProvider?: OrchestratorConfig['defaultProvider']
+  readonly defaultBaseURL?: OrchestratorConfig['defaultBaseURL']
+  readonly defaultApiKey?: OrchestratorConfig['defaultApiKey']
+  readonly defaultCwd?: OrchestratorConfig['defaultCwd']
+  readonly onToolCall?: OrchestratorConfig['onToolCall']
+}
+
+/** Apply the orchestrator-level defaults shared by ephemeral agent configs. */
+export function applyAgentDefaults(config: AgentConfig, src: AgentDefaultsSource): AgentConfig {
+  return {
+    ...config,
+    model: config.model ?? src.defaultModel,
+    provider: config.provider ?? src.defaultProvider,
+    baseURL: config.baseURL ?? src.defaultBaseURL,
+    apiKey: config.apiKey ?? src.defaultApiKey,
+    cwd: config.cwd === undefined ? src.defaultCwd : config.cwd,
+    onToolCall: config.onToolCall ?? src.onToolCall,
+  }
+}
+
 /**
  * Build a minimal {@link Agent} with its own fresh registry/executor.
  * Pool workers pass `includeDelegateTool` so `delegate_to_agent` is available during `runTeam` / `runTasks`.

@@ -38,7 +38,13 @@ import {
   type RevealCoordinatorContext,
 } from './run-context.js'
 import { recordRunUsage, buildCostEstimateContext } from './budget.js'
-import { routeMatches, withModelRoute, applyDefaultToolPreset, buildAgent } from './agent-config.js'
+import {
+  routeMatches,
+  withModelRoute,
+  applyAgentDefaults,
+  applyDefaultToolPreset,
+  buildAgent,
+} from './agent-config.js'
 import { executeWithRetry } from './retry.js'
 import { runTaskVerify } from './consensus.js'
 
@@ -101,15 +107,10 @@ export function buildTaskAgentTeamInfo(
       task: ctx.taskById.get(taskId),
       leaf: ctx.taskLeafById.get(taskId),
     })
-    const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
-      ...targetConfig,
-      model: targetConfig.model ?? ctx.config.defaultModel,
-      provider: targetConfig.provider ?? ctx.config.defaultProvider,
-      baseURL: targetConfig.baseURL ?? ctx.config.defaultBaseURL,
-      apiKey: targetConfig.apiKey ?? ctx.config.defaultApiKey,
-      cwd: targetConfig.cwd === undefined ? ctx.config.defaultCwd : targetConfig.cwd,
-      onToolCall: targetConfig.onToolCall ?? ctx.config.onToolCall,
-    }, ctx.config.defaultToolPreset), route)
+    const effective: AgentConfig = withModelRoute(applyDefaultToolPreset(
+      applyAgentDefaults(targetConfig, ctx.config),
+      ctx.config.defaultToolPreset,
+    ), route)
     const tempAgent = buildAgent(effective, { includeDelegateTool: true })
 
     const delegatedParentId = traceBase.traceSpanId ?? traceBase.traceParentId
@@ -404,15 +405,10 @@ export async function executeQueue(
           task,
           leaf: ctx.taskLeafById.get(task.id),
         })
-        const workerEffectiveConfig = withModelRoute(applyDefaultToolPreset({
-          ...agentConfig,
-          model: agentConfig.model ?? config.defaultModel,
-          provider: agentConfig.provider ?? config.defaultProvider,
-          baseURL: agentConfig.baseURL ?? config.defaultBaseURL,
-          apiKey: agentConfig.apiKey ?? config.defaultApiKey,
-          cwd: agentConfig.cwd === undefined ? config.defaultCwd : agentConfig.cwd,
-          onToolCall: agentConfig.onToolCall ?? config.onToolCall,
-        }, config.defaultToolPreset), workerRoute)
+        const workerEffectiveConfig = withModelRoute(applyDefaultToolPreset(
+          applyAgentDefaults(agentConfig, config),
+          config.defaultToolPreset,
+        ), workerRoute)
         const routedAgent = workerRoute
           ? buildAgent(workerEffectiveConfig, { includeDelegateTool: true })
           : undefined

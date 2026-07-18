@@ -121,6 +121,7 @@ import {
 } from './budget.js'
 import {
   buildAgent,
+  applyAgentDefaults,
   applyDefaultToolPreset,
   routeMatches,
   withModelRoute,
@@ -283,14 +284,8 @@ export class OpenMultiAgent {
     const traceRuntime = this.startTrace(identity, metadata)
     const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
     const effective: AgentConfig = applyDefaultToolPreset({
-      ...config,
-      model: config.model ?? this.config.defaultModel,
-      provider: config.provider ?? this.config.defaultProvider,
-      baseURL: config.baseURL ?? this.config.defaultBaseURL,
-      apiKey: config.apiKey ?? this.config.defaultApiKey,
-      cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
+      ...applyAgentDefaults(config, this.config),
       maxTokenBudget: effectiveBudget,
-      onToolCall: config.onToolCall ?? this.config.onToolCall,
     }, this.config.defaultToolPreset)
     const agent = buildAgent(effective)
     this.config.onProgress?.({
@@ -454,14 +449,8 @@ export class OpenMultiAgent {
       // Events are emitted here; counting is handled by buildTeamRunResult().
       const effectiveBudget = resolveTokenBudget(bestAgent.maxTokenBudget, this.config.maxTokenBudget)
       const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
-        ...bestAgent,
-        model: bestAgent.model ?? this.config.defaultModel,
-        provider: bestAgent.provider ?? this.config.defaultProvider,
-        baseURL: bestAgent.baseURL ?? this.config.defaultBaseURL,
-        apiKey: bestAgent.apiKey ?? this.config.defaultApiKey,
-        cwd: bestAgent.cwd === undefined ? this.config.defaultCwd : bestAgent.cwd,
+        ...applyAgentDefaults(bestAgent, this.config),
         maxTokenBudget: effectiveBudget,
-        onToolCall: bestAgent.onToolCall ?? this.config.onToolCall,
       }, this.config.defaultToolPreset), routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
       const agent = buildAgent(effective)
 
@@ -1580,15 +1569,10 @@ export class OpenMultiAgent {
   private buildPool(agentConfigs: AgentConfig[]): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
-      const effective: AgentConfig = applyDefaultToolPreset({
-        ...config,
-        model: config.model ?? this.config.defaultModel,
-        provider: config.provider ?? this.config.defaultProvider,
-        baseURL: config.baseURL ?? this.config.defaultBaseURL,
-        apiKey: config.apiKey ?? this.config.defaultApiKey,
-        cwd: config.cwd === undefined ? this.config.defaultCwd : config.cwd,
-        onToolCall: config.onToolCall ?? this.config.onToolCall,
-      }, this.config.defaultToolPreset)
+      const effective: AgentConfig = applyDefaultToolPreset(
+        applyAgentDefaults(config, this.config),
+        this.config.defaultToolPreset,
+      )
       pool.add(buildAgent(effective, { includeDelegateTool: true }))
     }
     return pool

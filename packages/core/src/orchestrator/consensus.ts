@@ -32,7 +32,7 @@ import {
   type RunContext,
 } from './run-context.js'
 import { recordRunUsage, buildCostEstimateContext } from './budget.js'
-import { buildAgent } from './agent-config.js'
+import { applyAgentDefaults, buildAgent } from './agent-config.js'
 
 /** Orchestrator-level defaults applied to ephemeral consensus agents. */
 export interface ConsensusAgentDefaults {
@@ -69,15 +69,7 @@ export const VERDICT_INSTRUCTION =
 
 /** Apply orchestrator defaults to a consensus agent config, mirroring buildPool. */
 export function applyConsensusDefaults(config: AgentConfig, defaults: ConsensusAgentDefaults): AgentConfig {
-  return {
-    ...config,
-    model: config.model ?? defaults.defaultModel,
-    provider: config.provider ?? defaults.defaultProvider,
-    baseURL: config.baseURL ?? defaults.defaultBaseURL,
-    apiKey: config.apiKey ?? defaults.defaultApiKey,
-    cwd: config.cwd === undefined ? defaults.defaultCwd : config.cwd,
-    onToolCall: config.onToolCall ?? defaults.onToolCall,
-  }
+  return applyAgentDefaults(config, defaults)
 }
 
 /** Build the user prompt sent to a single judge, always including the original question. */
