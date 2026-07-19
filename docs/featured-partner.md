@@ -1,6 +1,6 @@
 # Featured Partner program
 
-For products and platforms already integrated with `open-multi-agent`. Reserves prominent placement in the [Ecosystem](../README.md#ecosystem) section of the project README for 12 months at a time.
+For products and platforms already integrated with `open-multi-agent`. Reserves prominent placement in the [Built with OMA](../README.md#built-with-oma) section of the project README for 12 months at a time.
 
 ## What you get
 

@@ -57,9 +57,9 @@ Flow:
 3. PR it. Follow the conventions in [`examples/README.md`](../README.md).
 
 If your product doesn't reference OMA yet, open a discussion to get listed
-in the [Ecosystem](../../README.md#ecosystem) section.
+in the [Built with OMA](../../../../README.md#built-with-oma) section.
 
-The [Featured Partner program](../../docs/featured-partner.md) is separate
+The [Featured Partner program](../../../../docs/featured-partner.md) is separate
 and paid, for prominent README placement. Eligibility is an active OMA
 integration; reciprocal listing isn't required.
 

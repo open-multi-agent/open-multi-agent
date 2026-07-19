@@ -111,10 +111,10 @@ Use `planOnly` to inspect a generated task graph before execution, then `createP
 
 | Capability | What you get |
 |------------|--------------|
-| **Dynamic orchestration** | Runtime goal decomposition, dependency-aware scheduling, parallel branches, configurable assignment, and final synthesis. |
-| **Models and reasoning** | Mix built-in, OpenAI-compatible, AI SDK, or local models; route phases separately and preserve reasoning only when explicitly enabled. |
+| **Dynamic orchestration** | Runtime goal decomposition, dependency-aware scheduling, parallel branches, configurable assignment, opt-in team context for workers (`revealCoordinator`), and final synthesis. |
+| **Models and reasoning** | Mix built-in, OpenAI-compatible, AI SDK, or local models; map one `thinking` config to each provider's reasoning setting, route phases separately, and preserve reasoning only when explicitly enabled. |
 | **Tools and handoffs** | Built-in tools are default-deny; custom tools, MCP, and guarded `delegate_to_agent` handoffs are opt-in. |
-| **Controlled outputs** | Stream per agent, validate results with Zod, approve plans or task rounds, and cancel with `AbortSignal`. |
+| **Controlled outputs** | Stream per agent, validate results with Zod, approve plans or task rounds, rewrite prompts or post-process results with `beforeRun` / `afterRun`, and cancel with `AbortSignal`. |
 | **Evaluation** | Version EvalSets, run reference scorers, gate CI with offline reports, persist results, or sample production runs on a best-effort path. |
 | **Memory and recovery** | Shared memory is pluggable; checkpoints resume interrupted runs without repeating completed tasks. |
 | **Observability** | Stable run identity, traces, redaction, TraceStore, and the offline DAG/Waterfall Viewer are available without a hosted service. |
@@ -161,9 +161,11 @@ Change `provider`, `model`, and credentials; the agent shape stays the same.
 | Built in | Anthropic, OpenAI, Azure OpenAI, Copilot, Grok, DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, Qiniu |
 | Optional peers | Gemini (`@google/genai`) and Bedrock (`@aws-sdk/client-bedrock-runtime`) |
 | OpenAI-compatible | Set `provider: 'openai'` + `baseURL` for Ollama, vLLM, LM Studio, OpenRouter, Groq, Mistral, Kimi, Qwen, or Zhipu |
-| AI SDK | Use `AISdkAdapter` with `ai` and your selected `@ai-sdk/*` provider |
+| AI SDK | Use `AISdkAdapter` with `ai` and your selected `@ai-sdk/*` provider (AI SDK 7 needs Node.js 22+) |
 
-Optional integrations load only when used. See [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) and [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) for credentials, models, MCP, and local endpoints.
+Optional integrations load only when used: core directly installs only `@anthropic-ai/sdk`, `openai`, and `zod`; other SDKs are lazy-loading opt-in peers, and OpenTelemetry lives entirely in `@open-multi-agent/otel`. Dependency changes are weighed on demonstrated value plus security, size, maintenance, and compatibility cost, not a fixed count.
+
+See [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) and [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) for credentials, models, the AI SDK bridge, reasoning settings, MCP, and local endpoints.
 
 ## Production
 
@@ -176,7 +178,9 @@ Optional integrations load only when used. See [Providers](https://github.com/op
 | Review work | `planOnly`, `onPlanReady`, and approval callbacks |
 | Observe | Trace sinks, TraceStore, Run Viewer, or the optional OTel adapter |
 
-Built-in tools are default-deny. Filesystem tools stay within the configured `cwd`; granted `bash` is not sandboxed. Secrets are redacted from traces, shell output, and Viewer payloads by default.
+Budget checks run at turn and task boundaries, so a run can overshoot by up to one model turn; they are not a cent-exact stop. `estimateCost` receives each call's token usage plus the agent, effective `model`, `provider`, phase, and `taskId`, and your application owns the price table.
+
+Built-in tools are default-deny, and every tool result is sent to your model provider, so grant read and exec access deliberately. Filesystem tools stay within the configured `cwd`; granted `bash` is not sandboxed. Secrets are redacted from traces, shell output, and Viewer payloads by default.
 
 ### Observability
 

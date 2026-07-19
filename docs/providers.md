@@ -56,6 +56,51 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
 
+## Vercel AI SDK (optional)
+
+The AI SDK bridge routes an agent through [any AI SDK provider](https://ai-sdk.dev/providers) instead of the built-in `provider` factory. Install the optional peers with `npm i ai @ai-sdk/<provider>`; the peer range accepts AI SDK 5, 6, and 7, and AI SDK 7 requires Node.js >= 22.
+
+Pass `adapter: new AISdkAdapter(model)` on `AgentConfig`. When `adapter` is set, `provider`, `apiKey`, `baseURL`, and `region` are ignored for that agent. Mixed teams work as usual: only agents with `adapter` use the AI SDK.
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { AISdkAdapter } from '@open-multi-agent/core/ai-sdk'
+import { OpenMultiAgent } from '@open-multi-agent/core'
+
+const oma = new OpenMultiAgent()
+await oma.runAgent(
+  {
+    name: 'researcher',
+    model: 'gpt-4o',
+    adapter: new AISdkAdapter(openai('gpt-4o')),
+    systemPrompt: 'You are a researcher.',
+  },
+  'What are the latest AI trends?',
+)
+```
+
+The coordinator accepts the same hook via `runTeam(team, goal, { coordinator: { adapter: new AISdkAdapter(...) } })`. For a full application, see [`integrations/with-vercel-ai-sdk`](../packages/core/examples/integrations/with-vercel-ai-sdk/).
+
+## Extended Thinking / Reasoning
+
+One `thinking` config on `AgentConfig` maps to each provider's native reasoning setting:
+
+```typescript
+const agent = {
+  name: 'deep-reasoner',
+  provider: 'anthropic',
+  model: 'claude-opus-4-6',
+  systemPrompt: 'Reason carefully before answering.',
+  thinking: { enabled: true, budgetTokens: 8_000 },
+}
+```
+
+- `budgetTokens` maps to Anthropic `thinking.budget_tokens` and Gemini `thinkingConfig.thinkingBudget`.
+- `effort` (`'low' | 'medium' | 'high'`) maps to OpenAI `reasoning_effort`. Values the pinned SDK union does not declare yet (such as `'minimal'` or `'none'`) can be passed via `extraBody: { reasoning_effort: '<value>' }`.
+- Adapters ignore fields they don't recognise, so one config is safe across a mixed-provider team.
+
+Reasoning is streamed as `reasoning` events. Preserving reasoning across a provider switch is opt-in via `preserveReasoningAsText`; see [context management](context-management.md) and [`patterns/cross-provider-reasoning`](../packages/core/examples/patterns/cross-provider-reasoning.ts).
+
 ## Local Model Tool-Calling
 
 The framework supports tool-calling with local models served by Ollama, vLLM, LM Studio, or llama.cpp. Tool-calling is handled natively through the OpenAI-compatible API.
