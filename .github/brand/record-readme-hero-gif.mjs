@@ -28,7 +28,7 @@ const FRAMES_DIR = join(WORK_DIR, 'screenshots')
 
 const OUTPUT_GIF = join(SCRIPT_DIR, 'demo-dashboard-hero.gif')
 const OUTPUT_GIF_1200 = join(SCRIPT_DIR, 'demo-dashboard-hero-1200.gif')
-const OUTPUT_MP4 = join(WORK_DIR, 'demo-dashboard-hero.mp4')
+const OUTPUT_MP4 = join(SCRIPT_DIR, 'demo-dashboard-hero.mp4')
 
 const WIDTH = 1600
 const HEIGHT = 900
