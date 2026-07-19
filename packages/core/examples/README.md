@@ -4,6 +4,12 @@ Runnable scripts demonstrating `open-multi-agent`. Organized by category — pic
 
 All scripts run with `npx tsx packages/core/examples/<category>/<name>.ts`. Scripts that call a model require the corresponding API key in your environment. The full applications (see the apps section below) are the exception: they have their own `package.json` and start scripts.
 
+[`catalog.json`](catalog.json) is the machine-readable inventory and website
+classification contract. The physical directories below remain the maintenance
+taxonomy; a catalog `goal` controls discovery by user intent without requiring a
+file move. `npm run test:example-catalog` validates the metadata and fails when a
+standalone example or top-level example directory is not registered.
+
 ---
 
 ## basics — start here
@@ -124,3 +130,4 @@ Conventions:
 - **Imports** should resolve as `from '../../src/index.js'` for scripts (one level deeper than the old flat layout); full applications with their own `package.json` import the published `@open-multi-agent/core` package name instead.
 - **Match the provider template** when adding a provider: three-agent team (architect / developer / reviewer) building a small REST API. Keeps comparisons honest.
 - **Add a row** to the table in this file for the corresponding category.
+- **Add exactly one entry** to [`catalog.json`](catalog.json), including its user goal, capability tags, format, level, and any directory entrypoints. Do not move an example merely to change its website grouping.
