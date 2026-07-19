@@ -1,91 +1,112 @@
 # AGENTS.md
 
-This file is the canonical working map for AI agents editing this repository: the conventions, the layer layout, the non-obvious invariants, and pointers into `docs/`. Keep it lean because it loads into agent sessions. Conceptual architecture, the provider table, and the production checklist live in the package page [packages/core/README.md](packages/core/README.md); detailed subsystem behavior lives in [`docs/`](docs/) and is linked inline below rather than duplicated here.
+This file is the canonical working agreement for AI agents editing this repository. Keep durable execution rules, high-risk invariants, and verification expectations here. Keep conceptual architecture and subsystem behavior in [`packages/core/README.md`](packages/core/README.md) and [`docs/`](docs/) so this file stays concise and accurate.
 
-**Monorepo layout.** The published package `@open-multi-agent/core` lives in [`packages/core/`](packages/core/) — its source, tests, examples, and the npm package README. The repo root is a private npm-workspaces manager (`package.json` `"private": true`) that delegates `build` / `lint` / `test` / `dev` to the package, so the commands below run from the root. Unprefixed code paths in this doc (`src/…`, `tests/…`, `cli/oma.ts`, the layer map below) are relative to `packages/core/`; `docs/` and the GitHub-facade `README.md` live at the repo root.
+## Repository map
+
+This is a private npm-workspaces root. Run the commands below from the repository root unless a workspace-specific command is shown.
+
+| Workspace | Purpose | Main paths |
+|---|---|---|
+| `@open-multi-agent/core` | Multi-agent orchestration framework and `oma` CLI | `packages/core/src/`, `packages/core/tests/`, `packages/core/examples/` |
+| `@open-multi-agent/otel` | Optional OpenTelemetry adapter; versioned independently from core | `packages/otel/src/`, `packages/otel/tests/` |
+| `create-oma-app` | Published scaffolder and starter templates | `packages/create-oma-app/src/`, `packages/create-oma-app/templates/`, `packages/create-oma-app/tests/` |
+
+Root-level `README.md`, `docs/`, `.github/`, and `scripts/` apply across workspaces. Paths in this file are repository-relative; do not assume an unprefixed `src/` or `tests/` means the workspace you intend.
 
 ## Commands
 
 ```bash
-npm run build          # Compile TypeScript (src/ → dist/)
-npm run dev            # Watch mode compilation
-npm run lint           # Type-check only (tsc --noEmit)
-npm test               # Run all tests (vitest run)
-npm run test:watch     # Vitest watch mode
-npm run test:coverage  # Vitest with v8 coverage
-npm run test:e2e       # E2E suite (requires RUN_E2E=1, real API keys)
-node packages/core/dist/cli/oma.js help   # After build: shell/CI CLI (`oma` when installed via npm bin)
+npm run build          # Compile every workspace
+npm run lint           # Type-check every workspace
+npm test               # Run unit tests in every workspace (no API keys required)
+npm run test:scaffold  # End-to-end create-oma-app scaffold smoke test
+npm run test:example-catalog  # Validate example catalog metadata and coverage
+
+npm run dev            # Watch-mode compilation for @open-multi-agent/core
+npm run test:watch     # Core Vitest watch mode
+npm run test:coverage  # Core coverage suite
+npm run test:e2e       # Core provider E2E; requires real API keys
+
+node packages/core/dist/cli/oma.js help  # After build; `oma` when installed from npm
 ```
 
-Tests live in `tests/` (vitest), E2E under `tests/e2e/`. Standalone `examples/` need real API keys and are grouped by intent (`basics/`, `cookbook/`, `patterns/`, `providers/`, `integrations/`, `production/`).
+Examples and core E2E tests may require real provider credentials. Unit tests mock provider SDKs and external processes and should run without network access or API keys.
 
-## Code style & workflow
+## Working rules
 
-- **ESM imports need `.js` extensions**: `import { X } from './foo.js'` even though the source is `foo.ts`. TypeScript strict; no eslint/prettier, so match existing patterns.
-- **After a change**, run `npm run lint` (typecheck) + the relevant tests. `tests/` need no API keys; `examples/` and `tests/e2e/` do.
-- **Keep dependency ownership explicit** — there is no fixed runtime-dependency count. OpenTelemetry-specific APIs, SDKs, semantic-convention packages, and exporters belong in `@open-multi-agent/otel`; `@open-multi-agent/core` must remain importable and runnable without them. New optional provider SDKs should continue to load lazily.
-- **PRs** must pass `npm run lint && npm test` (CI on Node 18/20/22). Conventional commits, reference PR/issue #. Full flow: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+- Use strict TypeScript and ESM imports with `.js` extensions: `import { X } from './foo.js'` even when the source file is TypeScript. There is no eslint/prettier configuration; match nearby style.
+- Change source files, tests, templates, or docs rather than generated `dist/` output.
+- Add or update tests for behavior changes. Update user-facing docs and examples when public behavior changes, or state why they are not applicable.
+- Keep dependency ownership explicit. Core must remain importable and runnable without optional integrations.
+- Add optional provider SDKs as peer dependencies and load them lazily with dynamic `import()`. Do not maintain a fixed dependency or adapter count in documentation.
+- OpenTelemetry APIs, SDKs, semantic-convention packages, and exporters belong in `@open-multi-agent/otel`, never in the core root import. The application owns its tracer/provider lifecycle unless an API explicitly says otherwise.
+- Treat `docs/` as the source of truth for subsystem behavior. Keep this file to rules and concise invariants; link to docs instead of copying long explanations.
+- Follow conventional commits when a commit is requested. Reference a PR or issue when one exists. The full contribution flow is in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
-## Architecture
+## Validation by change type
 
-ES module TypeScript framework for multi-agent orchestration. Core owns the dependencies required by its native provider contracts; optional peers (`@aws-sdk/client-bedrock-runtime`, `@google/genai`, `@modelcontextprotocol/sdk`, `ai`) load lazily via dynamic `import()` so unused SDKs never resolve. OpenTelemetry APIs, SDKs, semantic conventions, and exporters are owned by the separately installable `@open-multi-agent/otel` package, never by the core root import.
+Always inspect the focused diff and run `git diff --check`. Run the smallest relevant checks first, then broaden in proportion to the change.
 
-**`OpenMultiAgent`** (`src/orchestrator/orchestrator.ts`) is the top-level public API with three execution modes:
+- **Documentation-only:** `git diff --check`; tests are not required unless commands, generated artifacts, or executable examples changed.
+- **Core code:** relevant core tests, then `npm run lint -w @open-multi-agent/core` and `npm run test -w @open-multi-agent/core`. Run `npm run build -w @open-multi-agent/core` when public entry points, declarations, package output, or CLI output may be affected.
+- **OpenTelemetry adapter:** relevant tests, then `npm run lint -w @open-multi-agent/otel`, `npm run test -w @open-multi-agent/otel`, and build when package output or public types may be affected.
+- **Scaffolder or templates:** relevant tests, then `npm run lint -w create-oma-app`, `npm run test -w create-oma-app`, and `npm run typecheck:template -w create-oma-app`. Run `npm run test:scaffold -w create-oma-app` when generated-project behavior changes.
+- **Examples or catalog metadata:** `npm run test:example-catalog`; add a runnable example smoke test when executable behavior changes.
+- **Cross-workspace or dependency changes:** `npm run lint`, `npm test`, and `npm run build`; add the package/import/template smoke checks relevant to the changed surface.
+- **Provider E2E:** run only when the changed surface requires real-provider verification and the necessary credentials are safely available. Never expose credential values.
 
-1. **`runAgent(config, prompt)`** — single agent, one-shot
-2. **`runTeam(team, goal)`** — a temporary "coordinator" agent decomposes the goal into a task DAG (a single coordinator pass), then tasks run in dependency order
-3. **`runTasks(team, tasks)`** — explicit task pipeline with user-defined `dependsOn`
+Before finishing, report every command run and its outcome. If a relevant check was skipped or could not run, state the reason and residual risk. CI remains the source of truth for the complete Node 18/20/22 pre-merge matrix.
 
-### The Coordinator Pattern (runTeam)
+## Architecture entry points
 
-The framework's key feature. The coordinator receives goal + roster → emits a JSON task array (title, description, assignee, dependsOn) → `TaskQueue` resolves dependencies topologically (independent tasks run in parallel, dependents wait) → `Scheduler` auto-assigns unassigned tasks (`dependency-first` default; also `round-robin`, `least-busy`, `capability-match`) → each result is written to `SharedMemory` for later agents → the coordinator synthesizes the final output.
+Use this map to locate code; use the linked docs for behavior and contracts.
 
-### Layer Map
+| Area | Entry points |
+|---|---|
+| Orchestration | `packages/core/src/orchestrator/orchestrator.ts` facade plus sibling run-context, budget, retry, task-execution, coordinator, consensus, and scheduler modules |
+| Agents and backends | `packages/core/src/agent/` — runner, pool, structured output, loop detection, process backend, and ACP backend |
+| Teams and tasks | `packages/core/src/team/`, `packages/core/src/task/` — roster, messaging, shared-memory binding, dependency queue, and task state |
+| Tools | `packages/core/src/tool/` — definitions, executor, MCP bridge, text fallback, built-ins, sandbox, and delegation |
+| LLM adapters | `packages/core/src/llm/` — adapter factory, provider adapters, OpenAI-compatible helpers, and reasoning fallback |
+| Memory and recovery | `packages/core/src/memory/` — shared memory, stores, file backends, and checkpointing |
+| Observability | `packages/core/src/observability/` for core records/sinks/stores; `packages/otel/src/` for the optional OpenTelemetry adapter |
+| Evaluation | `packages/core/src/eval/` — scorers, EvalSets, stores, offline/online runners, reports, and gates |
+| Dashboard and CLI | `packages/core/src/dashboard/`, `packages/core/src/cli/oma.ts` |
+| Public exports | `packages/core/src/index.ts` plus dedicated subpath entry points for observability, evaluation, MCP, AI SDK, ACP, process backends, and classifiers |
 
-| Layer | Files | Responsibility |
-|-------|-------|----------------|
-| Orchestrator | `orchestrator/orchestrator.ts` (facade) plus `run-context.ts`, `budget.ts`, `retry.ts`, `short-circuit.ts`, `agent-config.ts`, `task-execution.ts`, `consensus.ts`, `coordinator.ts`, `scheduler.ts` | Top-level API facade; run context/identity, budget accounting, retry/backoff, short-circuit, agent build + model routing, task-execution loop, consensus verification, coordinator decomposition/synthesis, scheduling |
-| Team | `team/team.ts`, `messaging.ts` | Agent roster, MessageBus (point-to-point + broadcast), SharedMemory binding |
-| Agent | `agent/agent.ts`, `runner.ts`, `pool.ts`, `structured-output.ts`, `loop-detector.ts`, `acp-backend.ts`, `process-backend.ts` | Lifecycle (idle→running→completed/error), conversation loop, concurrency pool + per-agent mutex, structured-output validation, loop detection; `AgentBackend` seam so an `Agent` runs on either an LLM `AgentRunner` or an external backend |
-| Task | `task/queue.ts`, `task.ts` | Dependency-aware queue, auto-unblock on completion, cascade failure to dependents |
-| Tool | `tool/framework.ts`, `executor.ts`, `mcp.ts`, `text-tool-extractor.ts`, `built-in/` | `defineTool()` + Zod, ToolRegistry, parallel batch exec, MCP bridge, local-model text tool-call fallback, filesystem sandbox |
-| LLM | `llm/adapter.ts` + 12 per-provider files + `openai-common.ts` + `reasoning-fallback.ts` | `LLMAdapter` (`chat` + `stream`); lazy `createAdapter()` factory; `baseURL` for OpenAI-compatible servers; cross-provider reasoning round-tripping |
-| Memory | `memory/shared.ts`, `store.ts`, `file-store.ts` | Namespaced KV store (`agentName/key`), markdown summary injection; pluggable `MemoryStore` backends (in-memory + durable file-backed `FileStore`) |
-| Dashboard | `dashboard/*.ts` | Pure HTML renderer for the post-run task DAG (no I/O) |
-| CLI | `cli/oma.ts` | Shell/CI entry; built to `dist/cli/oma.js`, exposed as the `oma` npm bin |
-| Utils | `utils/*.ts` | Semaphore, token accounting, keyword helpers, trace plumbing, secret/PII redaction |
-| Types / Errors | `types.ts`, `errors.ts` | All interfaces in one file (avoids circular deps); shared error types |
-| Exports | `index.ts`, `mcp.ts`, `ai-sdk.ts`, `acp.ts`, `process.ts`, `classifiers.ts` | Root + `/mcp` + `/ai-sdk` + `/acp` + `/process` + `/classifiers` subpaths so optional peers, backend-specific helpers, and pattern tables don't break the main import |
+`OpenMultiAgent` exposes three primary modes: `runAgent()` for a one-shot agent, `runTeam()` for coordinator-generated task DAGs, and `runTasks()` for explicit dependency pipelines. See the [core package README](packages/core/README.md#architecture) for the conceptual architecture.
 
-### Non-obvious invariants
+## Non-obvious invariants
 
-Behavior that isn't visible from any single file and will cause bugs if missed:
+These constraints span multiple files and can cause behavioral or compatibility bugs when missed:
 
-- **Tool errors never throw** — they're caught and returned as `ToolResult(isError: true)`. Task failures cascade to dependents (independent tasks continue); LLM API errors propagate to the caller.
-- **Built-in tools are default-deny** — `resolveTools()` (`agent/runner.ts`) grants a built-in (`bash`, `file_*`, `grep`, `glob`, `delegate_to_agent`) only when `AgentConfig.tools` or `toolPreset` is set; with neither, an agent resolves to **zero** built-in tools. Custom/runtime tools (`customTools` / `addTool`) are exempt — registration is the grant — but still honor `disallowedTools`. The runner gates execution on the same granted set, so a registered-but-ungranted call returns a `"not granted"` error instead of running. `OrchestratorConfig.defaultToolPreset` restores the prior allow-all. Uniform across `runAgent` / `runTeam` / `runTasks` / short-circuit / standalone `Agent`. → [docs/tool-configuration.md](docs/tool-configuration.md)
-- **Per-call gating runs below the grant** — `onToolCall` (opt-in, on `AgentConfig` / `OrchestratorConfig`) fires in `ToolExecutor.runTool()` after Zod validation and before execute, returning `{action:'allow'|'deny'}`. Deny → error `ToolResult` (never a throw); a throwing or invalid gate fails **closed**. Grant / default-deny runs first, so ungranted tools never reach it. `AgentConfig.onToolCall` overrides `OrchestratorConfig.onToolCall`; standalone `new Agent({ onToolCall })` wires it into its own executor. Optional `classifyBashCommand` (safe/review/high) ships behind the `/classifiers` subpath. → [docs/tool-configuration.md](docs/tool-configuration.md)
-- **`delegate_to_agent` is orchestration-only and needs a grant** — registered only inside `runTeam`/`runTasks` pool workers (never in standalone `runAgent` or the `isSimpleGoal` short-circuit), and like every built-in it must be granted via `tools: ['delegate_to_agent']` to be callable. Self-delegation, cycles, unknown targets, depth > `maxDelegationDepth` (default 3), and pool-slot exhaustion are all rejected in the tool; delegated token usage counts against the parent budget. → [docs/tool-configuration.md](docs/tool-configuration.md)
-- **Filesystem tools are sandboxed, `bash` is not** — `file_read/file_write/file_edit/grep/glob` resolve every path (symlinks included) within `AgentConfig.cwd` / `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables the sandbox; `process.cwd()` widens it. → [docs/tool-configuration.md](docs/tool-configuration.md)
-- **Reasoning is dropped unless opted in** — provider-native `ReasoningBlock`s the target adapter can't echo are silently dropped unless `AgentConfig.preserveReasoningAsText` is on (then converted to inline `<thinking>` text). `<thinking>` text is never parsed back into a signed block. → [docs/context-management.md](docs/context-management.md)
-- **Local-model tool-call fallback** — `text-tool-extractor.ts` only runs when the server emits no native `tool_calls` (Ollama/vLLM/LM Studio); native calls always win.
-- **External agent backends swap the LLM runner** — `AgentConfig.backend` can use `kind: 'process'` for a fresh local subprocess per run, or `kind: 'acp'` for a long-lived coding CLI over ACP. The runner's tool loop / sandbox / context strategy don't apply; the subprocess does its own work in `cwd`, while everything downstream (`pool`/`scheduler`/`queue`/memory/budget) is backend-agnostic. ACP-specific details: OMA is the ACP *client*, permission prompts default to auto-approve, `systemPrompt` is prepended to the session's first turn, and ACP's cumulative context-token figure is recorded as a per-turn delta into `tokenUsage.input_tokens` (no `usage_update` ⇒ not budget-gated). → [docs/external-agents.md](docs/external-agents.md)
-- **Secrets are auto-redacted** from traces, bash output, and dashboard payloads (`utils/redaction.ts`).
+- **Tool errors are values:** tool failures are returned as `ToolResult` with `isError: true`; they do not throw through the runner. LLM API failures propagate. Task failures cascade to dependents while independent tasks may continue.
+- **Built-in tools are default-deny:** a built-in is granted only through `AgentConfig.tools`, `toolPreset`, or `OrchestratorConfig.defaultToolPreset`. Registered custom/runtime tools are granted by registration but still honor `disallowedTools`. Ungranted calls return an error rather than executing. See [tool configuration](docs/tool-configuration.md).
+- **Per-call gates run below grants:** `onToolCall` runs after Zod validation and before execution. Denial returns an error `ToolResult`; throwing or invalid gates fail closed. Ungranted tools never reach the gate. `AgentConfig.onToolCall` overrides the orchestrator default. The optional shell classifier is exported from `/classifiers`.
+- **Delegation is orchestration-only and separately granted:** `delegate_to_agent` exists only in `runTeam()` and `runTasks()` workers and must be explicitly granted. Standalone `runAgent()` and the simple-goal short circuit do not register it. Self-delegation, cycles, unknown targets, excess depth, and unavailable pool capacity are rejected; delegated usage counts against the parent budget.
+- **Filesystem tools are sandboxed; `bash` is not:** filesystem built-ins resolve paths and symlinks within `AgentConfig.cwd` or `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables that sandbox and `process.cwd()` widens it. Shell execution has no equivalent filesystem boundary.
+- **Reasoning is dropped unless opted in:** provider-native reasoning blocks that the target adapter cannot echo are discarded unless `preserveReasoningAsText` is enabled. Inline `<thinking>` text is never reconstructed into a signed reasoning block. See [context management](docs/context-management.md).
+- **Native tool calls win:** the local-model text extractor runs only when a server emits no native tool calls.
+- **External backends replace the LLM runner:** process and ACP backends perform their own work in `cwd`; the runner tool loop, sandbox, and context strategy do not apply, while queue, scheduler, memory, and budget behavior remain backend-agnostic. ACP permissions default to auto-approve and its cumulative context usage is recorded as per-turn deltas when updates exist. See [external agents](docs/external-agents.md).
+- **Telemetry is not execution state:** losing telemetry must not roll back a durable run. Deleting traces must not delete checkpoints, shared memory, or remotely exported OpenTelemetry data. Observability delivery/export failures do not become agent, task, or run failures. See [observability](docs/observability.md).
+- **Evaluation observes results:** offline evaluation is separate; online sampling, scoring, and persistence are best-effort and isolated from the business response. Scorer failures become `scorer_error` and are excluded from score aggregates rather than converted to zero. See [evaluation](docs/evaluation.md).
+- **Secrets and PII are redacted best-effort:** traces, shell output, and dashboard payloads pass through redaction, but callers must still avoid deliberately persisting or logging secrets.
 
-### Subsystem docs
+## Subsystem documentation
 
-Detailed behavior is documented in `docs/` — the single source of truth, so update it there rather than copying detail into this file:
+| Topic | Source of truth |
+|---|---|
+| Context strategies and reasoning round-tripping | [docs/context-management.md](docs/context-management.md) |
+| Tool grants, presets, sandbox, delegation, MCP, and gates | [docs/tool-configuration.md](docs/tool-configuration.md) |
+| Providers, environment variables, local servers, and AI SDK | [docs/providers.md](docs/providers.md) |
+| Shared memory and custom stores | [docs/shared-memory.md](docs/shared-memory.md) |
+| Checkpoint and restore | [docs/checkpoint.md](docs/checkpoint.md) |
+| Tracing, stores, progress, Run Viewer, privacy, and OpenTelemetry | [docs/observability.md](docs/observability.md) |
+| Evaluation, scorers, stores, reports, sampling, and gates | [docs/evaluation.md](docs/evaluation.md) |
+| CLI commands and JSON schemas | [docs/cli.md](docs/cli.md) |
+| Process and ACP backends | [docs/external-agents.md](docs/external-agents.md) |
 
-| Topic | Code | Doc |
-|-------|------|-----|
-| Context strategies, summarization, reasoning round-tripping | `agent/runner.ts`, `llm/reasoning-fallback.ts` | [context-management.md](docs/context-management.md) |
-| Tool presets, custom tools, sandbox, delegation, MCP, per-call gate + risk classifier | `tool/` | [tool-configuration.md](docs/tool-configuration.md) |
-| Providers, env vars, local servers, AI SDK bridge | `llm/` | [providers.md](docs/providers.md) |
-| Shared memory + custom backends | `memory/` | [shared-memory.md](docs/shared-memory.md) |
-| Checkpoint/resume over `MemoryStore` | `memory/checkpoint.ts`, `orchestrator/orchestrator.ts` | [checkpoint.md](docs/checkpoint.md) |
-| Tracing, progress events, dashboard, migration, performance | `observability/`, `utils/trace.ts`, `dashboard/` | [observability.md](docs/observability.md), [observability-migration.md](docs/observability-migration.md), [observability-performance.md](docs/observability-performance.md) |
-| CLI usage + JSON schemas | `cli/oma.ts` | [cli.md](docs/cli.md) |
-| External agent backends | `agent/acp-backend.ts`, `agent/process-backend.ts` | [external-agents.md](docs/external-agents.md) |
+## Adding an LLM adapter
 
-### Adding an LLM Adapter
-
-Implement `LLMAdapter` (`chat` + `stream`), add the provider name to the `SupportedProvider` union, then register a `case` in the `createAdapter()` factory in `src/llm/adapter.ts` using a dynamic `await import('./your-provider.js')` so the SDK loads only when that provider is requested. OpenAI-compatible providers should accept `baseURL` and reuse helpers from `openai-common.ts`.
+Implement `LLMAdapter.chat()` and `LLMAdapter.stream()`, add the provider to `SupportedProvider`, and register it in `packages/core/src/llm/adapter.ts` through dynamic `import()` so unused SDKs never resolve. OpenAI-compatible providers should accept `baseURL` and reuse `openai-common.ts`. Add focused adapter tests and update [docs/providers.md](docs/providers.md) without introducing a hard-coded provider count.
