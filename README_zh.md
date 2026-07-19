@@ -46,121 +46,85 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。
+`open-multi-agent` 把一个目标转换为可审查的任务 DAG，交给多个 Agent 执行，再合成最终结果。它是可直接嵌入 Node.js 后端的 TypeScript 库。
 
-> **工程师只描述目标，不画任务图。**
+当任务计划需要在运行时动态生成，但执行仍需确定性调度、明确管控和可回放轨迹时，选择 OMA。
 
-图优先的框架要求你预先列出每个节点与每条边。OMA 是**动态工作流**（dynamic workflow）：协调者在运行时把目标拆成任务 DAG，并行执行独立任务并合成结果；这份计划以数据形式交给确定性调度器执行，因此始终可审查、可回放。这与 Anthropic 在 2026 年 5 月为 Claude Code 推出的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) 是同一押注；OMA 以开源库的形式把它带到任意 provider、你自己的后端。
+## 为什么选择 OMA
 
-轻量内核：编排引擎加上 Anthropic、OpenAI 及任意 OpenAI 兼容端点开箱即用；Gemini、Bedrock、MCP、Vercel AI SDK bridge 为可选 peer 依赖，按需安装。OpenTelemetry 通过独立可选包 `@open-multi-agent/otel` 集成：OTel API、SDK、semantic convention 映射和 exporter 集成均不进入 core root import，应用显式提供自己的 provider。
-
-依赖按明确价值以及安全、体积、维护和兼容成本治理，而不是永久限制依赖数量。可选或平台特定 SDK 在能避免主入口 eager import 未使用代码时继续隔离。
+- **从目标生成计划。** Coordinator 在运行时拆解任务，无需预先画好工作流图。
+- **可预期地执行。** 依赖关系决定顺序，独立任务并行运行，失败不会无限扩散。
+- **面向生产环境。** 预算、重试、审批、checkpoint、脱敏和离线 Run Viewer 与编排流程一起提供。
+- **保留现有技术栈。** 混用 Provider、运行本地模型或接入外部编码 Agent，OMA 仍留在你的 TypeScript 服务中。
 
 ## 快速开始
 
-一条命令即可初始化生产模板或教学用 multi-agent DAG：
+初始化 PR 审查 Agent、安全分析 Agent 或教学用 DAG：
 
 ```bash
 npm create oma-app@latest
 ```
 
-创建项目时可选择 **PR Review Agent**、**安全分析 Agent** 或 **multi-agent DAG 入门 Demo**，并选择云端/OpenAI 兼容 provider 或完全本地的 Ollama。生产模板默认只读，同时输出 Markdown、JSON 和可离线审查的单次运行 DAG/Waterfall Viewer。若要将库集成到现有项目：
+也可以把编排库直接加入现有后端：
 
 ```bash
 npm install @open-multi-agent/core
 ```
 
-完整的 quickstart、三种运行模式、provider 接入、生产级检查清单与完整 API 参考详见包页：
+[核心包使用指南](packages/core/README_zh.md)提供最小示例、三种执行模式、Provider 配置和生产检查清单。更多可运行流程见[示例索引](packages/core/examples/README.md)。
 
-**→ [`packages/core/README_zh.md`](packages/core/README_zh.md)**
+## 基于 OMA 构建
 
-其他运行方式：克隆仓库，以 `npx tsx packages/core/examples/basics/team-collaboration.ts` 运行任意[示例](packages/core/examples/)；或借助 [Express](packages/core/examples/integrations/express-customer-support/)、[Next.js](packages/core/examples/integrations/with-vercel-ai-sdk/) 应用将 OMA 嵌入真实后端。如需免去本地搭建，[Next.js 部署模板](https://github.com/open-multi-agent/oma-nextjs-starter)可一键部署至 Vercel；通过 [Ollama](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) 运行本地模型则无需 API key。
+| 项目 | OMA 的用法 |
+|---|---|
+| [temodar-agent](https://github.com/xeloxa/temodar-agent) | 在 Docker 中使用 OMA 工具执行 WordPress 安全分析；已确认生产使用。 |
+| [PR-Copilot](https://github.com/kidoom/PR-Copilot) | 限定范围的审查 Agent、仓库工具和 token-aware diff 压缩。 |
+| [StuFlow](https://github.com/znc15/StuFlow) | 以 OMA 为编排内核的终端编码助手。 |
+| [Mark Galyan](https://github.com/apollo-mg) | 在显存受限环境中用本地量化模型运行 Agent 循环。 |
+
+已有集成包括 [Engram](https://github.com/Agentscreator/engram-memory)、[AgentSonar](https://github.com/agentsonar/agentsonar-oma) 和 [CodingScaffold](https://github.com/JRS1986/CodingScaffold)。正在项目中使用 OMA？欢迎在 [Discussions](https://github.com/open-multi-agent/open-multi-agent/discussions) 告诉我们，或加入 [Featured partner 计划](docs/featured-partner.md)。
+
+## OMA 适合什么场景
+
+OMA 面向希望任务图随目标动态生成的 TypeScript 团队。Coordinator 产生计划，Scheduler 把它当作可审查数据执行。
+
+如果工作流必须逐节点手工设计，图优先框架更合适；如果只需要单个 Agent 调用，一个 LLM 工具库就够了。当多个 Agent、任务依赖、审批或恢复机制需要协同时，OMA 负责这一编排层。
+
+## 包
+
+| 包 | 作用 |
+|---|---|
+| [`@open-multi-agent/core`](packages/core/README_zh.md) | 编排运行时、工具、记忆、checkpoint、trace、CLI 和离线 Run Viewer。 |
+| [`@open-multi-agent/otel`](packages/otel/README.md) | 面向已建立 OpenTelemetry 统一监控体系的生产团队的可选企业集成。 |
+
+Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有当 OMA trace 需要进入应用现有的统一监控平台时，才需要安装 OTel 包。
 
 ## 企业服务
 
-面向互联网、制造业、传统企业，提供 AI 落地咨询与商业支持。微信扫码添加，或访问官网 [yuanasi.com](https://yuanasi.com)。
+面向已有产品或业务系统的团队，提供 AI 场景梳理、Agent 能力嵌入与交付支持。微信扫码联系，或访问 [yuanasi.com](https://yuanasi.com)。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
 </p>
 
-## 生态
-
-`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
-
-**基于 OMA 构建**
-
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
-- **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 coordinator 与上下文压缩，在显存受限的条件下维持自治 agent 循环持续运行。自框架发布首月起持续贡献，涵盖上下文压缩、采样与工具调用解析。
-- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**。AI pull request 审查助手，作者 [kidoom](https://github.com/kidoom)。运行一个 OMA 审查 team（coordinator + 限定范围的 reviewer agent），用 `defineTool` 定义仓库上下文工具，并加入自定义 `ContextStrategy` 做 token-aware 的 PR diff 压缩。公开代码，基于 `@open-multi-agent/core`。
-- **[StuFlow](https://github.com/znc15/StuFlow)**。终端 AI 编码助手，作者 [znc15](https://github.com/znc15)。以 OMA 为编排内核：构建 team 并通过 `runAgent` / `runTasks` / `runTeam` 驱动，配自定义 `RunTeamOptions` coordinator，搭配 DeepSeek。公开代码，基于 `@open-multi-agent/core`。
-
-**集成**
-
-- **[Engram](https://www.engram-memory.com)** — "AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar，检测跨运行的委派环、重复和速率突增。
-- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
-
-在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。深度集成的产品见 [Featured partner 计划](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/featured-partner.md)。
-
-## 与其他框架对比
-
-大多数 TypeScript 团队选多智能体编排层时，实际是在 OMA、LangGraph JS、Mastra、CrewAI、Vercel AI SDK 之间取舍。一句话：OMA 是目标驱动的，动态规划而非僵化的手工连线图。把目标交给 Coordinator，它在运行时构建任务 DAG。
-
-这一对比也涵盖 Claude Code 自身的 [dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code)；相较于单纯竞争，OMA 与它更是可组合的：通过 [ACP](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md)，OMA 团队可以把 Claude Code 本身作为其中一个 agent 来编排。
-
-逐个正面对比见包页：[与其他框架对比](packages/core/README_zh.md#与其他框架对比)
-
-## 仓库结构
-
-这是一个 monorepo。主包为 **`@open-multi-agent/core`**；可选 OpenTelemetry 适配器以 **`@open-multi-agent/otel`** 独立发布。
-
-```
-open-multi-agent/
-├── packages/
-│   ├── core/          # @open-multi-agent/core（框架、测试、示例）
-│   └── otel/          # @open-multi-agent/otel（可选适配器）
-└── docs/              # 子系统文档
-```
-
-build / lint / test 都从仓库根目录跨 workspace 编排：
-
-```bash
-npm install            # 安装所有 workspace
-npm run build          # 编译 packages/core
-npm run lint           # 类型检查
-npm test               # 运行测试套件
-```
-
 ## 文档
 
-- [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
-- [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
-- [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore，以及离线单次运行 DAG/Waterfall Viewer。旧 callback 可按 [`onTrace` 分阶段迁移指南](docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](packages/otel/README.md) 使用应用自有 provider。
-- [评测](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/evaluation.md) — 版本化 EvalSet、规则/结构/judge 参考 scorer、离线报告与 CI gate、EvalStore，以及尽力而为的在线抽样。
-- [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
-- [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 在任意 `MemoryStore` 上保存可选快照；`restore()` 保留 `runId`、递增 `attempt`，并启动新的 trace。
-- [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。
-- [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md) — 面向 shell 和 CI 的 JSON-first `oma` 命令行。
-- [Consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) — `runConsensus` proposer→judge 原语、按任务的 `verify` 钩子，以及预算不变量。
-- [模型路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) — 可选的 `modelRouting` 策略：按 phase / agent / role / priority / leaf 匹配，first match wins。
-- [计划预览与回放](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/plan-replay.md) — 用 `planOnly` 预览协调者拆解的任务 DAG，`createPlanArtifact` 将其固化，之后 `runFromPlan` 不再调用协调者即可回放同一张图。
+| 目标 | 从这里开始 |
+|---|---|
+| 安装与运行 | [核心包使用指南](packages/core/README_zh.md) · [示例](packages/core/examples/README.md) · [CLI](docs/cli.md) |
+| 配置模型与工具 | [Provider](docs/providers.md) · [工具与沙箱](docs/tool-configuration.md) · [外部 Agent](docs/external-agents.md) |
+| 稳定运行 | [可观测性](docs/observability.md) · [评测](docs/evaluation.md) · [Checkpoint 与恢复](docs/checkpoint.md) · [上下文管理](docs/context-management.md) |
+| 控制编排 | [Consensus](docs/consensus.md) · [模型路由](docs/model-routing.md) · [计划回放](docs/plan-replay.md) |
 
 ## 参与贡献
 
-Issue、feature request、PR 都欢迎。特别欢迎以下方面的贡献：
-
-- **生产级示例。** 端到端可运行的真实场景工作流。收录条件与提交格式见 [`packages/core/examples/production/README.md`](packages/core/examples/production/README.md)。
-- **文档。** 指南、教程、API 文档。
-- **翻译。** 将文档翻译为其他语言。[提交 PR](https://github.com/open-multi-agent/open-multi-agent/pulls)。
-
-## 贡献者
+欢迎提交 Issue 和 Pull Request。Workspace 边界、验证要求和提交流程见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。
 
 <a href="https://github.com/open-multi-agent/open-multi-agent/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=open-multi-agent/open-multi-agent&max=100" />
 </a>
 
-按领域展开的完整致谢见[包页](packages/core/README_zh.md#贡献者)。
+按领域展开的贡献者致谢见[核心包页](packages/core/README_zh.md#贡献者)。
 
 ## 许可证
 
