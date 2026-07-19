@@ -28,7 +28,9 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real multi-agent run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="eager">
+  <video autoplay loop muted playsinline width="960" height="540" poster="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/demo-dashboard-gif-review-3d9ae0/.github/brand/demo-dashboard-hero.gif" src="https://cdn.jsdelivr.net/gh/open-multi-agent/open-multi-agent@demo-dashboard-gif-review-3d9ae0/.github/brand/demo-dashboard-hero.mp4">
+    <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/demo-dashboard-gif-review-3d9ae0/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real multi-agent run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="eager">
+  </video>
 </p>
 
 <br />
