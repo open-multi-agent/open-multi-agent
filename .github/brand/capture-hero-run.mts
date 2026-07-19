@@ -1,7 +1,7 @@
 /**
  * README hero-run capture
  *
- * Runs a real DeepSeek team (4 agents with tools) through `runTeam()` while a
+ * Runs a real DeepSeek team (5 agents with tools) through `runTeam()` while a
  * `DashboardTraceCaptureSink` records the full trace, then writes the combined
  * Run Viewer HTML plus the raw materials needed to re-render it later without
  * spending API credits again.
@@ -104,19 +104,22 @@ process.chdir(runDir)
 // spell the exact directory out and keep bash down to `node --check`.
 const OUTPUT_DIR = join(runDir, '.agent-workspace', 'hero-api')
 const PATH_RULE = `Filesystem tools require absolute paths: every file you read or write lives
-under ${OUTPUT_DIR}/ (e.g. ${OUTPUT_DIR}/server.js). Do not install packages, start servers,
-or make network calls. The only bash command you may run is \`node --check <absolute file path>\`
-to verify that a file parses.`
+under ${OUTPUT_DIR}/ (e.g. ${OUTPUT_DIR}/auth.js). Do not install packages, start servers, or make
+network calls. Never execute code and never run a test — the ONLY bash command permitted is
+\`node --check <absolute file path>\` to confirm a file you just wrote parses (never \`node <file>\`
+without --check, never run the test script, never any other command).`
 
 const architect: AgentConfig = {
   name: 'architect',
   model: 'deepseek-v4-pro',
   provider: 'deepseek',
-  systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
-Design clear, minimal API contracts and file layouts. Write the contract to
-${OUTPUT_DIR}/CONTRACT.md with file_write so later agents can read it. Be concise.
+  systemPrompt: `You are a security-minded software architect. Design a small JWT (HS256)
+authentication module built only on Node's built-in \`crypto\` (no external packages). Write the
+contract — the sign/verify signatures, error types, and token/claim format — to
+${OUTPUT_DIR}/CONTRACT.md with file_write so the implementer, tester, and security reviewer can
+all work from it. Be concise. Do not write code or run any command.
 ${PATH_RULE}`,
-  tools: ['bash', 'file_write'],
+  tools: ['file_write'],
   maxTurns: 5,
   temperature: 0.2,
 }
@@ -125,8 +128,10 @@ const backendDev: AgentConfig = {
   name: 'backend-dev',
   model: 'deepseek-v4-flash',
   provider: 'deepseek',
-  systemPrompt: `You are a TypeScript/Node.js developer. Implement exactly what the architect specified.
-Write clean, runnable code with proper error handling. Use the tools to write files and verify them.
+  systemPrompt: `You are a Node.js developer. Read the contract at ${OUTPUT_DIR}/CONTRACT.md, then
+implement the JWT sign/verify module using only Node's built-in \`crypto\` (no external packages).
+Write it to ${OUTPUT_DIR}/auth.js with clear input validation and typed errors, and confirm it
+parses with \`node --check ${OUTPUT_DIR}/auth.js\`. Do not run the module or any test.
 ${PATH_RULE}`,
   tools: ['bash', 'file_read', 'file_write', 'file_edit'],
   maxTurns: 10,
@@ -137,23 +142,42 @@ const qaEngineer: AgentConfig = {
   name: 'qa-engineer',
   model: 'deepseek-v4-flash',
   provider: 'deepseek',
-  systemPrompt: `You are a QA engineer. Write a small plain-Node test script (no test framework)
-that exercises the API endpoints described by the architect, meant to be run later against a
-started server. Write it with the tools and verify it parses with \`node --check\`; do not execute it.
+  systemPrompt: `You are a QA engineer. Read ONLY the contract at ${OUTPUT_DIR}/CONTRACT.md (the
+implementation runs in parallel and is not available to you). Write a plain-Node test script
+(node:assert, no framework) to ${OUTPUT_DIR}/auth.test.js that exercises sign/verify against the
+contract — including a tampered-token case and an expired-token case — then confirm it parses with
+\`node --check ${OUTPUT_DIR}/auth.test.js\`. Do not run the tests.
 ${PATH_RULE}`,
   tools: ['bash', 'file_read', 'file_write'],
   maxTurns: 8,
   temperature: 0.1,
 }
 
+const securityAnalyst: AgentConfig = {
+  name: 'security-analyst',
+  model: 'deepseek-v4-pro',
+  provider: 'deepseek',
+  systemPrompt: `You are an application security engineer. Read ONLY the contract at
+${OUTPUT_DIR}/CONTRACT.md, then write a concise threat model to ${OUTPUT_DIR}/THREAT-MODEL.md:
+concrete risks (signature bypass, algorithm confusion, timing attacks, weak secrets, token
+replay/expiry) each paired with a specific mitigation. Do not read other files, write code, or run
+any command.
+${PATH_RULE}`,
+  tools: ['file_read', 'file_write'],
+  maxTurns: 6,
+  temperature: 0.3,
+}
+
 const reviewer: AgentConfig = {
   name: 'reviewer',
   model: 'deepseek-v4-flash',
   provider: 'deepseek',
-  systemPrompt: `You are a senior code reviewer. Read the produced files with the tools, then deliver
-a structured review: LGTM items, suggestions, and any blocking issues.
+  systemPrompt: `You are a senior reviewer. Read exactly these three files with file_read:
+${OUTPUT_DIR}/auth.js, ${OUTPUT_DIR}/auth.test.js, and ${OUTPUT_DIR}/THREAT-MODEL.md. Then RETURN
+your integration review as your final message — LGTM items, suggestions, blocking issues, and
+whether the code addresses the threat model. Do NOT write any file and do NOT run any command.
 ${PATH_RULE}`,
-  tools: ['bash', 'file_read', 'grep'],
+  tools: ['file_read'],
   maxTurns: 5,
   temperature: 0.3,
 }
@@ -192,36 +216,38 @@ const capture = new DashboardTraceCaptureSink()
 const orchestrator = new OpenMultiAgent({
   defaultModel: 'deepseek-v4-flash',
   defaultProvider: 'deepseek',
-  maxConcurrency: 2, // let the parallel branch genuinely overlap in the waterfall
+  maxConcurrency: 3, // let the three parallel specialists genuinely overlap in the waterfall
   onProgress: handleProgress,
   observability: { sinks: [capture] },
 })
 
 const team = orchestrator.createTeam('hero-team', {
   name: 'hero-team',
-  agents: [architect, backendDev, qaEngineer, reviewer],
+  agents: [architect, backendDev, qaEngineer, securityAnalyst, reviewer],
   sharedMemory: true,
-  maxConcurrency: 2,
+  maxConcurrency: 3,
 })
 
 // The goal itself is never embedded in the viewer payload (titles and safe
 // attributes only), so the absolute workspace directory is safe to spell out
 // here — and required, because the file tools reject relative paths.
-const goal = `Build a minimal Express.js REST API in ${OUTPUT_DIR}/ :
-- GET /health → { status: "ok" }
-- GET /users → a hardcoded array of 2 user objects
-- POST /users → accepts { name, email }, validates it, returns 201
-- An error-handling middleware and a package.json with the required dependencies
-Also write a small plain-Node test script that exercises the endpoints (to be run later,
-once the server is started), and finish with a code review of everything produced.
-Verify files parse with \`node --check\`; do not install packages, start servers, or make
-network calls. Filesystem tools need absolute paths under ${OUTPUT_DIR}/ .`
+const goal = `Build a small JWT (HS256) authentication module in ${OUTPUT_DIR}/ using only Node's
+built-in \`crypto\` (no external packages). Produce exactly four files:
+- ${OUTPUT_DIR}/CONTRACT.md — the design: sign(payload, secret) and verify(token, secret), error
+  types, and token/claim format
+- ${OUTPUT_DIR}/auth.js — the implementation, with input validation and typed errors
+- ${OUTPUT_DIR}/auth.test.js — a node:assert test script covering tamper and expiry cases
+- ${OUTPUT_DIR}/THREAT-MODEL.md — risks and mitigations for the design
+Finish with an integration review of everything produced.
+Do not install packages, start servers, execute code, or run tests; only \`node --check <file>\` is
+allowed, to confirm a file parses. Filesystem tools need absolute paths under ${OUTPUT_DIR}/ .`
 
-const coordinatorInstructions = `Decompose into exactly 4 or 5 tasks.
+const coordinatorInstructions = `Decompose into exactly 5 tasks.
 Task titles must be short imperative phrases of at most ${MAX_TITLE_CHARS} characters.
-The API implementation task and the test-writing task must not depend on each other so
-they can run in parallel, and must be assigned to different agents.
-The final review task depends on both. Assign every task explicitly.`
+The first task designs the auth module and writes the contract. The implementation task, the
+test-writing task, and the threat-model task must each depend only on the design task and NOT on
+one another, so they run in parallel, and must be assigned to three different agents.
+The final integration review depends on all three. Assign every task explicitly.`
 
 console.log(`Run directory: ${runDir}`)
 console.log(`Team "${team.name}": ${team.getAgents().map((a) => a.name).join(', ')}`)
