@@ -13,8 +13,8 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  <strong>给一个目标，自动得到任务 DAG。</strong><br/>
-  原生 TypeScript 多智能体编排。
+  <strong>只描述目标，不画任务图。</strong><br/>
+  运行在你自己环境中的多智能体编排。
 </p>
 
 <p align="center">
@@ -46,18 +46,16 @@
 
 <br />
 
-`open-multi-agent` 是可直接嵌入 Node.js 后端的多智能体编排库。
-
-> **工程师只描述目标，不画任务图。**
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。它把一个目标拆成可审查的任务 DAG，交给多个 Agent 执行，再合成最终结果，全程在你自己的环境中运行。可本地、断网或气隙部署，云端与本地模型同队混用。
 
 当任务计划需要在运行时动态生成，但执行仍需确定性调度、明确管控和可回放轨迹时，选择 OMA。
 
 ## 为什么选择 OMA
 
-- **从目标生成计划。** Coordinator 在运行时拆解任务，无需预先画好工作流图。
-- **可预期地执行。** 依赖关系决定顺序，独立任务并行运行，失败不会无限扩散。
-- **面向生产环境。** 预算、重试、审批、checkpoint、脱敏和离线 Run Viewer 与编排流程一起提供。
-- **保留现有技术栈。** 混用 Provider、运行本地模型或接入外部编码 Agent，OMA 仍留在你的 TypeScript 服务中。
+- **从目标生成计划。** Coordinator 在运行时把请求拆成任务 DAG，自动完成分工，无需预先画好工作流图。
+- **给 Agent 套上确定性。** 计划先审后跑、固化重放、多 Agent 共识验证：用确定性控制包住非确定性的 Agent。
+- **在你自己的环境中运行。** 本地、断网、气隙或自有服务器，用你自己的凭证；工具默认拒绝、密钥自动脱敏。仅 3 个运行时依赖，轻到能塞进受限内网，完全不必上云。
+- **任意模型混编。** 云端（Claude、GPT）、本地开源模型与原生接入的国产模型同队协作，并为以文本形式返回工具调用的本地模型提供容错解析。
 
 ## 快速开始
 
@@ -67,7 +65,7 @@
 npm create oma-app@latest
 ```
 
-也可以把编排库直接加入现有后端：
+也可以把 OMA 直接加入现有后端：
 
 ```bash
 npm install @open-multi-agent/core
@@ -86,9 +84,9 @@ npm install @open-multi-agent/core
 
 **集成**
 
-- **[Engram](https://www.engram-memory.com)** — "AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar，检测跨运行的委派环、重复和速率突增。
-- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
 在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
 

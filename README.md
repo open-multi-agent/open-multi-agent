@@ -13,8 +13,8 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  <strong>From a goal to a task DAG, automatically.</strong><br/>
-  TypeScript-native multi-agent orchestration.
+  <strong>Describe the goal, not the graph.</strong><br/>
+  Multi-agent orchestration that runs in your own environment.
 </p>
 
 <p align="center">
@@ -46,18 +46,16 @@
 
 <br />
 
-`open-multi-agent` is a multi-agent orchestration library that embeds directly in your Node.js backend.
-
-> **Your engineers describe the goal, not the graph.**
+`open-multi-agent` is an AI agent orchestration framework for TypeScript backends that drops into any Node.js app. It turns one goal into an inspectable task DAG, runs it across a team of agents, and synthesizes the result, all inside your own environment. Run it local, offline, or air-gapped, mixing cloud and local models on one team.
 
 Use OMA when the plan should adapt at runtime, but execution still needs deterministic scheduling, explicit controls, and a trace you can inspect or replay.
 
 ## Why OMA
 
-- **Plan from the goal.** A coordinator decomposes the request at runtime instead of requiring a hand-wired graph.
-- **Execute predictably.** Dependencies control task order; independent work runs in parallel and failures stay scoped.
-- **Operate in production.** Budgets, retries, approvals, checkpoints, redaction, and the offline Run Viewer are built into the workflow.
-- **Keep your stack.** Mix providers, use local models, or connect external coding agents while OMA remains inside your TypeScript service.
+- **Plan from the goal.** A coordinator decomposes the request into a task DAG at runtime (auto work-division) instead of a hand-wired graph.
+- **Wrap agents in determinism.** Preview and approve the plan, freeze and replay it, and verify with multi-agent consensus: deterministic control around non-deterministic agents.
+- **Run in your own environment.** Local, offline, air-gapped, or your own servers, on your own credentials. Tools are default-deny and secrets auto-redacted, and three runtime dependencies keep it light enough for locked-down infrastructure; no cloud required.
+- **Mix any model.** Cloud (Claude, GPT), local open models, and natively integrated Chinese providers on one team, with a fallback parser for local models that emit tool calls as text.
 
 ## Get started
 
@@ -67,7 +65,7 @@ Scaffold a PR review agent, security analysis agent, or teaching DAG:
 npm create oma-app@latest
 ```
 
-Or add the orchestration library to an existing backend:
+Or add OMA to an existing backend:
 
 ```bash
 npm install @open-multi-agent/core
@@ -86,9 +84,9 @@ The [Core package guide](packages/core/README.md) contains the minimal example, 
 
 **Integrations**
 
-- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
-- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
+- **[Engram](https://www.engram-memory.com)**: "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**: Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**: Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
 
 Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here. Built an integration? The [integration guide](packages/core/examples/integrations/README.md) covers how to get listed. For a deep integration, see the [Featured partner program](docs/featured-partner.md).
 

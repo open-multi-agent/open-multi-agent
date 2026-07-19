@@ -13,8 +13,8 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  <strong>From a goal to a task DAG, automatically.</strong><br/>
-  TypeScript-native multi-agent orchestration.
+  <strong>Describe the goal, not the graph.</strong><br/>
+  Multi-agent orchestration that runs in your own environment.
 </p>
 
 <p align="center">
@@ -62,7 +62,7 @@ Requires Node.js 18 or newer. Scaffold a runnable project:
 npm create oma-app@latest
 ```
 
-To add the library to an existing backend:
+To add OMA to an existing backend:
 
 ```bash
 npm install @open-multi-agent/core

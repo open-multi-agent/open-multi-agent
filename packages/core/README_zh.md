@@ -13,8 +13,8 @@
 <h1 align="center">Open Multi-Agent</h1>
 
 <p align="center">
-  <strong>给一个目标，自动得到任务 DAG。</strong><br/>
-  原生 TypeScript 多智能体编排。
+  <strong>只描述目标，不画任务图。</strong><br/>
+  运行在你自己环境中的多智能体编排。
 </p>
 
 <p align="center">
