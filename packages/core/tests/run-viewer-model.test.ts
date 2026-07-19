@@ -311,4 +311,66 @@ describe('buildRunViewerModel', () => {
     expect(model.spans.find((span) => span.kind === 'callback')?.links.map((link) => link.relation))
       .toEqual(['continued_from', 'depends_on', 'consumed', 'delegated_from'])
   })
+
+  it('rolls a task\'s descendant LLM spans up into task-level model, provider, and cost', () => {
+    const runId = 'run-rollup'
+    const traceId = '1'.repeat(32)
+    const mkSpan = (
+      spanId: string,
+      kind: MaterializedSpan['kind'],
+      parentSpanId: string | undefined,
+      attributes: MaterializedSpan['attributes'] = {},
+    ): MaterializedSpan => ({
+      traceId,
+      spanId,
+      ...(parentSpanId ? { parentSpanId } : {}),
+      kind,
+      name: `${kind}.op`,
+      startUnixMs: 3_000,
+      endUnixMs: 3_050,
+      durationMs: 50,
+      status: 'ok',
+      attributes,
+      links: [],
+      events: [],
+      incomplete: false,
+    })
+    const combinedResult: TeamRunResult = {
+      ...result(runId),
+      tasks: [{ id: 't1', title: 'Build API', assignee: 'architect', status: 'completed', dependsOn: [] }],
+    }
+    const run: StoredRun = {
+      ...storedRun(runId),
+      taskIds: ['t1'],
+      agents: ['architect'],
+      records: undefined,
+      // run → task → agent → { llm, llm, tool }. LLM spans carry no oma.task.id,
+      // so the roll-up must reach them by walking down from the task span.
+      spans: [
+        mkSpan('0000000000000001', 'run', undefined),
+        mkSpan('0000000000000002', 'task', '0000000000000001', {
+          'oma.task.id': 't1',
+          'oma.task.title': 'Build API',
+          'oma.agent.name': 'architect',
+        }),
+        mkSpan('0000000000000003', 'agent', '0000000000000002', { 'oma.agent.name': 'architect' }),
+        mkSpan('0000000000000004', 'llm', '0000000000000003', {
+          'oma.llm.model': 'deepseek-v4-pro',
+          'oma.llm.provider': 'deepseek',
+          'oma.cost.amount': 0.01,
+          'oma.cost.currency': 'USD',
+        }),
+        mkSpan('0000000000000005', 'llm', '0000000000000003', {
+          'oma.llm.model': 'deepseek-v4-pro',
+          'oma.llm.provider': 'deepseek',
+          'oma.cost.amount': 0.02,
+          'oma.cost.currency': 'USD',
+        }),
+        mkSpan('0000000000000006', 'tool', '0000000000000003', { 'oma.tool.name': 'file_write' }),
+      ],
+    }
+    const task = buildRunViewerModel({ result: combinedResult, run }).tasks.find((t) => t.id === 't1')!
+    expect(task).toMatchObject({ model: 'deepseek-v4-pro', provider: 'deepseek' })
+    expect(task.costs).toEqual([{ amount: expect.closeTo(0.03, 10), currency: 'USD' }])
+  })
 })

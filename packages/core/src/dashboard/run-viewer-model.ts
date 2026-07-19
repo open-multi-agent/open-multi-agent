@@ -107,6 +107,9 @@ export interface RunViewerTask {
   readonly durationMs?: number
   readonly inputTokens: number
   readonly outputTokens: number
+  readonly model?: string
+  readonly provider?: string
+  readonly costs?: readonly { readonly amount: number; readonly currency: string }[]
   readonly retries: number
   readonly toolCallCount: number
   readonly spanKey?: string
@@ -341,9 +344,58 @@ function viewerSpans(run: StoredRun | undefined): RunViewerSpan[] {
     || a.key.localeCompare(b.key))
 }
 
+/**
+ * Roll each task's descendant LLM spans up into task-level model, provider, and
+ * cost. LLM spans carry these but no `taskId`, so they are reached by walking the
+ * span tree down from the task span (task → agent → llm). Lets the viewer show a
+ * task's actual model/provider/cost instead of "Not recorded".
+ */
+function llmRollupByTask(
+  spans: readonly RunViewerSpan[],
+): Map<string, { model?: string; provider?: string; costs?: { amount: number; currency: string }[] }> {
+  const childrenByParent = new Map<string, RunViewerSpan[]>()
+  for (const span of spans) {
+    if (!span.parentKey) continue
+    const bucket = childrenByParent.get(span.parentKey)
+    if (bucket) bucket.push(span)
+    else childrenByParent.set(span.parentKey, [span])
+  }
+  const rollup = new Map<string, { model?: string; provider?: string; costs?: { amount: number; currency: string }[] }>()
+  for (const taskSpan of spans) {
+    if (taskSpan.kind !== 'task' || !taskSpan.taskId) continue
+    const models = new Set<string>()
+    const providers = new Set<string>()
+    const costByCurrency = new Map<string, number>()
+    const seen = new Set<string>()
+    const stack = [...(childrenByParent.get(taskSpan.key) ?? [])]
+    while (stack.length > 0) {
+      const span = stack.pop()
+      if (!span || seen.has(span.key)) continue
+      seen.add(span.key)
+      if (span.kind === 'llm') {
+        if (span.model) models.add(span.model)
+        if (span.provider) providers.add(span.provider)
+        for (const cost of span.costs ?? []) {
+          costByCurrency.set(cost.currency, (costByCurrency.get(cost.currency) ?? 0) + cost.amount)
+        }
+      }
+      for (const child of childrenByParent.get(span.key) ?? []) stack.push(child)
+    }
+    rollup.set(taskSpan.taskId, {
+      ...(models.size > 0 ? { model: [...models].sort((a, b) => a.localeCompare(b)).join(', ') } : {}),
+      ...(providers.size > 0 ? { provider: [...providers].sort((a, b) => a.localeCompare(b)).join(', ') } : {}),
+      ...(costByCurrency.size > 0
+        ? { costs: [...costByCurrency].map(([currency, amount]) => ({ amount, currency })) }
+        : {}),
+    })
+  }
+  return rollup
+}
+
 function traceTasks(spans: readonly RunViewerSpan[]): RunViewerTask[] {
   const taskSpans = spans.filter((span) => span.kind === 'task' && span.taskId)
   const taskIdBySpan = new Map(taskSpans.map((span) => [span.key, span.taskId!]))
+  const rollup = llmRollupByTask(spans)
   return taskSpans.map((span) => ({
     id: span.taskId!,
     title: span.taskTitle ?? span.name,
@@ -366,6 +418,7 @@ function traceTasks(spans: readonly RunViewerSpan[]): RunViewerTask[] {
     retries: span.retries ?? 0,
     toolCallCount: 0,
     spanKey: span.key,
+    ...(rollup.get(span.taskId!) ?? {}),
   }))
 }
 
@@ -376,6 +429,7 @@ function resultTasks(result: TeamRunResult, spans: readonly RunViewerSpan[]): Ru
       spanByTask.set(span.taskId, span)
     }
   }
+  const rollup = llmRollupByTask(spans)
   return (result.tasks ?? []).map((task) => {
     const span = spanByTask.get(task.id)
     return {
@@ -392,6 +446,7 @@ function resultTasks(result: TeamRunResult, spans: readonly RunViewerSpan[]): Ru
       retries: task.metrics?.retries ?? 0,
       toolCallCount: task.metrics?.toolCalls.length ?? 0,
       ...(span ? { spanKey: span.key } : {}),
+      ...(rollup.get(task.id) ?? {}),
     }
   })
 }
