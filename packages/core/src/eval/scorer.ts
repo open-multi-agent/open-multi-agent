@@ -37,6 +37,7 @@ export interface Scorer {
 }
 
 const SCORE_COST_INPUTS = Symbol('oma.eval.score_cost_inputs')
+const warnedUnversionedScorers = new Set<string>()
 
 /** Internal usage detail attached non-enumerably by framework-backed scorers. */
 export interface ScoreCostInput {
@@ -138,6 +139,13 @@ export function defineScorer(scorer: Scorer): Scorer {
   }
   if (typeof scorer.score !== 'function') {
     throw new TypeError('Scorer.score must be a function.')
+  }
+  if (scorer.version === undefined && !warnedUnversionedScorers.has(scorer.name)) {
+    warnedUnversionedScorers.add(scorer.name)
+    console.warn(
+      `[open-multi-agent eval] Scorer "${scorer.name}" has no version; `
+      + 'baseline comparisons cannot detect scoring drift.',
+    )
   }
 
   const score = scorer.score

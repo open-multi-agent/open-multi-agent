@@ -2,6 +2,21 @@ export { defineScorer } from './scorer.js'
 export type { ScoreResult, Scorer, ScorerContext } from './scorer.js'
 export { createJudgeScorer } from './judge.js'
 export type { JudgeScorerOptions } from './judge.js'
+export {
+  costBudgetScorer,
+  createAnswerRelevancyScorer,
+  dependencyUtilizationScorer,
+  duplicateWorkScorer,
+  noProgressScorer,
+  structuredOutputComplianceScorer,
+  toolCallSuccessScorer,
+} from './scorers/index.js'
+export type {
+  AnswerRelevancyScorerOptions,
+  CostBudgetScorerOptions,
+  DuplicateWorkScorerOptions,
+  NoProgressScorerOptions,
+} from './scorers/index.js'
 export { EVAL_STORE_SCHEMA_MAJOR } from './record.js'
 export type { EvalRecord } from './record.js'
 export { EvalStoreError, InMemoryEvalStore } from './store.js'

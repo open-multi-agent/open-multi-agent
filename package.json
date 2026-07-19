@@ -14,6 +14,7 @@
     "test:coverage": "npm run test:coverage -w @open-multi-agent/core",
     "test:e2e": "npm run test:e2e -w @open-multi-agent/core",
     "bench:observability:ci": "node scripts/observability-benchmark-ci.mjs",
+    "test:eval-examples": "node scripts/eval-example-smoke.mjs",
     "test:observability-examples": "node scripts/observability-example-smoke.mjs",
     "test:observability-pack": "node scripts/observability-tarball-smoke.mjs",
     "test:scaffold": "npm run test:scaffold --workspaces --if-present",

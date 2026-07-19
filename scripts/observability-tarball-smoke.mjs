@@ -92,10 +92,23 @@ try {
     import { mkdtemp, rm } from 'node:fs/promises'
     import { tmpdir } from 'node:os'
     import { join } from 'node:path'
+    import * as coreRoot from '@open-multi-agent/core'
     import { OpenMultiAgent } from '@open-multi-agent/core'
+    import { defineEvalSet, toolCallSuccessScorer } from '@open-multi-agent/core/eval'
+    import { FileEvalStore } from '@open-multi-agent/core/eval/file'
     import { InMemoryTraceStore } from '@open-multi-agent/core/observability'
     import { FileTraceStore } from '@open-multi-agent/core/observability/file'
     if (typeof OpenMultiAgent !== 'function') throw new Error('core root import failed')
+    if (typeof defineEvalSet !== 'function' || typeof toolCallSuccessScorer !== 'function') {
+      throw new Error('eval import failed')
+    }
+    if ('defineEvalSet' in coreRoot) throw new Error('core root unexpectedly re-exported eval')
+    defineEvalSet({ name: 'pack', version: '1', cases: [{ id: 'case', input: 'x' }] })
+    const score = await toolCallSuccessScorer().score({
+      evalCase: { id: 'case', input: 'x' }, output: 'x', metadata: {},
+      signal: new AbortController().signal,
+    })
+    if (score.score !== 1) throw new Error('reference scorer failed')
     const records = [{
       schemaVersion: 2, recordId: 'start', sequence: 1, timestampUnixMs: 1,
       runId: 'pack-core-only', attempt: 1, traceId: '1'.repeat(32), spanId: '2'.repeat(16),
@@ -112,12 +125,14 @@ try {
     const directory = await mkdtemp(join(tmpdir(), 'oma-core-only-'))
     const file = await FileTraceStore.open(join(directory, 'traces.ndjson'))
     await file.append(records); await file.flush(); await file.close()
+    const evalFile = await FileEvalStore.open(join(directory, 'evals.ndjson'))
+    await evalFile.flush(); await evalFile.close()
     await rm(directory, { recursive: true, force: true })
   `)
   const coreManifest = JSON.parse(await readFile(join(coreOnly, 'node_modules/@open-multi-agent/core/package.json'), 'utf8'))
   const installedCore = join(coreOnly, 'node_modules/@open-multi-agent/core')
   await assertExportsInstalled(installedCore, coreManifest)
-  for (const entry of ['dist/index.js', 'dist/observability/index.js']) {
+  for (const entry of ['dist/index.js', 'dist/observability/index.js', 'dist/eval/index.js']) {
     const graph = await staticImportGraph(join(installedCore, entry))
     if ([...graph.specifiers].some((specifier) => specifier.startsWith('@opentelemetry/'))) {
       throw new Error(`${entry} eagerly reaches OpenTelemetry`)
@@ -125,7 +140,10 @@ try {
     if ([...graph.visited].some((file) => file.endsWith('/dist/observability/file-store.js'))) {
       throw new Error(`${entry} eagerly reaches FileTraceStore`)
     }
-    if (entry === 'dist/observability/index.js'
+    if ([...graph.visited].some((file) => file.endsWith('/dist/eval/file-store.js'))) {
+      throw new Error(`${entry} eagerly reaches FileEvalStore`)
+    }
+    if ((entry === 'dist/observability/index.js' || entry === 'dist/eval/index.js')
       && [...graph.specifiers].some((specifier) => specifier === 'node:fs' || specifier.startsWith('node:fs/'))) {
       throw new Error(`${entry} eagerly reaches node:fs`)
     }
@@ -133,6 +151,10 @@ try {
   const fileGraph = await staticImportGraph(join(installedCore, 'dist/observability/file.js'))
   if (![...fileGraph.specifiers].some((specifier) => specifier === 'node:fs' || specifier.startsWith('node:fs/'))) {
     throw new Error('observability/file did not reach its Node-only implementation')
+  }
+  const evalFileGraph = await staticImportGraph(join(installedCore, 'dist/eval/file.js'))
+  if (![...evalFileGraph.specifiers].some((specifier) => specifier === 'node:fs' || specifier.startsWith('node:fs/'))) {
+    throw new Error('eval/file did not reach its Node-only implementation')
   }
   await readdir(join(coreOnly, 'node_modules/@open-multi-agent')).then((names) => {
     if (names.includes('otel')) throw new Error('core-only consumer unexpectedly installed OTel')

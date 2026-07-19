@@ -137,6 +137,7 @@ npm test               # 运行测试套件
 - [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md) — 环境变量、模型示例、本地模型工具调用、超时、常见问题。
 - [工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md) — 工具预设、自定义工具、文件系统沙箱、MCP。
 - [可观测性](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) — 稳定 identity/status、TraceRecord v2、有界 sink/exporter 生命周期、InMemory/File TraceStore，以及离线单次运行 DAG/Waterfall Viewer。旧 callback 可按 [`onTrace` 分阶段迁移指南](docs/observability-migration.md) 无停机迁移；[`@open-multi-agent/otel`](packages/otel/README.md) 使用应用自有 provider。
+- [评测](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/evaluation.md) — 版本化 EvalSet、规则/结构/judge 参考 scorer、离线报告与 CI gate、EvalStore，以及尽力而为的在线抽样。
 - [共享记忆](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md) — 默认存储与自定义 `MemoryStore` 后端。
 - [Checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md) — 在任意 `MemoryStore` 上保存可选快照；`restore()` 保留 `runId`、递增 `attempt`，并启动新的 trace。
 - [上下文管理](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) — 滑动窗口、摘要、压缩、自定义压缩器。

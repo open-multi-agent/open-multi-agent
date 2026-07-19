@@ -132,6 +132,11 @@ be unique, and an evaluation with no scorers is a usage error. Dynamic import
 executes the supplied modules with the current process permissions; only load
 code you trust. The CLI does not sandbox target or scorer modules.
 
+Reference factories such as `toolCallSuccessScorer()`,
+`costBudgetScorer()`, and `createAnswerRelevancyScorer()` can be imported from
+`@open-multi-agent/core/eval` inside either module. Version custom and judge
+scorers so baseline drift warnings remain actionable.
+
 Repeat `--report` to request any combination of `json`, `markdown`, and
 `junit`; JSON is the default. The output root defaults to `./eval-results`.
 Every invocation writes into `<out>/<evalRunId>/`, using `report.json`,

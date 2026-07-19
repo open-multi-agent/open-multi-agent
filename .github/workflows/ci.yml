@@ -181,6 +181,9 @@ jobs:
       - name: Run public observability examples without network or API keys
         run: npm run test:observability-examples
 
+      - name: Run public evaluation example without network or API keys
+        run: npm run test:eval-examples
+
       - name: Run tolerant same-host observability regression gate
         run: npm run bench:observability:ci
 

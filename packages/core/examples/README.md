@@ -61,6 +61,8 @@ Reusable shapes for common multi-agent problems.
 | [`patterns/plan-replay`](patterns/plan-replay.ts) | Pin a coordinator plan with `createPlanArtifact`, then replay it with `runFromPlan`, no coordinator re-run. |
 | [`patterns/consensus`](patterns/consensus.ts) | Proposer→judge refutation loop via `runConsensus()`: default judge prompt and per-judge `judgePrompt` function. |
 | [`patterns/cross-provider-reasoning`](patterns/cross-provider-reasoning.ts) | Preserve a reasoning model's thought stream across providers via `preserveReasoningAsText`. |
+| [`patterns/eval-offline-regression`](patterns/eval-offline-regression.ts) | No-key EvalSet regression across two model configurations with rule + judge scorers and a gate. |
+| [`patterns/eval-online-sampling`](patterns/eval-online-sampling.ts) | Best-effort online sampling into `FileEvalStore` with explicit flush and shutdown. |
 
 ## cookbook — use-case recipes
 

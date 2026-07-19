@@ -1,8 +1,23 @@
 # Evaluation
 
-The experimental `@open-multi-agent/core/eval` subpath defines quality scorers for offline regression checks and future online sampling. Evaluation runs outside the business execution path: it observes a result but never changes that result.
+The `@open-multi-agent/core/eval` subpath measures agent and multi-agent quality
+offline or through best-effort online sampling. Evaluation observes completed
+results; it never changes the business result.
 
-## Define a scorer
+Use runtime verification and evaluation for different jobs:
+
+| | `runConsensus()` / per-task `verify` | Evaluation |
+|---|---|---|
+| When | During one business run | Offline in batches or asynchronously after a live run |
+| Changes the business result | Yes: may accept, revise, or reject | No |
+| Measures | One result | Cases, versions, regressions, and trends |
+| Failure meaning | Affects the runtime verdict | Produces `scorer_error`; never becomes score zero |
+| Output | `ConsensusResult` | `EvalRecord`, `EvalRunReport`, and `GateVerdict` |
+
+The two mechanisms compose: verification protects a single run, while an
+EvalSet can detect changes in verification pass rate over time.
+
+## Scorers
 
 ```ts
 import { defineScorer, type ScorerContext } from '@open-multi-agent/core/eval'
@@ -27,7 +42,7 @@ const result = await exact.score(context)
 console.log(result.score) // 1
 ```
 
-Scores must be finite numbers from `0` through `1`. `pass` is optional so a later gate can apply its own threshold. `defineScorer()` freezes the scorer definition and validates both synchronous and asynchronous results.
+Scores must be finite numbers from `0` through `1`. `pass` is optional so a later gate can apply its own threshold. `defineScorer()` freezes the scorer definition and validates both synchronous and asynchronous results. A scorer may omit `version`, but OMA warns once per scorer name because a gate then cannot distinguish scoring-logic drift from target drift. Bump the version whenever a rule, prompt, judge model, or judge configuration changes.
 
 ## Scorer failures are not zero scores
 
@@ -35,7 +50,44 @@ A scorer that throws, rejects, or exceeds its timeout has not measured quality. 
 
 If the target itself throws, the sample produces one `target_error` record under the reserved scorer name `_target`; its scorers do not run. The eval subpath also defines the `EvalRecord` shape and schema major version.
 
-## Run an EvalSet offline
+### Reference scorers
+
+Reference scorers are deliberately small examples, not universal quality
+standards. Import them from `@open-multi-agent/core/eval`:
+
+| Factory | Score meaning | Required data and missing-data behavior |
+|---|---|---|
+| `toolCallSuccessScorer()` | Successful tool spans / all tool spans | Uses trace status when available. A result-only `ToolCallRecord` has no error flag, so completed result calls are treated as successful. No calls returns `1` with `details.tool_calls = 0` and an explicit not-applicable reason. |
+| `structuredOutputComplianceScorer(schema?)` | `1` when `AgentRunResult.structured` exists and, when supplied, passes the Zod schema | Intended only for targets whose agent config has `outputSchema`. Missing structured output is a measured failure (`0`), not missing infrastructure. |
+| `costBudgetScorer({ maxTokens?, maxCostAmount? })` | Hard step: `1` within every observable ceiling, otherwise `0` | Tokens come from the OMA result; cost comes from `StoredRun.costs`. Unavailable dimensions are named in `reason` and `details.data_complete`; no observable dimension returns `1` with `applicable: false`. Multiple currencies throw and become `scorer_error` instead of being added incorrectly. |
+| `dependencyUtilizationScorer()` | Completed dependency-bearing task spans / all dependency-bearing task spans | Requires a trace. This is a conservative dependency-chain completion proxy; it proves linked prerequisites and the dependent task completed, not that the model semantically used prerequisite text. |
+| `duplicateWorkScorer({ threshold? })` | `1 - duplicatePairs / comparedPairs` | Requires both a trace and `TeamRunResult`. Trace identifies task IDs; actual outputs come from `agentResults`. Similarity is Jaccard over normalized character trigrams. Fewer than two outputs returns explicit not-applicable `1`. |
+| `noProgressScorer({ maxStallTurns? })` | `1` within the allowed consecutive stalls; above it, `maxStallTurns / observedMaximum` | Requires a trace. A stall is a failed task-agent attempt with LLM work, no tool call, and no completed task. This measures agent attempts, not semantic reasoning turns. |
+| `createAnswerRelevancyScorer({ judges, ... })` | Mean judge score for direct relevance to input and expected output | Thin `createJudgeScorer()` wrapper with a fixed `{ score, reason }` schema. Treat it as a prompt template to version and validate against your own data. |
+
+The three structure-aware scorers expose behavior specific to a multi-agent DAG,
+but remain privacy-aware: traces do not persist task output bodies. Dependency
+utilization and no-progress therefore use honest structural proxies, while
+duplicate-work reads outputs from the in-memory `TeamRunResult` and uses the
+trace only to select task executions. Use these three with offline
+`runEvalSet(..., { traceStore })`; online sampling does not load a trace for a scorer.
+
+```ts
+import {
+  createAnswerRelevancyScorer,
+  toolCallSuccessScorer,
+} from '@open-multi-agent/core/eval'
+
+const scorers = [
+  toolCallSuccessScorer(),
+  createAnswerRelevancyScorer({
+    version: 'relevancy-prompt-v1',
+    judges: [{ name: 'judge', model: 'claude-sonnet-4-6', provider: 'anthropic' }],
+  }),
+]
+```
+
+## Quick start: offline evaluation in five minutes
 
 ```ts
 import {
@@ -61,6 +113,7 @@ const target: EvalTarget = async (input) => ({
 
 const exact = defineScorer({
   name: 'exact',
+  version: '1',
   score({ output, evalCase }) {
     const pass = output === evalCase.expected
     return { score: pass ? 1 : 0, pass }
@@ -227,7 +280,7 @@ p95 (`0.30 µs` mean) on the implementation host. Absolute microseconds vary by
 host; CI additionally retains the existing observability same-host regression
 gate for the unconfigured path.
 
-## Persist evaluation records
+## EvalStore
 
 Use `InMemoryEvalStore` for short-lived local runs, tests, or an adapter
 prototype. Pass it to `runEvalSet()` to persist one atomic batch per completed
@@ -533,11 +586,34 @@ the gate control the step status:
     path: eval-results/**/report.junit.xml
 ```
 
-## Payload privacy
+## Memory evaluation metrics
+
+`MemoryExtractionSample` and `MemoryRetrievalSample` are experimental input
+shapes for future memory scorers; this release adds no memory runtime and no
+automatic memory writer. The following metrics can be implemented with existing
+rule or judge scorers:
+
+| Stage | Metric | Definition |
+|---|---|---|
+| Extraction | Yield | Valid extracted records relative to conversation, token, latency, or monetary cost. Report raw counts beside any ratio. |
+| Extraction | Duplicate and conflict rate | Share of records that repeat, contradict, or add no durable information. Rule checks can catch exact duplicates; semantic conflict needs a versioned judge. |
+| Extraction | Staleness annotation rate | Share of time-sensitive records carrying enough provenance or expiry information to identify staleness risk. |
+| Extraction | Scope leakage | Private content written into team scope. This is a safety gate: any non-zero leakage fails. |
+| Extraction | Cost and reasons | Extraction latency and tokens, plus the distribution of skipped and merged reasons. |
+| Retrieval | Relevance | Judge score between the query and retrieved records. Version the rubric and judge configuration. |
+| Retrieval | Omission | Available positive records that should have been returned but were not. |
+| Retrieval | Pollution | Run the same case with and without retrieved memory; a lower primary score after injection is harmful pollution. |
+| Retrieval | Added cost | Extra tokens and latency caused by retrieval and prompt injection. |
+
+Automatic extraction or consolidation should not be enabled by default until it
+passes both a versioned offline EvalSet gate and online sampling. Scope leakage
+is always a hard safety gate, independent of average quality.
+
+## Privacy
 
 EvalSet cases may contain private user data. `storePayloads` therefore defaults to `'none'`, so records contain scores, reasons, metadata, and run references but no input/output snapshots. `'redacted'` serializes each payload field, caps it at 8 KiB, and applies OMA's existing secret redaction. `'full'` keeps the serialized text without redaction but still applies the 8 KiB cap; opt into it only for data you are prepared to retain. A model-based judge necessarily sends the evaluated output to the configured judge model regardless of record payload storage.
 
-## Why there is no seed
+## Reproducibility and the absence of a seed
 
 OMA's current provider contract has no cross-provider seed parameter or LLM response recording. Adding a seed to `EvalSet` would therefore promise determinism the framework cannot provide. Use `repeats` to sample nondeterministic behavior and compare the aggregate statistics. `targetFromPlan()` fixes the orchestration plan, but model responses can still vary.
 
@@ -571,6 +647,35 @@ Judge scores are averaged. When the verdict schema returns a boolean `pass`, the
 
 `result.details.judges`, `result.details.models`, and `result.details.scores` are parallel arrays: values at the same index describe one judge. This flat representation remains compatible with trace attribute values while preserving model-drift evidence. Bump the scorer `version` whenever judge models, configuration, or prompts change.
 
-## Runtime verification versus evaluation
+## FAQ
 
-Use `runConsensus()` or per-task `verify` to accept, revise, or reject a result during a live business run. Use scorers to measure regressions and trends after or alongside a run. Runtime verification can affect the business result; evaluation never does. The two mechanisms can be used together.
+### Should a scorer error count as zero?
+
+No. It means quality was not measured. OMA records `scorer_error`, excludes it
+from score denominators, and lets gate health limits decide whether the
+evaluation infrastructure is reliable enough.
+
+### Why did a baseline scorer comparison produce a warning?
+
+Candidate and baseline scorer versions differ, or one side omitted the scorer.
+OMA still applies absolute thresholds and health checks, but skips an invalid
+apples-to-oranges regression comparison. Review the scorer change and create a
+new accepted baseline intentionally.
+
+### Can evaluation delay or fail the business response?
+
+Offline evaluation is a separate call. Online evaluation performs only a
+synchronous sampling and bounded-queue decision after the run settles; scoring
+and persistence are best-effort and isolated. Call `forceFlush()` when the host
+must wait for accepted samples before exit.
+
+### Does `targetFromPlan()` make an LLM run deterministic?
+
+It fixes the task graph and avoids another coordinator decomposition. Model
+responses can still vary because OMA has no cross-provider seed contract. Use
+`repeats` and compare distributions.
+
+### Where can I see complete examples?
+
+Run `examples/patterns/eval-offline-regression.ts` for a no-key two-target gate
+or `examples/patterns/eval-online-sampling.ts` for `FileEvalStore` lifecycle.
