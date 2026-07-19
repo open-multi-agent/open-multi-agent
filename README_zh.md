@@ -46,7 +46,9 @@
 
 <br />
 
-`open-multi-agent` 把一个目标转换为可审查的任务 DAG，交给多个 Agent 执行，再合成最终结果。它是可直接嵌入 Node.js 后端的 TypeScript 库。
+`open-multi-agent` 是可直接嵌入 Node.js 后端的多智能体编排库。
+
+> **工程师只描述目标，不画任务图。**
 
 当任务计划需要在运行时动态生成，但执行仍需确定性调度、明确管控和可回放轨迹时，选择 OMA。
 
@@ -75,20 +77,28 @@ npm install @open-multi-agent/core
 
 ## 基于 OMA 构建
 
-| 项目 | OMA 的用法 |
-|---|---|
-| [temodar-agent](https://github.com/xeloxa/temodar-agent) | 在 Docker 中使用 OMA 工具执行 WordPress 安全分析；已确认生产使用。 |
-| [PR-Copilot](https://github.com/kidoom/PR-Copilot) | 限定范围的审查 Agent、仓库工具和 token-aware diff 压缩。 |
-| [StuFlow](https://github.com/znc15/StuFlow) | 以 OMA 为编排内核的终端编码助手。 |
-| [Mark Galyan](https://github.com/apollo-mg) | 在显存受限环境中用本地量化模型运行 Agent 循环。 |
+`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
 
-已有集成包括 [Engram](https://github.com/Agentscreator/engram-memory)、[AgentSonar](https://github.com/agentsonar/agentsonar-oma) 和 [CodingScaffold](https://github.com/JRS1986/CodingScaffold)。正在项目中使用 OMA？欢迎在 [Discussions](https://github.com/open-multi-agent/open-multi-agent/discussions) 告诉我们，或加入 [Featured partner 计划](docs/featured-partner.md)。
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+- **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 coordinator 与上下文压缩，在显存受限的条件下维持自治 agent 循环持续运行。自框架发布首月起持续贡献，涵盖上下文压缩、采样与工具调用解析。
+- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**。AI pull request 审查助手，作者 [kidoom](https://github.com/kidoom)。运行一个 OMA 审查 team（coordinator + 限定范围的 reviewer agent），用 `defineTool` 定义仓库上下文工具，并加入自定义 `ContextStrategy` 做 token-aware 的 PR diff 压缩。公开代码，基于 `@open-multi-agent/core`。
+- **[StuFlow](https://github.com/znc15/StuFlow)**。终端 AI 编码助手，作者 [znc15](https://github.com/znc15)。以 OMA 为编排内核：构建 team 并通过 `runAgent` / `runTasks` / `runTeam` 驱动，配自定义 `RunTeamOptions` coordinator，搭配 DeepSeek。公开代码，基于 `@open-multi-agent/core`。
+
+**集成**
+
+- **[Engram](https://www.engram-memory.com)** — "AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar，检测跨运行的委派环、重复和速率突增。
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
+
+在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
 
 ## OMA 适合什么场景
 
 OMA 面向希望任务图随目标动态生成的 TypeScript 团队。Coordinator 产生计划，Scheduler 把它当作可审查数据执行。
 
 如果工作流必须逐节点手工设计，图优先框架更合适；如果只需要单个 Agent 调用，一个 LLM 工具库就够了。当多个 Agent、任务依赖、审批或恢复机制需要协同时，OMA 负责这一编排层。
+
+与 LangGraph、Mastra、CrewAI、Vercel AI SDK 等的逐项对比见[对比页](https://open-multi-agent.com/zh/compare/)。
 
 ## 包
 
@@ -101,7 +111,7 @@ Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有
 
 ## 企业服务
 
-面向已有产品或业务系统的团队，提供 AI 场景梳理、Agent 能力嵌入与交付支持。微信扫码联系，或访问 [yuanasi.com](https://yuanasi.com)。
+面向已有产品或业务系统的团队，提供 AI 场景梳理、Agent 能力嵌入与交付支持。微信扫码联系，或邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">

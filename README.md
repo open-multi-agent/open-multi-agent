@@ -46,7 +46,9 @@
 
 <br />
 
-`open-multi-agent` turns one goal into an inspectable task DAG, runs it across a team of agents, and synthesizes the result. It is a TypeScript library that embeds directly in your Node.js backend.
+`open-multi-agent` is a multi-agent orchestration library that embeds directly in your Node.js backend.
+
+> **Your engineers describe the goal, not the graph.**
 
 Use OMA when the plan should adapt at runtime, but execution still needs deterministic scheduling, explicit controls, and a trace you can inspect or replay.
 
@@ -75,20 +77,28 @@ The [Core package guide](packages/core/README.md) contains the minimal example, 
 
 ## Built with OMA
 
-| Project | How it uses OMA |
-|---|---|
-| [temodar-agent](https://github.com/xeloxa/temodar-agent) | WordPress security analysis with OMA tools inside Docker; confirmed production use. |
-| [PR-Copilot](https://github.com/kidoom/PR-Copilot) | Scoped review agents, repository tools, and token-aware diff compression. |
-| [StuFlow](https://github.com/znc15/StuFlow) | Terminal coding assistant using OMA as its orchestration core. |
-| [Mark Galyan](https://github.com/apollo-mg) | Fully local agent loops on quantized models under tight VRAM limits. |
+`open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
 
-Integrations include [Engram](https://github.com/Agentscreator/engram-memory), [AgentSonar](https://github.com/agentsonar/agentsonar-oma), and [CodingScaffold](https://github.com/JRS1986/CodingScaffold). Using OMA in a project? [Tell us in Discussions](https://github.com/open-multi-agent/open-multi-agent/discussions) or join the [Featured partner program](docs/featured-partner.md).
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** (~60 stars). WordPress security analysis platform by [Ali Sünbül](https://github.com/xeloxa). Uses our built-in tools (`bash`, `file_*`, `grep`) directly inside a Docker runtime. Confirmed production use.
+- **[Mark Galyan](https://github.com/apollo-mg)** runs OMA fully offline on local quantized models, using the Coordinator and context compaction to keep autonomous agent loops alive under tight VRAM limits. Contributor since the framework's first month, across compaction, sampling, and tool-call parsing.
+- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**. AI pull-request review assistant by [kidoom](https://github.com/kidoom). Runs an OMA review team (coordinator + scoped reviewer agents), defines repo-context tools with `defineTool`, and adds a custom `ContextStrategy` for token-aware PR-diff compression. Public code on `@open-multi-agent/core`.
+- **[StuFlow](https://github.com/znc15/StuFlow)** by [znc15](https://github.com/znc15). Terminal AI coding assistant on OMA's orchestration core: builds a team and drives it through `runAgent` / `runTasks` / `runTeam` with a custom `RunTeamOptions` coordinator, paired with DeepSeek. Public code on `@open-multi-agent/core`.
+
+**Integrations**
+
+- **[Engram](https://www.engram-memory.com)** — "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)** — Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)** — Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
+
+Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here. Built an integration? The [integration guide](packages/core/examples/integrations/README.md) covers how to get listed. For a deep integration, see the [Featured partner program](docs/featured-partner.md).
 
 ## When OMA fits
 
 OMA is designed for TypeScript teams that want the task graph to emerge from the goal at runtime. The coordinator creates the plan; the scheduler executes it as inspectable data.
 
 Choose a graph-first framework when the workflow must be authored node by node. Use an LLM toolkit alone when one agent call is enough. OMA sits at the orchestration layer when several agents, dependencies, approvals, or recovery steps must work together.
+
+For a named head-to-head against LangGraph, Mastra, CrewAI, the Vercel AI SDK, and others, see the [comparison page](https://open-multi-agent.com/compare/).
 
 ## Packages
 
@@ -101,7 +111,7 @@ Core users can store traces locally and inspect them with the offline Run Viewer
 
 ## Commercial support
 
-Need to embed agent capabilities in an existing product or business system? Commercial discovery and delivery support is available at [yuanasi.com](https://yuanasi.com).
+Need to embed agent capabilities in an existing product or business system? Email [jack@yuanasi.com](mailto:jack@yuanasi.com) for discovery and delivery support.
 
 ## Documentation
 
