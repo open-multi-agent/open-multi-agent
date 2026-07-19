@@ -100,10 +100,8 @@ For a named head-to-head against LangGraph, Mastra, CrewAI, the Vercel AI SDK, a
 
 ## Packages
 
-| Package | Purpose |
-|---|---|
-| [`@open-multi-agent/core`](packages/core/README.md) | Orchestration runtime, tools, memory, checkpoints, traces, CLI, and offline Run Viewer. |
-| [`@open-multi-agent/otel`](packages/otel/README.md) | Optional enterprise integration for production teams with a centralized OpenTelemetry stack. |
+- **[`@open-multi-agent/core`](packages/core/README.md)**: Orchestration runtime, tools, memory, checkpoints, traces, CLI, and offline Run Viewer.
+- **[`@open-multi-agent/otel`](packages/otel/README.md)**: Optional enterprise integration for production teams with a centralized OpenTelemetry stack.
 
 Core users can store traces locally and inspect them with the offline Run Viewer. Install the OTel package only when OMA traces should appear in the same monitoring system as the rest of your application.
 

@@ -100,10 +100,8 @@ OMA 面向希望任务图随目标动态生成的 TypeScript 团队。Coordinato
 
 ## 包
 
-| 包 | 作用 |
-|---|---|
-| [`@open-multi-agent/core`](packages/core/README_zh.md) | 编排运行时、工具、记忆、checkpoint、trace、CLI 和离线 Run Viewer。 |
-| [`@open-multi-agent/otel`](packages/otel/README.md) | 面向已建立 OpenTelemetry 统一监控体系的生产团队的可选企业集成。 |
+- **[`@open-multi-agent/core`](packages/core/README_zh.md)**：编排运行时、工具、记忆、checkpoint、trace、CLI 和离线 Run Viewer。
+- **[`@open-multi-agent/otel`](packages/otel/README.md)**：面向已建立 OpenTelemetry 统一监控体系的生产团队的可选企业集成。
 
 Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有当 OMA trace 需要进入应用现有的统一监控平台时，才需要安装 OTel 包。
 
