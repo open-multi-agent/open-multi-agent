@@ -12,7 +12,7 @@
  */
 
 import { mkdir, stat, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -1024,7 +1024,7 @@ const isMain = (() => {
   const argv1 = process.argv[1]
   if (!argv1) return false
   try {
-    return fileURLToPath(import.meta.url) === resolve(argv1)
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(argv1))
   } catch {
     return false
   }

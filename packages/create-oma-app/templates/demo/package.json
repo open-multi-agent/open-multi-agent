@@ -8,7 +8,7 @@
     "demo": "tsx src/index.ts --demo"
   },
   "dependencies": {
-    "@open-multi-agent/core": "1.12.0"
+    "@open-multi-agent/core": "1.12.1"
   },
   "devDependencies": {
     "tsx": "^4.21.0"

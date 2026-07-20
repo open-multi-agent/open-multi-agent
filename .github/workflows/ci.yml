@@ -132,6 +132,19 @@ jobs:
             exit 1
           fi
 
+      - name: Smoke-test the installed core npm bin
+        working-directory: packages/core
+        run: |
+          pack_dir=$(mktemp -d)
+          consumer_dir=$(mktemp -d)
+          pack_json=$(npm pack --json --pack-destination "$pack_dir")
+          tarball=$(echo "$pack_json" | jq -r '.[0].filename')
+          npm install --prefix "$consumer_dir" "$pack_dir/$tarball"
+          help_output=$("$consumer_dir/node_modules/.bin/oma" help)
+          echo "$help_output" | grep -q "oma eval run"
+          echo "$help_output" | grep -q "oma eval gate"
+          echo "Installed CLI help runs OK"
+
       - name: Assert the create-oma-app tarball ships dist + template
         working-directory: packages/create-oma-app
         run: |
