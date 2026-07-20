@@ -3,7 +3,8 @@ name: Release smoke
 # After a GitHub Release is published, prove that the packages we just pushed to
 # npm actually work from a *user's* point of view: `npx create-oma-app@latest`
 # scaffolds the recommended PR-review starter, the @open-multi-agent/core it
-# pins installs from npm, and the demo reaches the missing-key gate.
+# pins installs from npm, and the deterministic no-key demo produces all three
+# disclosed report formats without making a model request.
 #
 # This is a POST-publish alarm, not a gate. The release is already out, so a red
 # run here means "the published bytes are broken, cut a fix" — it does not block
@@ -25,13 +26,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Scaffold from the published npm package and reach the run gate
+      - name: Scaffold from the published npm package and run the no-key demo
         env:
           # The tag is the core version (e.g. v1.11.0); create-oma-app has its
           # own version, so we resolve the scaffolder via @latest and verify it
           # pins THIS release's core below.
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          # Force the missing-key gate even if the runner ever grows these.
+          # Prove that the deterministic demo does not depend on ambient model
+          # configuration, even if the runner ever grows these variables.
           OPENAI_API_KEY: ''
           OMA_MODEL: ''
           OPENAI_BASE_URL: ''
@@ -76,16 +78,33 @@ jobs:
 
           echo "scaffolded the PR-review starter with create-oma-app@$(npm view create-oma-app version) → installed core@$want"
 
-          # No API key on purpose: the demo must exit non-zero at the env gate.
-          # Reaching that message proves core resolved from npm, imported, and
-          # ran under tsx — a broken import or syntax error would fail elsewhere.
+          # No API key on purpose: scripted model responses must drive the real
+          # scheduler and report generation without making a model request.
           set +e
           out=$( cd "$project" && npm run demo 2>&1 )
           code=$?
           set -e
           echo "$out"
-          if [ "$code" -eq 0 ] || ! printf '%s' "$out" | grep -q "Missing OPENAI_API_KEY"; then
-            echo "::error::expected a non-zero exit with 'Missing OPENAI_API_KEY'; got exit $code"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::expected the no-key demo to succeed; got exit $code"
             exit 1
           fi
-          echo "✓ create-oma-app@latest scaffolds the PR-review starter, installs core from npm, and reaches the run gate"
+          grep -q "Simulated model responses" <<<"$out"
+          grep -q "demo-fixture" <<<"$out"
+
+          if [ ! -d "$project/reports" ]; then
+            echo "::error::the no-key demo did not create its reports directory"
+            exit 1
+          fi
+          markdown=$(find "$project/reports" -maxdepth 1 -type f -name '*.md' -print -quit)
+          json=$(find "$project/reports" -maxdepth 1 -type f -name '*.json' -print -quit)
+          dashboard=$(find "$project/reports" -maxdepth 1 -type f -name '*.html' -print -quit)
+          if [ -z "$markdown" ] || [ -z "$json" ] || [ -z "$dashboard" ]; then
+            echo "::error::the no-key demo did not produce Markdown, JSON, and HTML reports"
+            exit 1
+          fi
+          grep -q "Demo mode" "$markdown"
+          grep -q '"mode": "demo"' "$json"
+          grep -q "Simulated model responses" "$dashboard"
+
+          echo "✓ create-oma-app@latest installs core@$want and runs the disclosed no-key demo from npm"
