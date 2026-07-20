@@ -90,6 +90,12 @@ npm install @open-multi-agent/core
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
+**Provider 赞助商**
+
+支持 `open-multi-agent` 的付费赞助商。赞助不影响技术决策与模型推荐。
+
+- **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**：全模态 AI 推理平台，单一 API 打通视频、图像与 LLM，覆盖 300+ 精选模型。OMA 用户可申请限量 $5 credit 兑换码。见 [Atlas Cloud 接入指南](docs/providers/atlascloud.md)。
+
 在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
 
 ## OMA 适合什么场景
