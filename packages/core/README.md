@@ -46,7 +46,7 @@
 
 <br />
 
-`@open-multi-agent/core` is the OMA orchestration runtime for TypeScript backends. Give it one agent, an explicit task graph, or a goal that the coordinator can decompose at runtime.
+`@open-multi-agent/core` is the OMA orchestration runtime for TypeScript backends. Give it one agent, an explicit task graph, or a **dynamic workflow** that the coordinator generates from a goal at runtime.
 
 The runtime schedules dependencies, runs independent work in parallel, shares context across agents, and returns an inspectable result. For product positioning and known users, see the [project overview](https://github.com/open-multi-agent/open-multi-agent#readme).
 

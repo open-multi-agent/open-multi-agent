@@ -46,7 +46,7 @@
 
 <br />
 
-`@open-multi-agent/core` 是面向 TypeScript 后端的 OMA 编排运行时。你可以交给它一个 Agent、一张显式任务图，或一个由 Coordinator 在运行时拆解的目标。
+`@open-multi-agent/core` 是面向 TypeScript 后端的 OMA 编排运行时。你可以交给它一个 Agent、一张显式任务图，或一条由 Coordinator 在运行时从目标生成的**动态工作流（dynamic workflow）**。
 
 运行时负责依赖调度、并行执行、Agent 间上下文共享和可审查结果输出。产品定位与已知用户见[项目首页](https://github.com/open-multi-agent/open-multi-agent/blob/main/README_zh.md)。
 

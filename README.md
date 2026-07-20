@@ -48,7 +48,7 @@
 
 `open-multi-agent` is an AI agent orchestration framework for TypeScript backends that drops into any Node.js app. It turns one goal into an inspectable task DAG, runs it across a team of agents, and synthesizes the result, all inside your own environment. Run it local, offline, or air-gapped, mixing cloud and local models on one team.
 
-Use OMA when the plan should adapt at runtime, but execution still needs deterministic scheduling, explicit controls, and a trace you can inspect or replay.
+Use OMA for **dynamic workflows**: the coordinator turns a goal into a task DAG at runtime, while deterministic scheduling keeps execution inspectable, controllable, and replayable.
 
 ## Why OMA
 
