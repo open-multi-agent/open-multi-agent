@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "demo": "tsx src/index.ts"
+    "demo": "tsx src/index.ts --demo"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.11.0"

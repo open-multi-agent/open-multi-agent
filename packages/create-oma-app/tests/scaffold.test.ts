@@ -54,6 +54,8 @@ describe('scaffold', () => {
     expect(existsSync(join(target, '_gitignore'))).toBe(false)
     expect(existsSync(join(target, '_env.example'))).toBe(false)
     expect(existsSync(join(target, 'src/index.ts'))).toBe(true)
+    expect(existsSync(join(target, 'src/demo-adapter.ts'))).toBe(true)
+    expect(existsSync(join(target, 'src/report.ts'))).toBe(true)
     expect(existsSync(join(target, 'README.md'))).toBe(true)
   })
 

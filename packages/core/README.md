@@ -56,11 +56,13 @@ The runtime schedules dependencies, runs independent work in parallel, shares co
 
 ## Quick Start
 
-Requires Node.js 18 or newer. Scaffold a runnable project:
+Requires Node.js 18 or newer. Scaffold and run a starter in one command:
 
 ```bash
-npm create oma-app@latest
+npm create oma-app@latest my-oma
 ```
+
+In an interactive terminal, the scaffolder selects a starter and Cloud/Ollama runtime, installs dependencies, then runs a deterministic demo and produces an offline dashboard. The demo uses scripted model responses, needs no API key, and makes no model request; OMA orchestration still runs locally for real. Pass `--no-install` to generate files only, or `--no-run` to install without starting the demo.
 
 To add OMA to an existing backend:
 

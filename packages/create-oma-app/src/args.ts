@@ -8,6 +8,8 @@ export interface CliOptions {
   readonly projectName?: string
   readonly templateId?: TemplateId
   readonly providerId?: ProviderId
+  readonly noInstall: boolean
+  readonly noRun: boolean
   readonly help: boolean
 }
 
@@ -21,6 +23,8 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let projectName: string | undefined
   let templateId: TemplateId | undefined
   let providerId: ProviderId | undefined
+  let noInstall = false
+  let noRun = false
   let help = false
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -28,6 +32,14 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     if (arg === '--') continue
     if (arg === '--help' || arg === '-h') {
       help = true
+      continue
+    }
+    if (arg === '--no-install') {
+      noInstall = true
+      continue
+    }
+    if (arg === '--no-run') {
+      noRun = true
       continue
     }
     if (arg === '--template' || arg === '-t') {
@@ -53,5 +65,5 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     projectName = arg
   }
 
-  return { projectName, templateId, providerId, help }
+  return { projectName, templateId, providerId, noInstall, noRun, help }
 }

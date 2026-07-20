@@ -4,13 +4,20 @@ import { parseArgs } from '../src/args.js'
 describe('parseArgs', () => {
   it('parses project, template, provider, and short flags', () => {
     expect(parseArgs(['my-app', '--template', 'pr-review', '--provider', 'ollama'])).toEqual({
-      projectName: 'my-app', templateId: 'pr-review', providerId: 'ollama', help: false,
+      projectName: 'my-app', templateId: 'pr-review', providerId: 'ollama', noInstall: false, noRun: false, help: false,
     })
     expect(parseArgs(['-t', 'security', '-p', 'cloud', 'audit-app']).templateId).toBe('security')
   })
 
   it('keeps template/provider absent so the CLI can select interactive or legacy defaults', () => {
-    expect(parseArgs(['demo-app'])).toEqual({ projectName: 'demo-app', templateId: undefined, providerId: undefined, help: false })
+    expect(parseArgs(['demo-app'])).toEqual({
+      projectName: 'demo-app', templateId: undefined, providerId: undefined, noInstall: false, noRun: false, help: false,
+    })
+  })
+
+  it('parses post-scaffold opt-out flags independently', () => {
+    expect(parseArgs(['demo-app', '--no-install', '--no-run'])).toMatchObject({ noInstall: true, noRun: true })
+    expect(parseArgs(['demo-app', '--no-run'])).toMatchObject({ noInstall: false, noRun: true })
   })
 
   it('handles help and rejects invalid input before scaffolding', () => {

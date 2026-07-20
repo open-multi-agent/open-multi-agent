@@ -62,8 +62,10 @@
 初始化 PR 审查 Agent、安全分析 Agent 或教学用 DAG：
 
 ```bash
-npm create oma-app@latest
+npm create oma-app@latest my-oma
 ```
+
+在交互式终端中，这一条命令会完成 starter 与 runtime 选择、依赖安装，并运行确定性的本地 Demo。Demo 不需要 API Key，也不会发起模型请求：预置模型响应负责模拟生成边界，OMA 的调度、结果聚合与离线 Dashboard 均真实运行。使用 `--no-install` 可仅生成文件，使用 `--no-run` 可安装但不启动 Demo。
 
 也可以把 OMA 直接加入现有后端：
 

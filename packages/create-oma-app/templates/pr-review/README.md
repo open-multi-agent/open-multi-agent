@@ -2,10 +2,20 @@
 
 A read-only multi-agent review of a local Git diff or GitHub pull request. The generated app never posts comments or changes the reviewed repository.
 
+## No-key demo
+
 ```bash
 npm install
-cp .env.example .env # cloud runtime only
 npm run demo
+```
+
+The demo reviews a bundled fixture with deterministic scripted model responses. It makes no model request and labels Markdown, JSON, and HTML output as simulated; OMA scheduling and report generation run locally for real.
+
+## Real model run
+
+For a Cloud scaffold, copy `.env.example` to `.env` and add the provider key first. For Ollama, start the local service and an installed model. Then run:
+
+```bash
 npm run dev -- --repo /path/to/repo
 npm run dev -- --repo /path/to/repo --base origin/main
 npm run dev -- --pr https://github.com/owner/repo/pull/123

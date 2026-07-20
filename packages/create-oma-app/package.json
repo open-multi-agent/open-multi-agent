@@ -11,6 +11,7 @@
     "template/_env.example",
     "template/_env.ollama",
     "template/_gitignore",
+    "template/src/demo-adapter.ts",
     "template/src/runtime.ts",
     "template/src/report.ts",
     "templates",

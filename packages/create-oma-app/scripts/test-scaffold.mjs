@@ -9,20 +9,15 @@
  *
  * The chain it proves, with NO API key and NO real LLM call:
  *   build → pack scaffolder → unpack → run the packed CLI → assert structure →
- *   install → `npm run dev` reaches the missing-key gate.
- *
- * That last step is the strong signal: the template exits 1 with
- * "Missing OPENAI_API_KEY" only AFTER importing @open-multi-agent/core and
- * running under tsx. Reaching that gate proves the dependency resolved, the
- * package loads, and tsx executes the TS. A broken core import or a syntax
- * error would fail differently and trip the assertion instead.
+ *   install → every `npm run demo` completes with deterministic adapters →
+ *   real Cloud/Ollama runs still reach their configuration gates.
  *
  * Core is installed from a freshly packed LOCAL tarball, not from npm, so the
  * test validates THIS commit's code and stays green during the release window
  * when the template pins a core version that isn't published yet.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,6 +60,12 @@ try {
   run('tar', ['-xzf', scaffoldTarball, '-C', work])
   const cli = join(work, 'package', 'dist', 'index.js')
 
+  console.log('• checking packed CLI help')
+  const help = spawnSync('node', [cli, '--help'], { cwd: work, encoding: 'utf8' })
+  if (help.status !== 0 || !help.stdout.includes('--no-install') || !help.stdout.includes('--no-run')) {
+    throw new Error(`packed CLI help is missing post-scaffold opt-outs\n${help.stdout ?? ''}${help.stderr ?? ''}`)
+  }
+
   console.log(`• generating legacy project "${PROJECT}" via the packed CLI`)
   // Passing the name skips the interactive prompt; the empty temp dir means no
   // overwrite confirmation — so the CLI runs fully non-interactively.
@@ -76,7 +77,7 @@ try {
       const project = `oma-e2e-${template}-${provider}`
       run('node', [cli, project, '--template', template, '--provider', provider], { cwd: work })
       const generated = join(work, project)
-      for (const f of ['package.json', 'src/index.ts', 'src/runtime.ts', '.gitignore', '.env.example', 'tsconfig.json', 'README.md']) {
+      for (const f of ['package.json', 'src/index.ts', 'src/runtime.ts', 'src/demo-adapter.ts', 'src/report.ts', '.gitignore', '.env.example', 'tsconfig.json', 'README.md']) {
         if (!existsSync(join(generated, f))) throw new Error(`${project} is missing ${f}`)
       }
       if (provider === 'ollama' && !existsSync(join(generated, '.env'))) throw new Error(`${project} is missing its local .env`)
@@ -96,24 +97,45 @@ try {
     throw new Error('generated project does not depend on @open-multi-agent/core')
   }
 
-  console.log('• installing the PR Review cloud starter (core from the local tarball, the rest from npm)')
-  // Installing the local core tarball satisfies the core dependency from THIS
-  // commit and reconciles the rest of the tree (zod + tsx) from npm in one shot.
-  const cloudProj = join(work, 'oma-e2e-pr-review-cloud')
-  run('npm', ['install', '--no-audit', '--no-fund', coreTarball], { cwd: cloudProj })
-
-  console.log('• running the demo with NO API key — expecting the env gate')
+  console.log('• installing and running every no-key demo (core from the local tarball)')
   const env = { ...process.env }
   delete env.OPENAI_API_KEY
   delete env.OMA_MODEL
   delete env.OPENAI_BASE_URL
-  const dev = spawnSync('npm', ['run', 'demo'], { cwd: cloudProj, env, encoding: 'utf8' })
-  const output = `${dev.stdout ?? ''}${dev.stderr ?? ''}`
-  if (dev.status === 0 || !/Missing OPENAI_API_KEY/.test(output)) {
-    throw new Error(
-      `expected a non-zero exit with "Missing OPENAI_API_KEY"; got exit ${dev.status}.\n` +
-        `--- demo output ---\n${output}`,
-    )
+  env.OLLAMA_HOST = 'http://127.0.0.1:1'
+
+  for (const template of ['demo', 'pr-review', 'security']) {
+    const cloudProj = join(work, `oma-e2e-${template}-cloud`)
+    run('npm', ['install', '--no-audit', '--no-fund', coreTarball], { cwd: cloudProj })
+    const demo = spawnSync('npm', ['run', 'demo'], { cwd: cloudProj, env, encoding: 'utf8' })
+    const output = `${demo.stdout ?? ''}${demo.stderr ?? ''}`
+    if (demo.status !== 0 || !/Simulated model responses/.test(output) || !/demo-fixture/.test(output)) {
+      throw new Error(`expected ${template} no-key demo to succeed with a simulation notice; got exit ${demo.status}.\n${output}`)
+    }
+
+    if (template === 'demo') {
+      const dashboard = readFileSync(join(cloudProj, 'dashboard.html'), 'utf8')
+      if (!/Simulated model responses/.test(dashboard)) throw new Error('demo dashboard is missing its simulation label')
+      continue
+    }
+
+    const reports = join(cloudProj, 'reports')
+    const names = readdirSync(reports)
+    const markdown = names.find((name) => name.endsWith('.md'))
+    const json = names.find((name) => name.endsWith('.json'))
+    const dashboard = names.find((name) => name.endsWith('.html'))
+    if (!markdown || !json || !dashboard) throw new Error(`${template} demo did not write all report formats`)
+    if (!/Demo mode/.test(readFileSync(join(reports, markdown), 'utf8'))) throw new Error(`${template} Markdown lacks demo disclosure`)
+    if (!/"mode": "demo"/.test(readFileSync(join(reports, json), 'utf8'))) throw new Error(`${template} JSON lacks demo metadata`)
+    if (!/Simulated model responses/.test(readFileSync(join(reports, dashboard), 'utf8'))) throw new Error(`${template} dashboard lacks demo disclosure`)
+  }
+
+  console.log('• running a real Cloud starter with NO API key — expecting the env gate')
+  const cloudProj = join(work, 'oma-e2e-demo-cloud')
+  const dev = spawnSync('npm', ['run', 'dev'], { cwd: cloudProj, env, encoding: 'utf8' })
+  const devOutput = `${dev.stdout ?? ''}${dev.stderr ?? ''}`
+  if (dev.status === 0 || !/Missing OPENAI_API_KEY/.test(devOutput)) {
+    throw new Error(`expected a non-zero real run with "Missing OPENAI_API_KEY"; got exit ${dev.status}.\n${devOutput}`)
   }
 
   console.log('• installing an Ollama scaffold and expecting the local-service gate')
@@ -127,7 +149,7 @@ try {
     throw new Error(`expected the Ollama availability gate; got exit ${local.status}.\n${localOutput}`)
   }
 
-  console.log('\n✓ create-oma-app packs every starter and reaches cloud + Ollama run gates')
+  console.log('\n✓ create-oma-app packs every starter, runs no-key demos, and preserves Cloud + Ollama gates')
 } finally {
   if (work) rmSync(work, { recursive: true, force: true })
 }

@@ -62,8 +62,10 @@ Use OMA when the plan should adapt at runtime, but execution still needs determi
 Scaffold a PR review agent, security analysis agent, or teaching DAG:
 
 ```bash
-npm create oma-app@latest
+npm create oma-app@latest my-oma
 ```
+
+In an interactive terminal, that one command selects a starter and runtime, installs dependencies, and runs a deterministic local demo. The demo needs no API key and makes no model request: scripted model responses drive the real OMA scheduler, result aggregation, and offline dashboard. Use `--no-install` to generate files only, or `--no-run` to install without starting the demo.
 
 Or add OMA to an existing backend:
 

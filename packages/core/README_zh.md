@@ -56,11 +56,13 @@
 
 ## 快速开始
 
-要求 Node.js 18 或更高版本。初始化一个可运行项目：
+要求 Node.js 18 或更高版本。一条命令初始化并运行 starter：
 
 ```bash
-npm create oma-app@latest
+npm create oma-app@latest my-oma
 ```
+
+在交互式终端中，脚手架会选择 starter 与 Cloud/Ollama runtime、安装依赖，然后运行确定性 Demo 并生成离线 Dashboard。Demo 使用预置模型响应，不需要 API Key，也不会发起模型请求；OMA 编排仍在本地真实运行。使用 `--no-install` 可仅生成文件，使用 `--no-run` 可安装但不启动 Demo。
 
 若要集成到现有后端：
 
