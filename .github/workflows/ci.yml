@@ -187,7 +187,24 @@ jobs:
       - name: Run tolerant same-host observability regression gate
         run: npm run bench:observability:ci
 
+      - name: Pack the minimum core version supported by OTel
+        id: minimum-otel-core
+        run: |
+          set -euo pipefail
+          range=$(jq -r '.dependencies["@open-multi-agent/core"]' packages/otel/package.json)
+          if [[ ! "$range" =~ ^\^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::expected an exact caret range for the OTel core dependency; got $range"
+            exit 1
+          fi
+          minimum="${range#^}"
+          filename=$(npm pack "@open-multi-agent/core@$minimum" --pack-destination "$RUNNER_TEMP" --json | jq -er '.[0].filename')
+          tarball="$RUNNER_TEMP/$filename"
+          test -f "$tarball"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
       - name: Install real core and OTel tarballs in clean consumers
+        env:
+          OMA_OBSERVABILITY_MIN_CORE_TARBALL: ${{ steps.minimum-otel-core.outputs.tarball }}
         run: npm run test:observability-pack
 
   scaffold-e2e:
