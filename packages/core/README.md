@@ -109,6 +109,18 @@ Set `OPENAI_API_KEY` for this example. For other hosted or local models, see [Pr
 
 Use `planOnly` to inspect a generated task graph before execution, then `createPlanArtifact()` and `runFromPlan()` to replay it. `runConsensus()` adds a proposer→judge verification loop when one answer needs extra scrutiny.
 
+When an application must enforce named independent roles, declare that governance intent instead of relying on wording in the goal:
+
+```typescript
+const governed = await orchestrator.runTeam(team, 'Review the evidence and assess the risk.', {
+  governanceIntent: 'required',
+  requiredRoles: ['researcher', 'analyst'],
+  requiredOrder: ['researcher', 'analyst'],
+})
+```
+
+`required` and `preferred` both bypass automatic decomposition and the simple-goal short circuit. OMA creates one task per declared roster name, assigns it to that agent, and chains tasks in `requiredOrder`; dependency outputs are passed to downstream roles. The topology comes only from these structured fields, so equivalent goals in different languages use the same roles and order. `none` or an omitted `governanceIntent` preserves the existing automatic `runTeam()` behavior.
+
 ## Capabilities
 
 | Capability | What you get |

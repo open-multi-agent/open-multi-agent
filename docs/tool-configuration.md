@@ -2,6 +2,24 @@
 
 Agents can be configured with fine-grained tool access control using presets, allowlists, and denylists.
 
+## Declared governance roles in `runTeam()`
+
+Tool and credential boundaries are often tied to named agents. When a goal must actually pass through specific roster roles, declare the topology structurally on the `runTeam()` call:
+
+```typescript
+const result = await orchestrator.runTeam(team, 'Review this change before release.', {
+  governanceIntent: 'required',
+  requiredRoles: ['reviewer', 'security'],
+  requiredOrder: ['reviewer', 'security'],
+})
+```
+
+For both `required` and `preferred`, OMA skips coordinator decomposition and the simple-goal single-agent short circuit. It creates one task for every `requiredRoles` entry, keeps each task assigned to that roster agent, and uses `requiredOrder` to create dependency edges. Each task receives the original goal unchanged; the agent's `systemPrompt`, tools, and credentials define the role. Downstream tasks receive prerequisite outputs through dependency-scoped memory.
+
+The goal text is not inspected to choose this topology. The same declaration therefore produces the same roles and dependency order for English, Chinese, or any other language. Every `requiredRoles` name must exist in the team roster, and `requiredOrder`, when present, must be a permutation of those roles. Invalid declarations throw before any agent runs.
+
+Use `governanceIntent: 'none'` to opt into the existing automatic `runTeam()` route explicitly. Omitting `governanceIntent` also preserves the existing behavior, including simple-goal short circuit and coordinator-generated task planning.
+
 ## Built-in tools are opt-in (default-deny)
 
 Built-in tools — `bash` and the filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) — are **default-deny**. An agent receives a built-in tool only when it is granted explicitly via `tools` (an allowlist of names) or `toolPreset`. An agent that sets **neither** resolves to **zero** built-in tools:

@@ -129,6 +129,7 @@ import {
 } from './agent-config.js'
 import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
+import { buildGovernanceTaskSpecs } from './governance.js'
 import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults } from './consensus.js'
 import {
   createOnlineEvaluator,
@@ -453,6 +454,25 @@ export class OpenMultiAgent {
     options?: RunTeamOptions,
   ): Promise<TeamRunResult> {
     const pendingEvaluation = this.beginOnlineEvaluation(goal)
+    const agentConfigs = team.getAgents()
+    const governanceTaskSpecs = buildGovernanceTaskSpecs(goal, agentConfigs, options)
+    if (governanceTaskSpecs !== undefined) {
+      const queue = new TaskQueue()
+      loadSpecsIntoQueue(governanceTaskSpecs, agentConfigs, queue)
+      return this.executeExplicitTaskQueue(
+        team,
+        queue,
+        options,
+        goal,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        pendingEvaluation,
+      )
+    }
+
     const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
     const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
@@ -467,7 +487,6 @@ export class OpenMultiAgent {
       this.completeOnlineEvaluation(pendingEvaluation, completedResult)
       return completedResult
     }
-    const agentConfigs = team.getAgents()
     const coordinatorOverrides = options?.coordinator
 
     // ------------------------------------------------------------------
