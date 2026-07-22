@@ -88,6 +88,7 @@ import {
   type RestoreMetadataResolution,
 } from '../observability/identity.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
+import { buildExecutionReceipt } from '../observability/execution-receipt.js'
 import {
   createTraceRuntime,
   LEGACY_TRACE_METADATA_ONLY,
@@ -129,7 +130,11 @@ import {
 } from './agent-config.js'
 import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
-import { buildGovernanceTaskSpecs } from './governance.js'
+import {
+  buildGovernanceTaskSpecs,
+  evaluateGovernance,
+  type GovernanceDeclaration,
+} from './governance.js'
 import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults } from './consensus.js'
 import {
   createOnlineEvaluator,
@@ -456,6 +461,9 @@ export class OpenMultiAgent {
     const pendingEvaluation = this.beginOnlineEvaluation(goal)
     const agentConfigs = team.getAgents()
     const governanceTaskSpecs = buildGovernanceTaskSpecs(goal, agentConfigs, options)
+    if (options?.governanceIntent === 'required' && governanceTaskSpecs === undefined) {
+      throw new Error('Invariant violation: required runTeam governance must use an explicit task topology.')
+    }
     if (governanceTaskSpecs !== undefined) {
       const queue = new TaskQueue()
       loadSpecsIntoQueue(governanceTaskSpecs, agentConfigs, queue)
@@ -470,6 +478,7 @@ export class OpenMultiAgent {
         undefined,
         undefined,
         pendingEvaluation,
+        options,
       )
     }
 
@@ -499,7 +508,12 @@ export class OpenMultiAgent {
     // The best-matching agent is selected via keyword affinity scoring
     // (same algorithm as the `capability-match` scheduler strategy).
     // ------------------------------------------------------------------
-    if (!options?.planOnly && agentConfigs.length > 0 && isSimpleGoal(goal)) {
+    if (
+      options?.governanceIntent !== 'required'
+      && !options?.planOnly
+      && agentConfigs.length > 0
+      && isSimpleGoal(goal)
+    ) {
       const bestAgent = selectBestAgent(goal, agentConfigs)
 
       // Use buildAgent() + agent.run() directly instead of this.runAgent()
@@ -1475,6 +1489,7 @@ export class OpenMultiAgent {
     identity?: RunIdentity,
     restoreMetadata?: RestoreMetadataResolution,
     pendingEvaluation?: PendingOnlineEvaluation,
+    governanceDeclaration?: GovernanceDeclaration,
   ): Promise<TeamRunResult> {
     const newRunFacts = identity === undefined
       ? createRunFacts(identityOptionsForRun(options))
@@ -1605,6 +1620,10 @@ export class OpenMultiAgent {
     )
     const completedResult: TeamRunResult = {
       ...result,
+      governanceConclusion: evaluateGovernance(
+        governanceDeclaration,
+        buildExecutionReceipt(result),
+      ),
       ...(metadata !== undefined ? { metadata } : {}),
     }
     traceRuntime?.close({
@@ -1766,6 +1785,7 @@ export class OpenMultiAgent {
 
     return {
       success: status.code === 'ok',
+      governanceConclusion: 'not-applicable',
       identity,
       status,
       ...(errorInfo !== undefined ? { errorInfo } : {}),

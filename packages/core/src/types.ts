@@ -1170,6 +1170,9 @@ export interface RunTeamOptions extends RunTasksOptions {
   readonly verifyJudges?: readonly AgentConfig[]
 }
 
+/** Post-execution result of comparing required governance with execution facts. */
+export type GovernanceConclusion = 'satisfied' | 'unsatisfied' | 'not-applicable'
+
 /** Run-level aggregated metrics summary. */
 export interface RunMetrics {
   readonly totalTokens: TokenUsage
@@ -1186,6 +1189,14 @@ export interface RunMetrics {
 /** Aggregated result for a full team run. */
 export interface TeamRunResult extends RunOutcomeFields {
   readonly success: boolean
+  /**
+   * Post-execution governance verdict for this run.
+   *
+   * OMA-produced results always set this field. It remains optional on the
+   * interface so older serialized results and caller-created fixtures continue
+   * to type-check. `success` retains its existing runtime-error semantics.
+   */
+  readonly governanceConclusion?: GovernanceConclusion
   readonly goal?: string
   readonly tasks?: readonly TaskExecutionRecord[]
   /**
