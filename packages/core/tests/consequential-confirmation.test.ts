@@ -216,6 +216,52 @@ describe('undeclared consequential run fallback', () => {
     expect(result.confirmationRequired).toBeUndefined()
   })
 
+  it("keeps consequential confirmation enabled for mode 'single'", async () => {
+    const { tool, execute } = mockTool('rotate_secret', true)
+    const orchestrator = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      requireConsequentialConfirmation: true,
+    })
+    const team = orchestrator.createTeam('explicit-single-mode-team', {
+      name: 'explicit-single-mode-team',
+      agents: [agent(tool)],
+    })
+
+    const result = await orchestrator.runTeam(team, 'Rotate the secret.', {
+      mode: 'single',
+    })
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.confirmationRequired).toBe(true)
+    expect(result.flags).toEqual(['consequential-no-independence'])
+  })
+
+  it("keeps consequential confirmation enabled for mode 'team'", async () => {
+    const { tool, execute } = mockTool('rotate_secret', true)
+    const orchestrator = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      requireConsequentialConfirmation: true,
+    })
+    const team = orchestrator.createTeam('explicit-team-mode-team', {
+      name: 'explicit-team-mode-team',
+      agents: [agent(tool)],
+    })
+    const plan = '```json\n[{"title":"Rotate","description":"Rotate it","assignee":"operator"}]\n```'
+
+    const result = await orchestrator.runTeam(team, 'Rotate the secret.', {
+      mode: 'team',
+      coordinator: {
+        adapter: scriptedAdapter(text(plan), text('synthesized')),
+      },
+    })
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.confirmationRequired).toBe(true)
+    expect(result.flags).toEqual(['consequential-no-independence'])
+  })
+
   it('reuses an approved runTeam plan gate when no per-call gate is configured', async () => {
     const { tool, execute } = mockTool('rotate_secret', true)
     const onPlanReady = vi.fn(async () => true)

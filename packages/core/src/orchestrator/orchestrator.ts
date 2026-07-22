@@ -115,7 +115,7 @@ import {
 } from './run-context.js'
 import {
   computeRunMetrics,
-  resolveTokenBudget,
+  resolveBudgetCeiling,
   buildCostEstimateContext,
   applyBudgetAccounting,
   emitBudgetExceeded,
@@ -132,7 +132,7 @@ import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
 import {
   buildGovernanceTaskSpecs,
-  evaluateGovernance,
+  finalizeGovernanceRun,
   type GovernanceDeclaration,
 } from './governance.js'
 import {
@@ -174,6 +174,29 @@ export { computeRetryDelay, executeWithRetry } from './retry.js'
 interface PendingOnlineEvaluation {
   readonly input: unknown
   readonly startedAtMs: number
+}
+
+interface EffectiveRunBudgets {
+  readonly maxTokenBudget?: number
+  readonly maxCostBudget?: number
+}
+
+function resolveRunBudgets(
+  config: Pick<OrchestratorConfig, 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost'>,
+  options?: Pick<RunTasksOptions, 'maxTokenBudget' | 'maxCostBudget'>,
+): EffectiveRunBudgets {
+  const maxTokenBudget = resolveBudgetCeiling(
+    options?.maxTokenBudget,
+    config.maxTokenBudget,
+  )
+  const maxCostBudget = resolveBudgetCeiling(
+    options?.maxCostBudget,
+    config.maxCostBudget,
+  )
+  if (maxCostBudget !== undefined && config.estimateCost === undefined) {
+    throw new Error('maxCostBudget requires estimateCost so cost caps cannot be silently ignored.')
+  }
+  return { maxTokenBudget, maxCostBudget }
 }
 
 /**
@@ -332,7 +355,7 @@ export class OpenMultiAgent {
     const pendingEvaluation = this.beginOnlineEvaluation(prompt)
     const { identity, metadata } = createRunFacts(options)
     const traceRuntime = this.startTrace(identity, metadata)
-    const effectiveBudget = resolveTokenBudget(config.maxTokenBudget, this.config.maxTokenBudget)
+    const effectiveBudget = resolveBudgetCeiling(config.maxTokenBudget, this.config.maxTokenBudget)
     const effective: AgentConfig = applyDefaultToolPreset({
       ...applyAgentDefaults(config, this.config),
       maxTokenBudget: effectiveBudget,
@@ -472,8 +495,27 @@ export class OpenMultiAgent {
   ): Promise<TeamRunResult> {
     const pendingEvaluation = this.beginOnlineEvaluation(goal)
     const agentConfigs = team.getAgents()
-    const governanceTaskSpecs = buildGovernanceTaskSpecs(goal, agentConfigs, options)
-    if (options?.governanceIntent === 'required' && governanceTaskSpecs === undefined) {
+    const budgets = resolveRunBudgets(this.config, options)
+    const explicitMode = options?.mode
+    if (explicitMode === 'single' && options?.planOnly) {
+      throw new Error("runTeam mode 'single' cannot be combined with planOnly.")
+    }
+    const preferredBudgetDegraded = explicitMode === undefined
+      && !options?.planOnly
+      && options?.governanceIntent === 'preferred'
+      && options.preferredUnderBudget === 'degrade'
+      && (budgets.maxTokenBudget !== undefined || budgets.maxCostBudget !== undefined)
+    // Always validate declared role names/order, even when an explicit mode
+    // selects a different execution topology.
+    const declaredGovernanceTaskSpecs = buildGovernanceTaskSpecs(goal, agentConfigs, options)
+    const governanceTaskSpecs = explicitMode === undefined && !preferredBudgetDegraded
+      ? declaredGovernanceTaskSpecs
+      : undefined
+    if (
+      explicitMode === undefined
+      && options?.governanceIntent === 'required'
+      && declaredGovernanceTaskSpecs === undefined
+    ) {
       throw new Error('Invariant violation: required runTeam governance must use an explicit task topology.')
     }
     if (governanceTaskSpecs !== undefined) {
@@ -507,10 +549,23 @@ export class OpenMultiAgent {
     const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
     const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
-      const completedResult = finalizeConsequentialRun<TeamRunResult>({
-        ...result,
-        ...(metadata !== undefined ? { metadata } : {}),
-      }, consequentialUndeclared, confirmationState)
+      const governedResult = finalizeGovernanceRun(
+        {
+          ...result,
+          ...(metadata !== undefined ? { metadata } : {}),
+        },
+        options,
+        buildExecutionReceipt(result),
+        {
+          modeOverride: explicitMode !== undefined,
+          preferredBudgetDegraded,
+        },
+      )
+      const completedResult = finalizeConsequentialRun<TeamRunResult>(
+        governedResult,
+        consequentialUndeclared,
+        confirmationState,
+      )
       traceRuntime?.close({
         status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
         ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
@@ -531,17 +586,23 @@ export class OpenMultiAgent {
     // (same algorithm as the `capability-match` scheduler strategy).
     // ------------------------------------------------------------------
     if (
-      options?.governanceIntent !== 'required'
-      && !options?.planOnly
+      !options?.planOnly
       && agentConfigs.length > 0
-      && isSimpleGoal(goal)
+      && (
+        explicitMode === 'single'
+        || preferredBudgetDegraded
+        || (explicitMode === undefined && isSimpleGoal(goal))
+      )
     ) {
       const bestAgent = selectBestAgent(goal, agentConfigs)
 
       // Use buildAgent() + agent.run() directly instead of this.runAgent()
       // to avoid duplicate progress events and double completedTaskCount.
       // Events are emitted here; counting is handled by buildTeamRunResult().
-      const effectiveBudget = resolveTokenBudget(bestAgent.maxTokenBudget, this.config.maxTokenBudget)
+      const effectiveBudget = resolveBudgetCeiling(
+        bestAgent.maxTokenBudget,
+        budgets.maxTokenBudget,
+      )
       const effective: AgentConfig = withModelRoute(applyDefaultToolPreset({
         ...applyAgentDefaults(bestAgent, this.config),
         maxTokenBudget: effectiveBudget,
@@ -603,7 +664,7 @@ export class OpenMultiAgent {
           currentUsage: ZERO_USAGE,
           currentCost: 0,
           usage: result.tokenUsage,
-          maxCostBudget: this.config.maxCostBudget,
+          maxCostBudget: budgets.maxCostBudget,
           estimateCost: this.config.estimateCost,
           costContext: buildCostEstimateContext({
             agentName: bestAgent.name,
@@ -714,8 +775,7 @@ export class OpenMultiAgent {
     const decompositionResult = await coordinatorAgent.run(decompositionPrompt, decompTraceOptions)
     const agentResults = new Map<string, AgentRunResult>()
     agentResults.set('coordinator:decompose', decompositionResult)
-    const maxTokenBudget = this.config.maxTokenBudget
-    const maxCostBudget = this.config.maxCostBudget
+    const { maxTokenBudget, maxCostBudget } = budgets
     const decompositionBudget = applyBudgetAccounting({
       currentUsage: ZERO_USAGE,
       currentCost: 0,
@@ -1554,6 +1614,7 @@ export class OpenMultiAgent {
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler('dependency-first')
     scheduler.autoAssign(queue, agentConfigs)
+    const budgets = resolveRunBudgets(this.config, options)
 
     const pool = this.buildPool(agentConfigs)
     const agentResults = initialAgentResults ?? new Map<string, AgentRunResult>()
@@ -1578,8 +1639,8 @@ export class OpenMultiAgent {
       abortSignal: options?.abortSignal,
       cumulativeUsage: ZERO_USAGE,
       cumulativeCost: 0,
-      maxTokenBudget: this.config.maxTokenBudget,
-      maxCostBudget: this.config.maxCostBudget,
+      maxTokenBudget: budgets.maxTokenBudget,
+      maxCostBudget: budgets.maxCostBudget,
       estimateCost: this.config.estimateCost,
       budgetExceededTriggered: false,
       budgetExceededReason: undefined,
@@ -1672,14 +1733,14 @@ export class OpenMultiAgent {
       ctx.outcomeStatus,
       ctx.outcomeErrorInfo,
     )
-    const completedResult: TeamRunResult = {
-      ...result,
-      governanceConclusion: evaluateGovernance(
-        governanceDeclaration,
-        buildExecutionReceipt(result),
-      ),
-      ...(metadata !== undefined ? { metadata } : {}),
-    }
+    const completedResult = finalizeGovernanceRun(
+      {
+        ...result,
+        ...(metadata !== undefined ? { metadata } : {}),
+      },
+      governanceDeclaration,
+      buildExecutionReceipt(result),
+    )
     traceRuntime?.close({
       status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
       ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),

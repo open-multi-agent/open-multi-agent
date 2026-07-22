@@ -1,16 +1,31 @@
 import type {
   AgentConfig,
   GovernanceConclusion,
+  GovernanceUnsatisfiedReason,
+  RunFlag,
   RunTaskSpec,
   RunTeamOptions,
+  TeamRunResult,
 } from '../types.js'
 import type { ExecutionReceipt } from '../observability/execution-receipt.js'
+
+export const GOVERNANCE_OVERRIDDEN_FLAG =
+  'governance-overridden' as const satisfies RunFlag
+export const REVIEW_SKIPPED_DUE_TO_BUDGET_FLAG =
+  'review-skipped-due-to-budget' as const satisfies RunFlag
 
 /** The structured governance fields accepted by {@link RunTeamOptions}. */
 export type GovernanceDeclaration = Pick<
   RunTeamOptions,
   'governanceIntent' | 'requiredRoles' | 'requiredOrder'
 >
+
+export interface GovernanceRunResolution {
+  /** True when an explicit `mode` displaced the declared governance topology. */
+  readonly modeOverride?: boolean
+  /** True when the application selected the preferred-under-budget Single path. */
+  readonly preferredBudgetDegraded?: boolean
+}
 
 /**
  * Compare required governance with an execution receipt.
@@ -44,6 +59,45 @@ export function evaluateGovernance(
   }
 
   return 'satisfied'
+}
+
+/**
+ * Attach the I3 conclusion plus additive I5-style conflict disclosures.
+ * Runtime success remains untouched; callers must continue to read the
+ * governance fields independently.
+ */
+export function finalizeGovernanceRun(
+  result: TeamRunResult,
+  declaration: GovernanceDeclaration | undefined,
+  receipt: ExecutionReceipt,
+  resolution: GovernanceRunResolution = {},
+): TeamRunResult {
+  const governanceConclusion = evaluateGovernance(declaration, receipt)
+  let governanceReason: GovernanceUnsatisfiedReason | undefined
+  const flags = new Set(result.flags ?? [])
+
+  if (
+    declaration?.governanceIntent === 'required'
+    && governanceConclusion === 'unsatisfied'
+  ) {
+    if (resolution.modeOverride) {
+      governanceReason = 'overridden'
+      flags.add(GOVERNANCE_OVERRIDDEN_FLAG)
+    } else if (result.status?.code === 'budget_exhausted') {
+      governanceReason = 'budget'
+    }
+  }
+
+  if (resolution.preferredBudgetDegraded) {
+    flags.add(REVIEW_SKIPPED_DUE_TO_BUDGET_FLAG)
+  }
+
+  return {
+    ...result,
+    governanceConclusion,
+    ...(governanceReason !== undefined ? { governanceReason } : {}),
+    ...(flags.size > 0 ? { flags: [...flags] } : {}),
+  }
 }
 
 /**

@@ -276,7 +276,10 @@ export interface RunOutcomeFields {
 }
 
 /** Machine-readable warnings that describe how a run was governed. */
-export type RunFlag = 'consequential-no-independence'
+export type RunFlag =
+  | 'consequential-no-independence'
+  | 'governance-overridden'
+  | 'review-skipped-due-to-budget'
 
 /** Context passed to user-supplied cost estimators. */
 export interface CostEstimateContext {
@@ -1098,6 +1101,18 @@ export interface RunTaskSpec {
 export interface RunTasksOptions extends RunIdentityOptions {
   readonly abortSignal?: AbortSignal
   /**
+   * Optional per-run token ceiling. When an orchestrator-level
+   * {@link OrchestratorConfig.maxTokenBudget} is also set, the lower ceiling
+   * wins. Enforcement reuses the existing turn/task-boundary accounting.
+   */
+  readonly maxTokenBudget?: number
+  /**
+   * Optional per-run cost ceiling in the application-defined cost unit. When
+   * an orchestrator-level {@link OrchestratorConfig.maxCostBudget} is also set,
+   * the lower ceiling wins. Requires {@link OrchestratorConfig.estimateCost}.
+   */
+  readonly maxCostBudget?: number
+  /**
    * Opt-in durable task checkpointing. When enabled, the orchestrator writes a
    * checkpoint after each successfully completed task using the configured
    * {@link MemoryStore}. Defaults to off.
@@ -1121,6 +1136,21 @@ export interface RunTasksOptions extends RunIdentityOptions {
 export interface RunTeamOptions extends RunTasksOptions {
   readonly coordinator?: CoordinatorConfig
   /**
+   * Application-selected execution mode for this invocation.
+   *
+   * `'single'` always uses the existing best-agent path. `'team'` forces the
+   * existing coordinator-generated team path and bypasses the simple-goal
+   * short circuit.
+   *
+   * This application choice takes precedence over {@link governanceIntent}.
+   * If the selected mode fails a declared `required` floor, execution is kept
+   * but the result is disclosed as governance `unsatisfied` / `overridden`.
+   * Selecting a mode does not count as declaring governance intent, so
+   * consequential confirmation still applies when `governanceIntent` is
+   * omitted.
+   */
+  readonly mode?: 'single' | 'team'
+  /**
    * Optional structured governance signal for this goal.
    *
    * `'required'` and `'preferred'` both bypass coordinator decomposition and
@@ -1142,6 +1172,16 @@ export interface RunTeamOptions extends RunTasksOptions {
    * parallel.
    */
   readonly requiredOrder?: readonly string[]
+  /**
+   * Application policy for a `preferred` declaration when a token or cost
+   * ceiling applies to the run.
+   *
+   * `'attempt'` (the default) preserves the existing declared-role topology.
+   * `'degrade'` chooses the Single path up front and attaches the
+   * `review-skipped-due-to-budget` disclosure flag. It does not predict model
+   * cost or attempt a pre-run fit estimate.
+   */
+  readonly preferredUnderBudget?: 'attempt' | 'degrade'
   /**
    * When true, the coordinator decomposes the goal but no task agents run.
    * The returned {@link TeamRunResult} has `planOnly: true`, `success: true`,
@@ -1192,6 +1232,9 @@ export interface RunTeamOptions extends RunTasksOptions {
 /** Post-execution result of comparing required governance with execution facts. */
 export type GovernanceConclusion = 'satisfied' | 'unsatisfied' | 'not-applicable'
 
+/** Known application/budget causes for an unsatisfied governance conclusion. */
+export type GovernanceUnsatisfiedReason = 'overridden' | 'budget'
+
 /** Run-level aggregated metrics summary. */
 export interface RunMetrics {
   readonly totalTokens: TokenUsage
@@ -1216,6 +1259,12 @@ export interface TeamRunResult extends RunOutcomeFields {
    * to type-check. `success` retains its existing runtime-error semantics.
    */
   readonly governanceConclusion?: GovernanceConclusion
+  /**
+   * Machine-readable cause when a required governance floor is unsatisfied by
+   * an explicit application override or by budget exhaustion. Omitted for a
+   * satisfied/not-applicable conclusion and for other execution failures.
+   */
+  readonly governanceReason?: GovernanceUnsatisfiedReason
   readonly goal?: string
   readonly tasks?: readonly TaskExecutionRecord[]
   /**

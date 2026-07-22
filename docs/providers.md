@@ -56,6 +56,47 @@ No bundled shortcut is needed when a server speaks OpenAI Chat Completions. Use 
 
 Other services can be connected the same way if they implement the OpenAI Chat Completions API, but they are not listed as verified providers here. For services where the key is not `OPENAI_API_KEY`, pass it explicitly via `apiKey`; otherwise the `openai` adapter falls back to `OPENAI_API_KEY`.
 
+## Budget ceilings and governed runs
+
+Token accounting is provider-independent. Cost accounting remains
+application-owned because provider prices, cached-token rules, regions, and
+contract rates vary. Configure `estimateCost` once, then place a ceiling on the
+orchestrator or on an individual team run:
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  maxCostBudget: 1,
+  estimateCost: (usage, context) => priceTable[context.model](usage),
+})
+
+const result = await orchestrator.runTeam(team, goal, {
+  governanceIntent: 'required',
+  requiredRoles: ['reviewer', 'security'],
+  maxCostBudget: 0.25,
+})
+```
+
+When both scopes set a ceiling, the lower value wins. The same applies to
+`maxTokenBudget`. A required run that exhausts the effective ceiling before its
+required execution facts are complete reports
+`governanceConclusion: 'unsatisfied'` and `governanceReason: 'budget'`; it is
+not presented as a clean governance success. An application `mode`
+wins over the required topology, but an unmet floor is disclosed as
+`unsatisfied` / `overridden` with the `governance-overridden` flag. Automatic
+routing has the lowest priority.
+
+For `governanceIntent: 'preferred'`, set
+`preferredUnderBudget: 'degrade'` to choose Single whenever an effective
+ceiling applies. The result carries `review-skipped-due-to-budget`, while the
+soft preference remains `not-applicable` to the required-governance verdict.
+The default is `attempt`, preserving existing behavior.
+
+These controls do **not** run a preflight price or latency estimator.
+`estimateCost` converts usage after each provider response, and Token/cost
+checks still happen at existing turn/task boundaries, so a run can overshoot by
+one model turn. `preferredUnderBudget: 'degrade'` is an application-declared
+policy choice, not a prediction that a particular plan would exceed budget.
+
 ## Vercel AI SDK (optional)
 
 The AI SDK bridge routes an agent through [any AI SDK provider](https://ai-sdk.dev/providers) instead of the built-in `provider` factory. Install the optional peers with `npm i ai @ai-sdk/<provider>`; the peer range accepts AI SDK 5, 6, and 7, and AI SDK 7 requires Node.js >= 22.

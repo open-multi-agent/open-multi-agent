@@ -77,7 +77,9 @@ function readTokenUsage(value: unknown): ExecutionReceipt['totalTokens'] {
 function readFlags(value: unknown): readonly RunFlag[] | undefined {
   if (!Array.isArray(value)) return undefined
   const flags = value.filter((flag): flag is RunFlag =>
-    flag === 'consequential-no-independence')
+    flag === 'consequential-no-independence'
+    || flag === 'governance-overridden'
+    || flag === 'review-skipped-due-to-budget')
   return flags.length > 0 ? [...new Set(flags)] : undefined
 }
 

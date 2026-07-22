@@ -55,7 +55,11 @@
 // ---------------------------------------------------------------------------
 
 export { OpenMultiAgent, executeWithRetry, computeRetryDelay } from './orchestrator/orchestrator.js'
-export { evaluateGovernance } from './orchestrator/governance.js'
+export {
+  evaluateGovernance,
+  GOVERNANCE_OVERRIDDEN_FLAG,
+  REVIEW_SKIPPED_DUE_TO_BUDGET_FLAG,
+} from './orchestrator/governance.js'
 export type { GovernanceDeclaration } from './orchestrator/governance.js'
 export { CONSEQUENTIAL_NO_INDEPENDENCE_FLAG } from './orchestrator/consequential.js'
 export { Scheduler } from './orchestrator/scheduler.js'
@@ -287,6 +291,7 @@ export type {
   TeamConfig,
   TeamRunResult,
   GovernanceConclusion,
+  GovernanceUnsatisfiedReason,
   RunMetrics,
   RunTeamOptions,
   RunTasksOptions,
