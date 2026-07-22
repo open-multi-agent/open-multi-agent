@@ -158,6 +158,7 @@ export {
   TRACE_STORE_SCHEMA_MAJOR,
   TraceStoreError,
   TraceStoreExporter,
+  buildExecutionReceipt,
   emptyTraceSinkStats,
   materializeRun,
 } from './observability/index.js'
@@ -168,6 +169,8 @@ export type {
   DiagnosticMode,
   DiagnosticOptions,
   ExportResult,
+  ExecutionReceipt,
+  ExecutionReceiptDependencyEdge,
   FlushOptions,
   FlushResult,
   GetRunOptions,
