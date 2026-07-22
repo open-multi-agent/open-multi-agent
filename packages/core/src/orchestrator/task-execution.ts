@@ -41,6 +41,7 @@ import { recordRunUsage, buildCostEstimateContext } from './budget.js'
 import {
   routeMatches,
   withModelRoute,
+  routeChain,
   applyAgentDefaults,
   applyDefaultToolPreset,
   buildAgent,
@@ -405,13 +406,20 @@ export async function executeQueue(
           task,
           leaf: ctx.taskLeafById.get(task.id),
         })
-        const workerEffectiveConfig = withModelRoute(applyDefaultToolPreset(
+        const workerBaseConfig = applyDefaultToolPreset(
           applyAgentDefaults(agentConfig, config),
           config.defaultToolPreset,
-        ), workerRoute)
-        const routedAgent = workerRoute
-          ? buildAgent(workerEffectiveConfig, { includeDelegateTool: true })
-          : undefined
+        )
+        const routedConfigs = routeChain(workerRoute).map(route =>
+          withModelRoute(workerBaseConfig, route),
+        )
+        const workerEffectiveConfig = routedConfigs[0] ?? workerBaseConfig
+        const routedAgents = routedConfigs.map(route =>
+          buildAgent(route, { includeDelegateTool: true }),
+        )
+        let routeIndex = 0
+        let lastFailureWasRetryableProviderError = false
+        const attemptUsages: Array<{ readonly usage: TokenUsage; readonly config: AgentConfig }> = []
         const streamCallback = config.onAgentStream
           ? (event: StreamEvent) => {
               const streamMs = Date.now()
@@ -440,21 +448,50 @@ export async function executeQueue(
         let retryCount = 0
 
         const result = await executeWithRetry(
-          (attempt) => routedAgent
-            ? pool.runEphemeral(
-                routedAgent,
-                prompt,
-                { ...runOptions, traceAgentAttempt: attempt },
-                streamCallback,
-              )
-            : pool.run(
-                assignee,
-                prompt,
-                { ...runOptions, traceAgentAttempt: attempt },
-                streamCallback,
-              ),
+          async (attempt) => {
+            const activeRouteIndex = Math.min(routeIndex, routedAgents.length - 1)
+            const routedAgent = routedAgents.length > 0
+              ? routedAgents[activeRouteIndex]
+              : undefined
+            const activeConfig = routedConfigs.length > 0
+              ? routedConfigs[activeRouteIndex]!
+              : workerBaseConfig
+            try {
+              const attemptResult = routedAgent
+                ? await pool.runEphemeral(
+                    routedAgent,
+                    prompt,
+                    { ...runOptions, traceAgentAttempt: attempt },
+                    streamCallback,
+                  )
+                : await pool.run(
+                    assignee,
+                    prompt,
+                    { ...runOptions, traceAgentAttempt: attempt },
+                    streamCallback,
+                  )
+              attemptUsages.push({ usage: attemptResult.tokenUsage, config: activeConfig })
+              lastFailureWasRetryableProviderError =
+                !attemptResult.success
+                && attemptResult.errorInfo?.kind === 'provider'
+                && attemptResult.errorInfo.retryable === true
+              return attemptResult
+            } catch (error) {
+              // A thrown value has no result-level source classification. Keep
+              // the current route rather than failing over on an unconfirmed
+              // error such as a hook or framework callback failure.
+              lastFailureWasRetryableProviderError = false
+              throw error
+            }
+          },
           task,
           (retryData) => {
+            if (
+              lastFailureWasRetryableProviderError
+              && routeIndex < routedAgents.length - 1
+            ) {
+              routeIndex++
+            }
             retryCount++
             taskSpan?.event('retry_scheduled', {
               'oma.retry.attempt': retryData.attempt,
@@ -499,15 +536,22 @@ export async function executeQueue(
           retries: retryCount,
         })
         try {
-          const budgetError = recordRunUsage(ctx, result.tokenUsage, buildCostEstimateContext({
-            agentName: assignee,
-            model: workerEffectiveConfig.model ?? config.defaultModel ?? DEFAULT_MODEL,
-            provider: workerEffectiveConfig.provider,
-            phase: 'worker',
-            taskId: task.id,
-          }), assignee, task.id)
-          if (budgetError) {
-            taskSpan?.event('budget_exhausted', {})
+          // Keep the existing aggregate estimate for a single route. A fallback
+          // chain needs per-attempt contexts so each provider is priced correctly.
+          const costAttempts = routedConfigs.length > 1
+            ? attemptUsages
+            : [{ usage: result.tokenUsage, config: workerEffectiveConfig }]
+          for (const attemptUsage of costAttempts) {
+            const budgetError = recordRunUsage(ctx, attemptUsage.usage, buildCostEstimateContext({
+              agentName: assignee,
+              model: attemptUsage.config.model ?? config.defaultModel ?? DEFAULT_MODEL,
+              provider: attemptUsage.config.provider,
+              phase: 'worker',
+              taskId: task.id,
+            }), assignee, task.id)
+            if (budgetError) {
+              taskSpan?.event('budget_exhausted', {})
+            }
           }
         } catch (error) {
           const message = errorMessage(error)

@@ -145,6 +145,11 @@ export function withModelRoute(config: AgentConfig, route: ModelRouteConfig | un
   }
 }
 
+/** Return a route followed by its ordered fallback entries. */
+export function routeChain(route: ModelRouteConfig | undefined): readonly ModelRouteConfig[] {
+  return route ? [route, ...(route.fallback ?? [])] : []
+}
+
 export function isLeafTask(task: Task, tasks: readonly Task[]): boolean {
   for (const candidate of tasks) {
     if (candidate.dependsOn?.includes(task.id)) return false

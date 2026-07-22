@@ -1050,6 +1050,13 @@ export interface ModelRouteConfig {
   readonly apiKey?: string
   /** AWS region selected for Bedrock routes. */
   readonly region?: string
+  /**
+   * Ordered fallback routes to try on retryable provider errors.
+   *
+   * The first entry becomes active on the next retry after the primary route
+   * fails; later retries advance through the list in order. Empty by default.
+   */
+  readonly fallback?: readonly ModelRouteConfig[]
 }
 
 /** Deterministic, predicate-free route selector for a model routing rule. */

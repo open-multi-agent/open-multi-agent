@@ -6,6 +6,7 @@ import { ToolExecutor } from '../src/tool/executor.js'
 import type {
   AgentConfig,
   AgentRunResult,
+  CostEstimateContext,
   LLMAdapter,
   LLMChatOptions,
   LLMMessage,
@@ -81,9 +82,12 @@ function extractUserPrompt(messages: LLMMessage[]): string {
 let mockAdapterResponses: string[] = []
 let capturedChatOptions: LLMChatOptions[] = []
 let capturedPrompts: string[] = []
+let capturedAdapterProviders: string[] = []
+let mockAdapterHandler: ((options: LLMChatOptions) => string | Error) | undefined
 
 vi.mock('../src/llm/adapter.js', () => ({
-  createAdapter: async () => {
+  createAdapter: async (provider: string) => {
+    capturedAdapterProviders.push(provider)
     let callIndex = 0
     return {
       name: 'mock',
@@ -95,7 +99,9 @@ vi.mock('../src/llm/adapter.js', () => ({
           .map((b) => b.text)
           .join('\n')
         capturedPrompts.push(prompt)
-        const text = mockAdapterResponses[callIndex] ?? 'default mock response'
+        const configuredResponse = mockAdapterHandler?.(options)
+        if (configuredResponse instanceof Error) throw configuredResponse
+        const text = configuredResponse ?? mockAdapterResponses[callIndex] ?? 'default mock response'
         callIndex++
         return {
           id: `resp-${callIndex}`,
@@ -142,6 +148,8 @@ describe('OpenMultiAgent', () => {
     mockAdapterResponses = []
     capturedChatOptions = []
     capturedPrompts = []
+    capturedAdapterProviders = []
+    mockAdapterHandler = undefined
   })
 
   describe('createTeam', () => {
@@ -427,6 +435,312 @@ describe('OpenMultiAgent', () => {
 
       expect(capturedChatOptions[0]?.model).toBe('default-worker-model')
       expect(capturedChatOptions[1]?.model).toBe('premium-review-model')
+    })
+
+    it('fails over to the next route after a retryable provider error', async () => {
+      mockAdapterHandler = (options) => {
+        if (options.model === 'primary-model') {
+          return Object.assign(new Error('rate limited'), { status: 429 })
+        }
+        return 'backup output'
+      }
+
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'Fallback',
+          description: 'Recover from a provider outage',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              provider: 'anthropic',
+              fallback: [{ model: 'backup-model', provider: 'openai' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.agentResults.get('worker-a')?.output).toBe('backup output')
+      expect(capturedChatOptions.map(options => options.model)).toEqual([
+        'primary-model',
+        'backup-model',
+      ])
+      expect(capturedAdapterProviders).toEqual(['anthropic', 'openai'])
+    })
+
+    it('prices each fallback attempt with the route that handled it', async () => {
+      const costContexts: CostEstimateContext[] = []
+      mockAdapterHandler = (options) => {
+        if (options.model === 'primary-model') {
+          return Object.assign(new Error('rate limited'), { status: 429 })
+        }
+        return 'backup output'
+      }
+
+      const oma = new OpenMultiAgent({
+        defaultModel: 'default-model',
+        maxCostBudget: 100,
+        estimateCost: (_usage, context) => {
+          costContexts.push(context)
+          return 1
+        },
+      })
+      const team = oma.createTeam('t', teamCfg([
+        agentConfig('worker-a'),
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'Fallback cost accounting',
+          description: 'Price each attempt with its active route',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              provider: 'anthropic',
+              fallback: [{ model: 'backup-model', provider: 'openai' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(costContexts.map(context => context.model)).toEqual([
+        'primary-model',
+        'backup-model',
+      ])
+      expect(costContexts.map(context => context.provider)).toEqual([
+        'anthropic',
+        'openai',
+      ])
+    })
+
+    it('advances through ordered fallbacks and retries the final route after exhaustion', async () => {
+      let finalRouteAttempts = 0
+      mockAdapterHandler = (options) => {
+        if (options.model === 'primary-model' || options.model === 'first-backup-model') {
+          return Object.assign(new Error('provider unavailable'), { status: 503 })
+        }
+        finalRouteAttempts++
+        return finalRouteAttempts === 1
+          ? Object.assign(new Error('rate limited'), { status: 429 })
+          : 'final backup output'
+      }
+
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'Multi-hop fallback',
+          description: 'Use each backup route in order',
+          assignee: 'worker-a',
+          maxRetries: 3,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              fallback: [
+                { model: 'first-backup-model' },
+                { model: 'final-backup-model' },
+              ],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(capturedChatOptions.map(options => options.model)).toEqual([
+        'primary-model',
+        'first-backup-model',
+        'final-backup-model',
+        'final-backup-model',
+      ])
+    })
+
+    it('does not fail over after a terminal provider error', async () => {
+      mockAdapterHandler = (options) => {
+        if (options.model === 'primary-model') {
+          return Object.assign(new Error('unauthorized'), { status: 401 })
+        }
+        return 'backup output'
+      }
+
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'Terminal error',
+          description: 'Do not retry invalid credentials',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              fallback: [{ model: 'backup-model' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(false)
+      expect(capturedChatOptions.map(options => options.model)).toEqual(['primary-model'])
+    })
+
+    it('retries the current route when a task failure has no provider error', async () => {
+      let afterRunCalls = 0
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        {
+          ...agentConfig('worker-a'),
+          afterRun: (result) => {
+            afterRunCalls++
+            return afterRunCalls === 1 ? { ...result, success: false } : result
+          },
+        },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'Unclassified failure',
+          description: 'Retry without changing the active route',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              fallback: [{ model: 'backup-model' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(capturedChatOptions.map(options => options.model)).toEqual([
+        'primary-model',
+        'primary-model',
+      ])
+    })
+
+    it('does not fail over after a retryable-looking beforeRun hook error', async () => {
+      const hookModels: string[] = []
+      let beforeRunCalls = 0
+      const hookError = Object.assign(new Error('hook rate limited'), { status: 429 })
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        {
+          ...agentConfig('worker-a'),
+          beforeRun: (context) => {
+            hookModels.push(context.agent.model ?? '')
+            beforeRunCalls++
+            if (beforeRunCalls === 1) throw hookError
+            return context
+          },
+        },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'beforeRun hook error',
+          description: 'Retry without changing the active route',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              fallback: [{ model: 'backup-model' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(hookModels).toEqual(['primary-model', 'primary-model'])
+      expect(capturedChatOptions.map(options => options.model)).toEqual(['primary-model'])
+    })
+
+    it('does not fail over after a retryable-looking afterRun hook error', async () => {
+      let afterRunCalls = 0
+      const hookError = Object.assign(new Error('hook rate limited'), { status: 429 })
+      const oma = new OpenMultiAgent({ defaultModel: 'default-model' })
+      const team = oma.createTeam('t', teamCfg([
+        {
+          ...agentConfig('worker-a'),
+          afterRun: (result) => {
+            afterRunCalls++
+            if (afterRunCalls === 1) throw hookError
+            return result
+          },
+        },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        {
+          title: 'afterRun hook error',
+          description: 'Retry without changing the active route',
+          assignee: 'worker-a',
+          maxRetries: 1,
+          retryDelayMs: 0,
+        },
+      ], {
+        modelRouting: {
+          rules: [{
+            match: { phase: 'worker' },
+            route: {
+              model: 'primary-model',
+              fallback: [{ model: 'backup-model' }],
+            },
+          }],
+        },
+      })
+
+      expect(result.success).toBe(true)
+      expect(capturedChatOptions.map(options => options.model)).toEqual([
+        'primary-model',
+        'primary-model',
+      ])
     })
   })
 
