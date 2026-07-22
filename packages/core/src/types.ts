@@ -265,7 +265,18 @@ export interface RunOutcomeFields {
   readonly errorInfo?: StructuredTraceError
   /** Echo of validated metadata; present at runtime whenever the caller provided it. */
   readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
+  /** Additive, machine-readable execution warnings attached by the runtime. */
+  readonly flags?: readonly RunFlag[]
+  /**
+   * True when an opt-in consequential-tool guard stopped a tool call because
+   * no application approval gate was available. Re-run with an `onToolCall`
+   * gate that returns `allow` to approve the call, or `deny` to reject it.
+   */
+  readonly confirmationRequired?: boolean
 }
+
+/** Machine-readable warnings that describe how a run was governed. */
+export type RunFlag = 'consequential-no-independence'
 
 /** Context passed to user-supplied cost estimators. */
 export interface CostEstimateContext {
@@ -395,6 +406,8 @@ export interface ToolCallContext {
   readonly toolName: string
   readonly input: Record<string, unknown>
   readonly agentName: string
+  /** True when the registered tool definition declares real side effects. */
+  readonly consequential?: boolean
   readonly runId?: string
   readonly taskId?: string
 }
@@ -485,6 +498,12 @@ export interface ToolDefinition<TInput = Record<string, unknown>> {
   readonly name: string
   readonly description: string
   readonly inputSchema: ZodSchema<TInput>
+  /**
+   * Marks a tool whose grant permits real side effects. Omitted/false means
+   * benign for undeclared-run fallback classification. The runtime never
+   * infers this value from prompts, tool arguments, or keywords.
+   */
+  readonly consequential?: boolean
   /**
    * Optional runtime validator for `ToolResult.data` (always a string).
    *
@@ -1465,6 +1484,16 @@ export interface OrchestratorConfig {
    * or security boundary.
    */
   readonly onToolCall?: ToolCallGate
+  /**
+   * Opt in to confirmation for consequential tool calls in `runAgent()` and
+   * automatic `runTeam()` runs that omit `governanceIntent`.
+   *
+   * When enabled, an existing `onToolCall` gate decides each consequential
+   * invocation. A dynamically planned `runTeam()` may also inherit approval
+   * from `onPlanReady`. Without either approval path, the tool is not executed
+   * and the result carries `confirmationRequired: true`. Defaults to false.
+   */
+  readonly requireConsequentialConfirmation?: boolean
   /**
    * Optional approval gate called between task execution rounds.
    *

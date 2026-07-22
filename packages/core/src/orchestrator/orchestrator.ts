@@ -135,6 +135,13 @@ import {
   evaluateGovernance,
   type GovernanceDeclaration,
 } from './governance.js'
+import {
+  createConsequentialConfirmationState,
+  finalizeConsequentialRun,
+  hasGrantedConsequentialTool,
+  withConsequentialConfirmation,
+  type ConsequentialConfirmationState,
+} from './consequential.js'
 import { runConsensusCore, applyConsensusDefaults, type ConsensusAgentDefaults } from './consensus.js'
 import {
   createOnlineEvaluator,
@@ -242,6 +249,7 @@ export class OpenMultiAgent {
       observability: config.observability,
       onTrace: config.onTrace ?? (hasExplicitLegacyBridge ? LEGACY_TRACE_METADATA_ONLY : undefined),
       onToolCall: config.onToolCall,
+      requireConsequentialConfirmation: config.requireConsequentialConfirmation ?? false,
     }
   }
 
@@ -329,7 +337,12 @@ export class OpenMultiAgent {
       ...applyAgentDefaults(config, this.config),
       maxTokenBudget: effectiveBudget,
     }, this.config.defaultToolPreset)
-    const agent = buildAgent(effective)
+    const consequential = hasGrantedConsequentialTool(effective)
+    const confirmationState = createConsequentialConfirmationState()
+    const guardedEffective = consequential && this.config.requireConsequentialConfirmation
+      ? withConsequentialConfirmation(effective, confirmationState)
+      : effective
+    const agent = buildAgent(guardedEffective)
     this.config.onProgress?.({
       type: 'agent_start',
       agent: config.name,
@@ -406,19 +419,18 @@ export class OpenMultiAgent {
       }
     }
 
+    const completedResult = finalizeConsequentialRun<AgentRunResult>({
+      ...finalResult,
+      ...(metadata !== undefined ? { metadata } : {}),
+    }, consequential, confirmationState)
     this.config.onProgress?.({
       type: 'agent_complete',
       agent: config.name,
-      data: finalResult,
+      data: completedResult,
     })
 
-    if (finalResult.success) {
+    if (completedResult.success) {
       this.completedTaskCount++
-    }
-
-    const completedResult: AgentRunResult = {
-      ...finalResult,
-      ...(metadata !== undefined ? { metadata } : {}),
     }
     traceRuntime?.close({
       status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
@@ -482,13 +494,23 @@ export class OpenMultiAgent {
       )
     }
 
+    const undeclared = options?.governanceIntent === undefined
+    const confirmationState = createConsequentialConfirmationState()
+    let consequentialUndeclared = undeclared && agentConfigs.some((agentConfig) => {
+      const effective = applyDefaultToolPreset(
+        applyAgentDefaults(agentConfig, this.config),
+        this.config.defaultToolPreset,
+      )
+      return hasGrantedConsequentialTool(effective, { includeDelegateTool: true })
+    })
+
     const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
     const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
-      const completedResult: TeamRunResult = {
+      const completedResult = finalizeConsequentialRun<TeamRunResult>({
         ...result,
         ...(metadata !== undefined ? { metadata } : {}),
-      }
+      }, consequentialUndeclared, confirmationState)
       traceRuntime?.close({
         status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),
         ...(completedResult.errorInfo ? { error: completedResult.errorInfo } : {}),
@@ -524,7 +546,13 @@ export class OpenMultiAgent {
         ...applyAgentDefaults(bestAgent, this.config),
         maxTokenBudget: effectiveBudget,
       }, this.config.defaultToolPreset), routeMatches(options?.modelRouting, { phase: 'short-circuit', agent: bestAgent.name }))
-      const agent = buildAgent(effective)
+      const selectedConsequential = undeclared
+        && hasGrantedConsequentialTool(effective)
+      const guardedEffective = selectedConsequential
+        && this.config.requireConsequentialConfirmation
+        ? withConsequentialConfirmation(effective, confirmationState)
+        : effective
+      const agent = buildAgent(guardedEffective)
 
       this.config.onProgress?.({
         type: 'agent_start',
@@ -599,6 +627,12 @@ export class OpenMultiAgent {
         }
       }
 
+      finalResult = finalizeConsequentialRun(
+        finalResult,
+        selectedConsequential,
+        confirmationState,
+      )
+
       this.config.onProgress?.({
         type: 'agent_complete',
         agent: bestAgent.name,
@@ -630,12 +664,19 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 1: Coordinator decomposes goal into tasks
     // ------------------------------------------------------------------
-    const coordinatorBaseConfig = buildCoordinatorBaseConfig(
+    const unguardedCoordinatorBaseConfig = buildCoordinatorBaseConfig(
       this.config,
       coordinatorOverrides,
       agentConfigs,
       (options?.verifyJudges?.length ?? 0) > 0,
     )
+    const coordinatorConsequential = undeclared
+      && hasGrantedConsequentialTool(unguardedCoordinatorBaseConfig)
+    if (coordinatorConsequential) consequentialUndeclared = true
+    const coordinatorBaseConfig = coordinatorConsequential
+      && this.config.requireConsequentialConfirmation
+      ? withConsequentialConfirmation(unguardedCoordinatorBaseConfig, confirmationState)
+      : unguardedCoordinatorBaseConfig
     const coordinatorConfig = withModelRoute(
       coordinatorBaseConfig,
       routeMatches(options?.modelRouting, { phase: 'coordinator', agent: 'coordinator' }),
@@ -734,7 +775,12 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 4: Build pool and execute
     // ------------------------------------------------------------------
-    const pool = this.buildPool(agentConfigs)
+    const pool = this.buildPool(
+      agentConfigs,
+      undeclared && this.config.requireConsequentialConfirmation
+        ? confirmationState
+        : undefined,
+    )
     const activeCheckpoint = this.createActiveCheckpoint(
       team,
       options?.checkpoint ?? this.config.checkpoint,
@@ -792,6 +838,14 @@ export class OpenMultiAgent {
         approved = false
         planApprovalError = error
       }
+    }
+    if (
+      approved
+      && this.config.onPlanReady
+      && consequentialUndeclared
+      && this.config.requireConsequentialConfirmation
+    ) {
+      confirmationState.planApproved = true
     }
     const planReadyEndMs = Date.now()
     const planLegacyEvent = this.config.onTrace ? {
@@ -1697,14 +1751,21 @@ export class OpenMultiAgent {
     return artifact['version'] === 1 && Array.isArray(artifact['tasks'])
   }
 
-  private buildPool(agentConfigs: AgentConfig[]): AgentPool {
+  private buildPool(
+    agentConfigs: AgentConfig[],
+    confirmationState?: ConsequentialConfirmationState,
+  ): AgentPool {
     const pool = new AgentPool(this.config.maxConcurrency)
     for (const config of agentConfigs) {
       const effective: AgentConfig = applyDefaultToolPreset(
         applyAgentDefaults(config, this.config),
         this.config.defaultToolPreset,
       )
-      pool.add(buildAgent(effective, { includeDelegateTool: true }))
+      const guardedEffective = confirmationState
+        && hasGrantedConsequentialTool(effective, { includeDelegateTool: true })
+        ? withConsequentialConfirmation(effective, confirmationState)
+        : effective
+      pool.add(buildAgent(guardedEffective, { includeDelegateTool: true }))
     }
     return pool
   }

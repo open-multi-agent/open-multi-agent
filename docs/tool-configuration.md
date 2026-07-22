@@ -38,6 +38,78 @@ The gate reads only the structured execution topology produced by
 or that an independent review occurred, even if it contains reviewer names,
 approval labels, or audit markers.
 
+## Consequential tools on undeclared runs
+
+Tool authors can declare that granting a tool permits real side effects:
+
+```typescript
+const rotateSecret = defineTool({
+  name: 'rotate_secret',
+  description: 'Rotate an application secret.',
+  inputSchema: z.object({ service: z.string() }),
+  consequential: true,
+  execute: async ({ service }) => rotateServiceSecret(service),
+})
+```
+
+`consequential` is optional and defaults to `false`. The built-in `bash`,
+`file_write`, and `file_edit` tools are marked consequential; read-only
+filesystem tools are not. Custom and MCP tools remain benign unless their
+registered `ToolDefinition` explicitly opts in.
+
+For `runAgent()` and an automatic `runTeam()` call that omits
+`governanceIntent`, OMA checks the final grant set after preset, allowlist,
+denylist, custom-tool, and default-preset resolution. If at least one granted
+tool is consequential, the result carries the additive machine-readable flag:
+
+```typescript
+if (result.flags?.includes('consequential-no-independence')) {
+  // The run had consequential capability without a governance declaration.
+}
+
+const receipt = buildExecutionReceipt(result)
+// The same flag is copied to receipt.flags.
+```
+
+This classification uses **tool grants only**. OMA never scans the goal,
+prompt, model output, tool arguments, or words such as `password`, `refund`,
+`security`, or `production` to infer consequences. A goal containing those
+words but exposing only benign tools is not flagged. Conversely, a granted
+consequential tool is flagged even when the goal sounds harmless.
+
+Declared `required`, `preferred`, and `none` `runTeam()` calls do not enter this
+fallback. Neither do explicit `runTasks()` DAGs or `runFromPlan()` replays;
+those calls already have application-supplied structure. The fallback never
+changes the execution topology or upgrades a run to independent governance.
+
+### Opt-in confirmation
+
+Confirmation is off by default. Set `requireConsequentialConfirmation: true`
+to guard consequential calls on the undeclared runs above:
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  requireConsequentialConfirmation: true,
+  onToolCall: async (context) => {
+    if (context.consequential !== true) return { action: 'allow' }
+    return (await app.confirm(context))
+      ? { action: 'allow' }
+      : { action: 'deny', reason: 'User rejected the action.' }
+  },
+})
+```
+
+The guard composes with the existing per-call `onToolCall` gateway, after input
+validation and before `execute`. An `allow` continues; a `deny` does not call
+the tool and returns a rejected run outcome. For a dynamically planned
+`runTeam()`, an approved `onPlanReady` callback can supply the approval when no
+per-call gate is configured. If neither approval path exists, the tool is not
+executed and the result returns `confirmationRequired: true` with
+`status.code === 'rejected'`. The application can then re-run with an
+`onToolCall` decision, or reject the action. The
+`consequential-no-independence` flag remains present whether confirmation is
+disabled, approved, pending, or rejected.
+
 ## Built-in tools are opt-in (default-deny)
 
 Built-in tools — `bash` and the filesystem tools (`file_read`, `file_write`, `file_edit`, `grep`, `glob`) — are **default-deny**. An agent receives a built-in tool only when it is granted explicitly via `tools` (an allowlist of names) or `toolPreset`. An agent that sets **neither** resolves to **zero** built-in tools:
@@ -127,7 +199,7 @@ import type { ToolCallContext, ToolCallDecision } from '@open-multi-agent/core'
 const orchestrator = new OpenMultiAgent({
   // Orchestrator-level default, inherited by any agent that sets no gate of its own.
   onToolCall: async (ctx: ToolCallContext): Promise<ToolCallDecision> => {
-    // ctx: { toolName, input (post-validation), agentName, runId?, taskId? }
+    // ctx: { toolName, input (post-validation), agentName, consequential?, runId?, taskId? }
     if (ctx.toolName !== 'bash') return { action: 'allow' }
     if (/^\s*rm\b/.test(String(ctx.input.command))) {
       return { action: 'deny', reason: 'rm is blocked' }

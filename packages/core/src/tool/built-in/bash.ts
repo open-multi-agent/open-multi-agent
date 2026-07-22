@@ -36,6 +36,7 @@ const SAFE_ENV_ALLOWLIST = new Set([
 
 export const bashTool = defineTool({
   name: 'bash',
+  consequential: true,
   description:
     'Execute a bash command and return its stdout and stderr. ' +
     'Use this for file system operations, running scripts, installing packages, ' +

@@ -17,6 +17,7 @@ import { Agent } from '../agent/agent.js'
 import { ToolRegistry } from '../tool/framework.js'
 import { ToolExecutor } from '../tool/executor.js'
 import { registerBuiltInTools } from '../tool/built-in/index.js'
+import { resolveGrantedToolDefinitions } from '../tool/grants.js'
 
 export interface AgentDefaultsSource {
   readonly defaultModel?: OrchestratorConfig['defaultModel']
@@ -61,6 +62,26 @@ export function buildAgent(
       : {}),
   })
   return new Agent(config, registry, executor)
+}
+
+/** Resolve the same final grants that {@link AgentRunner} will expose. */
+export function resolveAgentToolDefinitions(
+  config: AgentConfig,
+  toolRegistration?: { readonly includeDelegateTool?: boolean },
+) {
+  if (config.backend !== undefined) return []
+  const registry = new ToolRegistry()
+  registerBuiltInTools(registry, toolRegistration)
+  if (config.customTools) {
+    for (const tool of config.customTools) {
+      registry.register(tool, { runtimeAdded: true })
+    }
+  }
+  return resolveGrantedToolDefinitions(registry, {
+    toolPreset: config.toolPreset,
+    allowedTools: config.tools,
+    disallowedTools: config.disallowedTools,
+  }, { warnOnConflict: false })
 }
 
 /**

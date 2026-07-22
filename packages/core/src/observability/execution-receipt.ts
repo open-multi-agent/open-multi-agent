@@ -1,5 +1,6 @@
 import type {
   AgentRunResult,
+  RunFlag,
   TeamRunResult,
   TraceEvent,
 } from '../types.js'
@@ -15,6 +16,8 @@ export interface ExecutionReceiptDependencyEdge {
  * Agent output text is deliberately excluded as a source of evidence.
  */
 export interface ExecutionReceipt {
+  /** Machine-readable warnings copied from the run result, when present. */
+  readonly flags?: readonly RunFlag[]
   readonly mode: 'single' | 'multi-agent'
   readonly rolesExecuted: readonly string[]
   readonly executionOrder: readonly string[]
@@ -69,6 +72,13 @@ function readTokenUsage(value: unknown): ExecutionReceipt['totalTokens'] {
   const input = value['input_tokens']
   const output = value['output_tokens']
   return isFiniteNumber(input) && isFiniteNumber(output) ? { input, output } : null
+}
+
+function readFlags(value: unknown): readonly RunFlag[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const flags = value.filter((flag): flag is RunFlag =>
+    flag === 'consequential-no-independence')
+  return flags.length > 0 ? [...new Set(flags)] : undefined
 }
 
 function readTraceFacts(trace: readonly TraceEvent[] | undefined): TraceFacts {
@@ -159,6 +169,7 @@ function buildAgentReceipt(result: AgentRunResult, trace: TraceFacts): Execution
     ? Math.max(0, Math.max(...ends) - Math.min(...starts))
     : null
   const totalTokens = readTokenUsage(rawResult['tokenUsage'])
+  const flags = readFlags(rawResult['flags'])
   const partial = trace.partial
     || workerAgentEvents.length === 0
     || rolesExecuted.length === 0
@@ -167,6 +178,7 @@ function buildAgentReceipt(result: AgentRunResult, trace: TraceFacts): Execution
     || totalTokens === null
 
   return {
+    ...(flags ? { flags } : {}),
     mode: rolesExecuted.length > 1 ? 'multi-agent' : 'single',
     rolesExecuted,
     executionOrder,
@@ -261,6 +273,7 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
   }
 
   const totalTokens = readTokenUsage(rawResult['totalTokenUsage'])
+  const flags = readFlags(rawResult['flags'])
   const rawMetrics = rawResult['metrics']
   const durationMs = isRecord(rawMetrics) && isFiniteNumber(rawMetrics['totalDurationMs'])
     ? rawMetrics['totalDurationMs']
@@ -270,6 +283,7 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
   }
 
   return {
+    ...(flags ? { flags } : {}),
     mode: rolesExecuted.length > 1 ? 'multi-agent' : 'single',
     rolesExecuted,
     executionOrder,

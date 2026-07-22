@@ -47,22 +47,17 @@ import { classifyRunFailure } from '../observability/status.js'
 import type { ToolRegistry } from '../tool/framework.js'
 import type { ToolExecutor } from '../tool/executor.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
+import {
+  AGENT_FRAMEWORK_DISALLOWED,
+  resolveGrantedToolDefinitions,
+  TOOL_PRESETS,
+} from '../tool/grants.js'
 
 // ---------------------------------------------------------------------------
 // Tool presets
 // ---------------------------------------------------------------------------
 
-/** Predefined tool sets for common agent use cases. */
-export const TOOL_PRESETS = {
-  readonly: ['file_read', 'grep', 'glob'],
-  readwrite: ['file_read', 'file_write', 'file_edit', 'grep', 'glob'],
-  full: ['file_read', 'file_write', 'file_edit', 'grep', 'glob', 'bash'],
-} as const satisfies Record<string, readonly string[]>
-
-/** Framework-level disallowed tools for safety rails. */
-export const AGENT_FRAMEWORK_DISALLOWED: readonly string[] = [
-  // Empty for now, infrastructure for future built-in tools
-]
+export { AGENT_FRAMEWORK_DISALLOWED, TOOL_PRESETS }
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -766,72 +761,15 @@ export class AgentRunner implements AgentBackend {
    * Returns LLMToolDef[] for direct use with LLM adapters.
    */
   private resolveTools(): LLMToolDef[] {
-    // Validate configuration for contradictions
-    if (this.options.toolPreset && this.options.allowedTools) {
-      console.warn(
-        'AgentRunner: both toolPreset and allowedTools are set. ' +
-        'Final tool access will be the intersection of both.'
-      )
-    }
-
-    if (this.options.allowedTools && this.options.disallowedTools) {
-      const overlap = this.options.allowedTools.filter(tool =>
-        this.options.disallowedTools!.includes(tool)
-      )
-      if (overlap.length > 0) {
-        console.warn(
-          `AgentRunner: tools [${overlap.map(name => `"${name}"`).join(', ')}] appear in both allowedTools and disallowedTools. ` +
-          'This is contradictory and may lead to unexpected behavior.'
-        )
-      }
-    }
-
-    const allTools = this.toolRegistry.toToolDefs()
-    const runtimeCustomTools = this.toolRegistry.toRuntimeToolDefs()
-    const runtimeCustomToolNames = new Set(runtimeCustomTools.map(t => t.name))
-    let filteredTools = allTools.filter(t => !runtimeCustomToolNames.has(t.name))
-
-    // Default-deny: built-in (non-runtime) tools require a positive grant via
-    // `toolPreset` or `allowedTools`. With neither set, an agent resolves to
-    // zero built-in tools — `bash` and the filesystem tools are opt-in, the
-    // same default-deny model #87 enforces for cross-agent context. Runtime /
-    // custom tools (registered via `addTool` / `customTools`) are exempt:
-    // registering them is the grant. All tools still respect the denylist and
-    // framework rails below.
-    const hasPositiveGrant =
-      this.options.toolPreset !== undefined || this.options.allowedTools !== undefined
-    if (!hasPositiveGrant) {
-      filteredTools = []
-    }
-
-    // 1. Apply preset filter if set
-    if (this.options.toolPreset) {
-      const presetTools = new Set(TOOL_PRESETS[this.options.toolPreset] as readonly string[])
-      filteredTools = filteredTools.filter(t => presetTools.has(t.name))
-    }
-
-    // 2. Apply allowlist filter if set
-    if (this.options.allowedTools) {
-      filteredTools = filteredTools.filter(t => this.options.allowedTools!.includes(t.name))
-    }
-
-    // 3. Apply denylist filter if set
-    const denied = this.options.disallowedTools
-      ? new Set(this.options.disallowedTools)
-      : undefined
-    if (denied) {
-      filteredTools = filteredTools.filter(t => !denied.has(t.name))
-    }
-
-    // 4. Apply framework-level safety rails
-    const frameworkDenied = new Set(AGENT_FRAMEWORK_DISALLOWED)
-    filteredTools = filteredTools.filter(t => !frameworkDenied.has(t.name))
-
-    // Runtime-added custom tools bypass preset / allowlist but respect denylist.
-    const finalRuntime = denied
-      ? runtimeCustomTools.filter(t => !denied.has(t.name))
-      : runtimeCustomTools
-    return [...filteredTools, ...finalRuntime]
+    const grantedTools = resolveGrantedToolDefinitions(this.toolRegistry, {
+      toolPreset: this.options.toolPreset,
+      allowedTools: this.options.allowedTools,
+      disallowedTools: this.options.disallowedTools,
+    })
+    const definitionsByName = new Map(
+      this.toolRegistry.toToolDefs().map((tool) => [tool.name, tool]),
+    )
+    return grantedTools.map((tool) => definitionsByName.get(tool.name)!)
   }
 
   // -------------------------------------------------------------------------

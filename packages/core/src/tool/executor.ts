@@ -189,6 +189,7 @@ export class ToolExecutor {
           toolName: tool.name,
           input: inputParseResult.data as Record<string, unknown>,
           agentName: context.agent.name,
+          ...(tool.consequential === true ? { consequential: true } : {}),
           ...(context.runId !== undefined ? { runId: context.runId } : {}),
           ...(context.taskId !== undefined ? { taskId: context.taskId } : {}),
         })

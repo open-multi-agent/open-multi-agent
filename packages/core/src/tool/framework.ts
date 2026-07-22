@@ -73,6 +73,10 @@ export function defineTool<TInput>(config: {
   description: string
   inputSchema: ZodSchema<TInput>
   /**
+   * Marks a tool whose grant permits real side effects. Defaults to false.
+   */
+  consequential?: boolean
+  /**
    * Optional runtime validator for `ToolResult.data`.
    * When omitted, output validation is skipped.
    *
@@ -97,6 +101,9 @@ export function defineTool<TInput>(config: {
     name: config.name,
     description: config.description,
     inputSchema: config.inputSchema,
+    ...(config.consequential !== undefined
+      ? { consequential: config.consequential }
+      : {}),
     ...(config.outputSchema !== undefined
       ? { outputSchema: config.outputSchema }
       : {}),
