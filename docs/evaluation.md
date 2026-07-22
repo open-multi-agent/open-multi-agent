@@ -586,6 +586,65 @@ the gate control the step status:
     path: eval-results/**/report.junit.xml
 ```
 
+## Routing stability regression EvalSet
+
+The frozen `run-team-routing-stability@1.0.0` EvalSet in
+`packages/core/tests/fixtures/eval/routing-stability-set.json` measures whether
+equivalent `runTeam()` goals keep the same executed topology when prompt length
+or language changes. Each family contains a short English variant, a detailed
+English variant longer than the current simple-goal boundary, and a Chinese
+translation. Governance families carry the same `governanceIntent: 'required'`,
+`requiredRoles`, and `requiredOrder` declaration on every variant; benign
+families carry no declaration.
+
+The test injects one deterministic `LLMAdapter` into every worker and the
+coordinator. Every model call returns the same fixed text, including a valid
+two-role coordinator plan, so it makes no network request and needs no API key.
+Within one family, the goal text is therefore the only routing input that
+changes. The measured topology comes from `buildExecutionReceipt(result)` and
+the `result.tasks` short-circuit marker, and contains only:
+
+- `single-short-circuit` versus task graph;
+- the worker roles that actually executed; and
+- cross-role dependency edges.
+
+Model output, generated task IDs, timing, token usage, and scheduler start order
+are excluded. For `n` variants, flip rate is the number of unordered variant
+pairs with different canonical topologies divided by `n * (n - 1) / 2`.
+Length invariance compares the fixture's short/detailed English pair; language
+invariance compares its explicitly paired English/Chinese variants.
+
+`packages/core/tests/fixtures/eval/routing-stability-gate.json` applies three
+absolute thresholds only to the `governance` tag: routing-stability minimum
+`1` (zero flips), length-invariance minimum `1`, and language-invariance minimum
+`1`. Scorer and target error limits are both zero. The Vitest suite emits one
+full report, then evaluates the gate on a `governance`-filtered run; benign
+scores, scorer health, and target health therefore cannot affect the verdict.
+The existing CI `npm test` matrix blocks a change that makes a declared route
+depend on goal language or length. A negative-control test injects a fake
+declared router that collapses Chinese variants to one role and asserts that
+both the routing-stability and language-invariance thresholds fail.
+
+Benign automatic routing remains monitored, not gated. The introduction
+snapshot below is emitted in the test's `[routing-stability]` EvalSet report:
+
+| Family | Pair flips | Flip rate | Length invariant | Language invariant |
+|---|---:|---:|---:|---:|
+| Declared wire transfer | 0 / 3 | 0% | 100% | 100% |
+| Declared key rotation | 0 / 3 | 0% | 100% | 100% |
+| **Declared governance total** | **0 / 6** | **0%** | **100%** | **100%** |
+| Undeclared DNS | 2 / 3 | 66.7% | 0% | 0% |
+| Undeclared database comparison | 2 / 3 | 66.7% | 0% | 100% |
+| **Undeclared benign total** | **4 / 6** | **66.7%** | **0%** | **50%** |
+
+The target for undeclared benign routing is at most 5% pair flips and at most
+5% length mismatches (at least 95% length invariance). The current snapshot is
+well outside that target and is intentionally non-blocking: automatic routing
+language/length neutrality is a known unresolved item, and changing its routing
+or classification behavior is outside this EvalSet's scope. Update the frozen
+corpus version and the documented snapshot only after reviewing an intentional
+measurement change.
+
 ## Memory evaluation metrics
 
 `MemoryExtractionSample` and `MemoryRetrievalSample` are experimental input
