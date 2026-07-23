@@ -7,7 +7,7 @@
  */
 
 import type { AgentConfig } from '../types.js'
-import { extractKeywords, keywordScore } from '../utils/keywords.js'
+import { AgentSelector } from './agent-selector.js'
 
 /**
  * Regex patterns that indicate a goal requires multi-agent coordination.
@@ -117,10 +117,11 @@ export function isSimpleGoal(goal: string): boolean {
 }
 
 /**
- * Select the best-matching agent for a goal using keyword affinity scoring.
+ * Select the best-matching agent for a goal through {@link AgentSelector}.
  *
- * The scoring logic mirrors {@link Scheduler}'s `capability-match` strategy
- * exactly, including its asymmetric use of the agent's `model` field:
+ * With no declared capabilities, the soft-scoring logic mirrors
+ * {@link Scheduler}'s `capability-match` strategy, including its asymmetric
+ * use of the agent's `model` field:
  *
  *  - `agentKeywords` is computed from `name + systemPrompt + model` so that
  *    a goal which mentions a model name (e.g. "haiku") can boost an agent
@@ -132,7 +133,8 @@ export function isSimpleGoal(goal: string): boolean {
  * The two-direction sum (`scoreA + scoreB`) ensures both "agent describes
  * goal" and "goal mentions agent capability" contribute to the final score.
  *
- * Score ties, including an all-zero result, are resolved by ascending agent
+ * Declared capability affinity is a higher-priority soft signal. Score ties,
+ * including an all-zero result, are resolved by ascending agent
  * name; duplicate names preserve roster order. Unlike Scheduler's stateful
  * `capability-match` zero-score fallback, this helper cannot round-robin across
  * calls because each invocation is stateless.
@@ -141,29 +143,5 @@ export function isSimpleGoal(goal: string): boolean {
  */
 export function selectBestAgent(goal: string, agents: AgentConfig[]): AgentConfig {
   if (agents.length <= 1) return agents[0]!
-
-  const goalKeywords = extractKeywords(goal)
-
-  let bestAgent = agents[0]!
-  let bestScore = -1
-
-  for (const agent of agents) {
-    const agentText = `${agent.name} ${agent.systemPrompt ?? ''}`
-    // Mirror Scheduler.capability-match: include `model` here only.
-    const agentKeywords = extractKeywords(`${agent.name} ${agent.systemPrompt ?? ''} ${agent.model}`)
-
-    const scoreA = keywordScore(agentText, goalKeywords)
-    const scoreB = keywordScore(goal, agentKeywords)
-    const score = scoreA + scoreB
-
-    if (
-      score > bestScore
-      || (score === bestScore && agent.name < bestAgent.name)
-    ) {
-      bestScore = score
-      bestAgent = agent
-    }
-  }
-
-  return bestAgent
+  return new AgentSelector().select(goal, agents).agent!
 }

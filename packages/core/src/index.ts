@@ -78,6 +78,14 @@ export type { GovernanceDeclaration } from './orchestrator/governance.js'
 export { CONSEQUENTIAL_NO_INDEPENDENCE_FLAG } from './orchestrator/consequential.js'
 export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
+export { AgentSelector } from './orchestrator/agent-selector.js'
+export type {
+  AgentSelectionFailure,
+  AgentSelectionResult,
+  AgentSelectionSubject,
+  AgentSelectorContext,
+  EligibleAgentScore,
+} from './orchestrator/agent-selector.js'
 
 export { renderTeamRunDashboard } from './dashboard/render-team-run-dashboard.js'
 export { renderRunViewer } from './dashboard/render-run-viewer.js'
@@ -311,6 +319,7 @@ export type {
   RunTeamOptions,
   RunTasksOptions,
   RunTaskSpec,
+  TaskRequirements,
   RestoreOptions,
   ModelRouteConfig,
   ModelRoutingMatch,
