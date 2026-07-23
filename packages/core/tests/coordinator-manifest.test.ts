@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   COORDINATOR_ROLE_SUMMARY_MAX_CHARS,
+  buildCoordinatorOutputFormatSection,
   buildCoordinatorRosterManifest,
   buildCoordinatorRosterSection,
   parseTaskSpecs,
@@ -116,5 +117,16 @@ describe('coordinator roster manifest', () => {
       requiredBackend: 'llm',
       requiredProvider: 'anthropic',
     })
+  })
+
+  it('guides assignee selection through manifest capability tags', () => {
+    const section = buildCoordinatorOutputFormatSection()
+
+    expect(section).toContain(
+      'Prefer an agent whose manifest `capabilities` best match the task',
+    )
+    expect(section).toContain(
+      'use `roleSummary` and `tools` only as secondary assignment signals',
+    )
   })
 })

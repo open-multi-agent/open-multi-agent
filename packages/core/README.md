@@ -132,7 +132,8 @@ keep that assignment.
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
-  schedulingStrategy: 'capability-match',
+  schedulingStrategy: 'composite',
+  schedulingWeights: { fit: 0.7, load: 0.3 },
 })
 ```
 
@@ -142,9 +143,21 @@ const orchestrator = new OpenMultiAgent({
 | `round-robin` | Distributes tasks in queue order across the roster | Agents are interchangeable |
 | `least-busy` | Chooses the agent with the fewest active or newly assigned tasks | Task duration varies and load balance matters |
 | `capability-match` | Filters explicit task requirements, then prefers declared capability tags before legacy keyword affinity | Tasks or agents declare differentiated requirements/capabilities |
+| `composite` | Ranks tasks by blocked dependents, hard-filters with `AgentSelector`, then maximizes `fitWeight * fit + loadWeight * (1 - normalizedCurrentLoad)` | Criticality, capability fit, and current load should influence one decision |
 
-These strategies select one scheduling dimension at a time; they are not
-combined or weighted.
+The four original strategies remain compatibility paths with unchanged
+behavior. `composite` uses `schedulingWeights.fit` and
+`schedulingWeights.load`, which default to `0.7` and `0.3`. Current load is the
+agent's `in_progress` task count normalized within the roster at scheduling
+time; assignments made earlier in the same call do not alter that snapshot.
+If hard filtering finds no eligible agent, OMA emits a structured `warning`
+event and explicitly falls back to zero fit plus current load instead of
+silently ignoring the requirements.
+
+Coordinator plans that name an agent outside the roster emit an
+`INVALID_ASSIGNEE` warning, clear that assignment, and use the configured
+scheduler by default. Set `strictAssignees: true` to stop before task execution
+with a structured validation error instead.
 
 Agents may declare `description`, `capabilities`, `costTier`, and
 `latencyClass`; none is inferred when omitted. Explicit `runTasks()` specs and

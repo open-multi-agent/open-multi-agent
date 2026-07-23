@@ -117,7 +117,8 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 ```typescript
 const orchestrator = new OpenMultiAgent({
-  schedulingStrategy: 'capability-match',
+  schedulingStrategy: 'composite',
+  schedulingWeights: { fit: 0.7, load: 0.3 },
 })
 ```
 
@@ -127,8 +128,18 @@ const orchestrator = new OpenMultiAgent({
 | `round-robin` | 按队列顺序在 Agent roster 中轮转分配 | Agent 能力可以互换 |
 | `least-busy` | 选择当前活跃任务或本批新分配任务最少的 Agent | 任务耗时差异较大，需要负载均衡 |
 | `capability-match` | 先过滤显式任务要求，再优先匹配声明的能力标签，最后使用兼容的关键词亲和度 | 任务或 Agent 声明了有区分度的要求/能力 |
+| `composite` | 按阻塞的下游任务数排列任务，经 `AgentSelector` 硬过滤后，最大化 `fitWeight * fit + loadWeight * (1 - normalizedCurrentLoad)` | 需要在一次决策中同时考虑关键度、能力匹配与当前负载 |
 
-每种策略只负责一个调度维度，不会彼此组合或加权。
+原有四种策略作为兼容路径保留，行为不变。`composite` 使用
+`schedulingWeights.fit` 与 `schedulingWeights.load`，缺省分别为 `0.7` 和
+`0.3`。当前负载是在调度时按 roster 归一化的 `in_progress` 任务数；同一次
+调用中先前完成的分配不会改变该快照。若硬过滤后没有合格 Agent，OMA 会发出
+结构化 `warning` 事件，并显式回退到 fit 为零、只结合当前负载的路径，不会
+静默忽略任务要求。
+
+Coordinator 计划若引用 roster 之外的 Agent，缺省会发出
+`INVALID_ASSIGNEE` warning、清空该分配，再交由所选调度策略处理。设置
+`strictAssignees: true` 后，会在任何计划任务执行前以结构化校验错误终止。
 
 Agent 可显式声明 `description`、`capabilities`、`costTier` 和
 `latencyClass`；字段缺省时框架不会推断。显式 `runTasks()` 任务和

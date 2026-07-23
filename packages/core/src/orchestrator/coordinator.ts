@@ -69,6 +69,23 @@ export interface ParsedTaskSpec {
   verify?: ConsensusVerifyOptions | CoordinatorVerifySpec | true
 }
 
+export interface InvalidAssigneeIssue {
+  readonly taskTitle: string
+  readonly assignee: string
+}
+
+/** Find coordinator-authored assignees that are not present in the team roster. */
+export function findInvalidAssignees(
+  specs: readonly ParsedTaskSpec[],
+  agents: readonly AgentConfig[],
+): readonly InvalidAssigneeIssue[] {
+  const agentNames = new Set(agents.map((agent) => agent.name))
+  return specs.flatMap((spec) =>
+    spec.assignee !== undefined && !agentNames.has(spec.assignee)
+      ? [{ taskTitle: spec.title, assignee: spec.assignee }]
+      : [])
+}
+
 /**
  * Resolve a parsed task spec's `verify` field into a full
  * {@link ConsensusVerifyOptions} (or `undefined` when no verify should run).
@@ -341,7 +358,9 @@ export function buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): 
     'Each task must have:',
     '  - "title":       Short descriptive title (string)',
     '  - "description": Full task description with context and expected output (string)',
-    '  - "assignee":    One of the agent names listed in the roster (string)',
+    '  - "assignee":    One of the agent names listed in the roster (string).',
+    '                   Prefer an agent whose manifest `capabilities` best match the task;',
+    '                   use `roleSummary` and `tools` only as secondary assignment signals.',
     '  - "dependsOn":   Array of titles of tasks this task depends on (string[], may be empty).',
     '  - "requires":    (optional) Explicit hard requirements with optional "requiredTools" (string[]),',
     '                   "requiredCapabilities" (string[]), "requiredBackend" ("llm"|"process"|"acp"),',

@@ -76,8 +76,16 @@ export {
 } from './orchestrator/governance.js'
 export type { GovernanceDeclaration } from './orchestrator/governance.js'
 export { CONSEQUENTIAL_NO_INDEPENDENCE_FLAG } from './orchestrator/consequential.js'
-export { Scheduler } from './orchestrator/scheduler.js'
-export type { SchedulingStrategy } from './orchestrator/scheduler.js'
+export {
+  Scheduler,
+  DEFAULT_SCHEDULING_WEIGHTS,
+} from './orchestrator/scheduler.js'
+export type {
+  SchedulingStrategy,
+  SchedulingWeights,
+  SchedulerOptions,
+  SchedulerWarning,
+} from './orchestrator/scheduler.js'
 export { AgentSelector } from './orchestrator/agent-selector.js'
 export type {
   AgentSelectionFailure,

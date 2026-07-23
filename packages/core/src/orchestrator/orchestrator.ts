@@ -167,6 +167,7 @@ import {
   buildDecompositionPrompt,
   runCoordinatorSynthesis,
   loadSpecsIntoQueue,
+  findInvalidAssignees,
 } from './coordinator.js'
 
 // ---------------------------------------------------------------------------
@@ -244,6 +245,8 @@ export class OpenMultiAgent {
    *   - `maxConcurrency`: 5
    *   - `maxDelegationDepth`: 3
    *   - `schedulingStrategy`: `'dependency-first'`
+   *   - `schedulingWeights`: `{ fit: 0.7, load: 0.3 }`
+   *   - `strictAssignees`: `false`
    *   - `defaultModel`:   `'claude-opus-4-6'`
    *   - `defaultProvider`: `'anthropic'`
    */
@@ -271,6 +274,8 @@ export class OpenMultiAgent {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
       schedulingStrategy: config.schedulingStrategy ?? 'dependency-first',
+      schedulingWeights: config.schedulingWeights ?? {},
+      strictAssignees: config.strictAssignees ?? false,
       executionRouter: config.executionRouter ?? new DeterministicRouter(),
       defaultModel: config.defaultModel ?? DEFAULT_MODEL,
       defaultProvider: config.defaultProvider ?? 'anthropic',
@@ -295,6 +300,27 @@ export class OpenMultiAgent {
       onToolCall: config.onToolCall,
       requireConsequentialConfirmation: config.requireConsequentialConfirmation ?? false,
     }
+  }
+
+  private createScheduler(): Scheduler {
+    return new Scheduler(
+      this.config.schedulingStrategy,
+      {
+        defaultProvider: this.config.defaultProvider,
+        defaultToolPreset: this.config.defaultToolPreset,
+        includeDelegateTool: true,
+      },
+      {
+        weights: this.config.schedulingWeights,
+        onWarning: (warning) => {
+          this.config.onProgress?.({
+            type: 'warning',
+            task: warning.taskId,
+            data: warning,
+          })
+        },
+      },
+    )
   }
 
   private beginOnlineEvaluation(input: unknown): PendingOnlineEvaluation | undefined {
@@ -892,14 +918,55 @@ export class OpenMultiAgent {
     const taskSpecs = parseTaskSpecs(decompositionResult.output)
 
     const queue = new TaskQueue()
-    const scheduler = new Scheduler(this.config.schedulingStrategy, {
-      defaultProvider: this.config.defaultProvider,
-      defaultToolPreset: this.config.defaultToolPreset,
-      includeDelegateTool: true,
-    })
+    const scheduler = this.createScheduler()
     const taskMetrics = new Map<string, TaskExecutionMetrics>()
 
     if (taskSpecs && taskSpecs.length > 0) {
+      const invalidAssignees = findInvalidAssignees(taskSpecs, agentConfigs)
+      if (invalidAssignees.length > 0 && this.config.strictAssignees) {
+        const error = Object.assign(
+          new Error(
+            `Coordinator plan contains invalid assignees: ${invalidAssignees
+              .map((issue) => `"${issue.assignee}" for "${issue.taskTitle}"`)
+              .join(', ')}.`,
+          ),
+          { code: 'INVALID_ASSIGNEE' },
+        )
+        const classified = classifyRunFailure(error, { kind: 'validation' })
+        this.config.onProgress?.({
+          type: 'agent_complete',
+          agent: 'coordinator',
+          data: decompositionResult,
+        })
+        this.config.onProgress?.({
+          type: 'error',
+          data: {
+            code: 'INVALID_ASSIGNEE',
+            issues: invalidAssignees,
+            error: classified.errorInfo,
+          },
+        })
+        return finish(this.buildTeamRunResult(
+          agentResults,
+          identity,
+          goal,
+          [],
+          classified.status,
+          classified.errorInfo,
+        ))
+      }
+      for (const issue of invalidAssignees) {
+        this.config.onProgress?.({
+          type: 'warning',
+          task: issue.taskTitle,
+          data: {
+            code: 'INVALID_ASSIGNEE',
+            assignee: issue.assignee,
+            taskTitle: issue.taskTitle,
+            fallback: 'clear-and-schedule',
+          },
+        })
+      }
       // Map title-based dependsOn references to real task IDs so we can
       // build the dependency graph before adding tasks to the queue.
       loadSpecsIntoQueue(taskSpecs, agentConfigs, queue, options?.verifyJudges)
@@ -1692,11 +1759,7 @@ export class OpenMultiAgent {
       ? recordRoutingDecision(runIdentity, traceRuntime, routingDecisionInput)
       : undefined
     const agentConfigs = team.getAgents()
-    const scheduler = new Scheduler(this.config.schedulingStrategy, {
-      defaultProvider: this.config.defaultProvider,
-      defaultToolPreset: this.config.defaultToolPreset,
-      includeDelegateTool: true,
-    })
+    const scheduler = this.createScheduler()
     scheduler.autoAssign(queue, agentConfigs)
     const budgets = resolveRunBudgets(this.config, options)
 

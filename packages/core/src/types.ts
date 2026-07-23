@@ -7,7 +7,10 @@
 
 import type { ZodSchema } from 'zod'
 import type { SupportedProvider } from './llm/adapter.js'
-import type { SchedulingStrategy } from './orchestrator/scheduler.js'
+import type {
+  SchedulingStrategy,
+  SchedulingWeights,
+} from './orchestrator/scheduler.js'
 
 // ---------------------------------------------------------------------------
 // Content blocks
@@ -1583,8 +1586,8 @@ export interface Task {
 /**
  * Progress event emitted by the orchestrator during a run.
  *
- * **v0.3 addition:** `'task_skipped'` — consumers with exhaustive switches
- * on `type` will need to add a case for this variant.
+ * Additive variants include `'task_skipped'` and `'warning'`; consumers with
+ * exhaustive switches on `type` need to handle them.
  */
 export interface OrchestratorEvent {
   readonly type:
@@ -1596,6 +1599,7 @@ export interface OrchestratorEvent {
     | 'task_retry'
     | 'budget_exceeded'
     | 'message'
+    | 'warning'
     | 'error'
   readonly agent?: string
   readonly task?: string
@@ -1616,11 +1620,31 @@ export interface OrchestratorConfig {
    *   prompts; use it when agents have distinct, clearly described roles.
    * - `'dependency-first'` assigns tasks that unblock the most dependents
    *   first; use it for dependency-heavy DAGs.
+   * - `'composite'` ranks by dependency criticality, hard-filters with the
+   *   AgentSelector, then combines fit and current load.
    *
    * Defaults to `'dependency-first'`. Explicit task assignees are preserved
    * and are never replaced by this strategy.
    */
   readonly schedulingStrategy?: SchedulingStrategy
+  /**
+   * Relative weights for `'composite'` scheduling.
+   *
+   * `fit` multiplies the AgentSelector score and defaults to `0.7`. `load`
+   * multiplies `1 - normalizedCurrentLoad` and defaults to `0.3`. Values must
+   * be finite and non-negative, and may not both be zero. Ignored by the four
+   * compatibility strategies.
+   */
+  readonly schedulingWeights?: Partial<SchedulingWeights>
+  /**
+   * Reject coordinator plans that name an assignee outside the team roster.
+   *
+   * Defaults to `false`: invalid names are cleared, a structured `warning`
+   * progress event is emitted, and the configured scheduler assigns the task.
+   * When `true`, the run terminates with a structured `INVALID_ASSIGNEE`
+   * validation error before any planned task executes.
+   */
+  readonly strictAssignees?: boolean
   /**
    * Default execution-topology router for automatic `runTeam()` calls.
    *

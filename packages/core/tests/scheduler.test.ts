@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Scheduler } from '../src/orchestrator/scheduler.js'
 import { TaskQueue } from '../src/task/queue.js'
 import { createTask } from '../src/task/task.js'
-import type { AgentConfig, Task } from '../src/types.js'
+import type { AgentConfig, Task, TaskRequirements } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -12,7 +12,14 @@ function agent(name: string, systemPrompt?: string): AgentConfig {
   return { name, model: 'test-model', systemPrompt }
 }
 
-function pendingTask(title: string, opts?: { assignee?: string; dependsOn?: string[] }): Task {
+function pendingTask(
+  title: string,
+  opts?: {
+    assignee?: string
+    dependsOn?: string[]
+    requires?: TaskRequirements
+  },
+): Task {
   return createTask({ title, description: title, assignee: opts?.assignee, ...opts })
 }
 
@@ -206,6 +213,143 @@ describe('Scheduler: dependency-first', () => {
     const s = new Scheduler('dependency-first')
     const assignments = s.schedule([], [agent('a')])
     expect(assignments.size).toBe(0)
+  })
+})
+
+describe('Scheduler: compatibility strategies', () => {
+  it('preserves the established behavior of all four pre-composite strategies', () => {
+    const agents = [
+      agent('a', 'Research and analyze evidence'),
+      agent('b', 'Implement TypeScript code'),
+    ]
+
+    const roundRobinTasks = [pendingTask('one'), pendingTask('two')]
+    expect([
+      ...new Scheduler('round-robin')
+        .schedule(roundRobinTasks, agents)
+        .values(),
+    ]).toEqual(['a', 'b'])
+
+    const busy: Task = {
+      ...pendingTask('busy'),
+      status: 'in_progress',
+      assignee: 'a',
+    }
+    const leastBusyTask = pendingTask('new')
+    expect(
+      new Scheduler('least-busy')
+        .schedule([busy, leastBusyTask], agents)
+        .get(leastBusyTask.id),
+    ).toBe('b')
+
+    const capabilityTask = pendingTask('Implement TypeScript code')
+    expect(
+      new Scheduler('capability-match')
+        .schedule([capabilityTask], agents)
+        .get(capabilityTask.id),
+    ).toBe('b')
+
+    const critical = pendingTask('critical')
+    const ordinary = pendingTask('ordinary')
+    const dependent = { ...pendingTask('dependent'), dependsOn: [critical.id] }
+    expect([
+      ...new Scheduler('dependency-first')
+        .schedule([ordinary, critical, dependent], agents)
+        .keys(),
+    ][0]).toBe(critical.id)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// composite
+// ---------------------------------------------------------------------------
+
+describe('Scheduler: composite', () => {
+  it('prioritises the most critical task and selects its highest-fit eligible agent', () => {
+    const s = new Scheduler('composite')
+    const agents: AgentConfig[] = [
+      { ...agent('researcher'), capabilities: ['worker', 'research'] },
+      { ...agent('coder'), capabilities: ['worker', 'typescript'] },
+    ]
+    const low = pendingTask('General task')
+    const critical = pendingTask('Implement TypeScript service', {
+      requires: { requiredCapabilities: ['worker'] },
+    })
+    const dependentA = { ...pendingTask('Dependent A'), dependsOn: [critical.id] }
+    const dependentB = { ...pendingTask('Dependent B'), dependsOn: [critical.id] }
+
+    const assignments = s.schedule(
+      [low, critical, dependentA, dependentB],
+      agents,
+    )
+
+    expect([...assignments.keys()][0]).toBe(critical.id)
+    expect(assignments.get(critical.id)).toBe('coder')
+  })
+
+  it('prefers the lower-load agent when fit is tied', () => {
+    const s = new Scheduler('composite')
+    const agents = [agent('alpha'), agent('beta')]
+    const busy: Task = {
+      ...pendingTask('Existing work'),
+      status: 'in_progress',
+      assignee: 'alpha',
+    }
+    const task = pendingTask('Unrelated neutral task')
+
+    const assignments = s.schedule([busy, task], agents)
+
+    expect(assignments.get(task.id)).toBe('beta')
+  })
+
+  it('honours configured fit and load weights', () => {
+    const agents: AgentConfig[] = [
+      { ...agent('coder'), capabilities: ['typescript'] },
+      agent('idle'),
+    ]
+    const busy: Task = {
+      ...pendingTask('Existing work'),
+      status: 'in_progress',
+      assignee: 'coder',
+    }
+    const task = pendingTask('Implement TypeScript')
+
+    const fitOnly = new Scheduler('composite', {}, {
+      weights: { fit: 1, load: 0 },
+    }).schedule([busy, task], agents)
+    const loadOnly = new Scheduler('composite', {}, {
+      weights: { fit: 0, load: 1 },
+    }).schedule([busy, task], agents)
+
+    expect(fitOnly.get(task.id)).toBe('coder')
+    expect(loadOnly.get(task.id)).toBe('idle')
+  })
+
+  it('warns and uses the explicit zero-fit load fallback when nobody is eligible', () => {
+    const warnings: unknown[] = []
+    const s = new Scheduler('composite', {}, {
+      onWarning: (warning) => warnings.push(warning),
+    })
+    const agents = [agent('busy'), agent('idle')]
+    const busy: Task = {
+      ...pendingTask('Existing work'),
+      status: 'in_progress',
+      assignee: 'busy',
+    }
+    const task = pendingTask('Restricted task', {
+      requires: { requiredCapabilities: ['missing'] },
+    })
+
+    const assignments = s.schedule([busy, task], agents)
+
+    expect(assignments.get(task.id)).toBe('idle')
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: 'NO_ELIGIBLE_AGENT',
+        taskId: task.id,
+        fallback: 'zero-fit-current-load',
+      }),
+    ])
   })
 })
 
