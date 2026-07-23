@@ -46,18 +46,18 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。它运行的是**动态工作流（dynamic workflows）**：Coordinator 在运行时把一个目标拆成任务 DAG，由确定性调度器交给团队执行，整个运行过程始终是可审查、可审批、可回放的数据。上方动图就是内置的离线 Run Viewer 在回放一次真实运行。
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。它运行的是**动态工作流（dynamic workflows）**：Coordinator 在运行时将一个目标分解为任务 DAG，由确定性调度器分派给团队执行，整个运行过程始终是可审查、可审批、可回放的数据。上方动图就是内置的离线 Run Viewer 在回放一次真实运行。
 
 ## 为什么选择 OMA
 
-- **从目标生成计划。** Coordinator 在运行时把请求拆成任务 DAG，自动分工并合成最终结果，没有需要手工维护的工作流图。
-- **确定性控制，人在回路。** 计划先审后跑、单个任务派发可审批、固化重放、多 Agent 共识验证；拓扑不容漂移时，直接声明必需角色与顺序，而不是依赖提示词措辞。
-- **恢复而不是重跑。** Checkpoint 让中断的运行从断点续跑，已完成的任务不再重复；重试、超时、循环检测与 token、成本双预算让每次运行都有边界。
-- **每次运行都看得见。** Trace、稳定的运行标识与离线 Run Viewer 内置于 core：在你自己的磁盘上以任务 DAG 与 span 瀑布双视图回放任意一次运行，无需托管服务。
-- **评测在同一个包里。** EvalSet 版本化、参考 scorer 打分、离线报告做 CI 门禁、线上运行按需采样，全部构建在编排器本就产出的运行记录之上。
-- **编码 CLI 也是队员。** Process 与 ACP backend 让 Claude Code、Gemini CLI、Codex 以一等 Agent 身份加入团队：同一个任务 DAG、同一份共享记忆、同一套预算。
-- **任意模型混编。** 云端（Claude、GPT）、本地开源模型与原生接入的国产模型同队协作；任意 OpenAI 兼容端点或 AI SDK provider 以同样方式接入，并为以文本形式返回工具调用的本地模型提供容错解析。
-- **在你自己的环境中运行。** 本地、断网、气隙或自有服务器，用你自己的凭证；工具默认拒绝、密钥自动脱敏，极小的运行时占用足以放进受限内网。
+- **从目标生成计划。** Coordinator 在运行时将请求分解为任务 DAG，自动完成分工并合成最终结果，无需手工维护工作流图。
+- **确定性控制，人在回路。** 支持计划先审后执行、单任务派发审批、固化重放与多 Agent 共识验证；当拓扑不容漂移时，可声明必需的角色与执行顺序，而非依赖提示词措辞。
+- **从断点恢复，而非整体重跑。** Checkpoint 使中断的运行从断点继续，已完成的任务不再重复执行；重试、超时、循环检测与 token、成本双预算为每次运行设定明确边界。
+- **运行全程可观测。** Trace、稳定的运行标识与离线 Run Viewer 均内置于 core，可在本地以任务 DAG 与 span 瀑布双视图回放任意一次运行，无需托管服务。
+- **评测内置于同一运行时。** 支持 EvalSet 版本化、参考 scorer 打分、以离线报告把关 CI，以及对线上运行按需采样，全部构建在编排器已产出的运行记录之上。
+- **编码 CLI 作为一等 Agent 参与。** 通过 Process 与 ACP backend，Claude Code、Gemini CLI、Codex 可作为一等 Agent 加入团队，与其余 Agent 同处一个任务 DAG，并共享记忆与预算。
+- **任意模型同队协作。** 云端模型（Claude、GPT）、本地开源模型与原生接入的国产模型可在同一团队中协作；任意 OpenAI 兼容端点或 AI SDK provider 以相同方式接入，并对以文本形式返回工具调用的本地模型提供容错解析。
+- **在自有环境中运行。** 支持本地、断网、气隙或自有服务器部署，使用自有凭证运行；内置工具默认拒绝、密钥自动脱敏，极小的运行时占用可适配受限内网环境。
 
 ## 快速开始
 
@@ -106,7 +106,7 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 **集成**
 
-- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
@@ -124,6 +124,7 @@ OMA 面向希望任务图随目标动态生成的 TypeScript 团队。
 
 - **[`@open-multi-agent/core`](packages/core/README_zh.md)**：编排运行时、工具、记忆、checkpoint、trace、CLI 和离线 Run Viewer。
 - **[`@open-multi-agent/otel`](packages/otel/README.md)**：面向已建立 OpenTelemetry 统一监控体系的生产团队的可选企业集成。
+- **[`create-oma-app`](packages/create-oma-app/README.md)**：`npm create oma-app` 背后的脚手架；提供自带免 API Key 本地 Demo 的 starter 模板。
 
 Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有当 OMA trace 需要进入应用现有的统一监控平台时，才需要安装 OTel 包。
 
