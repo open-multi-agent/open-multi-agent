@@ -53,9 +53,23 @@
 OMA combines dynamic orchestration with the control, evidence, and recovery paths needed to move multi-agent systems from prototype to production.
 
 - **Dynamic orchestration.** Describe the goal and let the coordinator build the task DAG, assign work, and synthesize the result at runtime. There is no hand-wired graph to maintain.
-- **Controlled execution.** Preview and approve plans or individual dispatches, verify outputs with multi-agent consensus, declare required roles and order when topology cannot drift, and freeze approved plans for replay. Checkpoints resume interrupted runs without repeating completed tasks; retries, timeouts, loop detection, and token and cost budgets keep execution bounded.
-- **Production essentials. Observe, evaluate, and improve.** Traces, stable run identity, and the offline Run Viewer replay any run from your own disk as a task DAG and span waterfall, without a hosted service. Use the same run records for versioned EvalSets, reference scorers, offline reports, CI gates, and production sampling to diagnose what happened, measure whether the result was good enough, and catch regressions before they ship.
-- **Open runtime.** Embed OMA in a TypeScript backend and run it on your own infrastructure and credentials. Process and ACP backends let Claude Code, Gemini CLI, and Codex join LLM agents on the same task DAG, shared memory, and budgets. Mix cloud and local models, natively integrated Chinese providers, OpenAI-compatible endpoints, and AI SDK providers; a fallback parser covers local models that emit tool calls as text. Built-in tools are default-deny, secrets are auto-redacted, and a minimal runtime footprint fits locked-down infrastructure, including local, offline, and air-gapped deployments.
+- **Controlled execution.** Keep dynamic plans within explicit boundaries.
+
+  - **Approve:** Preview and approve plans or individual dispatches, then freeze approved plans for replay.
+  - **Constrain:** Declare required roles and order when topology cannot drift, and verify outputs with multi-agent consensus.
+
+- **Production essentials.** Run reliably, diagnose failures, and prevent quality regressions.
+
+  - **Reliability:** Resume interrupted runs from checkpoints. Retries, timeouts, loop detection, and token and cost budgets keep execution bounded.
+  - **Observability:** Follow each run through stable identity, execution receipts, and traces; query them in TraceStore, replay the task DAG and span waterfall in the offline Run Viewer, or export through the optional OpenTelemetry adapter.
+  - **Evaluation:** Use the same run records for versioned EvalSets, reference scorers, offline reports, CI gates, regression baselines, and production sampling.
+  - **Safety and privacy:** Keep tools default-deny, gate individual calls, and apply explicit privacy controls to telemetry and persisted state.
+
+- **Open runtime.** Bring OMA into your stack without giving up control of agents, models, infrastructure, or credentials.
+
+  - **Agents:** Process and ACP backends let Claude Code, Gemini CLI, and Codex join LLM agents on the same task DAG, shared memory, and budgets.
+  - **Models:** Mix cloud and local models, natively integrated Chinese providers, OpenAI-compatible endpoints, and AI SDK providers. A fallback parser covers local models that emit tool calls as text.
+  - **Deployment:** Run on your own infrastructure and credentials, locally, offline, or air-gapped. A minimal runtime footprint fits locked-down environments.
 
 ## Get started
 
