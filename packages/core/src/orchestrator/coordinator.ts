@@ -17,6 +17,7 @@ import type {
   OrchestratorConfig,
   RunIdentity,
   Task,
+  TaskMetadata,
   TaskRequirements,
   TokenUsage,
 } from '../types.js'
@@ -622,11 +623,13 @@ export async function buildSynthesisPrompt(
 export function loadSpecsIntoQueue(
   specs: ReadonlyArray<ParsedTaskSpec & {
     memoryScope?: 'dependencies' | 'all'
+    dependencyPayload?: 'output' | 'structured' | 'both'
     maxRetries?: number
     retryDelayMs?: number
     retryBackoff?: number
     role?: string
     priority?: 'low' | 'normal' | 'high' | 'critical'
+    metadata?: TaskMetadata
     requires?: TaskRequirements
   }>,
   agentConfigs: AgentConfig[],
@@ -653,11 +656,13 @@ export function loadSpecsIntoQueue(
         ? spec.assignee
         : undefined,
       memoryScope: spec.memoryScope,
+      dependencyPayload: spec.dependencyPayload,
       maxRetries: spec.maxRetries,
       retryDelayMs: spec.retryDelayMs,
       retryBackoff: spec.retryBackoff,
       role: spec.role,
       priority: spec.priority,
+      metadata: spec.metadata,
       requires: spec.requires,
       verify: resolveVerify(spec.verify, verifyJudges),
     })

@@ -101,11 +101,15 @@ const receipt = buildExecutionReceipt(result, trace)
 
 The receipt reports `mode`, distinct `rolesExecuted`, start-time-based
 `executionOrder`, cross-role `dependencyEdges`, `independentRolesCount`, token
-usage, duration, and whether the record is `partial`. `independentReviewOccurred`
-is true only when at least two different worker roles executed and at least one
-task dependency connects two different roles. Parallel roles with no dependency
-edge do not count as an independent review chain. Coordinator planning entries
-(`coordinator` and `coordinator:*`) are excluded.
+usage, duration, and whether the record is `partial`. For compatibility,
+`rolesExecuted` continues to mean concrete assignee names;
+`workerInstancesExecuted` makes that meaning explicit and
+`taskRolesExecuted` lists distinct caller-declared logical task roles when
+present. `independentReviewOccurred` is true only when at least two different
+worker instances executed and at least one task dependency connects two
+different assignees. Parallel workers with no dependency edge do not count as
+an independent review chain. Coordinator planning entries (`coordinator` and
+`coordinator:*`) are excluded.
 
 For `runTeam()`, the receipt also carries its stable `id` plus
 `routingDecisionId` and, when tracing is enabled, `routingDecisionSpanId`.
@@ -642,7 +646,8 @@ the priority-chain path without pretending every choice came from a router:
 
 The event/span's `receiptId` points to the eventual `ExecutionReceipt`; the
 receipt points back with `routingDecisionId` and `routingDecisionSpanId`.
-Neither record duplicates task roles, order, or dependency edges.
+The decision records do not duplicate actual task roles, order, or dependency
+edges; those remain post-execution receipt/task facts.
 
 The `TraceEvent` union now has eight members, including `routing_decision`.
 Internally, `LegacyCallbackTraceSink` maps v2 records back to the exact legacy

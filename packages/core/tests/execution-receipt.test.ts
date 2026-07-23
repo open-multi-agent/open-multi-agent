@@ -37,6 +37,7 @@ function task(
   assignee: string,
   dependsOn: readonly string[],
   startMs: number,
+  role?: string,
 ): TaskExecutionRecord {
   return {
     id,
@@ -44,6 +45,7 @@ function task(
     assignee,
     status: 'completed',
     dependsOn,
+    ...(role ? { role } : {}),
     metrics: {
       startMs,
       endMs: startMs + 10,
@@ -143,6 +145,25 @@ describe('buildExecutionReceipt', () => {
     expect(receipt.independentRolesCount).toBe(6)
     expect(receipt.dependencyEdges).toEqual([])
     expect(receipt.independentReviewOccurred).toBe(false)
+  })
+
+  it('keeps worker instances distinct from repeated logical task roles', () => {
+    const receipt = buildExecutionReceipt(teamResult([
+      task('supplier-1', 'supplier-reader-01', [], 100, 'supplier-extraction'),
+      task('supplier-2', 'supplier-reader-02', [], 101, 'supplier-extraction'),
+      task('supplier-3', 'supplier-reader-03', [], 102, 'supplier-extraction'),
+      task('review', 'evidence-reviewer', ['supplier-1', 'supplier-2', 'supplier-3'], 200, 'evidence-review'),
+    ]))
+
+    expect(receipt.rolesExecuted).toEqual([
+      'supplier-reader-01',
+      'supplier-reader-02',
+      'supplier-reader-03',
+      'evidence-reviewer',
+    ])
+    expect(receipt.workerInstancesExecuted).toEqual(receipt.rolesExecuted)
+    expect(receipt.taskRolesExecuted).toEqual(['supplier-extraction', 'evidence-review'])
+    expect(receipt.independentRolesCount).toBe(4)
   })
 
   it('excludes coordinator planning records from executed worker roles', () => {

@@ -80,6 +80,7 @@ import { TaskQueue } from '../task/queue.js'
 import { Checkpoint } from '../memory/checkpoint.js'
 import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
+import { validateTaskMetadata } from '../task/metadata.js'
 import { Scheduler } from './scheduler.js'
 import { CostBudgetExceededError, TokenBudgetExceededError } from '../errors.js'
 import {
@@ -1134,6 +1135,10 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
       requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
@@ -1213,6 +1218,12 @@ export class OpenMultiAgent {
           ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
           ...(task.dependsOn.length > 0 ? { dependsOn: task.dependsOn } : {}),
           ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+          ...(task.dependencyPayload !== undefined
+            ? { dependencyPayload: task.dependencyPayload }
+            : {}),
+          ...(task.role !== undefined ? { role: task.role } : {}),
+          ...(task.priority !== undefined ? { priority: task.priority } : {}),
+          ...(task.metadata !== undefined ? { metadata: task.metadata } : {}),
           ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
           ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
           ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
@@ -1320,11 +1331,13 @@ export class OpenMultiAgent {
             assignee: t.assignee,
             dependsOn: t.dependsOn,
             memoryScope: t.memoryScope,
+            dependencyPayload: t.dependencyPayload,
             maxRetries: t.maxRetries,
             retryDelayMs: t.retryDelayMs,
             retryBackoff: t.retryBackoff,
             role: t.role,
             priority: t.priority,
+            metadata: t.metadata,
             verify: t.verify,
           })),
           team.getAgents(),
@@ -1459,11 +1472,13 @@ export class OpenMultiAgent {
         assignee: t.assignee,
         dependsOn: t.dependsOn,
         memoryScope: t.memoryScope,
+        dependencyPayload: t.dependencyPayload,
         maxRetries: t.maxRetries,
         retryDelayMs: t.retryDelayMs,
         retryBackoff: t.retryBackoff,
         role: t.role,
         priority: t.priority,
+        metadata: t.metadata,
         requires: t.requires,
         verify: t.verify,
       })),
@@ -1731,6 +1746,14 @@ export class OpenMultiAgent {
       ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
       ...(task.dependsOn && task.dependsOn.length > 0 ? { dependsOn: [...task.dependsOn] } : {}),
       ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      ...(task.dependencyPayload !== undefined
+        ? { dependencyPayload: task.dependencyPayload }
+        : {}),
+      ...(task.role !== undefined ? { role: task.role } : {}),
+      ...(task.priority !== undefined ? { priority: task.priority } : {}),
+      ...(task.metadata !== undefined
+        ? { metadata: validateTaskMetadata(task.metadata) }
+        : {}),
       ...(task.requires !== undefined ? { requires: task.requires } : {}),
       result: undefined,
       createdAt: now,
@@ -1873,6 +1896,10 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
       requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
@@ -1952,13 +1979,16 @@ export class OpenMultiAgent {
       const task = taskById.get(completed.taskId)
       const assignee = completed.assignee ?? task?.assignee ?? 'unknown'
       const output = completed.result ?? task?.result ?? ''
-      agentResults.set(`${assignee}:${completed.taskId}`, {
-        success: true,
-        output,
-        messages: [],
-        tokenUsage: ZERO_USAGE,
-        toolCalls: [],
-      })
+      agentResults.set(
+        `${assignee}:${completed.taskId}`,
+        completed.agentResult ?? {
+          success: true,
+          output,
+          messages: [],
+          tokenUsage: ZERO_USAGE,
+          toolCalls: [],
+        },
+      )
     }
 
     return agentResults
@@ -2009,6 +2039,14 @@ export class OpenMultiAgent {
     let totalUsage: TokenUsage = ZERO_USAGE
     let overallSuccess = true
     const collapsed = new Map<string, AgentRunResult>()
+    const taskResults = new Map<string, AgentRunResult>()
+
+    for (const task of tasks ?? []) {
+      if (!task.assignee) continue
+      const exact = agentResults.get(`${task.assignee}:${task.id}`)
+        ?? (task.id === 'short-circuit' ? agentResults.get(task.assignee) : undefined)
+      if (exact !== undefined) taskResults.set(task.id, exact)
+    }
 
     for (const [key, result] of agentResults) {
       // Strip the `:taskId` suffix to get the agent name
@@ -2072,6 +2110,7 @@ export class OpenMultiAgent {
       goal,
       tasks,
       agentResults: collapsed,
+      taskResults,
       totalTokenUsage: totalUsage,
       metrics,
     }
@@ -2091,6 +2130,10 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
       requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,

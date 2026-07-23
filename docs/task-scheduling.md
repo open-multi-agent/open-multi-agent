@@ -24,6 +24,77 @@ Task failure and skip propagation still belong to `TaskQueue`. A failed or
 skipped task cascades to its dependents immediately, while unrelated branches
 continue.
 
+## Task results and dependency payloads
+
+`TeamRunResult.agentResults` remains keyed by agent name and preserves its
+existing merge behavior when one agent executes multiple tasks. Task runs also
+populate `TeamRunResult.taskResults`, keyed by stable task ID, so every task's
+unmerged `AgentRunResult` remains available:
+
+```ts
+const result = await orchestrator.runTasks(team, tasks)
+const extractTask = result.tasks?.find(task => task.title === 'Extract')
+const extracted = extractTask
+  ? result.taskResults?.get(extractTask.id)?.structured
+  : undefined
+```
+
+The two indexes reference the same underlying executions. Run-level token usage
+and metrics are calculated once from the internal results; exposing
+`taskResults` does not count usage twice.
+
+Direct dependencies still inject raw `output` by default. An explicit task can
+opt into validated structured handoff:
+
+```ts
+{
+  title: 'Review',
+  description: 'Review validated extraction records.',
+  dependsOn: ['Extract'],
+  dependencyPayload: 'structured', // 'output' (default) | 'structured' | 'both'
+}
+```
+
+`structured` injects only canonical JSON derived from the dependency's
+successful `AgentRunResult.structured`; narrative text in `output` is excluded.
+`both` injects labeled raw and structured sections. A missing or non-serializable
+structured value fails the dependent task with a machine-readable validation
+error—OMA never silently falls back to raw output. Each opt-in dependency
+payload is limited to 64 KiB before the consumer agent is invoked. The default
+`output` path is unchanged for 1.x compatibility.
+
+## Task role and provenance metadata
+
+`assignee` identifies the concrete worker instance. `role` can separately name
+the logical business function, and bounded `metadata` can carry references such
+as `sourceFile`, `supplierId`, or `documentId`:
+
+```ts
+{
+  title: 'Read supplier reply 01',
+  description: 'Extract the simulated quote.',
+  assignee: 'supplier-reader-01',
+  role: 'supplier-extraction',
+  metadata: {
+    sourceFile: 'fixtures/supplier-01.json',
+    supplierId: 'supplier-01',
+  },
+}
+```
+
+Task metadata allows at most 16 entries. Keys are 1–64 characters, begin with a
+letter, and otherwise use letters, digits, `.`, `_`, or `-`; each string is at
+most 1024 characters and each homogeneous scalar array at most 16 values.
+Credential-like keys and the reserved `oma.` prefix are rejected.
+Credential-like text in allowed string values is redacted before the metadata
+enters results, task trace attributes, checkpoint snapshots, or plan artifacts.
+
+`TaskExecutionRecord` retains `role` and `metadata`. Task spans expose
+`oma.task.role` and `oma.task.meta.<key>`, while legacy task trace events expose
+`taskRole` and `taskMetadata`. Execution receipts keep the legacy
+`rolesExecuted` assignee semantics and add `workerInstancesExecuted` plus
+`taskRolesExecuted` so worker replicas are not confused with business roles.
+
 ## Assignment strategies
 
 Unassigned tasks are scheduled when they become ready. `dependency-first` and

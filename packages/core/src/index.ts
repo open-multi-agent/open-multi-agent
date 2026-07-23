@@ -327,6 +327,7 @@ export type {
   RunTeamOptions,
   RunTasksOptions,
   RunTaskSpec,
+  TaskMetadata,
   TaskRequirements,
   RestoreOptions,
   ModelRouteConfig,

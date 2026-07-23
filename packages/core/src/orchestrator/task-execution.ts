@@ -24,6 +24,7 @@ import type {
 import type { AgentPool } from '../agent/pool.js'
 import type { Team } from '../team/team.js'
 import type { TaskQueue } from '../task/queue.js'
+import { taskMetadataTraceAttributes } from '../task/metadata.js'
 import type { Checkpoint } from '../memory/checkpoint.js'
 import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
@@ -179,11 +180,22 @@ export async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Prom
   // and the run continues — the next completed task retries the write.
   const save = async (): Promise<void> => {
     const sharedMem = ctx.team.getSharedMemoryInstance()
-    const completedTaskResults = queue.getByStatus('completed').map((task) => ({
-      taskId: task.id,
-      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
-      ...(task.result !== undefined ? { result: task.result } : {}),
-    }))
+    const completedTaskResults = queue.getByStatus('completed').map((task) => {
+      const agentResult = task.assignee === undefined
+        ? undefined
+        : ctx.agentResults.get(`${task.assignee}:${task.id}`)
+      const checkpointAgentResult = agentResult === undefined
+        ? undefined
+        : toCheckpointAgentResult(agentResult)
+      return {
+        taskId: task.id,
+        ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+        ...(task.result !== undefined ? { result: task.result } : {}),
+        ...(checkpointAgentResult !== undefined
+          ? { agentResult: checkpointAgentResult }
+          : {}),
+      }
+    })
 
     const snapshot: CheckpointSnapshot = {
       version: 2,
@@ -228,6 +240,19 @@ export async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Prom
       type: 'error',
       data: { kind: 'checkpoint_save_failed', error },
     } satisfies OrchestratorEvent)
+  }
+}
+
+function toCheckpointAgentResult(
+  result: AgentRunResult,
+): Omit<AgentRunResult, 'error'> | undefined {
+  const { error: _error, ...candidate } = result
+  try {
+    return JSON.parse(JSON.stringify(candidate)) as Omit<AgentRunResult, 'error'>
+  } catch {
+    // A custom structured value or tool input can be non-JSON-safe. Preserve
+    // checkpoint durability and let restore use the legacy minimal task result.
+    return undefined
   }
 }
 
@@ -536,6 +561,8 @@ export async function executeQueue(
           'oma.task.id': task.id,
           'oma.task.title': task.title,
           ...(task.assignee ? { 'oma.agent.name': task.assignee } : {}),
+          ...(task.role ? { 'oma.task.role': task.role } : {}),
+          ...taskMetadataTraceAttributes(task.metadata),
         },
       })
       if (taskSpan) ctx.taskSpans.set(task.id, taskSpan)
@@ -600,12 +627,80 @@ export async function executeQueue(
           data: task,
         } satisfies OrchestratorEvent)
 
-        // Build the prompt: task description + dependency-only context by default.
-        const prompt = await buildTaskPrompt(task, team, queue, ctx.revealCoordinatorContext)
-
-        // Trace + abort + team tool context (delegate_to_agent)
+        const taskStartMs = taskSpan?.startUnixMs ?? Date.now()
         const taskSpanId = config.onTrace ? generateSpanId() : undefined
         const agentSpanId = config.onTrace ? generateSpanId() : undefined
+        const legacyTaskEvent = (
+          success: boolean,
+          endMs: number,
+          retries: number,
+        ) => config.onTrace ? {
+            type: 'task',
+            runId: ctx.runId ?? '',
+            spanId: taskSpanId ?? generateSpanId(),
+            taskId: task.id,
+            taskTitle: task.title,
+            ...(task.role !== undefined ? { taskRole: task.role } : {}),
+            ...(task.metadata !== undefined ? { taskMetadata: task.metadata } : {}),
+            agent: assignee,
+            success,
+            retries,
+            startMs: taskStartMs,
+            endMs,
+            durationMs: endMs - taskStartMs,
+          } as const : undefined
+
+        // Build the prompt: task description + dependency-only context by default.
+        let prompt: string
+        try {
+          prompt = await buildTaskPrompt(
+            task,
+            team,
+            queue,
+            ctx.revealCoordinatorContext,
+            ctx.agentResults,
+          )
+        } catch (error) {
+          if (!(error instanceof DependencyPayloadError)) throw error
+          const taskEndMs = Date.now()
+          const message = errorMessage(error)
+          const classified = classifyRunFailure(error, { kind: 'validation' })
+          const failure: AgentRunResult = {
+            success: false,
+            output: message,
+            messages: [],
+            tokenUsage: ZERO_USAGE,
+            toolCalls: [],
+            status: classified.status,
+            errorInfo: classified.errorInfo,
+            error,
+          }
+          ctx.agentResults.set(`${assignee}:${task.id}`, failure)
+          ctx.taskMetrics.set(task.id, {
+            startMs: taskStartMs,
+            endMs: taskEndMs,
+            durationMs: Math.max(0, taskEndMs - taskStartMs),
+            tokenUsage: ZERO_USAGE,
+            toolCalls: [],
+            retries: 0,
+          })
+          queue.fail(task.id, message)
+          const taskLegacyEvent = legacyTaskEvent(false, taskEndMs, 0)
+          taskSpan?.end({
+            status: classified.status,
+            error: classified.errorInfo,
+            ...(taskLegacyEvent ? { legacyEvent: taskLegacyEvent } : {}),
+          })
+          config.onProgress?.({
+            type: 'error',
+            task: task.id,
+            agent: assignee,
+            data: failure,
+          } satisfies OrchestratorEvent)
+          return
+        }
+
+        // Trace + abort + team tool context (delegate_to_agent)
         const traceBase: Partial<RunOptions> = {
           identity: ctx.identity,
           runId: ctx.runId,
@@ -674,7 +769,6 @@ export async function executeQueue(
             }
           : undefined
 
-        const taskStartMs = taskSpan?.startUnixMs ?? Date.now()
         let retryCount = 0
 
         const result = await executeWithRetry(
@@ -744,19 +838,7 @@ export async function executeQueue(
 
         const taskEndMs = Date.now()
 
-        const taskLegacyEvent = config.onTrace ? {
-            type: 'task',
-            runId: ctx.runId ?? '',
-            spanId: taskSpanId ?? generateSpanId(),
-            taskId: task.id,
-            taskTitle: task.title,
-            agent: assignee,
-            success: result.success,
-            retries: retryCount,
-            startMs: taskStartMs,
-            endMs: taskEndMs,
-            durationMs: taskEndMs - taskStartMs,
-          } as const : undefined
+        const taskLegacyEvent = legacyTaskEvent(result.success, taskEndMs, retryCount)
 
         ctx.agentResults.set(`${assignee}:${task.id}`, result)
 
@@ -968,6 +1050,7 @@ export async function buildTaskPrompt(
   team: Team,
   queue: TaskQueue,
   revealContext?: RevealCoordinatorContext,
+  agentResults?: ReadonlyMap<string, AgentRunResult>,
 ): Promise<string> {
   const lines: string[] = []
 
@@ -999,9 +1082,49 @@ export async function buildTaskPrompt(
     const depResults: string[] = []
     for (const depId of task.dependsOn) {
       const depTask = queue.get(depId)
-      if (depTask?.status === 'completed' && depTask.result) {
-        depResults.push(`### ${depTask.title} (by ${depTask.assignee ?? 'unknown'})\n${depTask.result}`)
+      if (depTask?.status !== 'completed') continue
+
+      const heading = `### ${depTask.title} (by ${depTask.assignee ?? 'unknown'})`
+      const payloadMode = task.dependencyPayload ?? 'output'
+      if (payloadMode === 'output') {
+        if (depTask.result) depResults.push(`${heading}\n${depTask.result}`)
+        continue
       }
+
+      const dependencyResult = depTask.assignee === undefined
+        ? undefined
+        : agentResults?.get(`${depTask.assignee}:${depTask.id}`)
+      if (!dependencyResult?.success || dependencyResult.structured === undefined) {
+        throw new DependencyPayloadError(
+          'DEPENDENCY_STRUCTURED_RESULT_MISSING',
+          `Task "${task.title}" requires a structured result from dependency ` +
+            `"${depTask.title}" (${depTask.id}), but none is available.`,
+        )
+      }
+
+      let structured: string
+      try {
+        structured = stableJsonStringify(dependencyResult.structured)
+      } catch {
+        throw new DependencyPayloadError(
+          'DEPENDENCY_STRUCTURED_SERIALIZATION_FAILED',
+          `Task "${task.title}" could not serialize the structured result from ` +
+            `dependency "${depTask.title}" (${depTask.id}).`,
+        )
+      }
+
+      const payload = payloadMode === 'structured'
+        ? `${heading}\n#### Validated structured result\n${structured}`
+        : [
+            heading,
+            '#### Raw output',
+            depTask.result ?? dependencyResult.output,
+            '',
+            '#### Validated structured result',
+            structured,
+          ].join('\n')
+      assertDependencyPayloadSize(task, depTask, payload)
+      depResults.push(payload)
     }
     if (depResults.length > 0) {
       lines.push('', '## Context from prerequisite tasks', '', ...depResults)
@@ -1020,4 +1143,71 @@ export async function buildTaskPrompt(
   }
 
   return lines.join('\n')
+}
+
+const MAX_DEPENDENCY_PAYLOAD_BYTES = 64 * 1_024
+
+class DependencyPayloadError extends Error {
+  constructor(
+    readonly code:
+      | 'DEPENDENCY_STRUCTURED_RESULT_MISSING'
+      | 'DEPENDENCY_STRUCTURED_SERIALIZATION_FAILED'
+      | 'DEPENDENCY_PAYLOAD_TOO_LARGE',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DependencyPayloadError'
+  }
+}
+
+function assertDependencyPayloadSize(task: Task, dependency: Task, payload: string): void {
+  const bytes = Buffer.byteLength(payload, 'utf8')
+  if (bytes <= MAX_DEPENDENCY_PAYLOAD_BYTES) return
+  throw new DependencyPayloadError(
+    'DEPENDENCY_PAYLOAD_TOO_LARGE',
+    `Task "${task.title}" dependency payload from "${dependency.title}" ` +
+      `is ${bytes} bytes; the limit is ${MAX_DEPENDENCY_PAYLOAD_BYTES} bytes.`,
+  )
+}
+
+function stableJsonStringify(value: unknown): string {
+  const normalized = normalizeJsonValue(value, new Set<object>())
+  const serialized = JSON.stringify(normalized)
+  if (serialized === undefined) {
+    throw new TypeError('Structured dependency result is not JSON-serializable.')
+  }
+  return serialized
+}
+
+function normalizeJsonValue(value: unknown, ancestors: Set<object>): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'bigint') throw new TypeError('BigInt is not JSON-serializable.')
+  if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') {
+    return undefined
+  }
+
+  const object = value as object
+  if (ancestors.has(object)) throw new TypeError('Circular structured dependency result.')
+  ancestors.add(object)
+  try {
+    if (value instanceof Date) return value.toJSON()
+    if (Array.isArray(value)) {
+      return value.map(item => normalizeJsonValue(item, ancestors) ?? null)
+    }
+
+    const record = value as Record<string, unknown> & { toJSON?: () => unknown }
+    if (typeof record.toJSON === 'function') {
+      return normalizeJsonValue(record.toJSON(), ancestors)
+    }
+
+    const normalized: Record<string, unknown> = {}
+    for (const key of Object.keys(record).sort()) {
+      const child = normalizeJsonValue(record[key], ancestors)
+      if (child !== undefined) normalized[key] = child
+    }
+    return normalized
+  } finally {
+    ancestors.delete(object)
+  }
 }

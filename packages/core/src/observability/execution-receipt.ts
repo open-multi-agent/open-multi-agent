@@ -25,7 +25,12 @@ export interface ExecutionReceipt {
   /** Machine-readable warnings copied from the run result, when present. */
   readonly flags?: readonly RunFlag[]
   readonly mode: 'single' | 'multi-agent'
+  /** Legacy worker/assignee list retained for compatibility. */
   readonly rolesExecuted: readonly string[]
+  /** Explicit alias that distinguishes concrete worker instances from task roles. */
+  readonly workerInstancesExecuted?: readonly string[]
+  /** Distinct caller-declared logical task roles observed in executed tasks. */
+  readonly taskRolesExecuted?: readonly string[]
   readonly executionOrder: readonly string[]
   readonly dependencyEdges: readonly ExecutionReceiptDependencyEdge[]
   readonly independentRolesCount: number
@@ -48,6 +53,7 @@ interface TraceFacts {
 interface TaskFact {
   readonly id?: string
   readonly role?: string
+  readonly taskRole?: string
   readonly dependsOn: readonly string[]
   readonly startMs?: number
 }
@@ -112,6 +118,7 @@ function readTraceTaskFacts(trace: TraceFacts): Map<string, TaskFact> {
     const candidate: TaskFact = {
       id,
       role: readWorkerRole(event['agent']),
+      taskRole: readString(event['taskRole']),
       dependsOn: [],
       startMs: isFiniteNumber(event['startMs']) ? event['startMs'] : undefined,
     }
@@ -128,6 +135,7 @@ function emptyReceipt(): ExecutionReceipt {
   return {
     mode: 'single',
     rolesExecuted: [],
+    workerInstancesExecuted: [],
     executionOrder: [],
     dependencyEdges: [],
     independentRolesCount: 0,
@@ -189,6 +197,7 @@ function buildAgentReceipt(result: AgentRunResult, trace: TraceFacts): Execution
     ...(flags ? { flags } : {}),
     mode: rolesExecuted.length > 1 ? 'multi-agent' : 'single',
     rolesExecuted,
+    workerInstancesExecuted: rolesExecuted,
     executionOrder,
     dependencyEdges: [],
     independentRolesCount: rolesExecuted.length,
@@ -230,6 +239,7 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
 
     const rawRole = readString(value['assignee'])
     const role = readWorkerRole(rawRole) ?? traced?.role
+    const taskRole = readString(value['role']) ?? traced?.taskRole
     const rawDependsOn = value['dependsOn']
     const dependsOn = Array.isArray(rawDependsOn)
       ? rawDependsOn.filter((dependency): dependency is string => typeof dependency === 'string')
@@ -241,7 +251,7 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
     if (!id || (!rawRole && !traced?.role) || !Array.isArray(rawDependsOn)) partial = true
     if (Array.isArray(rawDependsOn) && dependsOn.length !== rawDependsOn.length) partial = true
     if (role && startMs === undefined) partial = true
-    taskFacts.push({ id, role, dependsOn, startMs })
+    taskFacts.push({ id, role, taskRole, dependsOn, startMs })
   }
 
   const rolesExecuted: string[] = []
@@ -266,6 +276,10 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
   const executionOrder = orderComplete && earliestByRole.size === rolesExecuted.length
     ? [...rolesExecuted].sort((left, right) => earliestByRole.get(left)! - earliestByRole.get(right)!)
     : []
+  const taskRolesExecuted = [...new Set(taskFacts
+    .filter((task) => task.role !== undefined)
+    .map((task) => task.taskRole)
+    .filter((role): role is string => role !== undefined))]
 
   const roleByTaskId = new Map<string, string>()
   for (const task of taskFacts) {
@@ -303,6 +317,8 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
     ...(flags ? { flags } : {}),
     mode: rolesExecuted.length > 1 ? 'multi-agent' : 'single',
     rolesExecuted,
+    workerInstancesExecuted: rolesExecuted,
+    ...(taskRolesExecuted.length > 0 ? { taskRolesExecuted } : {}),
     executionOrder,
     dependencyEdges,
     independentRolesCount: rolesExecuted.length,

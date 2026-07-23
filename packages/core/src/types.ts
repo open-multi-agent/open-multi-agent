@@ -1130,6 +1130,9 @@ export interface TaskRequirements {
   readonly requiredProvider?: SupportedProvider
 }
 
+/** Bounded, trace-safe business references attached to one task. */
+export type TaskMetadata = Readonly<Record<string, TraceAttributeValue>>
+
 /** Input task descriptor accepted by {@link OpenMultiAgent.runTasks}. */
 export interface RunTaskSpec {
   readonly title: string
@@ -1137,6 +1140,20 @@ export interface RunTaskSpec {
   readonly assignee?: string
   readonly dependsOn?: string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  /**
+   * Payload injected for each direct dependency.
+   *
+   * Defaults to `output` for backwards compatibility. `structured` injects
+   * only the dependency's validated structured value; `both` labels and
+   * injects both forms.
+   */
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  /**
+   * Bounded business references such as `sourceFile`, `supplierId`, or
+   * `documentId`. Values are validated and credential-like content is redacted
+   * before entering task results, traces, or checkpoints.
+   */
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
@@ -1422,6 +1439,15 @@ export interface TeamRunResult extends RunOutcomeFields {
   readonly planOnly?: boolean
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
+  /**
+   * Unmerged per-task results keyed by stable task id.
+   *
+   * Runtime-produced task runs populate this map while retaining
+   * {@link agentResults} for backwards compatibility. It remains optional so
+   * older serialized results and caller-authored fixtures continue to
+   * type-check.
+   */
+  readonly taskResults?: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage
   /** Aggregated run-level metrics computed from per-task data. */
   readonly metrics?: RunMetrics
@@ -1435,6 +1461,10 @@ export interface PlanTaskArtifact {
   readonly assignee?: string
   readonly dependsOn?: readonly string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
@@ -1531,6 +1561,11 @@ export interface TaskExecutionRecord {
    * task; `undefined` when the task did not set them.
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  /** Logical business role, distinct from the concrete worker in `assignee`. */
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
@@ -1556,10 +1591,17 @@ export interface Task {
    * - `all`: full shared-memory summary
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  /**
+   * Selects the representation of direct dependency results injected into the
+   * task prompt. Defaults to `output`.
+   */
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
   /** Caller-defined task role used by model routing rules. */
   readonly role?: string
   /** Caller-defined task priority used by model routing rules. */
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Validated, bounded business references carried through result/trace/checkpoint. */
+  readonly metadata?: TaskMetadata
   /** Explicit hard requirements used by capability-aware scheduling. */
   readonly requires?: TaskRequirements
   result?: string
@@ -1883,8 +1925,10 @@ export interface TaskSnapshot {
   readonly assignee?: string
   readonly dependsOn?: readonly string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
   readonly role?: string
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
   readonly requires?: TaskRequirements
   readonly result?: string
   readonly createdAt: string
@@ -1911,6 +1955,11 @@ export interface CompletedTaskCheckpoint {
   readonly taskId: string
   readonly assignee?: string
   readonly result?: string
+  /**
+   * Full JSON-serializable task result. The in-process-only `error` object is
+   * deliberately omitted; normalized `status` / `errorInfo` remain available.
+   */
+  readonly agentResult?: Omit<AgentRunResult, 'error'>
 }
 
 interface CheckpointSnapshotBase {
@@ -2094,6 +2143,8 @@ export interface TaskTrace extends TraceEventBase {
   readonly type: 'task'
   readonly taskId: string
   readonly taskTitle: string
+  readonly taskRole?: string
+  readonly taskMetadata?: TaskMetadata
   readonly success: boolean
   readonly retries: number
 }
