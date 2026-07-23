@@ -419,9 +419,11 @@ export async function executeQueue(
         )
         let routeIndex = 0
         let lastFailureWasRetryableProviderError = false
+        let streamedErrorInfo: AgentRunResult['errorInfo']
         const attemptUsages: Array<{ readonly usage: TokenUsage; readonly config: AgentConfig }> = []
         const streamCallback = config.onAgentStream
           ? (event: StreamEvent) => {
+              if (event.type === 'error') streamedErrorInfo = event.errorInfo
               const streamMs = Date.now()
               const legacyEvent = config.onTrace ? {
                   type: 'agent_stream',
@@ -457,6 +459,7 @@ export async function executeQueue(
               ? routedConfigs[activeRouteIndex]!
               : workerBaseConfig
             try {
+              streamedErrorInfo = undefined
               const attemptResult = routedAgent
                 ? await pool.runEphemeral(
                     routedAgent,
@@ -477,10 +480,12 @@ export async function executeQueue(
                 && attemptResult.errorInfo.retryable === true
               return attemptResult
             } catch (error) {
-              // A thrown value has no result-level source classification. Keep
-              // the current route rather than failing over on an unconfirmed
-              // error such as a hook or framework callback failure.
-              lastFailureWasRetryableProviderError = false
+              // Streaming errors are thrown by AgentPool after they have been
+              // forwarded through onAgentStream. Use the source classification
+              // attached by Agent rather than inferring it from the raw Error.
+              lastFailureWasRetryableProviderError =
+                streamedErrorInfo?.kind === 'provider'
+                && streamedErrorInfo.retryable === true
               throw error
             }
           },

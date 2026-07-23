@@ -480,6 +480,60 @@ describe('OpenMultiAgent', () => {
       expect(capturedAdapterProviders).toEqual(['anthropic', 'openai'])
     })
 
+    it('fails over after a retryable provider error while onAgentStream is enabled', async () => {
+      const streamedErrorKinds: Array<{ kind: string | undefined; retryable: boolean | undefined }> = []
+      let defaultModelCalls = 0
+      mockAdapterHandler = (options) => {
+        if (options.model === 'primary-model') {
+          return Object.assign(new Error('provider unavailable'), { status: 503 })
+        }
+        if (options.model === 'backup-model') return 'backup output'
+        defaultModelCalls++
+        return defaultModelCalls === 1
+          ? '```json\n[{"title":"Fallback","description":"Recover from a provider outage","assignee":"worker-a","maxRetries":1,"retryDelayMs":0}]\n```'
+          : 'final synthesis'
+      }
+
+      const oma = new OpenMultiAgent({
+        defaultModel: 'default-model',
+        onAgentStream: (_agentName, event) => {
+          if (event.type === 'error') {
+            streamedErrorKinds.push({
+              kind: event.errorInfo?.kind,
+              retryable: event.errorInfo?.retryable,
+            })
+          }
+        },
+      })
+      const team = oma.createTeam('t', teamCfg([
+        { ...agentConfig('worker-a'), model: 'default-worker-model' },
+      ]))
+
+      const result = await oma.runTeam(
+        team,
+        'First recover from the provider outage, then write a summary of the result',
+        {
+          modelRouting: {
+            rules: [{
+              match: { phase: 'worker' },
+              route: {
+                model: 'primary-model',
+                provider: 'anthropic',
+                fallback: [{ model: 'backup-model', provider: 'openai' }],
+              },
+            }],
+          },
+        },
+      )
+
+      expect(result.success).toBe(true)
+      expect(capturedChatOptions
+        .map(options => options.model)
+        .filter(model => model === 'primary-model' || model === 'backup-model'))
+        .toEqual(['primary-model', 'backup-model'])
+      expect(streamedErrorKinds).toEqual([{ kind: 'provider', retryable: true }])
+    })
+
     it('prices each fallback attempt with the route that handled it', async () => {
       const costContexts: CostEstimateContext[] = []
       mockAdapterHandler = (options) => {

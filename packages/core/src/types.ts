@@ -319,6 +319,12 @@ export interface LLMResponse {
 export interface StreamEvent {
   readonly type: 'text' | 'reasoning' | 'tool_use' | 'tool_result' | 'loop_detected' | 'budget_exceeded' | 'done' | 'error'
   readonly data: unknown
+  /**
+   * Normalized failure metadata for an `error` event when its source is known.
+   * This lets orchestrators distinguish a provider failure from a callback or
+   * framework failure without inferring the source from the error text.
+   */
+  readonly errorInfo?: StructuredTraceError
 }
 
 // ---------------------------------------------------------------------------
