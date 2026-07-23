@@ -52,7 +52,7 @@
 
 ## 目录
 
-[快速开始](#快速开始) · [执行模式](#执行模式) · [核心能力](#核心能力) · [架构](#架构) · [示例](#示例) · [Provider](#provider) · [生产配置](#生产配置) · [文档](#文档)
+[快速开始](#快速开始) · [执行模式](#执行模式) · [调度](#调度) · [核心能力](#核心能力) · [架构](#架构) · [示例](#示例) · [Provider](#provider) · [生产配置](#生产配置) · [文档](#文档)
 
 ## 快速开始
 
@@ -108,6 +108,25 @@ console.log(result.agentResults.get('coordinator')?.output)
 | 显式任务管线 | `runTasks()` | 你自己定义任务图和分配 | [`basics/task-pipeline`](examples/basics/task-pipeline.ts) |
 
 用 `planOnly` 在执行前审查生成的任务图，再通过 `createPlanArtifact()` 和 `runFromPlan()` 回放。当一个答案需要额外把关时，`runConsensus()` 提供 proposer→judge 校验循环。
+
+## 调度
+
+在 `OpenMultiAgent` 上设置 `schedulingStrategy`，可以选择如何把未分配的任务映射给 Agent。该配置同时适用于 Coordinator 生成的 `runTeam()` 计划，以及显式或恢复的任务队列。已有显式 `assignee` 的任务会保留原分配。
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  schedulingStrategy: 'capability-match',
+})
+```
+
+| 策略 | 分配行为 | 适用场景 |
+|------|----------|----------|
+| `dependency-first`（默认） | 优先分配能解锁最多下游工作的任务，并轮转选择 Agent | 任务图存在明确依赖关系 |
+| `round-robin` | 按队列顺序在 Agent roster 中轮转分配 | Agent 能力可以互换 |
+| `least-busy` | 选择当前活跃任务或本批新分配任务最少的 Agent | 任务耗时差异较大，需要负载均衡 |
+| `capability-match` | 用任务文本匹配 Agent 名称和 system prompt | Agent 角色明确且差异清晰 |
+
+每种策略只负责一个调度维度，不会彼此组合或加权。
 
 ## 核心能力
 
