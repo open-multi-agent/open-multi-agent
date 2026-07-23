@@ -9,8 +9,9 @@
  * - `capability-match`   — Score agents by keyword overlap with the task description.
  * - `dependency-first`   — Prioritise tasks on the critical path (most blocked dependents).
  *
- * The scheduler is stateless between calls. All mutable task state lives in the
- * {@link TaskQueue} that is passed to {@link Scheduler.autoAssign}.
+ * The scheduler retains only a round-robin cursor between calls. All mutable
+ * task state lives in the {@link TaskQueue} passed to
+ * {@link Scheduler.autoAssign}.
  */
 
 import type { AgentConfig, Task } from '../types.js'
@@ -94,7 +95,7 @@ function countBlockedDependents(taskId: string, allTasks: Task[]): number {
  * ```
  */
 export class Scheduler {
-  /** Rolling cursor used by `round-robin` to distribute tasks sequentially. */
+  /** Rolling cursor used by round-robin strategies and fallbacks. */
   private roundRobinCursor = 0
 
   /**
@@ -115,9 +116,9 @@ export class Scheduler {
    * Only tasks without an existing `assignee` are considered. Tasks that are
    * already assigned are preserved unchanged.
    *
-   * The method is deterministic for all strategies except `round-robin`, which
-   * advances an internal cursor and therefore produces different results across
-   * successive calls with the same inputs.
+   * The method is deterministic except where a strategy uses the shared
+   * round-robin cursor: the `round-robin` strategy and zero-score fallback in
+   * `capability-match` advance it across successive calls.
    *
    * @param tasks  - Snapshot of all tasks in the current run (any status).
    * @param agents - Available agent configurations.
@@ -240,7 +241,9 @@ export class Scheduler {
    * between the task's title/description and the agent's `systemPrompt` and
    * `name`. The highest-scoring agent wins.
    *
-   * Falls back to round-robin when no agent has any positive score.
+   * The highest positive score wins; positive-score ties preserve agent roster
+   * order. When every agent scores zero for a task, that task consumes the
+   * shared round-robin cursor instead.
    */
   private scheduleCapabilityMatch(
     unassigned: Task[],
@@ -275,6 +278,11 @@ export class Scheduler {
           bestScore = score
           bestAgent = agent
         }
+      }
+
+      if (bestScore === 0) {
+        bestAgent = agents[this.roundRobinCursor % agents.length]!
+        this.roundRobinCursor = (this.roundRobinCursor + 1) % agents.length
       }
 
       result.set(task.id, bestAgent.name)

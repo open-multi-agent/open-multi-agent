@@ -160,15 +160,21 @@ describe('Scheduler: capability-match', () => {
     expect(assignments.get(tasks[2]!.id)).toBe('营销专家')
   })
 
-  it('falls back to first agent when no keywords match', () => {
+  it('round-robins zero-score tasks and advances the cursor across calls', () => {
     const s = new Scheduler('capability-match')
     const agents = [agent('alpha'), agent('beta')]
-    const tasks = [pendingTask('xyz')]
+    const tasks = [
+      pendingTask('x'),
+      pendingTask('y'),
+      pendingTask('z'),
+    ]
 
     const assignments = s.schedule(tasks, agents)
+    const nextTask = pendingTask('q')
+    const nextAssignments = s.schedule([nextTask], agents)
 
-    // When scores are tied (all 0), first agent wins
-    expect(assignments.size).toBe(1)
+    expect([...assignments.values()]).toEqual(['alpha', 'beta', 'alpha'])
+    expect(nextAssignments.get(nextTask.id)).toBe('beta')
   })
 })
 
