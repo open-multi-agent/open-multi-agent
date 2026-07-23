@@ -69,7 +69,12 @@ result.routingDecision
 // }
 ```
 
-Automatic routes expose `TeamRunResult.routingDecision`. Explicit `mode`, declared role governance, `preferredUnderBudget: 'degrade'`, and `planOnly` paths omit it because no router chose their topology.
+Every `runTeam()` topology choice exposes `TeamRunResult.routingDecision`.
+Its `source` distinguishes caller `override`, governance `declared`, framework
+`policy`, and automatic `router` decisions; only `router` records carry the
+actual `routerVersion`. See the
+[five routing trace source classifications](./observability.md#trace-spans),
+including the compatibility-only `legacy-deterministic` label.
 
 ## Built-in deterministic policy
 
