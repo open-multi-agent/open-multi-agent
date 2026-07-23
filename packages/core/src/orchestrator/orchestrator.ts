@@ -226,8 +226,8 @@ function resolveRunBudgets(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onTaskDispatch' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onTaskDispatch' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
@@ -253,6 +253,9 @@ export class OpenMultiAgent {
   constructor(config: OrchestratorConfig = {}) {
     if (config.maxCostBudget !== undefined && config.estimateCost === undefined) {
       throw new Error('maxCostBudget requires estimateCost so cost caps cannot be silently ignored.')
+    }
+    if (config.onApproval && config.onTaskDispatch) {
+      throw new Error('onApproval and onTaskDispatch are mutually exclusive approval modes.')
     }
 
     this.traceRecordObserver = traceRecordObserverFrom(config)
@@ -291,6 +294,7 @@ export class OpenMultiAgent {
       defaultToolPreset: config.defaultToolPreset,
       checkpoint: config.checkpoint,
       onApproval: config.onApproval,
+      onTaskDispatch: config.onTaskDispatch,
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
       onProgress: config.onProgress,
@@ -986,7 +990,9 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 3: Auto-assign any unassigned tasks
     // ------------------------------------------------------------------
-    scheduler.autoAssign(queue, agentConfigs)
+    if (this.config.onApproval || this.config.onPlanReady || options?.planOnly) {
+      scheduler.autoAssign(queue, agentConfigs)
+    }
 
     // ------------------------------------------------------------------
     // Step 4: Build pool and execute
@@ -1760,7 +1766,9 @@ export class OpenMultiAgent {
       : undefined
     const agentConfigs = team.getAgents()
     const scheduler = this.createScheduler()
-    scheduler.autoAssign(queue, agentConfigs)
+    if (this.config.onApproval) {
+      scheduler.autoAssign(queue, agentConfigs)
+    }
     const budgets = resolveRunBudgets(this.config, options)
 
     const pool = this.buildPool(agentConfigs)

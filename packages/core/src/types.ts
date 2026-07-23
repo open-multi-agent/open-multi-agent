@@ -1749,6 +1749,9 @@ export interface OrchestratorConfig {
    * to start next. Return `true` to continue or `false` to abort —
    * remaining tasks will be marked `'skipped'`.
    *
+   * Configuring this callback selects the legacy round-based executor. It is
+   * mutually exclusive with {@link onTaskDispatch}.
+   *
    * Not called when:
    * - No tasks succeeded in the round (all failed).
    * - No pending tasks remain after the round (final batch).
@@ -1758,6 +1761,22 @@ export interface OrchestratorConfig {
    * undefined behavior.
    */
   readonly onApproval?: (completedTasks: readonly Task[], nextTasks: readonly Task[]) => Promise<boolean>
+  /**
+   * Optional per-task dispatch gate for event-driven DAG execution.
+   *
+   * Called after a ready task has an assignee and immediately before it is
+   * dispatched. Return `true` to start the task or `false` to stop new
+   * dispatches. On rejection, already-running tasks are allowed to settle and
+   * every remaining task is then marked `'skipped'`.
+   *
+   * This gate is mutually exclusive with {@link onApproval}. Configure
+   * `onApproval` to retain legacy round-by-round execution and approval
+   * semantics; configure `onTaskDispatch` for native pipeline approval.
+   *
+   * **Note:** Do not mutate the {@link Task} passed to this callback. It is a
+   * live reference to queue state; mutation is undefined behavior.
+   */
+  readonly onTaskDispatch?: (task: Readonly<Task>) => boolean | Promise<boolean>
   /**
    * Optional approval gate called once after the coordinator decomposes the
    * goal into tasks and before execution begins.

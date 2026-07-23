@@ -130,6 +130,13 @@ mapped to agents. The setting applies to coordinator-generated `runTeam()`
 plans and explicit or restored task queues. Tasks with an explicit `assignee`
 keep that assignment.
 
+Task DAG execution is event-driven: a downstream task starts as soon as its
+dependencies are satisfied, without waiting for unrelated tasks from the same
+ready set. Progress events from independent branches can therefore interleave
+instead of arriving in round-sized groups. See
+[Task scheduling and dispatch](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/task-scheduling.md)
+for approval compatibility and UI migration guidance.
+
 ```typescript
 const orchestrator = new OpenMultiAgent({
   schedulingStrategy: 'composite',
@@ -145,14 +152,14 @@ const orchestrator = new OpenMultiAgent({
 | `capability-match` | Filters explicit task requirements, then prefers declared capability tags before legacy keyword affinity | Tasks or agents declare differentiated requirements/capabilities |
 | `composite` | Ranks tasks by blocked dependents, hard-filters with `AgentSelector`, then maximizes `fitWeight * fit + loadWeight * (1 - normalizedCurrentLoad)` | Criticality, capability fit, and current load should influence one decision |
 
-The four original strategies remain compatibility paths with unchanged
-behavior. `composite` uses `schedulingWeights.fit` and
+The four original strategies retain their selection contracts when invoked for
+one ready task. `composite` uses `schedulingWeights.fit` and
 `schedulingWeights.load`, which default to `0.7` and `0.3`. Current load is the
 agent's `in_progress` task count normalized within the roster at scheduling
 time; assignments made earlier in the same call do not alter that snapshot.
-If hard filtering finds no eligible agent, OMA emits a structured `warning`
-event and explicitly falls back to zero fit plus current load instead of
-silently ignoring the requirements.
+When `requires` leaves no eligible agent, `capability-match` terminates with
+`NO_ELIGIBLE_AGENT`; `composite` instead emits that structured `warning` and
+explicitly falls back to zero fit plus current load.
 
 Coordinator plans that name an agent outside the roster emit an
 `INVALID_ASSIGNEE` warning, clear that assignment, and use the configured
@@ -173,7 +180,7 @@ allowlists, denylists, and framework rails.
 | **Dynamic orchestration** | Runtime goal decomposition, dependency-aware scheduling, parallel branches, configurable assignment, opt-in team context for workers (`revealCoordinator`), and final synthesis. |
 | **Models and reasoning** | Mix built-in, OpenAI-compatible, AI SDK, or local models; map one `thinking` config to each provider's reasoning setting, route phases separately, and preserve reasoning only when explicitly enabled. |
 | **Tools and handoffs** | Built-in tools are default-deny; custom tools, MCP, and guarded `delegate_to_agent` handoffs are opt-in. |
-| **Controlled outputs** | Stream per agent, validate results with Zod, approve plans or task rounds, rewrite prompts or post-process results with `beforeRun` / `afterRun`, and cancel with `AbortSignal`. |
+| **Controlled outputs** | Stream per agent, validate results with Zod, approve plans, legacy task rounds (`onApproval`), or individual dispatches (`onTaskDispatch`), rewrite prompts or post-process results with `beforeRun` / `afterRun`, and cancel with `AbortSignal`. |
 | **Evaluation** | Version EvalSets, run reference scorers, gate CI with offline reports, persist results, or sample production runs on a best-effort path. |
 | **Memory and recovery** | Shared memory is pluggable; checkpoints resume interrupted runs without repeating completed tasks. |
 | **Observability** | Stable run identity, traces, redaction, TraceStore, and the offline DAG/Waterfall Viewer are available without a hosted service. |
@@ -203,6 +210,7 @@ Start with one example that matches the behavior you need:
 |---|---|
 | See coordinator planning | [`basics/team-collaboration`](examples/basics/team-collaboration.ts) |
 | Build an explicit DAG | [`cookbook/contract-review-dag`](examples/cookbook/contract-review-dag.ts) |
+| Observe event-driven DAG dispatch | [`patterns/event-driven-dag`](examples/patterns/event-driven-dag.ts) |
 | Validate structured output | [`patterns/structured-output`](examples/patterns/structured-output.ts) |
 | Delegate between agents | [`patterns/agent-handoff`](examples/patterns/agent-handoff.ts) |
 | Replay a frozen plan | [`patterns/plan-replay`](examples/patterns/plan-replay.ts) |

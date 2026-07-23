@@ -208,6 +208,54 @@ export class Scheduler {
   }
 
   /**
+   * Schedule one task against a current DAG snapshot.
+   *
+   * Event-driven execution calls this when a task becomes ready. The candidate
+   * set contains only `task`, while load and dependency-aware strategies still
+   * inspect `allTasks`. Existing assignees and non-pending tasks are preserved.
+   */
+  scheduleTask(
+    task: Task,
+    agents: AgentConfig[],
+    allTasks: Task[],
+  ): string | undefined {
+    if (agents.length === 0 || task.status !== 'pending' || task.assignee) {
+      return undefined
+    }
+
+    const candidate = [task]
+    switch (this.strategy) {
+      case 'round-robin':
+        return this.scheduleRoundRobin(candidate, agents).get(task.id)
+      case 'least-busy':
+        return this.scheduleLeastBusy(candidate, agents, allTasks).get(task.id)
+      case 'capability-match':
+        return this.scheduleCapabilityMatch(candidate, agents).get(task.id)
+      case 'dependency-first':
+        return this.scheduleDependencyFirst(candidate, agents, allTasks).get(task.id)
+      case 'composite':
+        return this.scheduleComposite(candidate, agents, allTasks).get(task.id)
+    }
+  }
+
+  /**
+   * Order the current ready set before one-task-at-a-time assignment.
+   *
+   * Dependency-aware strategies retain their critical-path preference even
+   * though assignment itself now receives one task. Other strategies preserve
+   * queue/event insertion order.
+   */
+  orderReadyTasks(tasks: Task[], allTasks: Task[]): Task[] {
+    const ready = tasks.filter((task) => task.status === 'pending')
+    if (this.strategy !== 'dependency-first' && this.strategy !== 'composite') {
+      return ready
+    }
+    return [...ready].sort((left, right) =>
+      countBlockedDependents(right.id, allTasks)
+      - countBlockedDependents(left.id, allTasks))
+  }
+
+  /**
    * Convenience method that applies assignments returned by {@link schedule}
    * directly to a live `TaskQueue`.
    *

@@ -148,7 +148,7 @@ export interface RunContext {
   readonly runId: string
   readonly traceRuntime?: TraceRuntime
   readonly taskSpans: Map<string, TraceSpan>
-  /** AbortSignal for run-level cancellation. Checked between task dispatch rounds. */
+  /** AbortSignal for run-level cancellation. Checked by the task dispatch gate. */
   readonly abortSignal?: AbortSignal
   cumulativeUsage: TokenUsage
   cumulativeCost: number

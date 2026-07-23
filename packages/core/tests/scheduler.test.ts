@@ -353,6 +353,76 @@ describe('Scheduler: composite', () => {
   })
 })
 
+describe('Scheduler: one ready task at a time', () => {
+  const agents = [
+    agent('researcher', 'Research and analyze evidence'),
+    agent('coder', 'Implement TypeScript code'),
+  ]
+
+  it('round-robin advances its cursor across single-task calls', () => {
+    const scheduler = new Scheduler('round-robin')
+    const first = pendingTask('first')
+    const second = pendingTask('second')
+
+    expect(scheduler.scheduleTask(first, agents, [first, second])).toBe('researcher')
+    expect(scheduler.scheduleTask(second, agents, [first, second])).toBe('coder')
+  })
+
+  it('least-busy reads current in-progress load from the full snapshot', () => {
+    const scheduler = new Scheduler('least-busy')
+    const busy: Task = {
+      ...pendingTask('busy'),
+      status: 'in_progress',
+      assignee: 'researcher',
+    }
+    const ready = pendingTask('ready')
+
+    expect(scheduler.scheduleTask(ready, agents, [busy, ready])).toBe('coder')
+  })
+
+  it('capability-match preserves hard eligibility for a single ready task', () => {
+    const scheduler = new Scheduler('capability-match')
+    const ready = pendingTask('Implement TypeScript code')
+    const impossible = pendingTask('Edit a file', {
+      requires: { requiredTools: ['file_edit'] },
+    })
+
+    expect(scheduler.scheduleTask(ready, agents, [ready])).toBe('coder')
+    expect(() => scheduler.scheduleTask(impossible, agents, [impossible]))
+      .toThrow('NO_ELIGIBLE_AGENT')
+  })
+
+  it('dependency-first assigns each ready task while retaining cursor fairness', () => {
+    const scheduler = new Scheduler('dependency-first')
+    const critical = pendingTask('critical')
+    const dependent = { ...pendingTask('dependent'), dependsOn: [critical.id] }
+    const later = pendingTask('later')
+
+    expect(scheduler.orderReadyTasks(
+      [later, critical],
+      [later, critical, dependent],
+    ).map((task) => task.id)).toEqual([critical.id, later.id])
+    expect(scheduler.scheduleTask(critical, agents, [critical, dependent, later]))
+      .toBe('researcher')
+    expect(scheduler.scheduleTask(later, agents, [critical, dependent, later]))
+      .toBe('coder')
+  })
+
+  it('composite reads current load from the full snapshot for one ready task', () => {
+    const scheduler = new Scheduler('composite', {}, {
+      weights: { fit: 0, load: 1 },
+    })
+    const busy: Task = {
+      ...pendingTask('busy'),
+      status: 'in_progress',
+      assignee: 'researcher',
+    }
+    const ready = pendingTask('ready')
+
+    expect(scheduler.scheduleTask(ready, agents, [busy, ready])).toBe('coder')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // autoAssign
 // ---------------------------------------------------------------------------

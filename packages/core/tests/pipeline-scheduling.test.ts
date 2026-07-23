@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
+import { buildExecutionReceipt } from '../src/observability/execution-receipt.js'
+import { Checkpoint } from '../src/memory/checkpoint.js'
+import { InMemoryStore } from '../src/memory/store.js'
 import type {
   AgentConfig,
   LLMAdapter,
@@ -9,6 +12,7 @@ import type {
   OrchestratorEvent,
   Task,
   TeamRunResult,
+  TraceEvent,
   TokenUsage,
 } from '../src/types.js'
 
@@ -37,6 +41,9 @@ interface HarnessOptions {
     completedTasks: readonly Task[],
     nextTasks: readonly Task[],
   ) => Promise<boolean>
+  readonly onTaskDispatch?: (task: Readonly<Task>) => boolean | Promise<boolean>
+  readonly onTrace?: (event: TraceEvent) => void
+  readonly checkpointStore?: InMemoryStore
 }
 
 const MAX_CONCURRENCY = 2
@@ -224,6 +231,10 @@ function createSchedulingHarness(options: HarnessOptions = {}) {
           },
         }
       : {}),
+    ...(options.onTaskDispatch
+      ? { onTaskDispatch: options.onTaskDispatch }
+      : {}),
+    ...(options.onTrace ? { onTrace: options.onTrace } : {}),
     onProgress: events.onProgress,
   })
   const agents: AgentConfig[] = ['worker-a', 'worker-b', 'worker-c'].map((name) => ({
@@ -255,7 +266,12 @@ function createSchedulingHarness(options: HarnessOptions = {}) {
     run: () => orchestrator.runTasks(
       team,
       tasks,
-      options.abortSignal ? { abortSignal: options.abortSignal } : undefined,
+      {
+        ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
+        ...(options.checkpointStore
+          ? { checkpoint: { store: options.checkpointStore } }
+          : {}),
+      },
     ),
   }
 }
@@ -289,10 +305,16 @@ function taskStatus(result: TeamRunResult, title: TaskTitle) {
   return result.tasks?.find((task) => task.title === title)?.status
 }
 
-// These tests document the current batch barrier; the pipeline PR will update
-// these assertions deliberately.
-describe('current executeQueue batch semantics', () => {
-  it('starts C only after the entire A/B batch completes', async () => {
+function expectNoUnsettledTasks(result: TeamRunResult): void {
+  expect(result.tasks?.some((task) =>
+    task.status === 'pending'
+    || task.status === 'blocked'
+    || task.status === 'in_progress',
+  )).toBe(false)
+}
+
+describe('executeQueue scheduling contracts', () => {
+  it('starts C after A completes without waiting for unrelated slow B', async () => {
     const harness = createSchedulingHarness()
 
     const result = await runFastABeforeSlowB(harness)
@@ -300,7 +322,10 @@ describe('current executeQueue batch semantics', () => {
     expect(taskStatus(result, 'A')).toBe('completed')
     expect(taskStatus(result, 'B')).toBe('completed')
     expect(taskStatus(result, 'C')).toBe('completed')
-    expect(harness.events.indexOf('task_start', 'C')).toBeGreaterThan(
+    expect(harness.events.indexOf('task_complete', 'A')).toBeLessThan(
+      harness.events.indexOf('task_start', 'C'),
+    )
+    expect(harness.events.indexOf('task_start', 'C')).toBeLessThan(
       harness.events.indexOf('task_complete', 'B'),
     )
   })
@@ -348,7 +373,7 @@ describe('current executeQueue batch semantics', () => {
     expect(result.tasks?.find((task) => task.title === 'C')?.assignee).toBe(nextTask?.assignee)
   })
 
-  it('applies a run budget overage after every task in the active batch settles', async () => {
+  it('stops new dispatch on budget overage, drains in-flight B, then skips C', async () => {
     const harness = createSchedulingHarness({
       maxTokenBudget: 10,
       usageByTask: {
@@ -359,6 +384,7 @@ describe('current executeQueue batch semantics', () => {
 
     const result = await runFastABeforeSlowB(harness)
 
+    expect(result.status?.code).toBe('budget_exhausted')
     expect(taskStatus(result, 'A')).toBe('completed')
     expect(taskStatus(result, 'B')).toBe('completed')
     expect(taskStatus(result, 'C')).toBe('skipped')
@@ -372,7 +398,7 @@ describe('current executeQueue batch semantics', () => {
     )
   })
 
-  it('skips remaining tasks after abort without leaving in_progress state', async () => {
+  it('drains an in-flight task after abort without leaving in_progress state', async () => {
     const controller = new AbortController()
     const harness = createSchedulingHarness({ abortSignal: controller.signal })
     harness.adapter.release('C')
@@ -388,6 +414,7 @@ describe('current executeQueue batch semantics', () => {
     harness.adapter.release('B')
     const result = await resultPromise
 
+    expect(result.status?.code).toBe('cancelled')
     expect(taskStatus(result, 'A')).toBe('completed')
     expect(taskStatus(result, 'B')).toBe('completed')
     expect(taskStatus(result, 'C')).toBe('skipped')
@@ -401,8 +428,192 @@ describe('current executeQueue batch semantics', () => {
   })
 })
 
+describe('pipeline interruption matrix', () => {
+  it('handles abort with no in-flight task', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const harness = createSchedulingHarness({ abortSignal: controller.signal })
+
+    const result = await harness.run()
+
+    expect(result.status?.code).toBe('cancelled')
+    expect(result.tasks?.map((task) => task.status)).toEqual([
+      'skipped',
+      'skipped',
+      'skipped',
+    ])
+    expect(harness.events.has('task_start')).toBe(false)
+    expectNoUnsettledTasks(result)
+  })
+
+  it('handles budget exhaustion with no other in-flight task', async () => {
+    const harness = createSchedulingHarness({
+      maxConcurrency: 1,
+      maxTokenBudget: 10,
+      usageByTask: {
+        A: { input_tokens: 6, output_tokens: 5 },
+      },
+    })
+    const resultPromise = harness.run()
+    await harness.adapter.waitForStart('A')
+    harness.adapter.release('A')
+
+    const result = await resultPromise
+
+    expect(result.status?.code).toBe('budget_exhausted')
+    expect(taskStatus(result, 'A')).toBe('completed')
+    expect(taskStatus(result, 'B')).toBe('skipped')
+    expect(taskStatus(result, 'C')).toBe('skipped')
+    expect(harness.events.has('task_start', 'B')).toBe(false)
+    expectNoUnsettledTasks(result)
+  })
+
+  it('handles per-task approval rejection with no in-flight task', async () => {
+    const onTaskDispatch = vi.fn(() => false)
+    const harness = createSchedulingHarness({
+      onTaskDispatch,
+      onTrace: () => {},
+    })
+
+    const result = await harness.run()
+
+    expect(onTaskDispatch).toHaveBeenCalledTimes(1)
+    expect(result.status?.code).toBe('rejected')
+    expect(result.tasks?.map((task) => task.status)).toEqual([
+      'skipped',
+      'skipped',
+      'skipped',
+    ])
+    expect(harness.events.has('task_start')).toBe(false)
+    expectNoUnsettledTasks(result)
+  })
+
+  it('rechecks abort after an asynchronous per-task gate resolves', async () => {
+    const controller = new AbortController()
+    const gateEntered = deferred<void>()
+    const gateDecision = deferred<boolean>()
+    const harness = createSchedulingHarness({
+      abortSignal: controller.signal,
+      onTaskDispatch: async () => {
+        gateEntered.resolve(undefined)
+        return gateDecision.promise
+      },
+    })
+    const resultPromise = harness.run()
+    await gateEntered.promise
+
+    controller.abort()
+    gateDecision.resolve(false)
+    const result = await resultPromise
+
+    expect(result.status?.code).toBe('cancelled')
+    expect(result.tasks?.map((task) => task.status)).toEqual([
+      'skipped',
+      'skipped',
+      'skipped',
+    ])
+    expect(harness.events.has('task_start')).toBe(false)
+    expectNoUnsettledTasks(result)
+  })
+
+  it('rechecks budget after an asynchronous per-task gate resolves', async () => {
+    const gateEntered = deferred<void>()
+    const gateDecision = deferred<boolean>()
+    const harness = createSchedulingHarness({
+      maxTokenBudget: 10,
+      usageByTask: {
+        A: { input_tokens: 6, output_tokens: 5 },
+      },
+      onTaskDispatch: (task) => {
+        if (task.title !== 'B') return true
+        gateEntered.resolve(undefined)
+        return gateDecision.promise
+      },
+    })
+    const resultPromise = harness.run()
+    await Promise.all([
+      harness.adapter.waitForStart('A'),
+      gateEntered.promise,
+    ])
+
+    harness.adapter.release('A')
+    await harness.events.waitFor('task_complete', 'A')
+    gateDecision.resolve(false)
+    const result = await resultPromise
+
+    expect(result.status?.code).toBe('budget_exhausted')
+    expect(taskStatus(result, 'A')).toBe('completed')
+    expect(taskStatus(result, 'B')).toBe('skipped')
+    expect(taskStatus(result, 'C')).toBe('skipped')
+    expect(harness.events.has('task_start', 'B')).toBe(false)
+    expectNoUnsettledTasks(result)
+  })
+
+  it('treats a per-task approval callback error as a drained callback failure', async () => {
+    const harness = createSchedulingHarness({
+      onTaskDispatch: () => {
+        throw new Error('approval backend unavailable')
+      },
+      onTrace: () => {},
+    })
+
+    const result = await harness.run()
+
+    expect(result.success).toBe(false)
+    expect(result.errorInfo).toMatchObject({ kind: 'callback' })
+    expectNoUnsettledTasks(result)
+  })
+
+  it('drains an in-flight task before applying per-task approval rejection', async () => {
+    const onTaskDispatch = vi.fn((task: Readonly<Task>) => task.title !== 'B')
+    const harness = createSchedulingHarness({ onTaskDispatch })
+    const resultPromise = harness.run()
+    await harness.adapter.waitForStart('A')
+
+    expect(onTaskDispatch.mock.calls.map(([task]) => task.title)).toEqual(['A', 'B'])
+    expect(harness.events.has('task_start', 'B')).toBe(false)
+    harness.adapter.release('A')
+    const result = await resultPromise
+
+    expect(result.status?.code).toBe('rejected')
+    expect(taskStatus(result, 'A')).toBe('completed')
+    expect(taskStatus(result, 'B')).toBe('skipped')
+    expect(taskStatus(result, 'C')).toBe('skipped')
+    expect(harness.events.indexOf('task_complete', 'A')).toBeLessThan(
+      harness.events.indexOf('task_skipped', 'B'),
+    )
+    expectNoUnsettledTasks(result)
+  })
+
+  it('rejects mutually exclusive round and per-task approval modes', () => {
+    expect(() => new OpenMultiAgent({
+      onApproval: async () => true,
+      onTaskDispatch: async () => true,
+    })).toThrow('onApproval and onTaskDispatch are mutually exclusive')
+  })
+
+  it('does not call the per-task gate before a task has an assignee', async () => {
+    const onTaskDispatch = vi.fn(() => true)
+    const orchestrator = new OpenMultiAgent({ onTaskDispatch })
+    const team = orchestrator.createTeam('empty-pipeline-team', {
+      name: 'empty-pipeline-team',
+      agents: [],
+      sharedMemory: false,
+    })
+
+    const result = await orchestrator.runTasks(team, [{
+      title: 'unassigned',
+      description: 'No agent can receive this task.',
+    }])
+
+    expect(onTaskDispatch).not.toHaveBeenCalled()
+    expect(result.tasks?.[0]?.status).toBe('failed')
+    expectNoUnsettledTasks(result)
+  })
+})
+
 describe('target event-driven pipeline semantics', () => {
-  it.fails('starts C before slow B completes while respecting maxConcurrency', async () => {
+  it('starts C before slow B completes while respecting maxConcurrency', async () => {
     const harness = createSchedulingHarness({ maxConcurrency: MAX_CONCURRENCY })
 
     await runFastABeforeSlowB(harness)
@@ -411,5 +622,108 @@ describe('target event-driven pipeline semantics', () => {
     expect(harness.events.indexOf('task_start', 'C')).toBeLessThan(
       harness.events.indexOf('task_complete', 'B'),
     )
+  })
+
+  it('keeps progress pairs, task traces, and execution receipt topology coherent', async () => {
+    const traces: TraceEvent[] = []
+    const harness = createSchedulingHarness({
+      onTrace: (event) => traces.push(event),
+    })
+
+    const result = await runFastABeforeSlowB(harness)
+
+    for (const title of TASK_TITLES) {
+      const taskStarts = harness.events.timeline.filter((entry) =>
+        entry.type === 'task_start' && entry.title === title)
+      const taskCompletes = harness.events.timeline.filter((entry) =>
+        entry.type === 'task_complete' && entry.title === title)
+      const agentStarts = harness.events.timeline.filter((entry) =>
+        entry.type === 'agent_start' && entry.title === title)
+      const agentCompletes = harness.events.timeline.filter((entry) =>
+        entry.type === 'agent_complete' && entry.title === title)
+      expect(taskStarts).toHaveLength(1)
+      expect(taskCompletes).toHaveLength(1)
+      expect(agentStarts).toHaveLength(1)
+      expect(agentCompletes).toHaveLength(1)
+      expect(harness.events.indexOf('task_start', title)).toBeLessThan(
+        harness.events.indexOf('task_complete', title),
+      )
+    }
+
+    const taskTraces = traces.filter((event) => event.type === 'task')
+    expect(taskTraces).toHaveLength(3)
+    expect(taskTraces.every((event) => event.success)).toBe(true)
+
+    const receipt = buildExecutionReceipt(result, traces)
+    expect(receipt.executionOrder.indexOf('worker-a')).toBeLessThan(
+      receipt.executionOrder.indexOf('worker-c'),
+    )
+    expect(receipt.dependencyEdges).toContainEqual({
+      from: 'worker-a',
+      to: 'worker-c',
+    })
+  })
+
+  it('restores a mid-pipeline checkpoint without rerunning completed A', async () => {
+    const checkpointStore = new InMemoryStore()
+    const abort = new AbortController()
+    const original = createSchedulingHarness({
+      abortSignal: abort.signal,
+      checkpointStore,
+    })
+    const originalResult = original.run()
+    await Promise.all([
+      original.adapter.waitForStart('A'),
+      original.adapter.waitForStart('B'),
+    ])
+
+    original.adapter.release('A')
+    await original.events.waitFor('task_complete', 'A')
+    const midPipelineSnapshot = await new Checkpoint(checkpointStore, {}).loadLatest()
+    expect(midPipelineSnapshot?.queue.completed).toHaveLength(1)
+    expect(midPipelineSnapshot?.queue.inProgress).toHaveLength(1)
+
+    abort.abort()
+    original.adapter.release('B')
+    original.adapter.release('C')
+    await originalResult
+
+    const restoreStore = new InMemoryStore()
+    await new Checkpoint(restoreStore, {}).save(midPipelineSnapshot!)
+
+    const adapter = new DeferredTaskAdapter()
+    const events = new SchedulingEventCollector()
+    const resumed = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      maxConcurrency: MAX_CONCURRENCY,
+      onProgress: events.onProgress,
+    })
+    const team = resumed.createTeam('pipeline-scheduling-restored', {
+      name: 'pipeline-scheduling-restored',
+      agents: ['worker-a', 'worker-b', 'worker-c'].map((name) => ({
+        name,
+        model: 'mock-model',
+        systemPrompt: `You are ${name}.`,
+        adapter,
+      })),
+      sharedMemory: false,
+    })
+    const restoredResult = resumed.restore(team, {
+      checkpoint: { store: restoreStore },
+    })
+    await Promise.all([
+      adapter.waitForStart('B'),
+      adapter.waitForStart('C'),
+    ])
+    adapter.release('B')
+    adapter.release('C')
+
+    const result = await restoredResult
+    expect(events.has('task_start', 'A')).toBe(false)
+    expect(result.tasks?.map((task) => [task.title, task.status])).toEqual([
+      ['A', 'completed'],
+      ['B', 'completed'],
+      ['C', 'completed'],
+    ])
   })
 })

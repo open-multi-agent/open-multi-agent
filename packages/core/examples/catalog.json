@@ -225,6 +225,17 @@
       "featuredOrder": 5
     },
     {
+      "id": "event-driven-dag",
+      "path": "patterns/event-driven-dag.ts",
+      "title": "Event-Driven DAG",
+      "description": "Use deferred promises to show a downstream task starting when its dependency is satisfied without waiting for an unrelated task.",
+      "section": "goal",
+      "goal": "orchestration",
+      "capabilities": ["run-tasks", "task-dependencies", "parallel-execution"],
+      "format": "script",
+      "level": "intermediate"
+    },
+    {
       "id": "cross-provider-reasoning",
       "path": "patterns/cross-provider-reasoning.ts",
       "title": "Cross-Provider Reasoning",
