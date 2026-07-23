@@ -46,16 +46,18 @@
 
 <br />
 
-`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。它把一个目标拆成可审查的任务 DAG，交给多个 Agent 执行，再合成最终结果，全程在你自己的环境中运行。可本地、断网或气隙部署，云端与本地模型同队混用。
-
-OMA 适合**动态工作流（dynamic workflows）**：Coordinator 在运行时把目标拆成任务 DAG，确定性调度让执行保持可审查、可管控、可回放。
+`open-multi-agent` 是面向 TypeScript 后端的多智能体编排框架，可直接嵌入任意 Node.js 应用。它运行的是**动态工作流（dynamic workflows）**：Coordinator 在运行时把一个目标拆成任务 DAG，由确定性调度器交给团队执行，整个运行过程始终是可审查、可审批、可回放的数据。上方动图就是内置的离线 Run Viewer 在回放一次真实运行。
 
 ## 为什么选择 OMA
 
-- **从目标生成计划。** Coordinator 在运行时把请求拆成任务 DAG，自动完成分工，无需预先画好工作流图。
-- **给 Agent 套上确定性。** 计划先审后跑、固化重放、多 Agent 共识验证：用确定性控制包住非确定性的 Agent。
-- **在你自己的环境中运行。** 本地、断网、气隙或自有服务器，用你自己的凭证；工具默认拒绝、密钥自动脱敏。仅 3 个运行时依赖，轻到能塞进受限内网，完全不必上云。
-- **任意模型混编。** 云端（Claude、GPT）、本地开源模型与原生接入的国产模型同队协作，并为以文本形式返回工具调用的本地模型提供容错解析。
+- **从目标生成计划。** Coordinator 在运行时把请求拆成任务 DAG，自动分工并合成最终结果，没有需要手工维护的工作流图。
+- **确定性控制，人在回路。** 计划先审后跑、单个任务派发可审批、固化重放、多 Agent 共识验证；拓扑不容漂移时，直接声明必需角色与顺序，而不是依赖提示词措辞。
+- **恢复而不是重跑。** Checkpoint 让中断的运行从断点续跑，已完成的任务不再重复；重试、超时、循环检测与 token、成本双预算让每次运行都有边界。
+- **每次运行都看得见。** Trace、稳定的运行标识与离线 Run Viewer 内置于 core：在你自己的磁盘上以任务 DAG 与 span 瀑布双视图回放任意一次运行，无需托管服务。
+- **评测在同一个包里。** EvalSet 版本化、参考 scorer 打分、离线报告做 CI 门禁、线上运行按需采样，全部构建在编排器本就产出的运行记录之上。
+- **编码 CLI 也是队员。** Process 与 ACP backend 让 Claude Code、Gemini CLI、Codex 以一等 Agent 身份加入团队：同一个任务 DAG、同一份共享记忆、同一套预算。
+- **任意模型混编。** 云端（Claude、GPT）、本地开源模型与原生接入的国产模型同队协作；任意 OpenAI 兼容端点或 AI SDK provider 以同样方式接入，并为以文本形式返回工具调用的本地模型提供容错解析。
+- **在你自己的环境中运行。** 本地、断网、气隙或自有服务器，用你自己的凭证；工具默认拒绝、密钥自动脱敏，极小的运行时占用足以放进受限内网。
 
 ## 快速开始
 
@@ -73,20 +75,38 @@ npm create oma-app@latest my-oma
 npm install @open-multi-agent/core
 ```
 
-[核心包使用指南](packages/core/README_zh.md)提供最小示例、三种执行模式、Provider 配置和生产检查清单。更多可运行流程见[示例索引](packages/core/examples/README.md)。
+```typescript
+import { OpenMultiAgent } from '@open-multi-agent/core'
+
+const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
+
+const team = oma.createTeam('research-team', {
+  name: 'research-team',
+  agents: [
+    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
+    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
+  ],
+  sharedMemory: true,
+})
+
+const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+console.log(result.agentResults.get('coordinator')?.output)
+```
+
+`runTeam()` 从目标自动规划，`runAgent()` 运行单个 Agent，`runTasks()` 执行显式流水线。三种模式、Provider 与凭证配置、生产检查清单见[核心包使用指南](packages/core/README_zh.md)。[示例索引](packages/core/examples/README.md)收录 50+ 个可运行示例，覆盖基础、cookbook 流程、模式、Provider 与集成。
 
 ## 基于 OMA 构建
 
 `open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
 
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**（约 60 stars）。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**。WordPress 安全分析平台，作者 [Ali Sünbül](https://github.com/xeloxa)。在 Docker runtime 里直接用我们的内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
 - **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 coordinator 与上下文压缩，在显存受限的条件下维持自治 agent 循环持续运行。自框架发布首月起持续贡献，涵盖上下文压缩、采样与工具调用解析。
 - **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**。AI pull request 审查助手，作者 [kidoom](https://github.com/kidoom)。运行一个 OMA 审查 team（coordinator + 限定范围的 reviewer agent），用 `defineTool` 定义仓库上下文工具，并加入自定义 `ContextStrategy` 做 token-aware 的 PR diff 压缩。公开代码，基于 `@open-multi-agent/core`。
 - **[StuFlow](https://github.com/znc15/StuFlow)**。终端 AI 编码助手，作者 [znc15](https://github.com/znc15)。以 OMA 为编排内核：构建 team 并通过 `runAgent` / `runTasks` / `runTeam` 驱动，配自定义 `RunTeamOptions` coordinator，搭配 DeepSeek。公开代码，基于 `@open-multi-agent/core`。
 
 **集成**
 
-- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
@@ -94,7 +114,7 @@ npm install @open-multi-agent/core
 
 ## OMA 适合什么场景
 
-OMA 面向希望任务图随目标动态生成的 TypeScript 团队。Coordinator 产生计划，Scheduler 把它当作可审查数据执行。
+OMA 面向希望任务图随目标动态生成的 TypeScript 团队。
 
 如果工作流必须逐节点手工设计，图优先框架更合适；如果只需要单个 Agent 调用，一个 LLM 工具库就够了。当多个 Agent、任务依赖、审批或恢复机制需要协同时，OMA 负责这一编排层。
 
@@ -122,7 +142,7 @@ Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有
 | 安装与运行 | [核心包使用指南](packages/core/README_zh.md) · [示例](packages/core/examples/README.md) · [CLI](docs/cli.md) |
 | 配置模型与工具 | [Provider](docs/providers.md) · [工具与沙箱](docs/tool-configuration.md) · [外部 Agent](docs/external-agents.md) |
 | 稳定运行 | [可观测性](docs/observability.md) · [评测](docs/evaluation.md) · [Checkpoint 与恢复](docs/checkpoint.md) · [上下文管理](docs/context-management.md) |
-| 控制编排 | [Consensus](docs/consensus.md) · [模型路由](docs/model-routing.md) · [计划回放](docs/plan-replay.md) |
+| 控制编排 | [Consensus](docs/consensus.md) · [执行路由](docs/execution-routing.md) · [模型路由](docs/model-routing.md) · [任务调度](docs/task-scheduling.md) · [计划回放](docs/plan-replay.md) · [共享记忆](docs/shared-memory.md) |
 
 ## 参与贡献
 
