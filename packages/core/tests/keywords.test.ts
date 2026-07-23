@@ -69,6 +69,33 @@ describe('utils/keywords', () => {
       ])
     })
 
+    it('segments Japanese words without spaces', () => {
+      expect(extractKeywords('コード品質を分析してレビューレポートを作成する')).toEqual([
+        'コード',
+        '品質',
+        '分析',
+        'レビュー',
+        'レポート',
+        '作成',
+        'する',
+      ])
+    })
+
+    it('segments Korean with particles attached to stems (agglutinative)', () => {
+      // Intl.Segmenter keeps object/verb particles attached (품질을, 분석하고,
+      // 보고서를). Substring keywordScore still matches these against bare stems
+      // in the other direction, which is why agent selection stays robust
+      // without any stemming. This test pins that surface behaviour.
+      expect(extractKeywords('코드 품질을 분석하고 리뷰 보고서를 작성한다')).toEqual([
+        '코드',
+        '품질을',
+        '분석하고',
+        '리뷰',
+        '보고서를',
+        '작성한다',
+      ])
+    })
+
     it('preserves pure-English punctuation and length behaviour', () => {
       expect(extractKeywords("Writer's notes don't include tiny API words")).toEqual([
         'writer',

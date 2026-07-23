@@ -146,6 +146,70 @@ describe('isSimpleGoal', () => {
       expect(isSimpleGoal(english)).toBe(expected)
       expect(isSimpleGoal(chinese)).toBe(expected)
     })
+
+    // Japanese: explicit sequence/ordinal/step markers and CJK enumeration, not
+    // a verb lexicon (see COMPLEXITY_PATTERNS non-goal note). Pairs are required,
+    // so a lone marker stays simple.
+    it.each([
+      'まず要件を設計し、次にサービスを実装し、最後にテストを書く',
+      '最初にデータを集め、それから傾向を分析する',
+      '第一に要件を収集し、第二に機能を実装する',
+      'ステップ1で環境を準備し、ステップ2でコードを書く',
+      '手順1で環境を準備し、手順2でコードを書く',
+      '① 資料を収集 ② 資料を分析 ③ レポートを出力',
+      'りんご、みかん、ぶどう、いちご、もも、なし',
+    ])('treats a Japanese multi-stage goal as complex: "%s"', (goal) => {
+      expect(isSimpleGoal(goal)).toBe(false)
+    })
+
+    // Korean: same marker-based approach. Agglutinative particles stay attached
+    // to the markers, so explicit 먼저/그다음, 첫째/둘째, N단계 pairs still fire.
+    it.each([
+      '먼저 요구사항을 수집하고, 그다음 기능을 구현한다',
+      '먼저 자료를 모으고 그리고 나서 분석한다',
+      '첫째 자료를 수집하고, 둘째 자료를 분석한다',
+      '첫 번째로 요구사항을 모으고 두 번째로 구현한다',
+      '1단계에서 환경을 준비하고 2단계에서 코드를 작성한다',
+      '① 자료 수집 ② 자료 분석 ③ 보고서 출력',
+      '사과、귤、포도、딸기、복숭아、배',
+    ])('treats a Korean multi-stage goal as complex: "%s"', (goal) => {
+      expect(isSimpleGoal(goal)).toBe(false)
+    })
+
+    it.each([
+      ['この報告書を一段落で要約して', 'ja single summarize'],
+      ['まず一言で挨拶して', 'ja lone まず — no pair'],
+      ['次に何をすべきか教えて', 'ja lone 次に — no pair'],
+      ['이 보고서를 한 문단으로 요약해 줘', 'ko single summarize'],
+      ['먼저 무엇을 해야 하는지 알려 줘', 'ko lone 먼저 — no pair'],
+    ])('keeps a Japanese/Korean single-action goal simple (%s)', (goal) => {
+      expect(isSimpleGoal(goal)).toBe(true)
+    })
+
+    it.each([
+      [
+        'Summarize this report in one paragraph',
+        '用一段话总结这份报告',
+        'この報告書を一段落で要約して',
+        '이 보고서를 한 문단으로 요약해 줘',
+        true,
+      ],
+      [
+        'First collect the requirements, then implement the feature',
+        '先收集需求，然后实现功能',
+        'まず要件を収集し、次に機能を実装する',
+        '먼저 요구사항을 수집하고, 그다음 기능을 구현한다',
+        false,
+      ],
+    ])(
+      'routes equivalent English, Chinese, Japanese, and Korean goals consistently',
+      (english, chinese, japanese, korean, expected) => {
+        expect(isSimpleGoal(english)).toBe(expected)
+        expect(isSimpleGoal(chinese)).toBe(expected)
+        expect(isSimpleGoal(japanese)).toBe(expected)
+        expect(isSimpleGoal(korean)).toBe(expected)
+      },
+    )
   })
 
   // -------------------------------------------------------------------------
@@ -210,6 +274,45 @@ describe('selectBestAgent', () => {
       { name: '营销专家', model: 'test', systemPrompt: '制定品牌策略和市场推广方案' },
       { name: '代码评审员', model: 'test', systemPrompt: '分析代码质量并生成评审报告' },
       { name: '数据分析师', model: 'test', systemPrompt: '分析销售数据并生成趋势报告' },
+    ]
+
+    expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])
+  })
+
+  // Intl.Segmenter surfaces Japanese words (コード, 品質, 分析, レビュー…) without
+  // spaces, so keyword affinity works the same way it does for Chinese.
+  it.each([
+    ['コード品質を分析してレビューレポートを作成する', 1],
+    ['販売データを分析して傾向レポートを作成する', 2],
+    ['ブランド戦略と市場推進の企画を立てる', 0],
+  ])('selects the semantically matching Japanese agent for "%s"', (goal, expectedIndex) => {
+    const agents: AgentConfig[] = [
+      { name: 'マーケティング担当', model: 'test', systemPrompt: 'ブランド戦略と市場推進の企画を立てる' },
+      { name: 'コードレビュアー', model: 'test', systemPrompt: 'コード品質を分析してレビューレポートを生成する' },
+      { name: 'データ分析官', model: 'test', systemPrompt: '販売データを分析して傾向レポートを生成する' },
+    ]
+
+    expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])
+  })
+
+  // Korean is agglutinative: Intl.Segmenter keeps particles attached to stems
+  // (품질을, 분석하고, 보고서를), so a keyword can miss when goal and prompt attach
+  // different affixes to the same stem. The bidirectional, substring keywordScore
+  // absorbs most of this — a bare stem in one text is a substring of the attached
+  // form in the other — so at least one direction usually matches and multiple
+  // noun tokens carry the selection. Known limitation: if BOTH sides attach
+  // different affixes to the same stem so neither surface form contains the other
+  // (분석과 vs 분석하고), that stem is missed. We intentionally do not add stemming
+  // or morphological analysis; real rosters resolve via the remaining tokens.
+  it.each([
+    ['코드 품질을 분석하고 리뷰 보고서를 작성한다', 1],
+    ['판매 데이터를 분석하고 추세 보고서를 작성한다', 2],
+    ['브랜드 전략과 시장 홍보 방안을 수립한다', 0],
+  ])('selects the semantically matching Korean agent for "%s"', (goal, expectedIndex) => {
+    const agents: AgentConfig[] = [
+      { name: '마케팅 담당자', model: 'test', systemPrompt: '브랜드 전략과 시장 홍보 방안을 수립한다' },
+      { name: '코드 리뷰어', model: 'test', systemPrompt: '코드 품질을 분석하고 리뷰 보고서를 생성한다' },
+      { name: '데이터 분석가', model: 'test', systemPrompt: '판매 데이터를 분석하고 추세 보고서를 생성한다' },
     ]
 
     expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])

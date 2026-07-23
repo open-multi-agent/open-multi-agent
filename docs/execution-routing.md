@@ -83,9 +83,18 @@ including the compatibility-only `legacy-deterministic` label.
 - An empty roster cannot select the Single path; otherwise the goal heuristic decides.
 - English sequence, coordination, parallelism, and multi-deliverable signals remain supported.
 - Chinese sequence markers (`先…然后`, `第一步/第二步`), circled steps, action enumerations, semicolon-separated clauses, and connected action verbs are recognized.
-- Length uses a cheap script-aware information estimate. CJK characters count as 2.25 units; ordinary Latin word runs approximate token density; long unbroken runs keep their raw length.
+- Japanese (`まず…次に`, `第一に…第二に`, `ステップ1/手順1`) and Korean (`먼저…그다음`, `첫째…둘째`, `1단계/2단계`) sequence markers are recognized, and dense `、` enumeration counts for kana- and Hangul-initial lists as well as Han. Each marker pair must appear, so a lone marker does not force Team.
+- Length uses a cheap script-aware information estimate. CJK characters — Han, Japanese kana, and Korean Hangul — count as 2.25 units; ordinary Latin word runs approximate token density; long unbroken runs keep their raw length.
 
-This policy is intentionally honest, cheap, and language-neutral rather than semantically ambitious. Semantically equivalent English and Chinese goals should select the same execution mode. Applications that need domain-specific semantics should inject an `ExecutionRouter` or declare an explicit mode/governance topology.
+Language coverage is tiered honestly rather than claimed uniform:
+
+- **Chinese, Japanese, and Korean** are one tier: the structural markers above plus 2.25-unit length weighting.
+- **Latin-script languages** share English's length treatment (word runs approximate token density). The structural word patterns are English-specific, so other Latin languages are routed by length and punctuation, not by their own sequence words.
+- **Other scripts** fall back conservatively: each non-space character counts as one unit and no structural markers apply, so routing relies on the length threshold alone.
+
+CJK verb-connective sequencing is a deliberate non-goal. Chinese keeps a verb-connective pattern because its verbs are invariant tokens, but Japanese and Korean verbs inflect (Japanese て-form, Korean agglutinative endings), so matching them would require morphological analysis this heuristic intentionally avoids; explicit markers and enumeration cover the structural signal instead.
+
+This policy is intentionally honest, cheap, and language-neutral rather than semantically ambitious. Semantically equivalent English, Chinese, Japanese, and Korean goals should select the same execution mode. Applications that need domain-specific semantics should inject an `ExecutionRouter` or declare an explicit mode/governance topology.
 
 ## Governance boundary
 
@@ -93,4 +102,4 @@ Execution Routing does not declare governance. The consequential-tool fallback s
 
 ## Behavior change
 
-The built-in automatic route now recognizes short Chinese multi-stage goals and script-weighted length instead of relying on English-only word patterns plus raw character count. Equivalent goals translated between English and Chinese no longer change Single/Team topology in the routing stability gate. Existing English structural-pattern regressions retain their previous outcomes. Script weighting intentionally changes a detailed, long English single-action goal from `team` to `single` when its estimated information length remains bounded; this case is locked by a regression test. Multilingual applications may also observe corrected automatic routes for Chinese structured goals.
+The built-in automatic route recognizes short CJK (Chinese, Japanese, Korean) multi-stage goals and script-weighted length instead of relying on English-only word patterns plus raw character count. Equivalent goals translated between English, Chinese, Japanese, and Korean no longer change Single/Team topology in the routing stability gate. Existing English and Chinese outcomes, including structural-pattern regressions, retain their previous behavior. Script weighting intentionally changes a detailed, long English single-action goal from `team` to `single` when its estimated information length remains bounded; this case is locked by a regression test. Multilingual applications may also observe corrected automatic routes for CJK structured goals.

@@ -37,7 +37,7 @@ const FIXED_MODEL_OUTPUT = `\`\`\`json
 \`\`\``
 
 type FamilyKind = 'benign' | 'governance'
-type Language = 'en' | 'zh'
+type Language = 'en' | 'zh' | 'ja' | 'ko'
 type VariantType = 'short' | 'detailed' | 'translation'
 
 interface RoutingVariant {
@@ -173,8 +173,8 @@ function parseRoutingFamily(input: unknown, caseId: string): RoutingFamily {
     if (!isRecord(value)) throw new TypeError(`${context} must be an object.`)
     const language = requiredString(value, 'language', context)
     const variantType = requiredString(value, 'variantType', context)
-    if (language !== 'en' && language !== 'zh') {
-      throw new TypeError(`${context}.language must be en or zh.`)
+    if (language !== 'en' && language !== 'zh' && language !== 'ja' && language !== 'ko') {
+      throw new TypeError(`${context}.language must be en, zh, ja, or ko.`)
     }
     if (variantType !== 'short' && variantType !== 'detailed' && variantType !== 'translation') {
       throw new TypeError(`${context}.variantType is invalid.`)
@@ -522,9 +522,15 @@ describe('runTeam routing stability EvalSet', () => {
     expect(evalSet.cases).toHaveLength(4)
     for (const evalCase of evalSet.cases) {
       const family = parseRoutingFamily(evalCase.input, evalCase.id)
+      // Each family carries one short + one detailed English anchor plus three
+      // equivalent translations (Chinese, Japanese, Korean). The Japanese and
+      // Korean translations join the existing en/zh goals in the all-pairs flip
+      // gate so equivalent CJK goals cannot change execution topology.
       expect(family.variants.map((variant) => variant.variantType)).toEqual([
         'short',
         'detailed',
+        'translation',
+        'translation',
         'translation',
       ])
       expect(variantById(family.variants, 'short-en')).toMatchObject({
@@ -539,6 +545,14 @@ describe('runTeam routing stability EvalSet', () => {
       expect(variantById(family.variants, 'detailed-en').text.length).toBeGreaterThan(200)
       expect(variantById(family.variants, 'translated-cn')).toMatchObject({
         language: 'zh',
+        variantType: 'translation',
+      })
+      expect(variantById(family.variants, 'translated-ja')).toMatchObject({
+        language: 'ja',
+        variantType: 'translation',
+      })
+      expect(variantById(family.variants, 'translated-ko')).toMatchObject({
+        language: 'ko',
         variantType: 'translation',
       })
 
