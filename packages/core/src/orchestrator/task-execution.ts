@@ -24,6 +24,7 @@ import type {
 import type { AgentPool } from '../agent/pool.js'
 import type { Team } from '../team/team.js'
 import type { TaskQueue } from '../task/queue.js'
+import { taskMetadataTraceAttributes } from '../task/metadata.js'
 import type { Checkpoint } from '../memory/checkpoint.js'
 import { emitTrace, generateSpanId } from '../utils/trace.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
@@ -179,11 +180,22 @@ export async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Prom
   // and the run continues — the next completed task retries the write.
   const save = async (): Promise<void> => {
     const sharedMem = ctx.team.getSharedMemoryInstance()
-    const completedTaskResults = queue.getByStatus('completed').map((task) => ({
-      taskId: task.id,
-      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
-      ...(task.result !== undefined ? { result: task.result } : {}),
-    }))
+    const completedTaskResults = queue.getByStatus('completed').map((task) => {
+      const agentResult = task.assignee === undefined
+        ? undefined
+        : ctx.agentResults.get(`${task.assignee}:${task.id}`)
+      const checkpointAgentResult = agentResult === undefined
+        ? undefined
+        : toCheckpointAgentResult(agentResult)
+      return {
+        taskId: task.id,
+        ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+        ...(task.result !== undefined ? { result: task.result } : {}),
+        ...(checkpointAgentResult !== undefined
+          ? { agentResult: checkpointAgentResult }
+          : {}),
+      }
+    })
 
     const snapshot: CheckpointSnapshot = {
       version: 2,
@@ -231,22 +243,102 @@ export async function saveRunCheckpoint(queue: TaskQueue, ctx: RunContext): Prom
   }
 }
 
+function toCheckpointAgentResult(
+  result: AgentRunResult,
+): Omit<AgentRunResult, 'error'> | undefined {
+  const { error: _error, ...candidate } = result
+  try {
+    return JSON.parse(JSON.stringify(candidate)) as Omit<AgentRunResult, 'error'>
+  } catch {
+    // A custom structured value or tool input can be non-JSON-safe. Preserve
+    // checkpoint durability and let restore use the legacy minimal task result.
+    return undefined
+  }
+}
+
+type DispatchGateResult = 'allow' | 'abort' | 'budget' | 'capacity'
+
+/**
+ * Synchronous dispatch-admission seam. AgentPool's semaphore remains the
+ * concurrency authority; future task-specific resource policies can compose
+ * here without changing queue or execution-loop topology.
+ */
+function evaluateDispatchGate(
+  ctx: RunContext,
+  inFlightCount: number,
+): DispatchGateResult {
+  if (ctx.abortSignal?.aborted) return 'abort'
+  if (ctx.budgetExceededTriggered) return 'budget'
+  if (inFlightCount >= ctx.pool.runConcurrencyLimit) return 'capacity'
+  return 'allow'
+}
+
 /**
  * Execute all tasks in `queue` using agents in `pool`, respecting dependencies
  * and running independent tasks in parallel.
  *
- * The orchestration loop works in rounds:
- *  1. Find all `'pending'` tasks (dependencies satisfied).
- *  2. Dispatch them in parallel via the pool.
- *  3. On completion, the queue automatically unblocks dependents.
- *  4. Repeat until no more pending tasks exist or all remaining tasks are
- *     `'failed'`/`'blocked'` (stuck).
+ * By default the loop subscribes to `'task:ready'`, assigns each newly-ready
+ * task against the current queue snapshot, and dispatches it as soon as the
+ * AgentPool concurrency gate admits another task. Configuring the legacy
+ * `onApproval` callback selects the round-based compatibility loop because
+ * that callback's arguments and timing are defined in terms of batches.
  */
 export async function executeQueue(
   queue: TaskQueue,
   ctx: RunContext,
 ): Promise<void> {
   const { team, pool, scheduler, config } = ctx
+  const legacyRoundMode = config.onApproval !== undefined
+  const readyTaskIds = new Set<string>()
+  const inFlight = new Map<string, Promise<void>>()
+  const dispatchErrors: unknown[] = []
+  let stopDispatch: { readonly reason: string } | undefined
+  let fatalError: unknown
+  let wakeCount = 0
+  let wakeResolver: (() => void) | undefined
+
+  const signalLoop = (): void => {
+    wakeCount++
+    wakeResolver?.()
+    wakeResolver = undefined
+  }
+
+  const waitForSignal = async (): Promise<void> => {
+    if (wakeCount === 0) {
+      await new Promise<void>((resolve) => {
+        wakeResolver = resolve
+      })
+    }
+    wakeCount = 0
+  }
+
+  const requestStop = (reason: string): void => {
+    stopDispatch ??= { reason }
+    signalLoop()
+  }
+
+  const requestAbortStop = (): void => {
+    if (stopDispatch) return
+    const abortError = new Error('Run cancelled by caller.')
+    abortError.name = 'AbortError'
+    const classified = classifyRunFailure(abortError)
+    ctx.outcomeStatus = classified.status
+    ctx.outcomeErrorInfo = classified.errorInfo
+    requestStop('Skipped: run aborted.')
+  }
+
+  const requestTerminalGateStop = (): boolean => {
+    const dispatchGate = evaluateDispatchGate(ctx, inFlight.size)
+    if (dispatchGate === 'abort') {
+      requestAbortStop()
+      return true
+    }
+    if (dispatchGate === 'budget') {
+      requestStop(ctx.budgetExceededReason ?? 'Skipped: token budget exceeded.')
+      return true
+    }
+    return false
+  }
 
   // Relay queue-level skip events to the orchestrator's onProgress callback.
   const unsubSkipped = config.onProgress
@@ -259,35 +351,196 @@ export async function executeQueue(
       })
     : undefined
 
-  while (true) {
-    // Check for cancellation before each dispatch round.
-    if (ctx.abortSignal?.aborted) {
-      queue.skipRemaining('Skipped: run aborted.')
-      const abortError = new Error('Run cancelled by caller.')
-      abortError.name = 'AbortError'
-      const classified = classifyRunFailure(abortError)
-      ctx.outcomeStatus = classified.status
-      ctx.outcomeErrorInfo = classified.errorInfo
-      break
+  const unsubReady = !legacyRoundMode
+    ? queue.on('task:ready', (task) => {
+        readyTaskIds.add(task.id)
+        signalLoop()
+      })
+    : undefined
+  const unsubAllComplete = !legacyRoundMode
+    ? queue.on('all:complete', signalLoop)
+    : undefined
+  const abortListener = !legacyRoundMode && ctx.abortSignal
+    ? () => requestAbortStop()
+    : undefined
+
+  if (abortListener) {
+    ctx.abortSignal!.addEventListener('abort', abortListener, { once: true })
+  }
+  if (!legacyRoundMode) {
+    // Initial and restored ready events happened before executeQueue subscribed.
+    for (const task of queue.getByStatus('pending')) {
+      readyTaskIds.add(task.id)
     }
+  }
 
-    // Re-run auto-assignment each iteration so tasks that were unblocked since
-    // the last round (and thus have no assignee yet) get assigned before dispatch.
-    scheduler.autoAssign(queue, team.getAgents())
+  try {
+    while (true) {
+      // Legacy approval is checked only between complete rounds.
+      if (legacyRoundMode && ctx.abortSignal?.aborted) {
+        queue.skipRemaining('Skipped: run aborted.')
+        const abortError = new Error('Run cancelled by caller.')
+        abortError.name = 'AbortError'
+        const classified = classifyRunFailure(abortError)
+        ctx.outcomeStatus = classified.status
+        ctx.outcomeErrorInfo = classified.errorInfo
+        break
+      }
 
-    const pending = queue.getByStatus('pending')
-    if (pending.length === 0) {
-      // Either all done, or everything remaining is blocked/failed.
-      break
-    }
+      if (!legacyRoundMode) {
+        const dispatchGate = evaluateDispatchGate(ctx, inFlight.size)
+        if (dispatchGate === 'abort') requestAbortStop()
+        if (dispatchGate === 'budget') {
+          requestStop(ctx.budgetExceededReason ?? 'Skipped: token budget exceeded.')
+        }
+        if (
+          dispatchErrors.length > 0
+          && fatalError === undefined
+          && stopDispatch === undefined
+        ) {
+          fatalError = dispatchErrors.shift()
+          requestStop(
+            `Skipped: task dispatch failed — ${
+              fatalError instanceof Error ? fatalError.message : String(fatalError)
+            }`,
+          )
+        }
+        if (stopDispatch !== undefined && fatalError === undefined) {
+          dispatchErrors.length = 0
+        }
 
-    // Track tasks that complete successfully in this round for the approval gate.
-    // Safe to push from concurrent promises: JS is single-threaded, so
-    // Array.push calls from resolved microtasks never interleave.
-    const completedThisRound: Task[] = []
+        // drain-then-skip: once any terminal gate closes, no new task is
+        // admitted. Existing task promises settle before the queue is skipped.
+        if (stopDispatch) {
+          if (inFlight.size > 0) {
+            await waitForSignal()
+            continue
+          }
+          queue.skipRemaining(stopDispatch.reason)
+          if (fatalError !== undefined) throw fatalError
+          break
+        }
 
-    // Dispatch all currently-pending tasks as a parallel batch.
-    const dispatchPromises = pending.map(async (task): Promise<void> => {
+        // Reconcile the event-fed set with queue state. This also covers
+        // restored queues and initial tasks whose ready event predated the
+        // subscription above.
+        for (const task of queue.getByStatus('pending')) {
+          readyTaskIds.add(task.id)
+        }
+        for (const taskId of readyTaskIds) {
+          if (queue.get(taskId)?.status !== 'pending') readyTaskIds.delete(taskId)
+        }
+
+        if (readyTaskIds.size === 0) {
+          if (inFlight.size === 0) break
+          await waitForSignal()
+          continue
+        }
+
+        // The limit comes from AgentPool's semaphore. The queue does not own a
+        // second concurrency setting; delegated runs remain accounted for and
+        // enforced inside AgentPool.
+        if (dispatchGate === 'capacity') {
+          await waitForSignal()
+          continue
+        }
+      }
+
+      let pending: Task[]
+      if (legacyRoundMode) {
+        scheduler.autoAssign(queue, team.getAgents())
+        pending = queue.getByStatus('pending')
+      } else {
+        // Queue completion makes dependents pending before completion
+        // checkpoint/progress/span work settles. Do not start a dependent until
+        // its predecessor's dispatch promise has finished, preserving paired
+        // terminal/start event ordering.
+        const readyTasks = [...readyTaskIds]
+          .map((taskId) => queue.get(taskId))
+          .filter((task): task is Task =>
+            task?.status === 'pending'
+            && !(task.dependsOn ?? []).some((dependencyId) => inFlight.has(dependencyId)),
+          )
+        const nextReady = scheduler.orderReadyTasks(readyTasks, queue.list())[0]
+
+        if (!nextReady) {
+          if (inFlight.size === 0) break
+          await waitForSignal()
+          continue
+        }
+        readyTaskIds.delete(nextReady.id)
+
+        let assigned = nextReady
+        if (!assigned.assignee) {
+          try {
+            const assignee = scheduler.scheduleTask(
+              assigned,
+              team.getAgents(),
+              queue.list(),
+            )
+            if (assignee) assigned = queue.update(assigned.id, { assignee })
+          } catch (error) {
+            fatalError = error
+            requestStop(
+              `Skipped: task scheduling failed — ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            )
+            continue
+          }
+        }
+
+        if (config.onTaskDispatch && assigned.assignee) {
+          const approvalSpan = ctx.traceRuntime?.startSpan({
+            kind: 'callback',
+            name: 'task_dispatch_callback',
+            parent: ctx.traceRuntime.root,
+            attributes: {
+              'oma.callback.name': 'onTaskDispatch',
+              'oma.task.id': assigned.id,
+              'oma.task.title': assigned.title,
+            },
+          })
+          let approved: boolean
+          try {
+            approved = await config.onTaskDispatch(assigned)
+          } catch (error) {
+            const classified = classifyRunFailure(error, { kind: 'callback' })
+            approvalSpan?.end({ status: classified.status, error: classified.errorInfo })
+            if (requestTerminalGateStop()) continue
+            ctx.outcomeStatus = classified.status
+            ctx.outcomeErrorInfo = classified.errorInfo
+            requestStop(
+              `Skipped: task dispatch callback error — ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            )
+            continue
+          }
+
+          approvalSpan?.event('approval_decision', { 'oma.approval.approved': approved })
+          approvalSpan?.end({ status: statusOnly(approved ? 'ok' : 'rejected') })
+          if (requestTerminalGateStop()) continue
+          if (!approved) {
+            ctx.outcomeStatus = statusOnly('rejected', 'Task dispatch approval rejected.')
+            requestStop('Skipped: task dispatch approval rejected.')
+            continue
+          }
+        }
+
+        pending = [assigned]
+      }
+
+      if (pending.length === 0) {
+        // Either all done, or everything remaining is blocked/failed.
+        break
+      }
+
+      // Used only by the legacy round approval callback. Pipeline mode admits
+      // one ready task per loop iteration.
+      const completedThisRound: Task[] = []
+
+      const dispatchPromises = pending.map(async (task): Promise<void> => {
       // Mark in-progress
       queue.update(task.id, { status: 'in_progress' as TaskStatus })
 
@@ -308,6 +561,8 @@ export async function executeQueue(
           'oma.task.id': task.id,
           'oma.task.title': task.title,
           ...(task.assignee ? { 'oma.agent.name': task.assignee } : {}),
+          ...(task.role ? { 'oma.task.role': task.role } : {}),
+          ...taskMetadataTraceAttributes(task.metadata),
         },
       })
       if (taskSpan) ctx.taskSpans.set(task.id, taskSpan)
@@ -372,12 +627,80 @@ export async function executeQueue(
           data: task,
         } satisfies OrchestratorEvent)
 
-        // Build the prompt: task description + dependency-only context by default.
-        const prompt = await buildTaskPrompt(task, team, queue, ctx.revealCoordinatorContext)
-
-        // Trace + abort + team tool context (delegate_to_agent)
+        const taskStartMs = taskSpan?.startUnixMs ?? Date.now()
         const taskSpanId = config.onTrace ? generateSpanId() : undefined
         const agentSpanId = config.onTrace ? generateSpanId() : undefined
+        const legacyTaskEvent = (
+          success: boolean,
+          endMs: number,
+          retries: number,
+        ) => config.onTrace ? {
+            type: 'task',
+            runId: ctx.runId ?? '',
+            spanId: taskSpanId ?? generateSpanId(),
+            taskId: task.id,
+            taskTitle: task.title,
+            ...(task.role !== undefined ? { taskRole: task.role } : {}),
+            ...(task.metadata !== undefined ? { taskMetadata: task.metadata } : {}),
+            agent: assignee,
+            success,
+            retries,
+            startMs: taskStartMs,
+            endMs,
+            durationMs: endMs - taskStartMs,
+          } as const : undefined
+
+        // Build the prompt: task description + dependency-only context by default.
+        let prompt: string
+        try {
+          prompt = await buildTaskPrompt(
+            task,
+            team,
+            queue,
+            ctx.revealCoordinatorContext,
+            ctx.agentResults,
+          )
+        } catch (error) {
+          if (!(error instanceof DependencyPayloadError)) throw error
+          const taskEndMs = Date.now()
+          const message = errorMessage(error)
+          const classified = classifyRunFailure(error, { kind: 'validation' })
+          const failure: AgentRunResult = {
+            success: false,
+            output: message,
+            messages: [],
+            tokenUsage: ZERO_USAGE,
+            toolCalls: [],
+            status: classified.status,
+            errorInfo: classified.errorInfo,
+            error,
+          }
+          ctx.agentResults.set(`${assignee}:${task.id}`, failure)
+          ctx.taskMetrics.set(task.id, {
+            startMs: taskStartMs,
+            endMs: taskEndMs,
+            durationMs: Math.max(0, taskEndMs - taskStartMs),
+            tokenUsage: ZERO_USAGE,
+            toolCalls: [],
+            retries: 0,
+          })
+          queue.fail(task.id, message)
+          const taskLegacyEvent = legacyTaskEvent(false, taskEndMs, 0)
+          taskSpan?.end({
+            status: classified.status,
+            error: classified.errorInfo,
+            ...(taskLegacyEvent ? { legacyEvent: taskLegacyEvent } : {}),
+          })
+          config.onProgress?.({
+            type: 'error',
+            task: task.id,
+            agent: assignee,
+            data: failure,
+          } satisfies OrchestratorEvent)
+          return
+        }
+
+        // Trace + abort + team tool context (delegate_to_agent)
         const traceBase: Partial<RunOptions> = {
           identity: ctx.identity,
           runId: ctx.runId,
@@ -446,7 +769,6 @@ export async function executeQueue(
             }
           : undefined
 
-        const taskStartMs = taskSpan?.startUnixMs ?? Date.now()
         let retryCount = 0
 
         const result = await executeWithRetry(
@@ -516,19 +838,7 @@ export async function executeQueue(
 
         const taskEndMs = Date.now()
 
-        const taskLegacyEvent = config.onTrace ? {
-            type: 'task',
-            runId: ctx.runId ?? '',
-            spanId: taskSpanId ?? generateSpanId(),
-            taskId: task.id,
-            taskTitle: task.title,
-            agent: assignee,
-            success: result.success,
-            retries: retryCount,
-            startMs: taskStartMs,
-            endMs: taskEndMs,
-            durationMs: taskEndMs - taskStartMs,
-          } as const : undefined
+        const taskLegacyEvent = legacyTaskEvent(result.success, taskEndMs, retryCount)
 
         ctx.agentResults.set(`${assignee}:${task.id}`, result)
 
@@ -649,53 +959,79 @@ export async function executeQueue(
       }
     })
 
-    // Wait for the entire parallel batch before checking for newly-unblocked tasks.
-    await Promise.all(dispatchPromises)
-    if (ctx.budgetExceededTriggered) {
-      queue.skipRemaining(ctx.budgetExceededReason ?? 'Skipped: token budget exceeded.')
-      break
-    }
+      if (!legacyRoundMode) {
+        const task = pending[0]!
+        const taskPromise = dispatchPromises[0]!
+        inFlight.set(task.id, taskPromise)
+        void taskPromise.then(
+          () => {
+            inFlight.delete(task.id)
+            if (ctx.budgetExceededTriggered) {
+              requestStop(ctx.budgetExceededReason ?? 'Skipped: token budget exceeded.')
+            } else {
+              signalLoop()
+            }
+          },
+          (error) => {
+            inFlight.delete(task.id)
+            dispatchErrors.push(error)
+            signalLoop()
+          },
+        )
+        // Re-enter synchronously so another ready task can be assigned against
+        // the now-in-progress queue snapshot without waiting for this task.
+        continue
+      }
 
-    // --- Approval gate ---
-    // After the batch completes, check if the caller wants to approve
-    // the next round before it starts.
-    if (config.onApproval && completedThisRound.length > 0) {
-      scheduler.autoAssign(queue, team.getAgents())
-      const nextPending = queue.getByStatus('pending')
+      // Compatibility mode deliberately retains the complete batch barrier.
+      await Promise.all(dispatchPromises)
+      if (ctx.budgetExceededTriggered) {
+        queue.skipRemaining(ctx.budgetExceededReason ?? 'Skipped: token budget exceeded.')
+        break
+      }
 
-      if (nextPending.length > 0) {
-        const approvalSpan = ctx.traceRuntime?.startSpan({
-          kind: 'callback',
-          name: 'approval_callback',
-          parent: ctx.traceRuntime.root,
-          attributes: { 'oma.callback.name': 'onApproval' },
-        })
-        let approved: boolean
-        try {
-          approved = await config.onApproval(completedThisRound, nextPending)
-        } catch (err) {
-          const reason = `Skipped: approval callback error — ${err instanceof Error ? err.message : String(err)}`
-          queue.skipRemaining(reason)
-          const classified = classifyRunFailure(err, { kind: 'callback' })
-          approvalSpan?.end({ status: classified.status, error: classified.errorInfo })
-          ctx.outcomeStatus = classified.status
-          ctx.outcomeErrorInfo = classified.errorInfo
-          break
+      // --- Legacy round approval gate ---
+      if (config.onApproval && completedThisRound.length > 0) {
+        scheduler.autoAssign(queue, team.getAgents())
+        const nextPending = queue.getByStatus('pending')
+
+        if (nextPending.length > 0) {
+          const approvalSpan = ctx.traceRuntime?.startSpan({
+            kind: 'callback',
+            name: 'approval_callback',
+            parent: ctx.traceRuntime.root,
+            attributes: { 'oma.callback.name': 'onApproval' },
+          })
+          let approved: boolean
+          try {
+            approved = await config.onApproval(completedThisRound, nextPending)
+          } catch (err) {
+            const reason = `Skipped: approval callback error — ${err instanceof Error ? err.message : String(err)}`
+            queue.skipRemaining(reason)
+            const classified = classifyRunFailure(err, { kind: 'callback' })
+            approvalSpan?.end({ status: classified.status, error: classified.errorInfo })
+            ctx.outcomeStatus = classified.status
+            ctx.outcomeErrorInfo = classified.errorInfo
+            break
+          }
+          if (!approved) {
+            approvalSpan?.event('approval_decision', { 'oma.approval.approved': false })
+            approvalSpan?.end({ status: statusOnly('rejected') })
+            queue.skipRemaining('Skipped: approval rejected.')
+            ctx.outcomeStatus = statusOnly('rejected', 'Approval rejected.')
+            break
+          }
+          approvalSpan?.event('approval_decision', { 'oma.approval.approved': true })
+          approvalSpan?.end({ status: statusOnly('ok') })
         }
-        if (!approved) {
-          approvalSpan?.event('approval_decision', { 'oma.approval.approved': false })
-          approvalSpan?.end({ status: statusOnly('rejected') })
-          queue.skipRemaining('Skipped: approval rejected.')
-          ctx.outcomeStatus = statusOnly('rejected', 'Approval rejected.')
-          break
-        }
-        approvalSpan?.event('approval_decision', { 'oma.approval.approved': true })
-        approvalSpan?.end({ status: statusOnly('ok') })
       }
     }
+  } finally {
+    if (abortListener) ctx.abortSignal!.removeEventListener('abort', abortListener)
+    unsubAllComplete?.()
+    unsubReady?.()
+    unsubSkipped?.()
   }
-
-  unsubSkipped?.()
 }
 
 /**
@@ -714,6 +1050,7 @@ export async function buildTaskPrompt(
   team: Team,
   queue: TaskQueue,
   revealContext?: RevealCoordinatorContext,
+  agentResults?: ReadonlyMap<string, AgentRunResult>,
 ): Promise<string> {
   const lines: string[] = []
 
@@ -745,9 +1082,49 @@ export async function buildTaskPrompt(
     const depResults: string[] = []
     for (const depId of task.dependsOn) {
       const depTask = queue.get(depId)
-      if (depTask?.status === 'completed' && depTask.result) {
-        depResults.push(`### ${depTask.title} (by ${depTask.assignee ?? 'unknown'})\n${depTask.result}`)
+      if (depTask?.status !== 'completed') continue
+
+      const heading = `### ${depTask.title} (by ${depTask.assignee ?? 'unknown'})`
+      const payloadMode = task.dependencyPayload ?? 'output'
+      if (payloadMode === 'output') {
+        if (depTask.result) depResults.push(`${heading}\n${depTask.result}`)
+        continue
       }
+
+      const dependencyResult = depTask.assignee === undefined
+        ? undefined
+        : agentResults?.get(`${depTask.assignee}:${depTask.id}`)
+      if (!dependencyResult?.success || dependencyResult.structured === undefined) {
+        throw new DependencyPayloadError(
+          'DEPENDENCY_STRUCTURED_RESULT_MISSING',
+          `Task "${task.title}" requires a structured result from dependency ` +
+            `"${depTask.title}" (${depTask.id}), but none is available.`,
+        )
+      }
+
+      let structured: string
+      try {
+        structured = stableJsonStringify(dependencyResult.structured)
+      } catch {
+        throw new DependencyPayloadError(
+          'DEPENDENCY_STRUCTURED_SERIALIZATION_FAILED',
+          `Task "${task.title}" could not serialize the structured result from ` +
+            `dependency "${depTask.title}" (${depTask.id}).`,
+        )
+      }
+
+      const payload = payloadMode === 'structured'
+        ? `${heading}\n#### Validated structured result\n${structured}`
+        : [
+            heading,
+            '#### Raw output',
+            depTask.result ?? dependencyResult.output,
+            '',
+            '#### Validated structured result',
+            structured,
+          ].join('\n')
+      assertDependencyPayloadSize(task, depTask, payload)
+      depResults.push(payload)
     }
     if (depResults.length > 0) {
       lines.push('', '## Context from prerequisite tasks', '', ...depResults)
@@ -766,4 +1143,71 @@ export async function buildTaskPrompt(
   }
 
   return lines.join('\n')
+}
+
+const MAX_DEPENDENCY_PAYLOAD_BYTES = 64 * 1_024
+
+class DependencyPayloadError extends Error {
+  constructor(
+    readonly code:
+      | 'DEPENDENCY_STRUCTURED_RESULT_MISSING'
+      | 'DEPENDENCY_STRUCTURED_SERIALIZATION_FAILED'
+      | 'DEPENDENCY_PAYLOAD_TOO_LARGE',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DependencyPayloadError'
+  }
+}
+
+function assertDependencyPayloadSize(task: Task, dependency: Task, payload: string): void {
+  const bytes = Buffer.byteLength(payload, 'utf8')
+  if (bytes <= MAX_DEPENDENCY_PAYLOAD_BYTES) return
+  throw new DependencyPayloadError(
+    'DEPENDENCY_PAYLOAD_TOO_LARGE',
+    `Task "${task.title}" dependency payload from "${dependency.title}" ` +
+      `is ${bytes} bytes; the limit is ${MAX_DEPENDENCY_PAYLOAD_BYTES} bytes.`,
+  )
+}
+
+function stableJsonStringify(value: unknown): string {
+  const normalized = normalizeJsonValue(value, new Set<object>())
+  const serialized = JSON.stringify(normalized)
+  if (serialized === undefined) {
+    throw new TypeError('Structured dependency result is not JSON-serializable.')
+  }
+  return serialized
+}
+
+function normalizeJsonValue(value: unknown, ancestors: Set<object>): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'bigint') throw new TypeError('BigInt is not JSON-serializable.')
+  if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') {
+    return undefined
+  }
+
+  const object = value as object
+  if (ancestors.has(object)) throw new TypeError('Circular structured dependency result.')
+  ancestors.add(object)
+  try {
+    if (value instanceof Date) return value.toJSON()
+    if (Array.isArray(value)) {
+      return value.map(item => normalizeJsonValue(item, ancestors) ?? null)
+    }
+
+    const record = value as Record<string, unknown> & { toJSON?: () => unknown }
+    if (typeof record.toJSON === 'function') {
+      return normalizeJsonValue(record.toJSON(), ancestors)
+    }
+
+    const normalized: Record<string, unknown> = {}
+    for (const key of Object.keys(record).sort()) {
+      const child = normalizeJsonValue(record[key], ancestors)
+      if (child !== undefined) normalized[key] = child
+    }
+    return normalized
+  } finally {
+    ancestors.delete(object)
+  }
 }

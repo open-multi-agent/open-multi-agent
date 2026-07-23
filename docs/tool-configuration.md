@@ -275,6 +275,39 @@ const customAgent: AgentConfig = {
 
 **Resolution order:** default-deny (no preset _and_ no allowlist ⇒ zero built-in tools) → preset → allowlist → denylist → framework safety rails. Custom / runtime tools bypass the grant step (registration is the grant) but still honor the denylist.
 
+## Capability-aware agent selection
+
+`AgentConfig` can carry four optional, caller-declared selection signals:
+`description` (a one-sentence role summary), `capabilities` (tags), `costTier`,
+and `latencyClass`. Omitted fields stay unknown; OMA does not guess defaults
+from the model, agent name, or system prompt.
+
+Tasks supplied to `runTasks()` can declare hard requirements:
+
+```typescript
+const tasks: RunTaskSpec[] = [{
+  title: 'Patch the parser',
+  description: 'Implement and test the parser fix.',
+  requires: {
+    requiredTools: ['file_read', 'file_edit'],
+    requiredCapabilities: ['typescript'],
+    requiredBackend: 'llm',
+    requiredProvider: 'anthropic',
+  },
+}]
+```
+
+The unified `AgentSelector` applies hard filters first, then ranks eligible
+agents by declared capability affinity before falling back to the existing
+multilingual keyword signal. `requiredTools` is checked against the exact
+definitions returned by the same resolved-grant path used by execution.
+Backend and provider checks use their structured configuration fields.
+`requiredCapabilities` uses only the caller-declared tags.
+
+Neither permissions nor capabilities are ever inferred from `systemPrompt` or
+other prose. When no candidate satisfies the hard requirements, the selector
+returns `NO_ELIGIBLE_AGENT`; a caller must choose any fallback explicitly.
+
 ## Per-call gating with `onToolCall`
 
 The layers above answer **"which tools are reachable?"** by operating on tool _names_. The `onToolCall` gate answers a different question one layer down: **"should _this specific invocation_ run right now?"** `bash` is a single allowed name that covers `ls -la` and `rm -rf /` equally; the gate inspects the actual arguments and can veto individual calls.
@@ -303,7 +336,7 @@ Key semantics:
 - **Human-in-the-loop lives inside your callback.** `await` your own CLI prompt, Slack button, or web dialog, then return `allow` or `deny`. The framework prescribes no review channel, keeping the surface small.
 - **Agent overrides orchestrator.** `AgentConfig.onToolCall` beats `OrchestratorConfig.onToolCall` for that agent, so a team can set a default policy while one specialist tightens or relaxes it. A standalone `new Agent({ ..., onToolCall })` wires the gate straight into its executor.
 - **Runs after the name-based grant.** Default-deny / allowlist / denylist resolution runs **first**; a tool that is not granted is refused before the gate is reached, so the gate only ever sees calls to already-reachable tools. Custom tools and MCP tools route through the same executor, so they are gated too.
-- **Orthogonal to `onApproval`.** `OrchestratorConfig.onApproval` gates whole task batches between orchestration rounds; `onToolCall` gates a single tool invocation during execution. They operate at different layers and compose.
+- **Orthogonal to task dispatch approval.** `OrchestratorConfig.onApproval` gates legacy task rounds and `onTaskDispatch` gates one ready task before dispatch; `onToolCall` gates a single tool invocation during execution. They operate at different layers and compose. The two task-level approval modes are mutually exclusive with each other.
 - **Observability.** When a gate runs, the `tool_call` trace event carries `gated: true`, `gateAction: 'allow' | 'deny'`, and (on deny) a `gateReason` that is redacted like other sensitive trace text, so `onTrace` consumers can audit every decision.
 
 > **Not a security boundary.** A gate that returns `deny` still relies on cooperating code; it is a coordination layer, not containment. `bash` remains un-sandboxed (see the callout below). For an actually-untrusted shell, use process-level isolation (a container / VM / seccomp); the gate is for *policy*, not *isolation*.

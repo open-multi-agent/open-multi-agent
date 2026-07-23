@@ -8,6 +8,7 @@
 
 import type { Task, TaskQueueSnapshot, TaskSnapshot, TaskStatus } from '../types.js'
 import { isTaskReady } from './task.js'
+import { validateTaskMetadata } from './metadata.js'
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -230,10 +231,10 @@ export class TaskQueue {
    * Used when an approval gate rejects continuation — every pending, blocked,
    * or in-progress task is skipped with the given reason.
    *
-   * **Important:** Call only when no tasks are actively executing. The
-   * orchestrator invokes this after `await Promise.all()`, so no tasks are
-   * in-flight. Calling while agents are running may mark an in-progress task
-   * as skipped while its agent continues executing.
+   * **Important:** Call only after active execution has drained. The
+   * orchestrator first stops new dispatches, waits for its in-flight map to
+   * settle, and only then calls this method. Direct callers must provide the
+   * same drain-before-skip ordering.
    */
   skipRemaining(reason = 'Skipped: approval rejected.'): void {
     // Snapshot first — update() mutates the live map, which is unsafe to
@@ -523,8 +524,11 @@ export class TaskQueue {
       ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
       ...(task.dependsOn !== undefined ? { dependsOn: [...task.dependsOn] } : {}),
       ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      ...(task.dependencyPayload !== undefined ? { dependencyPayload: task.dependencyPayload } : {}),
       ...(task.role !== undefined ? { role: task.role } : {}),
       ...(task.priority !== undefined ? { priority: task.priority } : {}),
+      ...(task.metadata !== undefined ? { metadata: task.metadata } : {}),
+      ...(task.requires !== undefined ? { requires: task.requires } : {}),
       ...(task.result !== undefined ? { result: task.result } : {}),
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
@@ -543,8 +547,15 @@ export class TaskQueue {
       ...(snapshot.assignee !== undefined ? { assignee: snapshot.assignee } : {}),
       ...(snapshot.dependsOn !== undefined ? { dependsOn: [...snapshot.dependsOn] } : {}),
       ...(snapshot.memoryScope !== undefined ? { memoryScope: snapshot.memoryScope } : {}),
+      ...(snapshot.dependencyPayload !== undefined
+        ? { dependencyPayload: snapshot.dependencyPayload }
+        : {}),
       ...(snapshot.role !== undefined ? { role: snapshot.role } : {}),
       ...(snapshot.priority !== undefined ? { priority: snapshot.priority } : {}),
+      ...(snapshot.metadata !== undefined
+        ? { metadata: validateTaskMetadata(snapshot.metadata) }
+        : {}),
+      ...(snapshot.requires !== undefined ? { requires: snapshot.requires } : {}),
       ...(snapshot.result !== undefined ? { result: snapshot.result } : {}),
       createdAt: TaskQueue.parseSnapshotDate(snapshot.createdAt),
       updatedAt: TaskQueue.parseSnapshotDate(snapshot.updatedAt),

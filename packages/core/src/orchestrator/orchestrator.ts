@@ -80,6 +80,7 @@ import { TaskQueue } from '../task/queue.js'
 import { Checkpoint } from '../memory/checkpoint.js'
 import { InMemoryStore } from '../memory/store.js'
 import { createTask, validateTaskDependencies } from '../task/task.js'
+import { validateTaskMetadata } from '../task/metadata.js'
 import { Scheduler } from './scheduler.js'
 import { CostBudgetExceededError, TokenBudgetExceededError } from '../errors.js'
 import {
@@ -167,6 +168,7 @@ import {
   buildDecompositionPrompt,
   runCoordinatorSynthesis,
   loadSpecsIntoQueue,
+  findInvalidAssignees,
 } from './coordinator.js'
 
 // ---------------------------------------------------------------------------
@@ -225,8 +227,8 @@ function resolveRunBudgets(
  */
 export class OpenMultiAgent {
   private readonly config: Required<
-    Omit<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
-  > & Pick<OrchestratorConfig, 'onApproval' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+    Omit<OrchestratorConfig, 'onApproval' | 'onTaskDispatch' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
+  > & Pick<OrchestratorConfig, 'onApproval' | 'onTaskDispatch' | 'onAgentStream' | 'onPlanReady' | 'onProgress' | 'onTrace' | 'onToolCall' | 'observability' | 'evaluation' | 'defaultBaseURL' | 'defaultApiKey' | 'maxTokenBudget' | 'maxCostBudget' | 'estimateCost' | 'defaultToolPreset' | 'checkpoint'>
 
   private readonly teams: Map<string, Team> = new Map()
   private readonly fallbackCheckpointStore = new InMemoryStore()
@@ -244,12 +246,17 @@ export class OpenMultiAgent {
    *   - `maxConcurrency`: 5
    *   - `maxDelegationDepth`: 3
    *   - `schedulingStrategy`: `'dependency-first'`
+   *   - `schedulingWeights`: `{ fit: 0.7, load: 0.3 }`
+   *   - `strictAssignees`: `false`
    *   - `defaultModel`:   `'claude-opus-4-6'`
    *   - `defaultProvider`: `'anthropic'`
    */
   constructor(config: OrchestratorConfig = {}) {
     if (config.maxCostBudget !== undefined && config.estimateCost === undefined) {
       throw new Error('maxCostBudget requires estimateCost so cost caps cannot be silently ignored.')
+    }
+    if (config.onApproval && config.onTaskDispatch) {
+      throw new Error('onApproval and onTaskDispatch are mutually exclusive approval modes.')
     }
 
     this.traceRecordObserver = traceRecordObserverFrom(config)
@@ -271,6 +278,8 @@ export class OpenMultiAgent {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
       schedulingStrategy: config.schedulingStrategy ?? 'dependency-first',
+      schedulingWeights: config.schedulingWeights ?? {},
+      strictAssignees: config.strictAssignees ?? false,
       executionRouter: config.executionRouter ?? new DeterministicRouter(),
       defaultModel: config.defaultModel ?? DEFAULT_MODEL,
       defaultProvider: config.defaultProvider ?? 'anthropic',
@@ -286,6 +295,7 @@ export class OpenMultiAgent {
       defaultToolPreset: config.defaultToolPreset,
       checkpoint: config.checkpoint,
       onApproval: config.onApproval,
+      onTaskDispatch: config.onTaskDispatch,
       onPlanReady: config.onPlanReady,
       onAgentStream: config.onAgentStream,
       onProgress: config.onProgress,
@@ -295,6 +305,27 @@ export class OpenMultiAgent {
       onToolCall: config.onToolCall,
       requireConsequentialConfirmation: config.requireConsequentialConfirmation ?? false,
     }
+  }
+
+  private createScheduler(): Scheduler {
+    return new Scheduler(
+      this.config.schedulingStrategy,
+      {
+        defaultProvider: this.config.defaultProvider,
+        defaultToolPreset: this.config.defaultToolPreset,
+        includeDelegateTool: true,
+      },
+      {
+        weights: this.config.schedulingWeights,
+        onWarning: (warning) => {
+          this.config.onProgress?.({
+            type: 'warning',
+            task: warning.taskId,
+            data: warning,
+          })
+        },
+      },
+    )
   }
 
   private beginOnlineEvaluation(input: unknown): PendingOnlineEvaluation | undefined {
@@ -892,10 +923,55 @@ export class OpenMultiAgent {
     const taskSpecs = parseTaskSpecs(decompositionResult.output)
 
     const queue = new TaskQueue()
-    const scheduler = new Scheduler(this.config.schedulingStrategy)
+    const scheduler = this.createScheduler()
     const taskMetrics = new Map<string, TaskExecutionMetrics>()
 
     if (taskSpecs && taskSpecs.length > 0) {
+      const invalidAssignees = findInvalidAssignees(taskSpecs, agentConfigs)
+      if (invalidAssignees.length > 0 && this.config.strictAssignees) {
+        const error = Object.assign(
+          new Error(
+            `Coordinator plan contains invalid assignees: ${invalidAssignees
+              .map((issue) => `"${issue.assignee}" for "${issue.taskTitle}"`)
+              .join(', ')}.`,
+          ),
+          { code: 'INVALID_ASSIGNEE' },
+        )
+        const classified = classifyRunFailure(error, { kind: 'validation' })
+        this.config.onProgress?.({
+          type: 'agent_complete',
+          agent: 'coordinator',
+          data: decompositionResult,
+        })
+        this.config.onProgress?.({
+          type: 'error',
+          data: {
+            code: 'INVALID_ASSIGNEE',
+            issues: invalidAssignees,
+            error: classified.errorInfo,
+          },
+        })
+        return finish(this.buildTeamRunResult(
+          agentResults,
+          identity,
+          goal,
+          [],
+          classified.status,
+          classified.errorInfo,
+        ))
+      }
+      for (const issue of invalidAssignees) {
+        this.config.onProgress?.({
+          type: 'warning',
+          task: issue.taskTitle,
+          data: {
+            code: 'INVALID_ASSIGNEE',
+            assignee: issue.assignee,
+            taskTitle: issue.taskTitle,
+            fallback: 'clear-and-schedule',
+          },
+        })
+      }
       // Map title-based dependsOn references to real task IDs so we can
       // build the dependency graph before adding tasks to the queue.
       loadSpecsIntoQueue(taskSpecs, agentConfigs, queue, options?.verifyJudges)
@@ -915,7 +991,9 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Step 3: Auto-assign any unassigned tasks
     // ------------------------------------------------------------------
-    scheduler.autoAssign(queue, agentConfigs)
+    if (this.config.onApproval || this.config.onPlanReady || options?.planOnly) {
+      scheduler.autoAssign(queue, agentConfigs)
+    }
 
     // ------------------------------------------------------------------
     // Step 4: Build pool and execute
@@ -1057,6 +1135,11 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
@@ -1135,9 +1218,16 @@ export class OpenMultiAgent {
           ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
           ...(task.dependsOn.length > 0 ? { dependsOn: task.dependsOn } : {}),
           ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+          ...(task.dependencyPayload !== undefined
+            ? { dependencyPayload: task.dependencyPayload }
+            : {}),
+          ...(task.role !== undefined ? { role: task.role } : {}),
+          ...(task.priority !== undefined ? { priority: task.priority } : {}),
+          ...(task.metadata !== undefined ? { metadata: task.metadata } : {}),
           ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
           ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
           ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+          ...(task.requires !== undefined ? { requires: task.requires } : {}),
         }
       }),
     }
@@ -1241,11 +1331,13 @@ export class OpenMultiAgent {
             assignee: t.assignee,
             dependsOn: t.dependsOn,
             memoryScope: t.memoryScope,
+            dependencyPayload: t.dependencyPayload,
             maxRetries: t.maxRetries,
             retryDelayMs: t.retryDelayMs,
             retryBackoff: t.retryBackoff,
             role: t.role,
             priority: t.priority,
+            metadata: t.metadata,
             verify: t.verify,
           })),
           team.getAgents(),
@@ -1380,11 +1472,14 @@ export class OpenMultiAgent {
         assignee: t.assignee,
         dependsOn: t.dependsOn,
         memoryScope: t.memoryScope,
+        dependencyPayload: t.dependencyPayload,
         maxRetries: t.maxRetries,
         retryDelayMs: t.retryDelayMs,
         retryBackoff: t.retryBackoff,
         role: t.role,
         priority: t.priority,
+        metadata: t.metadata,
+        requires: t.requires,
         verify: t.verify,
       })),
       agentConfigs,
@@ -1651,6 +1746,15 @@ export class OpenMultiAgent {
       ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
       ...(task.dependsOn && task.dependsOn.length > 0 ? { dependsOn: [...task.dependsOn] } : {}),
       ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      ...(task.dependencyPayload !== undefined
+        ? { dependencyPayload: task.dependencyPayload }
+        : {}),
+      ...(task.role !== undefined ? { role: task.role } : {}),
+      ...(task.priority !== undefined ? { priority: task.priority } : {}),
+      ...(task.metadata !== undefined
+        ? { metadata: validateTaskMetadata(task.metadata) }
+        : {}),
+      ...(task.requires !== undefined ? { requires: task.requires } : {}),
       result: undefined,
       createdAt: now,
       updatedAt: now,
@@ -1684,8 +1788,10 @@ export class OpenMultiAgent {
       ? recordRoutingDecision(runIdentity, traceRuntime, routingDecisionInput)
       : undefined
     const agentConfigs = team.getAgents()
-    const scheduler = new Scheduler(this.config.schedulingStrategy)
-    scheduler.autoAssign(queue, agentConfigs)
+    const scheduler = this.createScheduler()
+    if (this.config.onApproval) {
+      scheduler.autoAssign(queue, agentConfigs)
+    }
     const budgets = resolveRunBudgets(this.config, options)
 
     const pool = this.buildPool(agentConfigs)
@@ -1790,6 +1896,11 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
@@ -1868,13 +1979,16 @@ export class OpenMultiAgent {
       const task = taskById.get(completed.taskId)
       const assignee = completed.assignee ?? task?.assignee ?? 'unknown'
       const output = completed.result ?? task?.result ?? ''
-      agentResults.set(`${assignee}:${completed.taskId}`, {
-        success: true,
-        output,
-        messages: [],
-        tokenUsage: ZERO_USAGE,
-        toolCalls: [],
-      })
+      agentResults.set(
+        `${assignee}:${completed.taskId}`,
+        completed.agentResult ?? {
+          success: true,
+          output,
+          messages: [],
+          tokenUsage: ZERO_USAGE,
+          toolCalls: [],
+        },
+      )
     }
 
     return agentResults
@@ -1925,6 +2039,14 @@ export class OpenMultiAgent {
     let totalUsage: TokenUsage = ZERO_USAGE
     let overallSuccess = true
     const collapsed = new Map<string, AgentRunResult>()
+    const taskResults = new Map<string, AgentRunResult>()
+
+    for (const task of tasks ?? []) {
+      if (!task.assignee) continue
+      const exact = agentResults.get(`${task.assignee}:${task.id}`)
+        ?? (task.id === 'short-circuit' ? agentResults.get(task.assignee) : undefined)
+      if (exact !== undefined) taskResults.set(task.id, exact)
+    }
 
     for (const [key, result] of agentResults) {
       // Strip the `:taskId` suffix to get the agent name
@@ -1988,6 +2110,7 @@ export class OpenMultiAgent {
       goal,
       tasks,
       agentResults: collapsed,
+      taskResults,
       totalTokenUsage: totalUsage,
       metrics,
     }
@@ -2007,6 +2130,11 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      dependencyPayload: task.dependencyPayload,
+      role: task.role,
+      priority: task.priority,
+      metadata: task.metadata,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,

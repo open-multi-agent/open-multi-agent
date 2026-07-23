@@ -112,7 +112,16 @@ On each successfully completed task, the orchestrator writes a `CheckpointSnapsh
   `continued_from` link to the prior attempt.
 - **Task queue state** — every task and its status partition (pending / in-progress / completed / failed / blocked / skipped).
 - **Shared memory** — the turn counter is always recorded. The full entry snapshot is embedded **only when the checkpoint store differs from the team's shared-memory store**. When they are the same store (the default for `checkpoint: true`), the entries are already durable there, so re-embedding them every task would be wasted ~O(N²) write volume across a long run; resume reads them straight from the store instead. Either way, resume rehydrates shared memory correctly.
-- **Completed task results** — `taskId`, `assignee`, and `result` for each finished task, so resumed agents see prior outputs.
+- **Completed task results** — `taskId`, `assignee`, raw `result`, and the
+  JSON-safe `AgentRunResult` for each finished task. This preserves per-task
+  `structured`, normalized status/error details, token usage, tool calls, and
+  messages so `TeamRunResult.taskResults` can be rebuilt after restore. The
+  in-process-only raw `error` object is not persisted. If caller-added result
+  data cannot be JSON-serialized, checkpoint durability wins: the full result
+  is omitted for that task and restore rebuilds the legacy minimal result.
+- **Task handoff/provenance config** — `dependencyPayload`, logical `role`, and
+  validated task `metadata` remain on the queue snapshot, so resumed consumers
+  use the same data-flow and trace references as the original run.
 
 Snapshots are stored as JSON under a reserved namespace: `__oma_checkpoint__/<runId>/latest` (or `__oma_checkpoint__/latest` when no `runId` is set). Keys under `__oma_checkpoint__/` are reserved — shared-memory snapshot/restore deliberately skips them so one store can hold both agent memory and checkpoints.
 
@@ -138,7 +147,13 @@ const orchestrator = new OpenMultiAgent({
 
 ## Redacting persisted secrets
 
-A checkpoint stores completed task results — and, for a separate checkpoint store, the shared-memory snapshot — **verbatim**. Redaction elsewhere (traces, dashboard) does **not** reach this path, so a secret an agent emits into its answer lands on disk. To scrub it, wrap the durable store with **`RedactingStore`**:
+A checkpoint stores completed task results — including structured values,
+messages, and tool calls — and, for a separate checkpoint store, the
+shared-memory snapshot **verbatim**. Task metadata has its own validation and
+credential redaction boundary, but agent-produced results do not. Redaction
+elsewhere (traces, dashboard) does **not** reach this path, so a secret an agent
+emits into its answer lands on disk. To scrub it, wrap the durable store with
+**`RedactingStore`**:
 
 ```typescript
 import { RedactingStore, FileStore } from '@open-multi-agent/core'

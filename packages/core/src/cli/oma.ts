@@ -35,7 +35,15 @@ import type { StoredRun } from '../observability/store.js'
 import { FileTraceStore, FileTraceStoreError } from '../observability/file-store.js'
 import { emptyTraceSinkStats, type FlushResult, type TraceSink } from '../observability/sink.js'
 import type { SupportedProvider } from '../llm/adapter.js'
-import type { AgentRunResult, CoordinatorConfig, OrchestratorConfig, TeamConfig, TeamRunResult } from '../types.js'
+import { validateTaskMetadata } from '../task/metadata.js'
+import type {
+  AgentRunResult,
+  CoordinatorConfig,
+  OrchestratorConfig,
+  TaskMetadata,
+  TeamConfig,
+  TeamRunResult,
+} from '../types.js'
 
 // ---------------------------------------------------------------------------
 // Exit codes
@@ -570,6 +578,10 @@ function asTaskSpecs(v: unknown, label: string): ReadonlyArray<{
   assignee?: string
   dependsOn?: string[]
   memoryScope?: 'dependencies' | 'all'
+  dependencyPayload?: 'output' | 'structured' | 'both'
+  role?: string
+  priority?: 'low' | 'normal' | 'high' | 'critical'
+  metadata?: TaskMetadata
   maxRetries?: number
   retryDelayMs?: number
   retryBackoff?: number
@@ -581,6 +593,10 @@ function asTaskSpecs(v: unknown, label: string): ReadonlyArray<{
     assignee?: string
     dependsOn?: string[]
     memoryScope?: 'dependencies' | 'all'
+    dependencyPayload?: 'output' | 'structured' | 'both'
+    role?: string
+    priority?: 'low' | 'normal' | 'high' | 'critical'
+    metadata?: TaskMetadata
     maxRetries?: number
     retryDelayMs?: number
     retryBackoff?: number
@@ -601,6 +617,34 @@ function asTaskSpecs(v: unknown, label: string): ReadonlyArray<{
     }
     if (item['memoryScope'] === 'all' || item['memoryScope'] === 'dependencies') {
       row.memoryScope = item['memoryScope']
+    }
+    if (
+      item['dependencyPayload'] === 'output'
+      || item['dependencyPayload'] === 'structured'
+      || item['dependencyPayload'] === 'both'
+    ) {
+      row.dependencyPayload = item['dependencyPayload']
+    }
+    if (typeof item['role'] === 'string') row.role = item['role']
+    if (
+      item['priority'] === 'low'
+      || item['priority'] === 'normal'
+      || item['priority'] === 'high'
+      || item['priority'] === 'critical'
+    ) {
+      row.priority = item['priority']
+    }
+    if (item['metadata'] !== undefined) {
+      if (!isObject(item['metadata'])) {
+        throw new OmaValidationError(`${label}[${i}].metadata: object expected`)
+      }
+      try {
+        row.metadata = validateTaskMetadata(item['metadata'] as TaskMetadata)!
+      } catch (error) {
+        throw new OmaValidationError(
+          `${label}[${i}].metadata: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
     }
     if (typeof item['maxRetries'] === 'number') row.maxRetries = item['maxRetries']
     if (typeof item['retryDelayMs'] === 'number') row.retryDelayMs = item['retryDelayMs']
@@ -635,6 +679,14 @@ export function serializeTeamRunResult(result: TeamRunResult, opts: CliJsonOptio
   for (const [k, v] of result.agentResults) {
     agentResults[k] = serializeAgentResult(v, opts.includeMessages)
   }
+  const taskResults: Record<string, unknown> | undefined = result.taskResults === undefined
+    ? undefined
+    : Object.fromEntries(
+        [...result.taskResults].map(([k, v]) => [
+          k,
+          serializeAgentResult(v, opts.includeMessages),
+        ]),
+      )
   return {
     success: result.success,
     goal: result.goal,
@@ -642,6 +694,7 @@ export function serializeTeamRunResult(result: TeamRunResult, opts: CliJsonOptio
     routingDecision: result.routingDecision,
     totalTokenUsage: result.totalTokenUsage,
     agentResults,
+    ...(taskResults !== undefined ? { taskResults } : {}),
   }
 }
 

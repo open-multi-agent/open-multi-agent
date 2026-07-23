@@ -17,6 +17,8 @@ import type {
   OrchestratorConfig,
   RunIdentity,
   Task,
+  TaskMetadata,
+  TaskRequirements,
   TokenUsage,
 } from '../types.js'
 import type { Team } from '../team/team.js'
@@ -26,7 +28,13 @@ import { classifyRunFailure } from '../observability/status.js'
 import type { TraceRuntime, TraceSpan } from '../observability/runtime.js'
 import { totalTokens, DEFAULT_MODEL } from './run-context.js'
 import { applyBudgetAccounting, buildCostEstimateContext, emitBudgetExceeded } from './budget.js'
-import { buildAgent, withModelRoute, routeMatches } from './agent-config.js'
+import {
+  applyDefaultToolPreset,
+  buildAgent,
+  resolveAgentToolDefinitions,
+  withModelRoute,
+  routeMatches,
+} from './agent-config.js'
 
 /**
  * Partial verify config that the coordinator can emit in task JSON.
@@ -52,6 +60,7 @@ export interface ParsedTaskSpec {
   retryBackoff?: number
   role?: string
   priority?: 'low' | 'normal' | 'high' | 'critical'
+  requires?: TaskRequirements
   /**
    * Full verify options (used by explicit `runTasks` specs that already
    * include judges) OR a coordinator-emitted partial spec / boolean `true`
@@ -59,6 +68,23 @@ export interface ParsedTaskSpec {
    * `verifyJudges` is available).
    */
   verify?: ConsensusVerifyOptions | CoordinatorVerifySpec | true
+}
+
+export interface InvalidAssigneeIssue {
+  readonly taskTitle: string
+  readonly assignee: string
+}
+
+/** Find coordinator-authored assignees that are not present in the team roster. */
+export function findInvalidAssignees(
+  specs: readonly ParsedTaskSpec[],
+  agents: readonly AgentConfig[],
+): readonly InvalidAssigneeIssue[] {
+  const agentNames = new Set(agents.map((agent) => agent.name))
+  return specs.flatMap((spec) =>
+    spec.assignee !== undefined && !agentNames.has(spec.assignee)
+      ? [{ taskTitle: spec.title, assignee: spec.assignee }]
+      : [])
 }
 
 /**
@@ -151,6 +177,7 @@ export function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
         priority: obj['priority'] === 'low' || obj['priority'] === 'normal' || obj['priority'] === 'high' || obj['priority'] === 'critical'
           ? obj['priority']
           : undefined,
+        requires: parseTaskRequirements(obj['requires']),
         verify: parseCoordinatorVerify(obj['verify']),
       })
     }
@@ -161,13 +188,116 @@ export function parseTaskSpecs(raw: string): ParsedTaskSpec[] | null {
   }
 }
 
+/** Parse the coordinator's optional, explicit task requirements. */
+export function parseTaskRequirements(raw: unknown): TaskRequirements | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined
+  const obj = raw as Record<string, unknown>
+  const strings = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined
+    const filtered = value.filter((item): item is string => typeof item === 'string')
+    return filtered.length > 0 ? filtered : undefined
+  }
+  const requiredTools = strings(obj['requiredTools'])
+  const requiredCapabilities = strings(obj['requiredCapabilities'])
+  const requiredBackend =
+    obj['requiredBackend'] === 'llm'
+    || obj['requiredBackend'] === 'process'
+    || obj['requiredBackend'] === 'acp'
+      ? obj['requiredBackend']
+      : undefined
+  // Unknown strings remain a safe no-match at runtime; the public
+  // RunTaskSpec type constrains caller-authored values to SupportedProvider.
+  const requiredProvider = typeof obj['requiredProvider'] === 'string'
+    ? obj['requiredProvider'] as TaskRequirements['requiredProvider']
+    : undefined
+  if (
+    requiredTools === undefined
+    && requiredCapabilities === undefined
+    && requiredBackend === undefined
+    && requiredProvider === undefined
+  ) return undefined
+  return {
+    ...(requiredTools !== undefined ? { requiredTools } : {}),
+    ...(requiredCapabilities !== undefined ? { requiredCapabilities } : {}),
+    ...(requiredBackend !== undefined ? { requiredBackend } : {}),
+    ...(requiredProvider !== undefined ? { requiredProvider } : {}),
+  }
+}
+
 /** Build the system prompt given to the coordinator agent. */
-export function buildCoordinatorSystemPrompt(agents: AgentConfig[], hasVerifyJudges?: boolean): string {
+export interface CoordinatorRosterContext {
+  readonly defaultModel?: string
+  readonly defaultToolPreset?: OrchestratorConfig['defaultToolPreset']
+}
+
+export interface CoordinatorRosterManifestEntry {
+  readonly name: string
+  readonly model: string
+  readonly roleSummary?: string
+  readonly capabilities?: readonly string[]
+  readonly tools?: readonly string[]
+  readonly costTier?: AgentConfig['costTier']
+}
+
+export const COORDINATOR_ROLE_SUMMARY_MAX_CHARS = 140
+export const COORDINATOR_MANIFEST_MAX_CAPABILITIES = 20
+export const COORDINATOR_MANIFEST_MAX_TOOLS = 24
+const MANIFEST_MODEL_MAX_CHARS = 120
+
+function bounded(value: string, maxChars: number): string {
+  return value.trim().slice(0, maxChars)
+}
+
+function roleSummary(agent: AgentConfig): string | undefined {
+  // This is an intentional, bounded summary exposure for coordinator routing:
+  // one explicit sentence or at most the first 140 prompt characters, never
+  // the previous unbounded full system prompt.
+  const source = agent.description
+    ?? agent.systemPrompt?.split(/\r?\n/, 1)[0]
+  if (!source) return undefined
+  const summary = bounded(source, COORDINATOR_ROLE_SUMMARY_MAX_CHARS)
+  return summary.length > 0 ? summary : undefined
+}
+
+/** Build the bounded, allowlisted manifest shown to the coordinator. */
+export function buildCoordinatorRosterManifest(
+  agents: readonly AgentConfig[],
+  context: CoordinatorRosterContext = {},
+): readonly CoordinatorRosterManifestEntry[] {
+  return agents.map((agent) => {
+    const effective = applyDefaultToolPreset(agent, context.defaultToolPreset)
+    const tools = resolveAgentToolDefinitions(effective, {
+      includeDelegateTool: true,
+    })
+      .map((tool) => tool.name)
+      .slice(0, COORDINATOR_MANIFEST_MAX_TOOLS)
+    const capabilities = agent.capabilities
+      ?.filter((capability) => capability.length > 0)
+      .slice(0, COORDINATOR_MANIFEST_MAX_CAPABILITIES)
+    const summary = roleSummary(agent)
+    return {
+      // Keep the assignment identity exact so coordinator output can always
+      // pass loadSpecsIntoQueue's roster-name validation.
+      name: agent.name,
+      model: bounded(agent.model ?? context.defaultModel ?? 'unspecified', MANIFEST_MODEL_MAX_CHARS),
+      ...(summary !== undefined ? { roleSummary: summary } : {}),
+      ...(capabilities && capabilities.length > 0 ? { capabilities } : {}),
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(agent.costTier !== undefined ? { costTier: agent.costTier } : {}),
+    }
+  })
+}
+
+export function buildCoordinatorSystemPrompt(
+  agents: AgentConfig[],
+  hasVerifyJudges?: boolean,
+  rosterContext: CoordinatorRosterContext = {},
+): string {
   return [
     'You are a task coordinator responsible for decomposing high-level goals',
     'into concrete, actionable tasks and assigning them to the right team members.',
     '',
-    buildCoordinatorRosterSection(agents),
+    buildCoordinatorRosterSection(agents, rosterContext),
     '',
     buildCoordinatorOutputFormatSection(hasVerifyJudges),
     '',
@@ -176,12 +306,17 @@ export function buildCoordinatorSystemPrompt(agents: AgentConfig[], hasVerifyJud
 }
 
 /** Build coordinator system prompt with optional caller overrides. */
-export function buildCoordinatorPrompt(agents: AgentConfig[], config?: CoordinatorConfig, hasVerifyJudges?: boolean): string {
+export function buildCoordinatorPrompt(
+  agents: AgentConfig[],
+  config?: CoordinatorConfig,
+  hasVerifyJudges?: boolean,
+  rosterContext: CoordinatorRosterContext = {},
+): string {
   if (config?.systemPrompt) {
     return [
       config.systemPrompt,
       '',
-      buildCoordinatorRosterSection(agents),
+      buildCoordinatorRosterSection(agents, rosterContext),
       '',
       buildCoordinatorOutputFormatSection(hasVerifyJudges),
       '',
@@ -189,7 +324,7 @@ export function buildCoordinatorPrompt(agents: AgentConfig[], config?: Coordinat
     ].join('\n')
   }
 
-  const base = buildCoordinatorSystemPrompt(agents, hasVerifyJudges)
+  const base = buildCoordinatorSystemPrompt(agents, hasVerifyJudges, rosterContext)
   if (!config?.instructions) {
     return base
   }
@@ -203,16 +338,15 @@ export function buildCoordinatorPrompt(agents: AgentConfig[], config?: Coordinat
 }
 
 /** Build the coordinator team roster section. */
-export function buildCoordinatorRosterSection(agents: AgentConfig[]): string {
-  const roster = agents
-    .map(
-      (a) =>
-        `- **${a.name}** (${a.model}): ${a.systemPrompt ?? 'general purpose agent'}`,
-    )
-    .join('\n')
-
+export function buildCoordinatorRosterSection(
+  agents: AgentConfig[],
+  context: CoordinatorRosterContext = {},
+): string {
+  const roster = JSON.stringify(buildCoordinatorRosterManifest(agents, context), null, 2)
   return [
     '## Team Roster',
+    'Use only this bounded structured manifest. `roleSummary` is an intentionally exposed',
+    `summary (maximum ${COORDINATOR_ROLE_SUMMARY_MAX_CHARS} characters), not the full system prompt.`,
     roster,
   ].join('\n')
 }
@@ -225,8 +359,13 @@ export function buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): 
     'Each task must have:',
     '  - "title":       Short descriptive title (string)',
     '  - "description": Full task description with context and expected output (string)',
-    '  - "assignee":    One of the agent names listed in the roster (string)',
+    '  - "assignee":    One of the agent names listed in the roster (string).',
+    '                   Prefer an agent whose manifest `capabilities` best match the task;',
+    '                   use `roleSummary` and `tools` only as secondary assignment signals.',
     '  - "dependsOn":   Array of titles of tasks this task depends on (string[], may be empty).',
+    '  - "requires":    (optional) Explicit hard requirements with optional "requiredTools" (string[]),',
+    '                   "requiredCapabilities" (string[]), "requiredBackend" ("llm"|"process"|"acp"),',
+    '                   and "requiredProvider" (string). Omit when there are no hard requirements.',
   ]
   if (hasVerifyJudges) {
     lines.push(
@@ -240,9 +379,9 @@ export function buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): 
     '',
     '## Dependency Guidance',
     'Prefer the minimum set of upstream tasks each assignee needs. When deciding dependsOn for agent X:',
-    '  1. Use X\'s system prompt as the primary signal for what inputs it consumes.',
-    '  2. Lean toward including a task as a dependency only when X\'s system prompt names or describes needing that kind of input.',
-    '  3. Avoid adding a dependency just because the information "would be useful" or matches general best practice; if X\'s system prompt gives no indication it consumes that input, prefer to leave it out.',
+    '  1. Use X\'s roleSummary and declared capabilities as the primary signals for what inputs it consumes.',
+    '  2. Lean toward including a task only when the structured manifest describes X as needing that input.',
+    '  3. Avoid adding a dependency just because the information "would be useful" or matches general best practice; if the manifest gives no indication X consumes that input, prefer to leave it out.',
     '  4. When uncertain, prefer fewer dependencies over more — extra parents cost parallelism and tokens.',
     '',
     'Wrap the JSON in a ```json code fence.',
@@ -291,7 +430,15 @@ export function buildCoordinatorBaseConfig(
     provider: coordinatorOverrides?.provider ?? config.defaultProvider,
     baseURL: coordinatorOverrides?.baseURL ?? config.defaultBaseURL,
     apiKey: coordinatorOverrides?.apiKey ?? config.defaultApiKey,
-    systemPrompt: buildCoordinatorPrompt(agentConfigs, coordinatorOverrides, hasVerifyJudges),
+    systemPrompt: buildCoordinatorPrompt(
+      agentConfigs,
+      coordinatorOverrides,
+      hasVerifyJudges,
+      {
+        defaultModel: config.defaultModel,
+        defaultToolPreset: config.defaultToolPreset,
+      },
+    ),
     maxTurns: coordinatorOverrides?.maxTurns ?? 3,
     maxTokens: coordinatorOverrides?.maxTokens,
     temperature: coordinatorOverrides?.temperature,
@@ -476,11 +623,14 @@ export async function buildSynthesisPrompt(
 export function loadSpecsIntoQueue(
   specs: ReadonlyArray<ParsedTaskSpec & {
     memoryScope?: 'dependencies' | 'all'
+    dependencyPayload?: 'output' | 'structured' | 'both'
     maxRetries?: number
     retryDelayMs?: number
     retryBackoff?: number
     role?: string
     priority?: 'low' | 'normal' | 'high' | 'critical'
+    metadata?: TaskMetadata
+    requires?: TaskRequirements
   }>,
   agentConfigs: AgentConfig[],
   queue: TaskQueue,
@@ -506,11 +656,14 @@ export function loadSpecsIntoQueue(
         ? spec.assignee
         : undefined,
       memoryScope: spec.memoryScope,
+      dependencyPayload: spec.dependencyPayload,
       maxRetries: spec.maxRetries,
       retryDelayMs: spec.retryDelayMs,
       retryBackoff: spec.retryBackoff,
       role: spec.role,
       priority: spec.priority,
+      metadata: spec.metadata,
+      requires: spec.requires,
       verify: resolveVerify(spec.verify, verifyJudges),
     })
     const titleKey = normalizeTitle(spec.title)

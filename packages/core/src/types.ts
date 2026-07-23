@@ -7,7 +7,10 @@
 
 import type { ZodSchema } from 'zod'
 import type { SupportedProvider } from './llm/adapter.js'
-import type { SchedulingStrategy } from './orchestrator/scheduler.js'
+import type {
+  SchedulingStrategy,
+  SchedulingWeights,
+} from './orchestrator/scheduler.js'
 
 // ---------------------------------------------------------------------------
 // Content blocks
@@ -667,6 +670,23 @@ export type ExternalAgentBackendConfig = AgentBackendConfig | ProcessAgentBacken
 /** Static configuration for a single agent. */
 export interface AgentConfig {
   readonly name: string
+  /** One-sentence role description for bounded, structured agent manifests. */
+  readonly description?: string
+  /**
+   * Caller-declared capability tags used as explicit selection signals.
+   * OMA never derives capabilities from `systemPrompt` or any other text.
+   */
+  readonly capabilities?: readonly string[]
+  /**
+   * Caller-declared relative cost class. `low`, `medium`, and `high` are
+   * application-level bands; OMA does not infer pricing when this is omitted.
+   */
+  readonly costTier?: 'low' | 'medium' | 'high'
+  /**
+   * Caller-declared relative response-time class. `low`, `medium`, and `high`
+   * describe expected latency; OMA does not benchmark or infer a default.
+   */
+  readonly latencyClass?: 'low' | 'medium' | 'high'
   /**
    * Model identifier (e.g. `'claude-opus-4-6'`).
    *
@@ -1096,6 +1116,23 @@ export interface ModelRoutingPolicy {
   readonly rules: readonly ModelRoutingRule[]
 }
 
+/**
+ * Explicit hard requirements for task-to-agent selection.
+ *
+ * Hard constraints use only resolved tool grants, backend discriminants,
+ * providers, and caller-declared capability tags. They are never inferred
+ * from `systemPrompt`, task prose, names, or other unstructured text.
+ */
+export interface TaskRequirements {
+  readonly requiredTools?: readonly string[]
+  readonly requiredCapabilities?: readonly string[]
+  readonly requiredBackend?: 'llm' | 'process' | 'acp'
+  readonly requiredProvider?: SupportedProvider
+}
+
+/** Bounded, trace-safe business references attached to one task. */
+export type TaskMetadata = Readonly<Record<string, TraceAttributeValue>>
+
 /** Input task descriptor accepted by {@link OpenMultiAgent.runTasks}. */
 export interface RunTaskSpec {
   readonly title: string
@@ -1103,11 +1140,27 @@ export interface RunTaskSpec {
   readonly assignee?: string
   readonly dependsOn?: string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  /**
+   * Payload injected for each direct dependency.
+   *
+   * Defaults to `output` for backwards compatibility. `structured` injects
+   * only the dependency's validated structured value; `both` labels and
+   * injects both forms.
+   */
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  /**
+   * Bounded business references such as `sourceFile`, `supplierId`, or
+   * `documentId`. Values are validated and credential-like content is redacted
+   * before entering task results, traces, or checkpoints.
+   */
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
   readonly role?: string
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Optional explicit hard requirements. Omitted means no hard constraints. */
+  readonly requires?: TaskRequirements
   readonly verify?: ConsensusVerifyOptions
 }
 
@@ -1155,6 +1208,12 @@ export interface RosterSummaryEntry {
   readonly model: string
   /** Count of directly declared built-in and custom tools, when known. */
   readonly toolCount?: number
+  /** Bounded role summary for manifest consumers; execution routing leaves this unset. */
+  readonly roleSummary?: string
+  /** Caller-declared capability tags; never inferred from `systemPrompt`. */
+  readonly capabilities?: readonly string[]
+  /** Caller-declared relative cost band. */
+  readonly costTier?: AgentConfig['costTier']
 }
 
 /** Budget still available when execution routing begins. */
@@ -1380,6 +1439,15 @@ export interface TeamRunResult extends RunOutcomeFields {
   readonly planOnly?: boolean
   /** Keyed by agent name. */
   readonly agentResults: Map<string, AgentRunResult>
+  /**
+   * Unmerged per-task results keyed by stable task id.
+   *
+   * Runtime-produced task runs populate this map while retaining
+   * {@link agentResults} for backwards compatibility. It remains optional so
+   * older serialized results and caller-authored fixtures continue to
+   * type-check.
+   */
+  readonly taskResults?: Map<string, AgentRunResult>
   readonly totalTokenUsage: TokenUsage
   /** Aggregated run-level metrics computed from per-task data. */
   readonly metrics?: RunMetrics
@@ -1393,9 +1461,14 @@ export interface PlanTaskArtifact {
   readonly assignee?: string
   readonly dependsOn?: readonly string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
+  readonly requires?: TaskRequirements
 }
 
 /**
@@ -1488,9 +1561,15 @@ export interface TaskExecutionRecord {
    * task; `undefined` when the task did not set them.
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
+  /** Logical business role, distinct from the concrete worker in `assignee`. */
+  readonly role?: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
+  readonly requires?: TaskRequirements
   /** Verify config attached to this task, if any. Populated in `planOnly` results for inspection. */
   readonly verify?: ConsensusVerifyOptions
   readonly metrics?: TaskExecutionMetrics
@@ -1512,10 +1591,19 @@ export interface Task {
    * - `all`: full shared-memory summary
    */
   readonly memoryScope?: 'dependencies' | 'all'
+  /**
+   * Selects the representation of direct dependency results injected into the
+   * task prompt. Defaults to `output`.
+   */
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
   /** Caller-defined task role used by model routing rules. */
   readonly role?: string
   /** Caller-defined task priority used by model routing rules. */
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Validated, bounded business references carried through result/trace/checkpoint. */
+  readonly metadata?: TaskMetadata
+  /** Explicit hard requirements used by capability-aware scheduling. */
+  readonly requires?: TaskRequirements
   result?: string
   readonly createdAt: Date
   updatedAt: Date
@@ -1540,8 +1628,8 @@ export interface Task {
 /**
  * Progress event emitted by the orchestrator during a run.
  *
- * **v0.3 addition:** `'task_skipped'` — consumers with exhaustive switches
- * on `type` will need to add a case for this variant.
+ * Additive variants include `'task_skipped'` and `'warning'`; consumers with
+ * exhaustive switches on `type` need to handle them.
  */
 export interface OrchestratorEvent {
   readonly type:
@@ -1553,6 +1641,7 @@ export interface OrchestratorEvent {
     | 'task_retry'
     | 'budget_exceeded'
     | 'message'
+    | 'warning'
     | 'error'
   readonly agent?: string
   readonly task?: string
@@ -1573,11 +1662,31 @@ export interface OrchestratorConfig {
    *   prompts; use it when agents have distinct, clearly described roles.
    * - `'dependency-first'` assigns tasks that unblock the most dependents
    *   first; use it for dependency-heavy DAGs.
+   * - `'composite'` ranks by dependency criticality, hard-filters with the
+   *   AgentSelector, then combines fit and current load.
    *
    * Defaults to `'dependency-first'`. Explicit task assignees are preserved
    * and are never replaced by this strategy.
    */
   readonly schedulingStrategy?: SchedulingStrategy
+  /**
+   * Relative weights for `'composite'` scheduling.
+   *
+   * `fit` multiplies the AgentSelector score and defaults to `0.7`. `load`
+   * multiplies `1 - normalizedCurrentLoad` and defaults to `0.3`. Values must
+   * be finite and non-negative, and may not both be zero. Ignored by the four
+   * compatibility strategies.
+   */
+  readonly schedulingWeights?: Partial<SchedulingWeights>
+  /**
+   * Reject coordinator plans that name an assignee outside the team roster.
+   *
+   * Defaults to `false`: invalid names are cleared, a structured `warning`
+   * progress event is emitted, and the configured scheduler assigns the task.
+   * When `true`, the run terminates with a structured `INVALID_ASSIGNEE`
+   * validation error before any planned task executes.
+   */
+  readonly strictAssignees?: boolean
   /**
    * Default execution-topology router for automatic `runTeam()` calls.
    *
@@ -1682,6 +1791,9 @@ export interface OrchestratorConfig {
    * to start next. Return `true` to continue or `false` to abort —
    * remaining tasks will be marked `'skipped'`.
    *
+   * Configuring this callback selects the legacy round-based executor. It is
+   * mutually exclusive with {@link onTaskDispatch}.
+   *
    * Not called when:
    * - No tasks succeeded in the round (all failed).
    * - No pending tasks remain after the round (final batch).
@@ -1691,6 +1803,22 @@ export interface OrchestratorConfig {
    * undefined behavior.
    */
   readonly onApproval?: (completedTasks: readonly Task[], nextTasks: readonly Task[]) => Promise<boolean>
+  /**
+   * Optional per-task dispatch gate for event-driven DAG execution.
+   *
+   * Called after a ready task has an assignee and immediately before it is
+   * dispatched. Return `true` to start the task or `false` to stop new
+   * dispatches. On rejection, already-running tasks are allowed to settle and
+   * every remaining task is then marked `'skipped'`.
+   *
+   * This gate is mutually exclusive with {@link onApproval}. Configure
+   * `onApproval` to retain legacy round-by-round execution and approval
+   * semantics; configure `onTaskDispatch` for native pipeline approval.
+   *
+   * **Note:** Do not mutate the {@link Task} passed to this callback. It is a
+   * live reference to queue state; mutation is undefined behavior.
+   */
+  readonly onTaskDispatch?: (task: Readonly<Task>) => boolean | Promise<boolean>
   /**
    * Optional approval gate called once after the coordinator decomposes the
    * goal into tasks and before execution begins.
@@ -1797,8 +1925,11 @@ export interface TaskSnapshot {
   readonly assignee?: string
   readonly dependsOn?: readonly string[]
   readonly memoryScope?: 'dependencies' | 'all'
+  readonly dependencyPayload?: 'output' | 'structured' | 'both'
   readonly role?: string
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly metadata?: TaskMetadata
+  readonly requires?: TaskRequirements
   readonly result?: string
   readonly createdAt: string
   readonly updatedAt: string
@@ -1824,6 +1955,11 @@ export interface CompletedTaskCheckpoint {
   readonly taskId: string
   readonly assignee?: string
   readonly result?: string
+  /**
+   * Full JSON-serializable task result. The in-process-only `error` object is
+   * deliberately omitted; normalized `status` / `errorInfo` remain available.
+   */
+  readonly agentResult?: Omit<AgentRunResult, 'error'>
 }
 
 interface CheckpointSnapshotBase {
@@ -2007,6 +2143,8 @@ export interface TaskTrace extends TraceEventBase {
   readonly type: 'task'
   readonly taskId: string
   readonly taskTitle: string
+  readonly taskRole?: string
+  readonly taskMetadata?: TaskMetadata
   readonly success: boolean
   readonly retries: number
 }

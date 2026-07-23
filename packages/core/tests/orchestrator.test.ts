@@ -1017,6 +1017,124 @@ describe('OpenMultiAgent', () => {
       })
     })
 
+    it('passes schedulingWeights from OrchestratorConfig into composite scheduling', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title":"Implement TypeScript","description":"Implement TypeScript service"}]\n```',
+      ]
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        schedulingStrategy: 'composite',
+        schedulingWeights: { fit: 0, load: 1 },
+      })
+      const team = oma.createTeam('t', teamCfg([
+        agentConfig('aaa-idle'),
+        {
+          ...agentConfig('coder'),
+          capabilities: ['typescript'],
+        },
+      ]))
+
+      const result = await oma.runTeam(
+        team,
+        'First implement the TypeScript service, then document the result.',
+        { planOnly: true },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.tasks?.[0]?.assignee).toBe('aaa-idle')
+    })
+
+    it('surfaces composite no-eligible fallback through onProgress warning', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title":"Restricted","description":"Restricted task","requires":{"requiredCapabilities":["missing"]}}]\n```',
+      ]
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        schedulingStrategy: 'composite',
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker-a')]))
+
+      const result = await oma.runTeam(
+        team,
+        'First complete the restricted task, then document the outcome.',
+        { planOnly: true },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.tasks?.[0]?.assignee).toBe('worker-a')
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'warning',
+        data: expect.objectContaining({
+          code: 'NO_ELIGIBLE_AGENT',
+          fallback: 'zero-fit-current-load',
+        }),
+      }))
+    })
+
+    it('warns and schedules a coordinator task with an invalid assignee by default', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title":"Research","description":"Research the topic","assignee":"ghost"}]\n```',
+      ]
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker-a')]))
+
+      const result = await oma.runTeam(
+        team,
+        'First research the topic, then prepare a detailed implementation plan.',
+        { planOnly: true },
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.tasks?.[0]?.assignee).toBe('worker-a')
+      expect(events).toContainEqual({
+        type: 'warning',
+        task: 'Research',
+        data: {
+          code: 'INVALID_ASSIGNEE',
+          assignee: 'ghost',
+          taskTitle: 'Research',
+          fallback: 'clear-and-schedule',
+        },
+      })
+    })
+
+    it('returns a structured validation error for an invalid assignee in strict mode', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title":"Research","description":"Research the topic","assignee":"ghost"}]\n```',
+      ]
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        strictAssignees: true,
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg([agentConfig('worker-a')]))
+
+      const result = await oma.runTeam(
+        team,
+        'First research the topic, then prepare a detailed implementation plan.',
+        { planOnly: true },
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.status?.code).toBe('error')
+      expect(result.errorInfo).toMatchObject({
+        kind: 'validation',
+        code: 'INVALID_ASSIGNEE',
+      })
+      expect(result.tasks).toEqual([])
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({ code: 'INVALID_ASSIGNEE' }),
+      }))
+    })
+
     it('supports coordinator model override without affecting workers', async () => {
       mockAdapterResponses = [
         '```json\n[{"title": "Research", "description": "Research", "assignee": "worker-a"}]\n```',

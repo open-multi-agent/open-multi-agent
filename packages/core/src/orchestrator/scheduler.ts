@@ -1,13 +1,14 @@
 /**
  * @fileoverview Task scheduling strategies for the open-multi-agent orchestrator.
  *
- * The {@link Scheduler} class encapsulates four distinct strategies for
+ * The {@link Scheduler} class encapsulates five distinct strategies for
  * mapping a set of pending {@link Task}s onto a pool of available agents:
  *
  * - `round-robin`        — Distribute tasks evenly across agents by index.
  * - `least-busy`         — Assign to whichever agent has the fewest active tasks.
- * - `capability-match`   — Score agents by keyword overlap with the task description.
+ * - `capability-match`   — Filter explicit requirements, then score capability/keyword affinity.
  * - `dependency-first`   — Prioritise tasks on the critical path (most blocked dependents).
+ * - `composite`          — Combine criticality, capability fit, and current load.
  *
  * The scheduler retains only a round-robin cursor between calls. All mutable
  * task state lives in the {@link TaskQueue} passed to
@@ -16,29 +17,67 @@
 
 import type { AgentConfig, Task } from '../types.js'
 import type { TaskQueue } from '../task/queue.js'
-import { extractKeywords, keywordScore } from '../utils/keywords.js'
+import {
+  AgentSelector,
+  type AgentSelectorContext,
+} from './agent-selector.js'
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /**
- * The four scheduling strategies available to the {@link Scheduler}.
+ * The five scheduling strategies available to the {@link Scheduler}.
  *
  * - `round-robin`       — Equal distribution by agent index.
  * - `least-busy`        — Prefers the agent with the fewest `in_progress` tasks.
- * - `capability-match`  — Keyword-based affinity between task text and agent role.
+ * - `capability-match`  — Explicit requirements plus capability/keyword affinity.
  * - `dependency-first`  — Prioritise tasks that unblock the most other tasks.
+ * - `composite`         — Criticality ordering plus weighted fit and current load.
  *
  * `dependency-first` is the orchestrator default and suits dependency-heavy
  * DAGs. Use `round-robin` for interchangeable agents, `least-busy` for uneven
- * task durations, and `capability-match` for clearly differentiated roles.
+ * task durations, `capability-match` for clearly differentiated roles, and
+ * `composite` when criticality, eligibility, fit, and load should work together.
  */
 export type SchedulingStrategy =
   | 'round-robin'
   | 'least-busy'
   | 'capability-match'
   | 'dependency-first'
+  | 'composite'
+
+/** Relative weights used by the composite scheduling strategy. */
+export interface SchedulingWeights {
+  /** AgentSelector fit weight. Defaults to `0.7`. */
+  readonly fit: number
+  /** Available-capacity (`1 - normalizedLoad`) weight. Defaults to `0.3`. */
+  readonly load: number
+}
+
+/** Default composite weights: fit is primary, current load is secondary. */
+export const DEFAULT_SCHEDULING_WEIGHTS: SchedulingWeights = {
+  fit: 0.7,
+  load: 0.3,
+}
+
+export interface SchedulerWarning {
+  /** Stable machine-readable warning code inherited from AgentSelector. */
+  readonly code: 'NO_ELIGIBLE_AGENT'
+  readonly message: string
+  readonly taskId: string
+  readonly taskTitle: string
+  readonly reasons: readonly string[]
+  /** Explicit compatibility fallback selected after hard filtering failed. */
+  readonly fallback: 'zero-fit-current-load'
+}
+
+export interface SchedulerOptions {
+  /** Per-field composite overrides; omitted fields use the documented defaults. */
+  readonly weights?: Partial<SchedulingWeights>
+  /** Receives structured scheduler degradations without changing assignments. */
+  readonly onWarning?: (warning: SchedulerWarning) => void
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -85,7 +124,7 @@ function countBlockedDependents(taskId: string, allTasks: Task[]): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Maps pending tasks to available agents using one of four configurable strategies.
+ * Maps pending tasks to available agents using one of five configurable strategies.
  *
  * @example
  * ```ts
@@ -107,7 +146,26 @@ export class Scheduler {
    *                   `'dependency-first'` which is the safest default for
    *                   complex multi-step pipelines.
    */
-  constructor(private readonly strategy: SchedulingStrategy = 'dependency-first') {}
+  constructor(
+    private readonly strategy: SchedulingStrategy = 'dependency-first',
+    private readonly selectorContext: AgentSelectorContext = {},
+    private readonly options: SchedulerOptions = {},
+  ) {
+    if (strategy === 'composite') {
+      const weights = this.resolvedWeights()
+      if (
+        !Number.isFinite(weights.fit)
+        || !Number.isFinite(weights.load)
+        || weights.fit < 0
+        || weights.load < 0
+        || (weights.fit === 0 && weights.load === 0)
+      ) {
+        throw new RangeError(
+          'Scheduling weights must be finite, non-negative, and not both zero.',
+        )
+      }
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Primary API
@@ -144,7 +202,57 @@ export class Scheduler {
         return this.scheduleCapabilityMatch(unassigned, agents)
       case 'dependency-first':
         return this.scheduleDependencyFirst(unassigned, agents, tasks)
+      case 'composite':
+        return this.scheduleComposite(unassigned, agents, tasks)
     }
+  }
+
+  /**
+   * Schedule one task against a current DAG snapshot.
+   *
+   * Event-driven execution calls this when a task becomes ready. The candidate
+   * set contains only `task`, while load and dependency-aware strategies still
+   * inspect `allTasks`. Existing assignees and non-pending tasks are preserved.
+   */
+  scheduleTask(
+    task: Task,
+    agents: AgentConfig[],
+    allTasks: Task[],
+  ): string | undefined {
+    if (agents.length === 0 || task.status !== 'pending' || task.assignee) {
+      return undefined
+    }
+
+    const candidate = [task]
+    switch (this.strategy) {
+      case 'round-robin':
+        return this.scheduleRoundRobin(candidate, agents).get(task.id)
+      case 'least-busy':
+        return this.scheduleLeastBusy(candidate, agents, allTasks).get(task.id)
+      case 'capability-match':
+        return this.scheduleCapabilityMatch(candidate, agents).get(task.id)
+      case 'dependency-first':
+        return this.scheduleDependencyFirst(candidate, agents, allTasks).get(task.id)
+      case 'composite':
+        return this.scheduleComposite(candidate, agents, allTasks).get(task.id)
+    }
+  }
+
+  /**
+   * Order the current ready set before one-task-at-a-time assignment.
+   *
+   * Dependency-aware strategies retain their critical-path preference even
+   * though assignment itself now receives one task. Other strategies preserve
+   * queue/event insertion order.
+   */
+  orderReadyTasks(tasks: Task[], allTasks: Task[]): Task[] {
+    const ready = tasks.filter((task) => task.status === 'pending')
+    if (this.strategy !== 'dependency-first' && this.strategy !== 'composite') {
+      return ready
+    }
+    return [...ready].sort((left, right) =>
+      countBlockedDependents(right.id, allTasks)
+      - countBlockedDependents(left.id, allTasks))
   }
 
   /**
@@ -241,9 +349,9 @@ export class Scheduler {
   }
 
   /**
-   * Capability-match: score each agent against each task by keyword overlap
-   * between the task's title/description and the agent's `systemPrompt` and
-   * `name`. The highest-scoring agent wins.
+   * Capability-match: use {@link AgentSelector} to hard-filter explicit task
+   * requirements, then score declared capabilities before legacy keyword
+   * overlap. The highest-scoring eligible agent wins.
    *
    * The highest positive score wins; positive-score ties preserve agent roster
    * order. When every agent scores zero for a task, that task consumes the
@@ -254,33 +362,30 @@ export class Scheduler {
     agents: AgentConfig[],
   ): Map<string, string> {
     const result = new Map<string, string>()
-
-    // Pre-compute keyword lists for each agent to avoid re-extracting per task.
-    const agentKeywords = new Map<string, string[]>(
-      agents.map((a) => [
-        a.name,
-        extractKeywords(`${a.name} ${a.systemPrompt ?? ''} ${a.model}`),
-      ]),
-    )
+    const selector = new AgentSelector()
 
     for (const task of unassigned) {
-      const taskText = `${task.title} ${task.description}`
-      const taskKeywords = extractKeywords(taskText)
+      const selection = selector.select({
+        title: task.title,
+        description: task.description,
+        requires: task.requires,
+      }, agents, this.selectorContext)
+      if (selection.error) {
+        throw new Error(
+          `Scheduler capability-match: ${selection.error.code}: ${selection.error.reasons.join(' ')}`,
+        )
+      }
 
+      // Preserve the legacy scheduler's roster-order tie-break while reusing
+      // the selector's eligibility and scoring kernel. The public selector and
+      // stateless short-circuit use ascending-name ties.
       let bestAgent = agents[0]!
       let bestScore = -1
-
       for (const agent of agents) {
-        // Score in both directions: task keywords vs agent text, and agent
-        // keywords vs task text, then take the max.
-        const agentText = `${agent.name} ${agent.systemPrompt ?? ''}`
-        const scoreA = keywordScore(agentText, taskKeywords)
-        const scoreB = keywordScore(taskText, agentKeywords.get(agent.name) ?? [])
-        const score = scoreA + scoreB
-
-        if (score > bestScore) {
-          bestScore = score
+        const scored = selection.eligible.find((entry) => entry.agent === agent)
+        if (scored && scored.score > bestScore) {
           bestAgent = agent
+          bestScore = scored.score
         }
       }
 
@@ -329,5 +434,87 @@ export class Scheduler {
     this.roundRobinCursor = cursor
 
     return result
+  }
+
+  /**
+   * Composite: rank tasks by criticality, then choose an agent with
+   * `fitWeight * selectorFit + loadWeight * (1 - normalizedCurrentLoad)`.
+   *
+   * Load is read only from the supplied DAG snapshot's `in_progress` tasks.
+   * Assignments made earlier in this call are deliberately not folded into
+   * load, keeping the decision compatible with future one-ready-task calls.
+   *
+   * When hard filtering leaves no eligible agent, the selector's structured
+   * failure is emitted as a warning and the task follows an explicit zero-fit
+   * fallback across the full roster, using current load and ascending agent
+   * name as the deterministic tie-break.
+   */
+  private scheduleComposite(
+    unassigned: Task[],
+    agents: AgentConfig[],
+    allTasks: Task[],
+  ): Map<string, string> {
+    const ranked = [...unassigned].sort((a, b) =>
+      countBlockedDependents(b.id, allTasks)
+      - countBlockedDependents(a.id, allTasks))
+    const loads = new Map<string, number>(agents.map((agent) => [agent.name, 0]))
+    for (const task of allTasks) {
+      if (task.status === 'in_progress' && task.assignee && loads.has(task.assignee)) {
+        loads.set(task.assignee, (loads.get(task.assignee) ?? 0) + 1)
+      }
+    }
+    const maxLoad = Math.max(1, ...loads.values())
+    const weights = this.resolvedWeights()
+    const selector = new AgentSelector()
+    const result = new Map<string, string>()
+
+    for (const task of ranked) {
+      const selection = selector.select({
+        title: task.title,
+        description: task.description,
+        requires: task.requires,
+      }, agents, this.selectorContext)
+      const candidates = selection.error
+        ? agents.map((agent) => ({ agent, score: 0 }))
+        : selection.eligible
+
+      if (selection.error) {
+        this.options.onWarning?.({
+          code: selection.error.code,
+          message: selection.error.message,
+          taskId: task.id,
+          taskTitle: task.title,
+          reasons: selection.error.reasons,
+          fallback: 'zero-fit-current-load',
+        })
+      }
+
+      const rankedCandidates = candidates.map((candidate) => {
+        const normalizedLoad = (loads.get(candidate.agent.name) ?? 0) / maxLoad
+        return {
+          agent: candidate.agent,
+          score:
+            weights.fit * candidate.score
+            + weights.load * (1 - normalizedLoad),
+        }
+      }).sort((left, right) => {
+        const scoreOrder = right.score - left.score
+        if (scoreOrder !== 0) return scoreOrder
+        if (left.agent.name < right.agent.name) return -1
+        if (left.agent.name > right.agent.name) return 1
+        return 0
+      })
+
+      result.set(task.id, rankedCandidates[0]!.agent.name)
+    }
+
+    return result
+  }
+
+  private resolvedWeights(): SchedulingWeights {
+    return {
+      fit: this.options.weights?.fit ?? DEFAULT_SCHEDULING_WEIGHTS.fit,
+      load: this.options.weights?.load ?? DEFAULT_SCHEDULING_WEIGHTS.load,
+    }
   }
 }
