@@ -109,7 +109,7 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 用 `planOnly` 在执行前审查生成的任务图，再通过 `createPlanArtifact()` 和 `runFromPlan()` 回放。当一个答案需要额外把关时，`runConsensus()` 提供 proposer→judge 校验循环。
 
-自动 `runTeam()` 的拓扑可通过 `OpenMultiAgent` 或单次调用的 `executionRouter` 插拔。内置 `DeterministicRouter` 使用语言中立的结构信号、按 script 加权的长度估计和 roster 规模；自定义 Router 只接收不含完整 prompt 的 roster 摘要，失败时安全回退。显式 `mode` 与治理声明始终优先，auto 结果通过 `routingDecision` 暴露决定。详见[执行路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/execution-routing.md)。Execution Routing 选择 Single 或 Team，[Model Routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)选择该拓扑内使用的模型。
+自动 `runTeam()` 的拓扑可通过 `OpenMultiAgent` 或单次调用的 `executionRouter` 插拔。内置 `DeterministicRouter` 使用语言中立的结构信号和按 script 加权的长度估计，并对空 roster 做 Single 路径资格检查；自定义 Router 只接收不含完整 prompt 的 roster 摘要，失败时安全回退。显式 `mode` 与治理声明始终优先，auto 结果通过 `routingDecision` 暴露决定。详见[执行路由](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/execution-routing.md)。Execution Routing 选择 Single 或 Team，[Model Routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md)选择该拓扑内使用的模型。
 
 ## 调度
 

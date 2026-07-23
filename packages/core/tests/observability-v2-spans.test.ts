@@ -388,7 +388,7 @@ describe('OBS-1B runtime integration', () => {
     const result = await tracedOrchestrator(records).runTeam(
       team,
       'First do the work, then synthesize the result',
-      { mode: 'team', coordinator: { adapter: coordinator } },
+      { coordinator: { adapter: coordinator } },
     )
 
     expect(result.success).toBe(true)

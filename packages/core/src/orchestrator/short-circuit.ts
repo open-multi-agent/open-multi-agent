@@ -44,10 +44,10 @@ export const COMPLEXITY_PATTERNS: RegExp[] = [
   /\bat\s+the\s+same\s+time\b/i,
 
   // Enumerations and multiple deliverables joined by connectives
-  /(?:[^,、\n]{1,40}[,、]){4}/,             // dense multi-dimensional enumeration
+  /(?:[\u3400-\u9fff][^、\n]{0,39}、){5}/, // dense CJK-only enumeration
   /[^；\n]{2,80}；[^；\n]{2,80}/,            // Chinese semicolon-separated clauses
   // Matches patterns like "build X, then deploy Y and test Z"
-  /\b(?:build|create|implement|design|write|develop)\b.{5,80}\b(?:and|then)\b.{5,80}\b(?:build|create|implement|design|write|develop|test|review|deploy)\b/i,
+  /\b(?:build|create|implement|design|write|develop)\b[^.!?\n]{5,80}\b(?:and|then)\b[^.!?\n]{5,80}\b(?:build|create|implement|design|write|develop|test|review|deploy)\b/i,
   /(?:构建|创建|实现|设计|编写|开发|分析|收集|部署|测试|审查|审核|研究|撰写).{0,40}、.{0,40}(?:构建|创建|实现|设计|编写|开发|生成|部署|测试|审查|审核|研究|撰写)/,
   /(?:构建|创建|实现|设计|编写|开发|分析|收集|部署|测试|审查|审核|研究|撰写).{1,50}(?:并|然后|再|接着).{0,50}(?:构建|创建|实现|设计|编写|开发|生成|部署|测试|审查|审核|研究|撰写)/,
 ]

@@ -24,6 +24,7 @@ describe('isSimpleGoal', () => {
       'List 3 blockchain security vulnerabilities',
       'Write a haiku about TypeScript',
       'Summarize this article',
+      'List apples, oranges, pears, plums, and grapes',
       '你好，回一个字：哈',
       'Fix the typo in the README',
     ]

@@ -294,10 +294,7 @@ describe('undeclared consequential run fallback', () => {
     })
     const team = orchestrator.createTeam('plan-approved-team', {
       name: 'plan-approved-team',
-      agents: [
-        agent(tool),
-        { ...agent(), name: 'observer' },
-      ],
+      agents: [agent(tool)],
     })
     const plan = '```json\n[{"title":"Rotate","description":"Rotate it","assignee":"operator"}]\n```'
 

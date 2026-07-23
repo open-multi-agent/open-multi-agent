@@ -2,8 +2,8 @@
  * @fileoverview Pluggable execution-topology routing for automatic runTeam calls.
  *
  * The built-in policy is deliberately honest, cheap, and language-neutral. It
- * uses one shared goal heuristic plus roster size; it is not intended to infer
- * deep task semantics or replace governance declarations.
+ * uses one shared goal heuristic plus an empty-roster qualification check; it
+ * is not intended to infer deep task semantics or replace governance declarations.
  */
 
 import type {
@@ -40,13 +40,6 @@ export class DeterministicRouter implements ExecutionRouter {
       return {
         mode: 'team',
         reasons: ['No roster member is available for the single-agent path.'],
-        routerVersion: this.version,
-      }
-    }
-    if (context.roster.length === 1) {
-      return {
-        mode: 'single',
-        reasons: ['A one-agent roster cannot benefit from multi-agent coordination.'],
         routerVersion: this.version,
       }
     }

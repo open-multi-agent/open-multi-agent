@@ -27,7 +27,7 @@ class ApplicationRouter implements ExecutionRouter {
   readonly version = 'application-router-v1'
 
   decide(context: RoutingContext): RoutingDecision {
-    const mode = context.roster.length === 1 ? 'single' : 'team'
+    const mode = context.goal.startsWith('[team]') ? 'team' : 'single'
     return {
       mode,
       reasons: [`Application policy selected ${mode}.`],
@@ -75,7 +75,7 @@ Automatic routes expose `TeamRunResult.routingDecision`. Explicit `mode`, declar
 
 `DeterministicRouter` wraps the single `isSimpleGoal()` heuristic; OMA does not maintain a second competing heuristic.
 
-- A one-Agent roster selects `single`; an empty roster cannot select the Single path.
+- An empty roster cannot select the Single path; otherwise the goal heuristic decides.
 - English sequence, coordination, parallelism, and multi-deliverable signals remain supported.
 - Chinese sequence markers (`先…然后`, `第一步/第二步`), circled steps, action enumerations, semicolon-separated clauses, and connected action verbs are recognized.
 - Length uses a cheap script-aware information estimate. CJK characters count as 2.25 units; ordinary Latin word runs approximate token density; long unbroken runs keep their raw length.
@@ -88,4 +88,4 @@ Execution Routing does not declare governance. The consequential-tool fallback s
 
 ## Behavior change
 
-The built-in automatic route now recognizes short Chinese multi-stage goals and script-weighted length instead of relying on English-only word patterns plus raw character count. Equivalent goals translated between English and Chinese no longer change Single/Team topology in the routing stability gate. Existing English short-circuit regression cases retain their previous outcomes, but multilingual applications may observe corrected automatic routes for Chinese structured goals.
+The built-in automatic route now recognizes short Chinese multi-stage goals and script-weighted length instead of relying on English-only word patterns plus raw character count. Equivalent goals translated between English and Chinese no longer change Single/Team topology in the routing stability gate. Existing English structural-pattern regressions retain their previous outcomes. Script weighting intentionally changes a detailed, long English single-action goal from `team` to `single` when its estimated information length remains bounded; this case is locked by a regression test. Multilingual applications may also observe corrected automatic routes for Chinese structured goals.

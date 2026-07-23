@@ -87,13 +87,13 @@ function decision(
 }
 
 describe('DeterministicRouter', () => {
-  it('returns Single for a one-agent roster even when the goal is multi-stage', () => {
+  it('returns Team for a one-agent roster when the goal is multi-stage', () => {
     const router = new DeterministicRouter()
     expect(router.decide({
       goal: 'First research the topic, then write and review the report.',
       roster: [{ name: 'solo', model: 'mock-model' }],
     })).toMatchObject({
-      mode: 'single',
+      mode: 'team',
       routerVersion: DETERMINISTIC_ROUTER_VERSION,
     })
   })
