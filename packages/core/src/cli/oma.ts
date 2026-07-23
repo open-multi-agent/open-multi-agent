@@ -639,6 +639,7 @@ export function serializeTeamRunResult(result: TeamRunResult, opts: CliJsonOptio
     success: result.success,
     goal: result.goal,
     tasks: result.tasks,
+    routingDecision: result.routingDecision,
     totalTokenUsage: result.totalTokenUsage,
     agentResults,
   }

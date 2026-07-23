@@ -1144,6 +1144,47 @@ export interface RunTasksOptions extends RunIdentityOptions {
 }
 
 /**
+ * A privacy-preserving roster entry supplied to an {@link ExecutionRouter}.
+ *
+ * This is intentionally smaller than {@link AgentConfig}: in particular it
+ * never contains `systemPrompt`. A later capability model may add structured
+ * fields without exposing full prompts.
+ */
+export interface RosterSummaryEntry {
+  readonly name: string
+  readonly model: string
+  /** Count of directly declared built-in and custom tools, when known. */
+  readonly toolCount?: number
+}
+
+/** Budget still available when execution routing begins. */
+export interface RoutingBudget {
+  readonly tokenRemaining?: number
+  readonly costRemaining?: number
+}
+
+/** Stable, language-neutral inputs available to an {@link ExecutionRouter}. */
+export interface RoutingContext {
+  readonly goal: string
+  readonly roster: readonly RosterSummaryEntry[]
+  readonly budget?: RoutingBudget
+}
+
+/** Explainable single-agent or team-topology decision. */
+export interface RoutingDecision {
+  readonly mode: 'single' | 'team'
+  readonly confidence?: number
+  readonly reasons: readonly string[]
+  readonly routerVersion: string
+}
+
+/** Pluggable execution-topology policy for automatic `runTeam()` calls. */
+export interface ExecutionRouter {
+  readonly version: string
+  decide(context: RoutingContext): RoutingDecision | Promise<RoutingDecision>
+}
+
+/**
  * Per-call options for {@link OpenMultiAgent.runTeam}. Differs from
  * {@link OrchestratorConfig} by being scoped to a single invocation.
  */
@@ -1164,6 +1205,16 @@ export interface RunTeamOptions extends RunTasksOptions {
    * omitted.
    */
   readonly mode?: 'single' | 'team'
+  /**
+   * Per-run execution router override.
+   *
+   * Precedence is: explicit {@link mode} > declared governance policy
+   * (`governanceIntent` / `preferredUnderBudget`) > this router > the
+   * orchestrator's router (the built-in deterministic router by default).
+   * Routers run only for automatic, non-`planOnly` topology selection and
+   * never override the first two layers.
+   */
+  readonly executionRouter?: ExecutionRouter
   /**
    * Optional structured governance signal for this goal.
    *
@@ -1271,6 +1322,14 @@ export interface RunMetrics {
 /** Aggregated result for a full team run. */
 export interface TeamRunResult extends RunOutcomeFields {
   readonly success: boolean
+  /**
+   * Explainable topology decision for automatic execution routing.
+   *
+   * Present on auto `runTeam()` paths. Omitted when the caller selected
+   * `mode`, declared a role topology, chose governance budget degradation, or
+   * requested `planOnly`.
+   */
+  readonly routingDecision?: RoutingDecision
   /**
    * Post-execution governance verdict for this run.
    *
@@ -1493,6 +1552,16 @@ export interface OrchestratorConfig {
    * and are never replaced by this strategy.
    */
   readonly schedulingStrategy?: SchedulingStrategy
+  /**
+   * Default execution-topology router for automatic `runTeam()` calls.
+   *
+   * Precedence is: per-call explicit mode > declared governance policy >
+   * per-call router > this router > the built-in deterministic router.
+   * Routing is orthogonal to {@link RunTeamOptions.modelRouting}: execution
+   * routing chooses Single versus Team topology, while model routing chooses
+   * models inside that topology.
+   */
+  readonly executionRouter?: ExecutionRouter
   /**
    * Maximum depth of `delegate_to_agent` chains from a task run (default `3`).
    * Depth is per nested delegated run, not per team.

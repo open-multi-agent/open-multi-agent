@@ -54,7 +54,19 @@
 // Orchestrator (primary entry point)
 // ---------------------------------------------------------------------------
 
-export { OpenMultiAgent, executeWithRetry, computeRetryDelay } from './orchestrator/orchestrator.js'
+export {
+  OpenMultiAgent,
+  DeterministicRouter,
+  executeWithRetry,
+  computeRetryDelay,
+} from './orchestrator/orchestrator.js'
+export type {
+  ExecutionRouter,
+  RoutingBudget,
+  RoutingContext,
+  RoutingDecision,
+  RosterSummaryEntry,
+} from './orchestrator/execution-router.js'
 export {
   evaluateGovernance,
   GOVERNANCE_OVERRIDDEN_FLAG,

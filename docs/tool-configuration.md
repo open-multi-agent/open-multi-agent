@@ -49,14 +49,17 @@ approval labels, or audit markers.
 `runTeam()` resolves execution policy in this order:
 
 1. An application `mode` (`single` or `team`).
-2. A declared `governanceIntent: 'required'` topology.
-3. The existing automatic route, including the simple-goal Single short circuit.
+2. A declared `governanceIntent` topology or `preferredUnderBudget` policy.
+3. The configured [Execution Router](execution-routing.md) for automatic routing.
+4. The built-in `DeterministicRouter`.
 
 `single` always uses the existing best-agent path. `team` forces the
 coordinator-generated team path and bypasses the simple-goal short circuit.
 `runAgent()` and `runTasks()` remain explicit choices in their own right.
 Selecting `mode` declares a topology preference, not governance intent, so it
 does not bypass consequential confirmation when `governanceIntent` is omitted.
+Routers follow the same boundary: they choose execution topology but do not
+declare governance or override structured role requirements.
 
 An application may select a mode that overrides a required floor, but that
 decision is never reported as a clean governance success:

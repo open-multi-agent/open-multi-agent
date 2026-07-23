@@ -618,6 +618,7 @@ describe('OpenMultiAgent', () => {
         team,
         'First recover from the provider outage, then write a summary of the result',
         {
+          mode: 'team',
           modelRouting: {
             rules: [{
               match: { phase: 'worker' },
@@ -1033,6 +1034,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       const result = await oma.runTeam(team, 'First research the topic, then synthesize findings', {
+        mode: 'team',
         coordinator: { model: 'cheap-model' },
       })
 
@@ -1059,6 +1061,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       await oma.runTeam(team, 'First implement, then verify', {
+        mode: 'team',
         coordinator: {
           instructions: 'Always create a testing task after implementation tasks.',
         },
@@ -1086,6 +1089,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       await oma.runTeam(team, 'First implement, then verify', {
+        mode: 'team',
         coordinator: {
           systemPrompt: 'You are a custom coordinator for monorepo planning.',
         },
@@ -1115,6 +1119,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       await oma.runTeam(team, 'First inspect project, then produce output', {
+        mode: 'team',
         coordinator: {
           maxTurns: 5,
           maxTokens: 1234,
@@ -1149,6 +1154,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       await oma.runTeam(team, 'First inspect project, then produce output', {
+        mode: 'team',
         coordinator: {
           toolPreset: 'readonly',
           tools: ['file_read', 'bash'],
@@ -1304,6 +1310,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       const result = await oma.runTeam(team, 'First do the work, then synthesize the result', {
+        mode: 'team',
         coordinator: { adapter: coordinatorAdapter },
         abortSignal: controller.signal,
       })
@@ -1343,6 +1350,7 @@ describe('OpenMultiAgent', () => {
       ]))
 
       const result = await oma.runTeam(team, 'First resolve dependencies, then produce output', {
+        mode: 'team',
         coordinator: { adapter: coordinatorAdapter },
       })
 
@@ -1567,7 +1575,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(true)
       const planReadyTraces = traces.filter((t) => t.type === 'plan_ready')
@@ -1590,7 +1598,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(false)
       expect(result.agentResults.has('coordinator')).toBe(true)
@@ -1610,7 +1618,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(false)
       expect(result.agentResults.has('coordinator')).toBe(true)
@@ -1632,7 +1640,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(true)
       expect(result.agentResults.has('worker')).toBe(true)
@@ -1656,7 +1664,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(false)
       const planReadyTraces = traces.filter((t) => t.type === 'plan_ready')
@@ -1939,7 +1947,7 @@ describe('OpenMultiAgent', () => {
       })
       const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
 
-      const result = await oma.runTeam(team, complexGoal)
+      const result = await oma.runTeam(team, complexGoal, { mode: 'team' })
 
       expect(result.success).toBe(true)
       expect(streamedTypes.length).toBeGreaterThan(0)

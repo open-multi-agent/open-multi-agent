@@ -110,6 +110,28 @@ describe('undeclared consequential run fallback', () => {
     expect(result.flags).toEqual(['consequential-no-independence'])
   })
 
+  it('keeps undeclared consequential confirmation independent from execution routing', async () => {
+    const { tool, execute } = mockTool('rotate_secret', true)
+
+    const result = await runAutomaticTeam({
+      requireConsequentialConfirmation: true,
+      executionRouter: {
+        version: 'single-test-v1',
+        decide: () => ({
+          mode: 'single',
+          reasons: ['Test the undeclared confirmation boundary.'],
+          routerVersion: 'single-test-v1',
+        }),
+      },
+    }, agent(tool))
+
+    expect(result.routingDecision?.routerVersion).toBe('single-test-v1')
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.confirmationRequired).toBe(true)
+    expect(result.flags).toEqual(['consequential-no-independence'])
+  })
+
   it('uses the existing onToolCall gate to approve a consequential action', async () => {
     const { tool, execute } = mockTool('rotate_secret', true)
     const onToolCall = vi.fn(async () => ({ action: 'allow' as const }))
@@ -272,7 +294,10 @@ describe('undeclared consequential run fallback', () => {
     })
     const team = orchestrator.createTeam('plan-approved-team', {
       name: 'plan-approved-team',
-      agents: [agent(tool)],
+      agents: [
+        agent(tool),
+        { ...agent(), name: 'observer' },
+      ],
     })
     const plan = '```json\n[{"title":"Rotate","description":"Rotate it","assignee":"operator"}]\n```'
 

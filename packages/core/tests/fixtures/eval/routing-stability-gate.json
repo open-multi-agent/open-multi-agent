@@ -18,6 +18,12 @@
       "metric": "min",
       "tag": "governance",
       "min": 1
+    },
+    {
+      "scorer": "routing-stability",
+      "metric": "min",
+      "tag": "benign",
+      "min": 0.95
     }
   ],
   "maxScorerErrorRate": 0,

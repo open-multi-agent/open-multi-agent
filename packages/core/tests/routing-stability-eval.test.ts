@@ -262,8 +262,13 @@ function topologyFromResult(result: TeamRunResult): RoutingTopology {
   }
 }
 
-function canonicalTopology(topology: RoutingTopology): string {
-  return JSON.stringify(topology)
+function canonicalTopology(topology: RoutingTopology, kind?: FamilyKind): string {
+  // Undeclared families gate Execution Routing only: which topology family was
+  // selected. Agent assignment is a separate subsystem. Declared governance
+  // keeps the full role/dependency topology in its 0%-flip gate.
+  return kind === 'benign'
+    ? JSON.stringify({ route: topology.route, mode: topology.mode })
+    : JSON.stringify(topology)
 }
 
 async function runActualRoute(
@@ -308,10 +313,11 @@ function variantById(
 function calculateMetrics(
   observations: readonly RouteObservation[],
   pairs: RoutingFamily['comparisonPairs'],
+  kind: FamilyKind,
 ): RoutingMetrics {
   const canonical = new Map(observations.map((observation) => [
     observation.variant.id,
-    canonicalTopology(observation.topology),
+    canonicalTopology(observation.topology, kind),
   ]))
   const flippedPairs: string[] = []
   let totalPairs = 0
@@ -349,7 +355,7 @@ function routingTarget(router: VariantRouter): EvalTarget {
       familyId: family.id,
       kind: family.kind,
       observations,
-      metrics: calculateMetrics(observations, family.comparisonPairs),
+      metrics: calculateMetrics(observations, family.comparisonPairs, family.kind),
     }
     return { output }
   }
@@ -551,7 +557,7 @@ describe('runTeam routing stability EvalSet', () => {
     }
   })
 
-  it('hard-gates declared governance while reporting benign drift without blocking', async () => {
+  it('hard-gates declared governance at 0% flip and undeclared routing at no more than 5%', async () => {
     const report = await runEvalSet(evalSet, routingTarget(runActualRoute), {
       scorers: routingScorers,
       concurrency: 1,
@@ -568,19 +574,13 @@ describe('runTeam routing stability EvalSet', () => {
       family.governanceConclusions.every((conclusion) => conclusion === 'satisfied'))).toBe(true)
 
     expect(snapshot.benign.families).toHaveLength(2)
-    expect(snapshot.benign.families.every((family) =>
-      family.flipRate >= 0 && family.flipRate <= 1)).toBe(true)
-    expect(gatePolicy.thresholds.every((threshold) => threshold.tag === 'governance')).toBe(true)
+    expect(snapshot.benign.flipRate).toBeLessThanOrEqual(snapshot.target.maxFlipRate)
+    expect(gatePolicy.thresholds.some((threshold) =>
+      threshold.tag === 'benign'
+      && threshold.scorer === 'routing-stability'
+      && threshold.min === 0.95)).toBe(true)
 
-    // Gate a governance-filtered run so benign scores and health records remain
-    // observable in the full report above but cannot affect the CI verdict.
-    const governanceReport = await runEvalSet(evalSet, routingTarget(runActualRoute), {
-      scorers: routingScorers,
-      concurrency: 1,
-      filterTags: ['governance'],
-      evalRunId: 'routing-stability-governance-gate',
-    })
-    expect(evaluateGate(governanceReport, gatePolicy)).toEqual({
+    expect(evaluateGate(report, gatePolicy)).toEqual({
       pass: true,
       failures: [],
       warnings: [],
@@ -606,7 +606,6 @@ describe('runTeam routing stability EvalSet', () => {
     const report = await runEvalSet(evalSet, routingTarget(languageSensitiveFakeRoute), {
       scorers: routingScorers,
       concurrency: 1,
-      filterTags: ['governance'],
       evalRunId: 'routing-stability-negative-control',
     })
 
@@ -622,6 +621,38 @@ describe('runTeam routing stability EvalSet', () => {
         kind: 'threshold',
         scorer: 'language-invariance',
         tag: 'governance',
+      }),
+    ]))
+  })
+
+  it('turns the hard gate red when an injected undeclared route flips mode', async () => {
+    const languageSensitiveFakeRoute: VariantRouter = async (family, variant, signal) => {
+      if (family.kind !== 'benign' || variant.language !== 'zh') {
+        return runActualRoute(family, variant, signal)
+      }
+      return {
+        topology: {
+          route: 'task-graph',
+          mode: 'multi-agent',
+          roles: ['analyst', 'researcher'],
+          dependencyEdges: ['researcher->analyst'],
+        },
+        governanceConclusion: 'not-applicable',
+      }
+    }
+    const report = await runEvalSet(evalSet, routingTarget(languageSensitiveFakeRoute), {
+      scorers: routingScorers,
+      concurrency: 1,
+      evalRunId: 'routing-stability-benign-negative-control',
+    })
+
+    const verdict = evaluateGate(report, gatePolicy)
+    expect(verdict.pass).toBe(false)
+    expect(verdict.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'threshold',
+        scorer: 'routing-stability',
+        tag: 'benign',
       }),
     ]))
   })

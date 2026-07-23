@@ -210,6 +210,7 @@ describe('OBS-1A outcome semantics', () => {
       defaultModel: 'test-model',
       onPlanReady: async () => false,
     }).runTeam(teamWith(), 'First plan the work, then execute it', {
+      mode: 'team',
       coordinator: { adapter: staticAdapter(taskJson) },
     })
     expect(rejected.success).toBe(false)
@@ -220,6 +221,7 @@ describe('OBS-1A outcome semantics', () => {
       defaultModel: 'test-model',
       onPlanReady: async () => { throw new Error('gate failed') },
     }).runTeam(teamWith(), 'First plan the work, then execute it', {
+      mode: 'team',
       coordinator: { adapter: staticAdapter(taskJson) },
     })
     expect(callbackError.success).toBe(false)

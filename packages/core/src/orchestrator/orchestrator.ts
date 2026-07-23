@@ -54,6 +54,7 @@ import type {
   OrchestratorConfig,
   OrchestratorEvent,
   RestoreOptions,
+  RoutingDecision as ExecutionRoutingDecision,
   RunAgentOptions,
   RunIdentity,
   RunStatus,
@@ -128,7 +129,12 @@ import {
   withModelRoute,
   isLeafTask,
 } from './agent-config.js'
-import { isSimpleGoal, selectBestAgent } from './short-circuit.js'
+import { selectBestAgent } from './short-circuit.js'
+import {
+  buildRoutingContext,
+  DeterministicRouter,
+  resolveExecutionRouting,
+} from './execution-router.js'
 import { executeQueue, saveRunCheckpoint } from './task-execution.js'
 import {
   buildGovernanceTaskSpecs,
@@ -166,6 +172,14 @@ import {
 
 export { isSimpleGoal, selectBestAgent } from './short-circuit.js'
 export { computeRetryDelay, executeWithRetry } from './retry.js'
+export { DeterministicRouter } from './execution-router.js'
+export type {
+  ExecutionRouter,
+  RoutingBudget,
+  RoutingContext,
+  RoutingDecision,
+  RosterSummaryEntry,
+} from './execution-router.js'
 
 // ---------------------------------------------------------------------------
 // OpenMultiAgent
@@ -253,6 +267,7 @@ export class OpenMultiAgent {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
       schedulingStrategy: config.schedulingStrategy ?? 'dependency-first',
+      executionRouter: config.executionRouter ?? new DeterministicRouter(),
       defaultModel: config.defaultModel ?? DEFAULT_MODEL,
       defaultProvider: config.defaultProvider ?? 'anthropic',
       defaultBaseURL: config.defaultBaseURL,
@@ -549,6 +564,15 @@ export class OpenMultiAgent {
       )
     }
 
+    const routingDecision: ExecutionRoutingDecision | undefined = explicitMode === undefined
+      && !options?.planOnly
+      && !preferredBudgetDegraded
+      ? await resolveExecutionRouting(
+          options?.executionRouter ?? this.config.executionRouter,
+          buildRoutingContext(goal, agentConfigs, this.config.defaultModel, budgets),
+          new DeterministicRouter(),
+        )
+      : undefined
     const undeclared = options?.governanceIntent === undefined
     const confirmationState = createConsequentialConfirmationState()
     let consequentialUndeclared = undeclared && agentConfigs.some((agentConfig) => {
@@ -565,6 +589,7 @@ export class OpenMultiAgent {
       const governedResult = finalizeGovernanceRun(
         {
           ...result,
+          ...(routingDecision !== undefined ? { routingDecision } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         },
         options,
@@ -591,8 +616,7 @@ export class OpenMultiAgent {
     // ------------------------------------------------------------------
     // Short-circuit: skip coordinator for simple, single-action goals.
     //
-    // When the goal is short and contains no multi-step / coordination
-    // signals, dispatching it to a single agent is faster and cheaper
+    // When the router selects Single, dispatching to one agent is faster and cheaper
     // than spinning up a coordinator for decomposition + synthesis.
     //
     // The best-matching agent is selected via keyword affinity scoring
@@ -604,7 +628,7 @@ export class OpenMultiAgent {
       && (
         explicitMode === 'single'
         || preferredBudgetDegraded
-        || (explicitMode === undefined && isSimpleGoal(goal))
+        || routingDecision?.mode === 'single'
       )
     ) {
       const bestAgent = selectBestAgent(goal, agentConfigs)

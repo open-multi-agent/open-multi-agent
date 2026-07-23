@@ -1,0 +1,269 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  DETERMINISTIC_ROUTER_VERSION,
+  DeterministicRouter,
+} from '../src/orchestrator/execution-router.js'
+import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
+import type {
+  AgentConfig,
+  ExecutionRouter,
+  LLMAdapter,
+  LLMResponse,
+  RoutingContext,
+  RoutingDecision,
+  RunTeamOptions,
+} from '../src/types.js'
+
+const PLAN = `\`\`\`json
+[{"title":"Do work","description":"Do the requested work.","assignee":"alpha"}]
+\`\`\``
+
+function response(output = PLAN): LLMResponse {
+  return {
+    id: 'execution-router-response',
+    content: [{ type: 'text', text: output }],
+    model: 'mock-model',
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 1, output_tokens: 1 },
+  }
+}
+
+function fixedAdapter(output = PLAN): LLMAdapter {
+  return {
+    name: 'execution-router-test',
+    async chat(): Promise<LLMResponse> {
+      return response(output)
+    },
+    async *stream() { /* unused */ },
+  }
+}
+
+function agents(count = 2): AgentConfig[] {
+  const adapter = fixedAdapter()
+  return [
+    {
+      name: 'alpha',
+      model: 'mock-model',
+      systemPrompt: 'SECRET_ALPHA_PROMPT',
+      tools: ['file_read'],
+      adapter,
+    },
+    {
+      name: 'beta',
+      model: 'mock-model',
+      systemPrompt: 'SECRET_BETA_PROMPT',
+      adapter,
+    },
+  ].slice(0, count)
+}
+
+async function run(
+  goal: string,
+  options?: RunTeamOptions,
+  configRouter?: ExecutionRouter,
+  roster = agents(),
+) {
+  const orchestrator = new OpenMultiAgent({
+    defaultModel: 'mock-model',
+    ...(configRouter ? { executionRouter: configRouter } : {}),
+  })
+  const team = orchestrator.createTeam('routing-team', {
+    name: 'routing-team',
+    agents: roster,
+  })
+  return orchestrator.runTeam(team, goal, {
+    coordinator: { model: 'mock-model', adapter: fixedAdapter() },
+    ...options,
+  })
+}
+
+function decision(
+  routerVersion: string,
+  mode: RoutingDecision['mode'],
+  reason = `${mode} by test`,
+): RoutingDecision {
+  return { mode, reasons: [reason], routerVersion }
+}
+
+describe('DeterministicRouter', () => {
+  it('returns Single for a one-agent roster even when the goal is multi-stage', () => {
+    const router = new DeterministicRouter()
+    expect(router.decide({
+      goal: 'First research the topic, then write and review the report.',
+      roster: [{ name: 'solo', model: 'mock-model' }],
+    })).toMatchObject({
+      mode: 'single',
+      routerVersion: DETERMINISTIC_ROUTER_VERSION,
+    })
+  })
+
+  it('returns Team for an empty roster because Single cannot execute', () => {
+    const router = new DeterministicRouter()
+    expect(router.decide({ goal: 'Say hello', roster: [] })).toMatchObject({
+      mode: 'team',
+      routerVersion: DETERMINISTIC_ROUTER_VERSION,
+    })
+  })
+})
+
+describe('runTeam execution routing', () => {
+  it('exposes the built-in decision on auto routes', async () => {
+    const result = await run('Say hello')
+
+    expect(result.routingDecision).toMatchObject({
+      mode: 'single',
+      routerVersion: DETERMINISTIC_ROUTER_VERSION,
+    })
+    expect(result.tasks?.[0]?.id).toBe('short-circuit')
+  })
+
+  it('passes only the structured roster summary and remaining budget', async () => {
+    let observed: RoutingContext | undefined
+    const router: ExecutionRouter = {
+      version: 'capture-v1',
+      decide(context) {
+        observed = context
+        return decision(this.version, 'single')
+      },
+    }
+
+    const result = await run('Say hello', {
+      executionRouter: router,
+      maxTokenBudget: 100,
+    })
+
+    expect(result.routingDecision?.routerVersion).toBe('capture-v1')
+    expect(observed).toEqual({
+      goal: 'Say hello',
+      roster: [
+        { name: 'alpha', model: 'mock-model', toolCount: 1 },
+        { name: 'beta', model: 'mock-model' },
+      ],
+      budget: { tokenRemaining: 100 },
+    })
+    expect(JSON.stringify(observed)).not.toContain('SECRET_')
+    expect(JSON.stringify(observed)).not.toContain('systemPrompt')
+  })
+
+  it('lets a per-run router override the orchestrator router', async () => {
+    const configured = {
+      version: 'configured-v1',
+      decide: vi.fn(() => decision('configured-v1', 'team')),
+    } satisfies ExecutionRouter
+    const perRun = {
+      version: 'per-run-v1',
+      decide: vi.fn(() => decision('per-run-v1', 'single')),
+    } satisfies ExecutionRouter
+
+    const result = await run('Say hello', { executionRouter: perRun }, configured)
+
+    expect(result.routingDecision?.routerVersion).toBe('per-run-v1')
+    expect(perRun.decide).toHaveBeenCalledOnce()
+    expect(configured.decide).not.toHaveBeenCalled()
+  })
+
+  it('honors a custom Team decision for a simple goal', async () => {
+    const router: ExecutionRouter = {
+      version: 'team-first-v1',
+      decide: () => decision('team-first-v1', 'team'),
+    }
+
+    const result = await run('Say hello', { executionRouter: router })
+
+    expect(result.routingDecision).toEqual(decision('team-first-v1', 'team'))
+    expect(result.agentResults.has('coordinator')).toBe(true)
+    expect(result.tasks?.[0]?.id).not.toBe('short-circuit')
+  })
+
+  it.each([
+    {
+      name: 'throws',
+      router: {
+        version: 'throwing-v1',
+        decide: () => {
+          throw new Error('router unavailable')
+        },
+      } satisfies ExecutionRouter,
+      reason: 'custom decision failed',
+    },
+    {
+      name: 'rejects',
+      router: {
+        version: 'rejecting-v1',
+        decide: async () => Promise.reject(new Error('router unavailable')),
+      } satisfies ExecutionRouter,
+      reason: 'custom decision failed',
+    },
+    {
+      name: 'returns an unsupported mode',
+      router: {
+        version: 'invalid-v1',
+        decide: () => ({
+          mode: 'unsupported',
+          reasons: [],
+          routerVersion: 'invalid-v1',
+        }),
+      } as unknown as ExecutionRouter,
+      reason: 'invalid decision',
+    },
+  ])('falls back to DeterministicRouter when a custom router $name', async ({ router, reason }) => {
+    const result = await run('Say hello', { executionRouter: router })
+
+    expect(result.success).toBe(true)
+    expect(result.routingDecision).toMatchObject({
+      mode: 'single',
+      routerVersion: DETERMINISTIC_ROUTER_VERSION,
+    })
+    expect(result.routingDecision?.reasons.join(' ')).toContain(reason)
+  })
+
+  it('bypasses routers for explicit mode and omits the decision', async () => {
+    const router = {
+      version: 'unused-v1',
+      decide: vi.fn(() => decision('unused-v1', 'team')),
+    } satisfies ExecutionRouter
+
+    const result = await run('Say hello', {
+      mode: 'single',
+      executionRouter: router,
+    })
+
+    expect(router.decide).not.toHaveBeenCalled()
+    expect(result.routingDecision).toBeUndefined()
+    expect(result.tasks?.[0]?.id).toBe('short-circuit')
+  })
+
+  it('bypasses routers for declared role governance and omits the decision', async () => {
+    const router = {
+      version: 'unused-v1',
+      decide: vi.fn(() => decision('unused-v1', 'single')),
+    } satisfies ExecutionRouter
+
+    const result = await run('Review this change.', {
+      governanceIntent: 'required',
+      requiredRoles: ['alpha', 'beta'],
+      executionRouter: router,
+    })
+
+    expect(router.decide).not.toHaveBeenCalled()
+    expect(result.routingDecision).toBeUndefined()
+    expect(result.tasks?.map((task) => task.assignee)).toEqual(['alpha', 'beta'])
+  })
+
+  it('bypasses routers for planOnly and omits the decision', async () => {
+    const router = {
+      version: 'unused-v1',
+      decide: vi.fn(() => decision('unused-v1', 'single')),
+    } satisfies ExecutionRouter
+
+    const result = await run('Plan this work.', {
+      planOnly: true,
+      executionRouter: router,
+    })
+
+    expect(router.decide).not.toHaveBeenCalled()
+    expect(result.routingDecision).toBeUndefined()
+    expect(result.planOnly).toBe(true)
+  })
+})

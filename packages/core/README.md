@@ -109,6 +109,8 @@ Set `OPENAI_API_KEY` for this example. For other hosted or local models, see [Pr
 
 Use `planOnly` to inspect a generated task graph before execution, then `createPlanArtifact()` and `runFromPlan()` to replay it. `runConsensus()` adds a proposer→judge verification loop when one answer needs extra scrutiny.
 
+Automatic `runTeam()` topology is pluggable through `executionRouter` on `OpenMultiAgent` or one `runTeam()` call. The built-in `DeterministicRouter` uses language-neutral structure, script-aware length, and roster size; custom routers receive a prompt-free roster summary and fall back safely when they fail. Explicit `mode` and declared governance always take precedence, and auto results expose `routingDecision`. See [Execution Routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/execution-routing.md). Execution Routing selects Single versus Team; [Model Routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md) selects models inside that topology.
+
 When an application must enforce named independent roles, declare that governance intent instead of relying on wording in the goal:
 
 ```typescript
@@ -232,7 +234,7 @@ See the [observability guide](https://github.com/open-multi-agent/open-multi-age
 | Area | Guides |
 |---|---|
 | Build agents | [Providers](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md), [tools](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md), [context](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/context-management.md) |
-| Run reliably | [Evaluation](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/evaluation.md), [checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md), [model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md), [consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) |
+| Run reliably | [Evaluation](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/evaluation.md), [checkpoint & resume](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/checkpoint.md), [execution routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/execution-routing.md), [model routing](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/model-routing.md), [consensus](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/consensus.md) |
 | Control workflows | [Plan preview & replay](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/plan-replay.md), [shared memory](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/shared-memory.md), [external agents](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/external-agents.md) |
 | Operate | [Observability](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md), [CLI](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/cli.md), [production examples](examples/production/README.md) |
 

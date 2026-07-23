@@ -1,5 +1,7 @@
 # Model routing
 
+Model Routing chooses models for calls inside an execution topology. It is orthogonal to [Execution Routing](execution-routing.md), which decides whether an automatic `runTeam()` call uses one Agent or a Coordinator-generated Team plan.
+
 `modelRouting` is an opt-in, deterministic policy that sends different orchestration calls to different models without touching your team or agent configuration. The usual shape is "flagship model plans, a cheap model runs the leaf work":
 
 ```ts

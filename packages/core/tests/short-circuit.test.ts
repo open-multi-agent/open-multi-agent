@@ -116,6 +116,37 @@ describe('isSimpleGoal', () => {
     })
   })
 
+  describe('language-neutral structure and length signals', () => {
+    it.each([
+      '先设计接口，然后实现服务，最后编写测试',
+      '第一步收集需求，第二步实现功能',
+      '① 收集资料 ② 分析资料 ③ 输出报告',
+      '研究需求；设计方案；验证结果',
+      '设计接口、实现服务、编写测试',
+      '分析销售数据并生成趋势报告',
+    ])('treats short Chinese multi-stage goal as complex: "%s"', (goal) => {
+      expect(isSimpleGoal(goal)).toBe(false)
+    })
+
+    it('keeps a short Chinese single-action goal simple', () => {
+      expect(isSimpleGoal('用一句话总结这份报告')).toBe(true)
+    })
+
+    it('keeps a detailed English single-action goal simple when its token estimate stays bounded', () => {
+      const goal = 'Explain DNS to a beginner using plain language and one analogy. Include enough background to make the explanation self-contained while keeping the answer focused on that single concept.'
+      expect(goal.length).toBeGreaterThan(120)
+      expect(isSimpleGoal(goal)).toBe(true)
+    })
+
+    it.each([
+      ['Summarize this report in one paragraph', '用一段话总结这份报告', true],
+      ['First collect the requirements, then implement the feature', '先收集需求，然后实现功能', false],
+    ])('routes equivalent English and Chinese goals consistently', (english, chinese, expected) => {
+      expect(isSimpleGoal(english)).toBe(expected)
+      expect(isSimpleGoal(chinese)).toBe(expected)
+    })
+  })
+
   // -------------------------------------------------------------------------
   // Regression: tightened coordinate/collaborate regex (PR #70 review point 5)
   //

@@ -100,6 +100,7 @@ describe('Advanced Sampling Parameters', () => {
       team,
       'step 1: research the topic. step 2: synthesize the findings.',
       {
+        mode: 'team',
         coordinator: {
           topP: 0.7,
           topK: 30,

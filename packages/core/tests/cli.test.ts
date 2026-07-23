@@ -120,11 +120,17 @@ describe('serializeTeamRunResult', () => {
     }
     const tr: TeamRunResult = {
       success: true,
+      routingDecision: {
+        mode: 'single',
+        reasons: ['simple goal'],
+        routerVersion: 'deterministic-v1',
+      },
       agentResults: new Map([['alice', ar]]),
       totalTokenUsage: { input_tokens: 1, output_tokens: 2 },
     }
     const json = serializeTeamRunResult(tr, { pretty: false, includeMessages: false })
     expect(json.success).toBe(true)
+    expect(json.routingDecision).toEqual(tr.routingDecision)
     expect((json.agentResults as Record<string, unknown>)['alice']).toMatchObject({
       success: true,
       output: 'ok',
