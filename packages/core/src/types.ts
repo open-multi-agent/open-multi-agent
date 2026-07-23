@@ -7,6 +7,7 @@
 
 import type { ZodSchema } from 'zod'
 import type { SupportedProvider } from './llm/adapter.js'
+import type { SchedulingStrategy } from './orchestrator/scheduler.js'
 
 // ---------------------------------------------------------------------------
 // Content blocks
@@ -322,6 +323,12 @@ export interface LLMResponse {
 export interface StreamEvent {
   readonly type: 'text' | 'reasoning' | 'tool_use' | 'tool_result' | 'loop_detected' | 'budget_exceeded' | 'done' | 'error'
   readonly data: unknown
+  /**
+   * Normalized failure metadata for an `error` event when its source is known.
+   * This lets orchestrators distinguish a provider failure from a callback or
+   * framework failure without inferring the source from the error text.
+   */
+  readonly errorInfo?: StructuredTraceError
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1060,13 @@ export interface ModelRouteConfig {
   readonly apiKey?: string
   /** AWS region selected for Bedrock routes. */
   readonly region?: string
+  /**
+   * Ordered fallback routes to try on retryable provider errors.
+   *
+   * The first entry becomes active on the next retry after the primary route
+   * fails; later retries advance through the list in order. Empty by default.
+   */
+  readonly fallback?: readonly ModelRouteConfig[]
 }
 
 /** Deterministic, predicate-free route selector for a model routing rule. */
@@ -1457,6 +1471,22 @@ export interface OrchestratorEvent {
 /** Top-level configuration for the orchestrator. */
 export interface OrchestratorConfig {
   readonly maxConcurrency?: number
+  /**
+   * Strategy used to assign unassigned tasks to team agents:
+   *
+   * - `'round-robin'` distributes tasks evenly in roster order; use it when
+   *   agents are interchangeable.
+   * - `'least-busy'` prefers the agent with the fewest active tasks; use it to
+   *   balance work when task duration varies.
+   * - `'capability-match'` compares task text with agent names and system
+   *   prompts; use it when agents have distinct, clearly described roles.
+   * - `'dependency-first'` assigns tasks that unblock the most dependents
+   *   first; use it for dependency-heavy DAGs.
+   *
+   * Defaults to `'dependency-first'`. Explicit task assignees are preserved
+   * and are never replaced by this strategy.
+   */
+  readonly schedulingStrategy?: SchedulingStrategy
   /**
    * Maximum depth of `delegate_to_agent` chains from a task run (default `3`).
    * Depth is per nested delegated run, not per team.

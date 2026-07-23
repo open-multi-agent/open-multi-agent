@@ -169,13 +169,37 @@ describe('selectBestAgent', () => {
     expect(selectBestAgent('Research the latest AI papers', agents)).toBe(agents[0])
   })
 
-  it('falls back to first agent when no keywords match', () => {
+  it.each([
+    ['分析代码质量并生成评审报告', 1],
+    ['分析销售数据并生成趋势报告', 2],
+    ['制定品牌策略和市场推广方案', 0],
+  ])('selects the semantically matching Chinese agent for "%s"', (goal, expectedIndex) => {
     const agents: AgentConfig[] = [
-      { name: 'alpha', model: 'test' },
-      { name: 'beta', model: 'test' },
+      { name: '营销专家', model: 'test', systemPrompt: '制定品牌策略和市场推广方案' },
+      { name: '代码评审员', model: 'test', systemPrompt: '分析代码质量并生成评审报告' },
+      { name: '数据分析师', model: 'test', systemPrompt: '分析销售数据并生成趋势报告' },
     ]
 
-    expect(selectBestAgent('xyzzy', agents)).toBe(agents[0])
+    expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])
+  })
+
+  it('uses agent name as the stable tie-break when all scores are zero', () => {
+    const agents: AgentConfig[] = [
+      { name: 'beta', model: 'test' },
+      { name: 'alpha', model: 'test' },
+    ]
+
+    expect(selectBestAgent('xyzzy', agents)).toBe(agents[1])
+    expect(selectBestAgent('xyzzy', [...agents].reverse())).toBe(agents[1])
+  })
+
+  it('uses agent name as the stable tie-break for equal positive scores', () => {
+    const agents: AgentConfig[] = [
+      { name: 'beta', model: 'test', systemPrompt: 'TypeScript specialist' },
+      { name: 'alpha', model: 'test', systemPrompt: 'TypeScript specialist' },
+    ]
+
+    expect(selectBestAgent('Write TypeScript', agents)).toBe(agents[1])
   })
 
   it('returns the only agent when team has one member', () => {

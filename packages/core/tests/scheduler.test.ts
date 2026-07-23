@@ -140,15 +140,41 @@ describe('Scheduler: capability-match', () => {
     expect(assignments.get(tasks[1]!.id)).toBe('researcher')
   })
 
-  it('falls back to first agent when no keywords match', () => {
+  it('matches Chinese tasks to the corresponding Chinese agents', () => {
     const s = new Scheduler('capability-match')
-    const agents = [agent('alpha'), agent('beta')]
-    const tasks = [pendingTask('xyz')]
+    const agents = [
+      agent('营销专家', '制定品牌策略和市场推广方案'),
+      agent('代码评审员', '分析代码质量并生成评审报告'),
+      agent('数据分析师', '分析销售数据并生成趋势报告'),
+    ]
+    const tasks = [
+      pendingTask('分析代码质量并生成评审报告'),
+      pendingTask('分析销售数据并生成趋势报告'),
+      pendingTask('制定品牌策略和市场推广方案'),
+    ]
 
     const assignments = s.schedule(tasks, agents)
 
-    // When scores are tied (all 0), first agent wins
-    expect(assignments.size).toBe(1)
+    expect(assignments.get(tasks[0]!.id)).toBe('代码评审员')
+    expect(assignments.get(tasks[1]!.id)).toBe('数据分析师')
+    expect(assignments.get(tasks[2]!.id)).toBe('营销专家')
+  })
+
+  it('round-robins zero-score tasks and advances the cursor across calls', () => {
+    const s = new Scheduler('capability-match')
+    const agents = [agent('alpha'), agent('beta')]
+    const tasks = [
+      pendingTask('x'),
+      pendingTask('y'),
+      pendingTask('z'),
+    ]
+
+    const assignments = s.schedule(tasks, agents)
+    const nextTask = pendingTask('q')
+    const nextAssignments = s.schedule([nextTask], agents)
+
+    expect([...assignments.values()]).toEqual(['alpha', 'beta', 'alpha'])
+    expect(nextAssignments.get(nextTask.id)).toBe('beta')
   })
 })
 

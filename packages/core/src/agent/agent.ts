@@ -741,21 +741,26 @@ export class Agent {
     })
     let agentTraceEmitted = false
     let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
+    let timeoutSignal: AbortSignal | undefined
+    let callerAbort: AbortSignal | undefined
+    let failureKind: TraceErrorKind | undefined
 
     try {
       // --- beforeRun hook ---
       if (this.config.beforeRun) {
+        failureKind = 'callback'
         const hookCtx = this.buildBeforeRunHookContext(messages)
         const modified = await this.config.beforeRun(hookCtx)
         this.applyHookContext(messages, modified, hookCtx.prompt)
+        failureKind = undefined
       }
 
       const backend = await this.getBackend()
       // Fresh timeout per stream call, same as executeRun.
-      const timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
+      timeoutSignal = this.config.timeoutMs !== undefined && this.config.timeoutMs > 0
         ? AbortSignal.timeout(this.config.timeoutMs)
         : undefined
-      const callerAbort = callerOptions?.abortSignal
+      callerAbort = callerOptions?.abortSignal
       const effectiveAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
         : timeoutSignal ?? callerAbort
@@ -791,7 +796,9 @@ export class Agent {
             result, !result.budgetExceeded, undefined, identity, status,
           )
           if (this.config.afterRun) {
+            failureKind = 'callback'
             agentResult = await this.config.afterRun(agentResult)
+            failureKind = undefined
           }
           agentResult = this.ensureAgentOutcome(agentResult, identity)
           this.transitionTo('completed')
@@ -803,12 +810,16 @@ export class Agent {
           const error = event.data instanceof Error
             ? event.data
             : new Error(String(event.data))
+          // Backend stream errors originate from the configured provider. Keep
+          // the source classification on the event so task retry can make an
+          // explicit failover decision without reclassifying a raw Error.
+          const classified = classifyRunFailure(error, { provider: this.config.provider })
           this.transitionToError(error)
           this.emitAgentTrace(runOptions, agentStartMs, {
             success: false,
             identity,
-            status: classifyRunFailure(error).status,
-            errorInfo: classifyRunFailure(error).errorInfo,
+            status: classified.status,
+            errorInfo: classified.errorInfo,
             output: error.message,
             messages: [],
             tokenUsage: ZERO_USAGE,
@@ -817,6 +828,8 @@ export class Agent {
             error,
           })
           agentTraceEmitted = true
+          yield { ...event, errorInfo: classified.errorInfo } satisfies StreamEvent
+          continue
         }
 
         yield event
@@ -824,12 +837,20 @@ export class Agent {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       this.transitionToError(error)
+      const classified = timeoutSignal?.aborted
+        ? classifyRunFailure(error, { kind: 'timeout', statusCode: 'timeout' })
+        : callerAbort?.aborted
+          ? classifyRunFailure(error, { kind: 'cancellation', statusCode: 'cancelled' })
+          : classifyRunFailure(error, {
+              ...(failureKind !== undefined ? { kind: failureKind } : {}),
+              provider: this.config.provider,
+            })
       if (!agentTraceEmitted) {
         this.emitAgentTrace(effectiveTraceOptions, agentStartMs, {
           success: false,
           identity,
-          status: classifyRunFailure(error).status,
-          errorInfo: classifyRunFailure(error).errorInfo,
+          status: classified.status,
+          errorInfo: classified.errorInfo,
           output: error.message,
           messages: [],
           tokenUsage: ZERO_USAGE,
@@ -838,7 +859,7 @@ export class Agent {
           error,
         })
       }
-      yield { type: 'error', data: error } satisfies StreamEvent
+      yield { type: 'error', data: error, errorInfo: classified.errorInfo } satisfies StreamEvent
     }
   }
 
