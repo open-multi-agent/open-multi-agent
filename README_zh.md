@@ -106,7 +106,7 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 **集成**
 
-- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
