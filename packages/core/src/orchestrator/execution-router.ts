@@ -78,6 +78,10 @@ export function buildRoutingContext(
       name: agent.name,
       model: agent.model ?? defaultModel,
       ...(toolCount !== undefined ? { toolCount } : {}),
+      ...(agent.capabilities !== undefined
+        ? { capabilities: [...agent.capabilities] }
+        : {}),
+      ...(agent.costTier !== undefined ? { costTier: agent.costTier } : {}),
     }
   })
   const hasBudget = budget.maxTokenBudget !== undefined || budget.maxCostBudget !== undefined

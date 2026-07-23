@@ -141,10 +141,17 @@ const orchestrator = new OpenMultiAgent({
 | `dependency-first` (default) | Assigns tasks that unblock the most downstream work first, rotating agents | The task graph has meaningful dependencies |
 | `round-robin` | Distributes tasks in queue order across the roster | Agents are interchangeable |
 | `least-busy` | Chooses the agent with the fewest active or newly assigned tasks | Task duration varies and load balance matters |
-| `capability-match` | Matches task text against agent names and system prompts | Agents have distinct, clearly described roles |
+| `capability-match` | Filters explicit task requirements, then prefers declared capability tags before legacy keyword affinity | Tasks or agents declare differentiated requirements/capabilities |
 
 These strategies select one scheduling dimension at a time; they are not
 combined or weighted.
+
+Agents may declare `description`, `capabilities`, `costTier`, and
+`latencyClass`; none is inferred when omitted. Explicit `runTasks()` specs and
+coordinator-generated tasks may add `requires` with `requiredTools`,
+`requiredCapabilities`, `requiredBackend`, and `requiredProvider`. Tool
+requirements are checked against the final resolved grant set, after presets,
+allowlists, denylists, and framework rails.
 
 ## Capabilities
 

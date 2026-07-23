@@ -667,6 +667,23 @@ export type ExternalAgentBackendConfig = AgentBackendConfig | ProcessAgentBacken
 /** Static configuration for a single agent. */
 export interface AgentConfig {
   readonly name: string
+  /** One-sentence role description for bounded, structured agent manifests. */
+  readonly description?: string
+  /**
+   * Caller-declared capability tags used as explicit selection signals.
+   * OMA never derives capabilities from `systemPrompt` or any other text.
+   */
+  readonly capabilities?: readonly string[]
+  /**
+   * Caller-declared relative cost class. `low`, `medium`, and `high` are
+   * application-level bands; OMA does not infer pricing when this is omitted.
+   */
+  readonly costTier?: 'low' | 'medium' | 'high'
+  /**
+   * Caller-declared relative response-time class. `low`, `medium`, and `high`
+   * describe expected latency; OMA does not benchmark or infer a default.
+   */
+  readonly latencyClass?: 'low' | 'medium' | 'high'
   /**
    * Model identifier (e.g. `'claude-opus-4-6'`).
    *
@@ -1096,6 +1113,20 @@ export interface ModelRoutingPolicy {
   readonly rules: readonly ModelRoutingRule[]
 }
 
+/**
+ * Explicit hard requirements for task-to-agent selection.
+ *
+ * Hard constraints use only resolved tool grants, backend discriminants,
+ * providers, and caller-declared capability tags. They are never inferred
+ * from `systemPrompt`, task prose, names, or other unstructured text.
+ */
+export interface TaskRequirements {
+  readonly requiredTools?: readonly string[]
+  readonly requiredCapabilities?: readonly string[]
+  readonly requiredBackend?: 'llm' | 'process' | 'acp'
+  readonly requiredProvider?: SupportedProvider
+}
+
 /** Input task descriptor accepted by {@link OpenMultiAgent.runTasks}. */
 export interface RunTaskSpec {
   readonly title: string
@@ -1108,6 +1139,8 @@ export interface RunTaskSpec {
   readonly retryBackoff?: number
   readonly role?: string
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Optional explicit hard requirements. Omitted means no hard constraints. */
+  readonly requires?: TaskRequirements
   readonly verify?: ConsensusVerifyOptions
 }
 
@@ -1155,6 +1188,12 @@ export interface RosterSummaryEntry {
   readonly model: string
   /** Count of directly declared built-in and custom tools, when known. */
   readonly toolCount?: number
+  /** Bounded role summary for manifest consumers; execution routing leaves this unset. */
+  readonly roleSummary?: string
+  /** Caller-declared capability tags; never inferred from `systemPrompt`. */
+  readonly capabilities?: readonly string[]
+  /** Caller-declared relative cost band. */
+  readonly costTier?: AgentConfig['costTier']
 }
 
 /** Budget still available when execution routing begins. */
@@ -1396,6 +1435,7 @@ export interface PlanTaskArtifact {
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
+  readonly requires?: TaskRequirements
 }
 
 /**
@@ -1491,6 +1531,7 @@ export interface TaskExecutionRecord {
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly retryBackoff?: number
+  readonly requires?: TaskRequirements
   /** Verify config attached to this task, if any. Populated in `planOnly` results for inspection. */
   readonly verify?: ConsensusVerifyOptions
   readonly metrics?: TaskExecutionMetrics
@@ -1516,6 +1557,8 @@ export interface Task {
   readonly role?: string
   /** Caller-defined task priority used by model routing rules. */
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  /** Explicit hard requirements used by capability-aware scheduling. */
+  readonly requires?: TaskRequirements
   result?: string
   readonly createdAt: Date
   updatedAt: Date
@@ -1799,6 +1842,7 @@ export interface TaskSnapshot {
   readonly memoryScope?: 'dependencies' | 'all'
   readonly role?: string
   readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly requires?: TaskRequirements
   readonly result?: string
   readonly createdAt: string
   readonly updatedAt: string

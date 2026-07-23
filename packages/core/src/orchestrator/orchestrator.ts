@@ -892,7 +892,11 @@ export class OpenMultiAgent {
     const taskSpecs = parseTaskSpecs(decompositionResult.output)
 
     const queue = new TaskQueue()
-    const scheduler = new Scheduler(this.config.schedulingStrategy)
+    const scheduler = new Scheduler(this.config.schedulingStrategy, {
+      defaultProvider: this.config.defaultProvider,
+      defaultToolPreset: this.config.defaultToolPreset,
+      includeDelegateTool: true,
+    })
     const taskMetrics = new Map<string, TaskExecutionMetrics>()
 
     if (taskSpecs && taskSpecs.length > 0) {
@@ -1057,6 +1061,7 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
@@ -1138,6 +1143,7 @@ export class OpenMultiAgent {
           ...(task.maxRetries !== undefined ? { maxRetries: task.maxRetries } : {}),
           ...(task.retryDelayMs !== undefined ? { retryDelayMs: task.retryDelayMs } : {}),
           ...(task.retryBackoff !== undefined ? { retryBackoff: task.retryBackoff } : {}),
+          ...(task.requires !== undefined ? { requires: task.requires } : {}),
         }
       }),
     }
@@ -1385,6 +1391,7 @@ export class OpenMultiAgent {
         retryBackoff: t.retryBackoff,
         role: t.role,
         priority: t.priority,
+        requires: t.requires,
         verify: t.verify,
       })),
       agentConfigs,
@@ -1651,6 +1658,7 @@ export class OpenMultiAgent {
       ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
       ...(task.dependsOn && task.dependsOn.length > 0 ? { dependsOn: [...task.dependsOn] } : {}),
       ...(task.memoryScope !== undefined ? { memoryScope: task.memoryScope } : {}),
+      ...(task.requires !== undefined ? { requires: task.requires } : {}),
       result: undefined,
       createdAt: now,
       updatedAt: now,
@@ -1684,7 +1692,11 @@ export class OpenMultiAgent {
       ? recordRoutingDecision(runIdentity, traceRuntime, routingDecisionInput)
       : undefined
     const agentConfigs = team.getAgents()
-    const scheduler = new Scheduler(this.config.schedulingStrategy)
+    const scheduler = new Scheduler(this.config.schedulingStrategy, {
+      defaultProvider: this.config.defaultProvider,
+      defaultToolPreset: this.config.defaultToolPreset,
+      includeDelegateTool: true,
+    })
     scheduler.autoAssign(queue, agentConfigs)
     const budgets = resolveRunBudgets(this.config, options)
 
@@ -1790,6 +1802,7 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,
@@ -2007,6 +2020,7 @@ export class OpenMultiAgent {
       dependsOn: task.dependsOn ?? [],
       description: task.description,
       memoryScope: task.memoryScope,
+      requires: task.requires,
       maxRetries: task.maxRetries,
       retryDelayMs: task.retryDelayMs,
       retryBackoff: task.retryBackoff,

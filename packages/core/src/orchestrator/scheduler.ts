@@ -6,7 +6,7 @@
  *
  * - `round-robin`        — Distribute tasks evenly across agents by index.
  * - `least-busy`         — Assign to whichever agent has the fewest active tasks.
- * - `capability-match`   — Score agents by keyword overlap with the task description.
+ * - `capability-match`   — Filter explicit requirements, then score capability/keyword affinity.
  * - `dependency-first`   — Prioritise tasks on the critical path (most blocked dependents).
  *
  * The scheduler retains only a round-robin cursor between calls. All mutable
@@ -16,7 +16,10 @@
 
 import type { AgentConfig, Task } from '../types.js'
 import type { TaskQueue } from '../task/queue.js'
-import { extractKeywords, keywordScore } from '../utils/keywords.js'
+import {
+  AgentSelector,
+  type AgentSelectorContext,
+} from './agent-selector.js'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -27,7 +30,7 @@ import { extractKeywords, keywordScore } from '../utils/keywords.js'
  *
  * - `round-robin`       — Equal distribution by agent index.
  * - `least-busy`        — Prefers the agent with the fewest `in_progress` tasks.
- * - `capability-match`  — Keyword-based affinity between task text and agent role.
+ * - `capability-match`  — Explicit requirements plus capability/keyword affinity.
  * - `dependency-first`  — Prioritise tasks that unblock the most other tasks.
  *
  * `dependency-first` is the orchestrator default and suits dependency-heavy
@@ -107,7 +110,10 @@ export class Scheduler {
    *                   `'dependency-first'` which is the safest default for
    *                   complex multi-step pipelines.
    */
-  constructor(private readonly strategy: SchedulingStrategy = 'dependency-first') {}
+  constructor(
+    private readonly strategy: SchedulingStrategy = 'dependency-first',
+    private readonly selectorContext: AgentSelectorContext = {},
+  ) {}
 
   // -------------------------------------------------------------------------
   // Primary API
@@ -241,9 +247,9 @@ export class Scheduler {
   }
 
   /**
-   * Capability-match: score each agent against each task by keyword overlap
-   * between the task's title/description and the agent's `systemPrompt` and
-   * `name`. The highest-scoring agent wins.
+   * Capability-match: use {@link AgentSelector} to hard-filter explicit task
+   * requirements, then score declared capabilities before legacy keyword
+   * overlap. The highest-scoring eligible agent wins.
    *
    * The highest positive score wins; positive-score ties preserve agent roster
    * order. When every agent scores zero for a task, that task consumes the
@@ -254,33 +260,30 @@ export class Scheduler {
     agents: AgentConfig[],
   ): Map<string, string> {
     const result = new Map<string, string>()
-
-    // Pre-compute keyword lists for each agent to avoid re-extracting per task.
-    const agentKeywords = new Map<string, string[]>(
-      agents.map((a) => [
-        a.name,
-        extractKeywords(`${a.name} ${a.systemPrompt ?? ''} ${a.model}`),
-      ]),
-    )
+    const selector = new AgentSelector()
 
     for (const task of unassigned) {
-      const taskText = `${task.title} ${task.description}`
-      const taskKeywords = extractKeywords(taskText)
+      const selection = selector.select({
+        title: task.title,
+        description: task.description,
+        requires: task.requires,
+      }, agents, this.selectorContext)
+      if (selection.error) {
+        throw new Error(
+          `Scheduler capability-match: ${selection.error.code}: ${selection.error.reasons.join(' ')}`,
+        )
+      }
 
+      // Preserve the legacy scheduler's roster-order tie-break while reusing
+      // the selector's eligibility and scoring kernel. The public selector and
+      // stateless short-circuit use ascending-name ties.
       let bestAgent = agents[0]!
       let bestScore = -1
-
       for (const agent of agents) {
-        // Score in both directions: task keywords vs agent text, and agent
-        // keywords vs task text, then take the max.
-        const agentText = `${agent.name} ${agent.systemPrompt ?? ''}`
-        const scoreA = keywordScore(agentText, taskKeywords)
-        const scoreB = keywordScore(taskText, agentKeywords.get(agent.name) ?? [])
-        const score = scoreA + scoreB
-
-        if (score > bestScore) {
-          bestScore = score
+        const scored = selection.eligible.find((entry) => entry.agent === agent)
+        if (scored && scored.score > bestScore) {
           bestAgent = agent
+          bestScore = scored.score
         }
       }
 

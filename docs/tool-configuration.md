@@ -275,6 +275,39 @@ const customAgent: AgentConfig = {
 
 **Resolution order:** default-deny (no preset _and_ no allowlist ⇒ zero built-in tools) → preset → allowlist → denylist → framework safety rails. Custom / runtime tools bypass the grant step (registration is the grant) but still honor the denylist.
 
+## Capability-aware agent selection
+
+`AgentConfig` can carry four optional, caller-declared selection signals:
+`description` (a one-sentence role summary), `capabilities` (tags), `costTier`,
+and `latencyClass`. Omitted fields stay unknown; OMA does not guess defaults
+from the model, agent name, or system prompt.
+
+Tasks supplied to `runTasks()` can declare hard requirements:
+
+```typescript
+const tasks: RunTaskSpec[] = [{
+  title: 'Patch the parser',
+  description: 'Implement and test the parser fix.',
+  requires: {
+    requiredTools: ['file_read', 'file_edit'],
+    requiredCapabilities: ['typescript'],
+    requiredBackend: 'llm',
+    requiredProvider: 'anthropic',
+  },
+}]
+```
+
+The unified `AgentSelector` applies hard filters first, then ranks eligible
+agents by declared capability affinity before falling back to the existing
+multilingual keyword signal. `requiredTools` is checked against the exact
+definitions returned by the same resolved-grant path used by execution.
+Backend and provider checks use their structured configuration fields.
+`requiredCapabilities` uses only the caller-declared tags.
+
+Neither permissions nor capabilities are ever inferred from `systemPrompt` or
+other prose. When no candidate satisfies the hard requirements, the selector
+returns `NO_ELIGIBLE_AGENT`; a caller must choose any fallback explicitly.
+
 ## Per-call gating with `onToolCall`
 
 The layers above answer **"which tools are reachable?"** by operating on tool _names_. The `onToolCall` gate answers a different question one layer down: **"should _this specific invocation_ run right now?"** `bash` is a single allowed name that covers `ls -la` and `rm -rf /` equally; the gate inspects the actual arguments and can veto individual calls.

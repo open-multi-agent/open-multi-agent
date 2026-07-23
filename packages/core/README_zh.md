@@ -126,9 +126,15 @@ const orchestrator = new OpenMultiAgent({
 | `dependency-first`（默认） | 优先分配能解锁最多下游工作的任务，并轮转选择 Agent | 任务图存在明确依赖关系 |
 | `round-robin` | 按队列顺序在 Agent roster 中轮转分配 | Agent 能力可以互换 |
 | `least-busy` | 选择当前活跃任务或本批新分配任务最少的 Agent | 任务耗时差异较大，需要负载均衡 |
-| `capability-match` | 用任务文本匹配 Agent 名称和 system prompt | Agent 角色明确且差异清晰 |
+| `capability-match` | 先过滤显式任务要求，再优先匹配声明的能力标签，最后使用兼容的关键词亲和度 | 任务或 Agent 声明了有区分度的要求/能力 |
 
 每种策略只负责一个调度维度，不会彼此组合或加权。
+
+Agent 可显式声明 `description`、`capabilities`、`costTier` 和
+`latencyClass`；字段缺省时框架不会推断。显式 `runTasks()` 任务和
+coordinator 生成的任务可通过 `requires` 声明 `requiredTools`、
+`requiredCapabilities`、`requiredBackend` 与 `requiredProvider`。工具要求
+基于 preset、allowlist、denylist 和框架安全栏之后的最终有效授权集判断。
 
 ## 核心能力
 
