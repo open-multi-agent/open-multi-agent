@@ -106,7 +106,7 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 **集成**
 
-- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory))
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
 
@@ -124,6 +124,7 @@ OMA 面向希望任务图随目标动态生成的 TypeScript 团队。
 
 - **[`@open-multi-agent/core`](packages/core/README_zh.md)**：编排运行时、工具、记忆、checkpoint、trace、CLI 和离线 Run Viewer。
 - **[`@open-multi-agent/otel`](packages/otel/README.md)**：面向已建立 OpenTelemetry 统一监控体系的生产团队的可选企业集成。
+- **[`create-oma-app`](packages/create-oma-app/README.md)**：`npm create oma-app` 背后的脚手架；提供自带免 API Key 本地 Demo 的 starter 模板。
 
 Core 用户可以在本地保存 trace，并用离线 Run Viewer 查看。只有当 OMA trace 需要进入应用现有的统一监控平台时，才需要安装 OTel 包。
 

@@ -106,7 +106,7 @@ console.log(result.agentResults.get('coordinator')?.output)
 
 **Integrations**
 
-- **[Engram](https://www.engram-memory.com)**: "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory))
+- **[Engram](https://www.engram-memory.com)**: "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts.
 - **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**: Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
 - **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**: Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
 
@@ -124,6 +124,7 @@ For a named head-to-head against LangGraph, Mastra, CrewAI, the Vercel AI SDK, a
 
 - **[`@open-multi-agent/core`](packages/core/README.md)**: Orchestration runtime, tools, memory, checkpoints, traces, CLI, and offline Run Viewer.
 - **[`@open-multi-agent/otel`](packages/otel/README.md)**: Optional enterprise integration for production teams with a centralized OpenTelemetry stack.
+- **[`create-oma-app`](packages/create-oma-app/README.md)**: Scaffolder behind `npm create oma-app`; starter templates with a no-key local demo.
 
 Core users can store traces locally and inspect them with the offline Run Viewer. Install the OTel package only when OMA traces should appear in the same monitoring system as the rest of your application.
 

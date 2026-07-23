@@ -103,6 +103,13 @@ task is then assigned individually. `round-robin` retains its cursor,
 `least-busy` reads current `in_progress` load, and `capability-match` retains its
 hard eligibility filter.
 
+Agents may declare `description`, `capabilities`, `costTier`, and
+`latencyClass`; none is inferred when omitted. Explicit `runTasks()` specs and
+coordinator-generated tasks may add `requires` with `requiredTools`,
+`requiredCapabilities`, `requiredBackend`, and `requiredProvider`. Tool
+requirements are checked against the final resolved grant set, after presets,
+allowlists, denylists, and framework rails.
+
 `capability-match` and `composite` deliberately differ when a task's `requires`
 cannot be satisfied:
 
@@ -111,9 +118,18 @@ cannot be satisfied:
 | `capability-match` | Terminates scheduling with `NO_ELIGIBLE_AGENT`. |
 | `composite` | Emits a structured `NO_ELIGIBLE_AGENT` warning, then falls back to zero fit plus current load. |
 
-Composite load is a snapshot of the supplied DAG state. Assignments earlier in
-one scheduler call are not folded into that same call; in event-driven execution
-the next ready-task call can observe tasks already marked `in_progress`.
+`composite` maximizes `fitWeight * fit + loadWeight * (1 - normalizedCurrentLoad)`.
+`schedulingWeights.fit` and `schedulingWeights.load` default to `0.7` and `0.3`,
+and current load is the agent's `in_progress` task count normalized within the
+roster at scheduling time. Composite load is a snapshot of the supplied DAG
+state. Assignments earlier in one scheduler call are not folded into that same
+call; in event-driven execution the next ready-task call can observe tasks
+already marked `in_progress`.
+
+Coordinator plans that name an agent outside the roster emit an
+`INVALID_ASSIGNEE` warning, clear that assignment, and use the configured
+scheduler by default. Set `strictAssignees: true` to stop before task execution
+with a structured validation error instead.
 
 ## Approval modes
 
