@@ -140,6 +140,26 @@ describe('Scheduler: capability-match', () => {
     expect(assignments.get(tasks[1]!.id)).toBe('researcher')
   })
 
+  it('matches Chinese tasks to the corresponding Chinese agents', () => {
+    const s = new Scheduler('capability-match')
+    const agents = [
+      agent('营销专家', '制定品牌策略和市场推广方案'),
+      agent('代码评审员', '分析代码质量并生成评审报告'),
+      agent('数据分析师', '分析销售数据并生成趋势报告'),
+    ]
+    const tasks = [
+      pendingTask('分析代码质量并生成评审报告'),
+      pendingTask('分析销售数据并生成趋势报告'),
+      pendingTask('制定品牌策略和市场推广方案'),
+    ]
+
+    const assignments = s.schedule(tasks, agents)
+
+    expect(assignments.get(tasks[0]!.id)).toBe('代码评审员')
+    expect(assignments.get(tasks[1]!.id)).toBe('数据分析师')
+    expect(assignments.get(tasks[2]!.id)).toBe('营销专家')
+  })
+
   it('falls back to first agent when no keywords match', () => {
     const s = new Scheduler('capability-match')
     const agents = [agent('alpha'), agent('beta')]

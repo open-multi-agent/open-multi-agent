@@ -169,6 +169,20 @@ describe('selectBestAgent', () => {
     expect(selectBestAgent('Research the latest AI papers', agents)).toBe(agents[0])
   })
 
+  it.each([
+    ['分析代码质量并生成评审报告', 1],
+    ['分析销售数据并生成趋势报告', 2],
+    ['制定品牌策略和市场推广方案', 0],
+  ])('selects the semantically matching Chinese agent for "%s"', (goal, expectedIndex) => {
+    const agents: AgentConfig[] = [
+      { name: '营销专家', model: 'test', systemPrompt: '制定品牌策略和市场推广方案' },
+      { name: '代码评审员', model: 'test', systemPrompt: '分析代码质量并生成评审报告' },
+      { name: '数据分析师', model: 'test', systemPrompt: '分析销售数据并生成趋势报告' },
+    ]
+
+    expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])
+  })
+
   it('falls back to first agent when no keywords match', () => {
     const agents: AgentConfig[] = [
       { name: 'alpha', model: 'test' },

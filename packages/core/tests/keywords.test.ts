@@ -47,6 +47,37 @@ describe('utils/keywords', () => {
     it('returns empty array for empty input', () => {
       expect(extractKeywords('')).toEqual([])
     })
+
+    it('extracts CJK words with at least two characters', () => {
+      expect(extractKeywords('分析代码质量并生成评审报告')).toEqual([
+        '分析',
+        '代码',
+        '质量',
+        '生成',
+        '评审',
+        '报告',
+      ])
+    })
+
+    it('extracts keywords from mixed Chinese and English text', () => {
+      expect(extractKeywords('Review这段TypeScript代码并生成API报告')).toEqual([
+        'review',
+        'typescript',
+        '代码',
+        '生成',
+        '报告',
+      ])
+    })
+
+    it('preserves pure-English punctuation and length behaviour', () => {
+      expect(extractKeywords("Writer's notes don't include tiny API words")).toEqual([
+        'writer',
+        'notes',
+        'include',
+        'tiny',
+        'words',
+      ])
+    })
   })
 
   describe('keywordScore', () => {
