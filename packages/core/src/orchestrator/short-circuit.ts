@@ -89,6 +89,11 @@ export function isSimpleGoal(goal: string): boolean {
  * The two-direction sum (`scoreA + scoreB`) ensures both "agent describes
  * goal" and "goal mentions agent capability" contribute to the final score.
  *
+ * Score ties, including an all-zero result, are resolved by ascending agent
+ * name; duplicate names preserve roster order. Unlike Scheduler's stateful
+ * `capability-match` zero-score fallback, this helper cannot round-robin across
+ * calls because each invocation is stateless.
+ *
  * Exported for unit testing.
  */
 export function selectBestAgent(goal: string, agents: AgentConfig[]): AgentConfig {
@@ -108,7 +113,10 @@ export function selectBestAgent(goal: string, agents: AgentConfig[]): AgentConfi
     const scoreB = keywordScore(goal, agentKeywords)
     const score = scoreA + scoreB
 
-    if (score > bestScore) {
+    if (
+      score > bestScore
+      || (score === bestScore && agent.name < bestAgent.name)
+    ) {
       bestScore = score
       bestAgent = agent
     }

@@ -183,13 +183,23 @@ describe('selectBestAgent', () => {
     expect(selectBestAgent(goal, agents)).toBe(agents[expectedIndex])
   })
 
-  it('falls back to first agent when no keywords match', () => {
+  it('uses agent name as the stable tie-break when all scores are zero', () => {
     const agents: AgentConfig[] = [
-      { name: 'alpha', model: 'test' },
       { name: 'beta', model: 'test' },
+      { name: 'alpha', model: 'test' },
     ]
 
-    expect(selectBestAgent('xyzzy', agents)).toBe(agents[0])
+    expect(selectBestAgent('xyzzy', agents)).toBe(agents[1])
+    expect(selectBestAgent('xyzzy', [...agents].reverse())).toBe(agents[1])
+  })
+
+  it('uses agent name as the stable tie-break for equal positive scores', () => {
+    const agents: AgentConfig[] = [
+      { name: 'beta', model: 'test', systemPrompt: 'TypeScript specialist' },
+      { name: 'alpha', model: 'test', systemPrompt: 'TypeScript specialist' },
+    ]
+
+    expect(selectBestAgent('Write TypeScript', agents)).toBe(agents[1])
   })
 
   it('returns the only agent when team has one member', () => {
