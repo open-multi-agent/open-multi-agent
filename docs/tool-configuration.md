@@ -22,6 +22,12 @@ For both `required` and `preferred`, OMA skips coordinator decomposition and the
 
 The goal text is not inspected to choose this topology. The same declaration therefore produces the same roles and dependency order for English, Chinese, or any other language. Every `requiredRoles` name must exist in the team roster, and `requiredOrder`, when present, must be a permutation of those roles. Invalid declarations throw before any agent runs.
 
+When `planOnly: true` is combined with `governanceIntent: 'required'` or
+`'preferred'`, `planOnly` wins: OMA validates and returns the declared role DAG
+with every task pending, but runs neither the coordinator nor task agents. The
+result reports `governanceConclusion: 'not-applicable'` until that plan is
+executed, for example through `runFromPlan()`.
+
 Use `governanceIntent: 'none'` to opt into the existing automatic `runTeam()` route explicitly. Omitting `governanceIntent` also preserves the existing behavior, including simple-goal short circuit and coordinator-generated task planning.
 
 After execution, required declarations are checked against the execution

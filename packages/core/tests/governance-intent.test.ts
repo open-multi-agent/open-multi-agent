@@ -134,6 +134,80 @@ describe('runTeam declared governance intent', () => {
     ])
   })
 
+  it.each(['required', 'preferred'] as const)(
+    'returns the pending role DAG without executing agents for %s planOnly',
+    async (governanceIntent) => {
+      const result = await runGovernedGoal('Check this request.', {
+        ...requiredGovernance,
+        governanceIntent,
+        planOnly: true,
+      })
+
+      expect(result).toMatchObject({
+        success: true,
+        planOnly: true,
+        governanceConclusion: 'not-applicable',
+      })
+      expect(result.agentResults.size).toBe(0)
+      expect(result.totalTokenUsage).toEqual({ input_tokens: 0, output_tokens: 0 })
+      expect(result.tasks?.every((task) => (
+        task.status === 'pending' && task.metrics === undefined
+      ))).toBe(true)
+      expect(normalizeTopology(result.tasks)).toEqual([
+        { assignee: 'reviewer', dependsOn: [] },
+        { assignee: 'security', dependsOn: ['reviewer'] },
+      ])
+    },
+  )
+
+  it('replays a governed plan with the same role topology as direct execution', async () => {
+    const workerCalls: string[] = []
+    const orchestrator = new OpenMultiAgent({ defaultModel: 'mock-model' })
+    const team = orchestrator.createTeam('governance-team', {
+      name: 'governance-team',
+      agents: [
+        agent('reviewer', 'reviewer output', workerCalls),
+        agent('security', 'security output', workerCalls),
+      ],
+      sharedMemory: true,
+    })
+    const planned = await orchestrator.runTeam(team, 'Check this request.', {
+      ...requiredGovernance,
+      planOnly: true,
+    })
+    const replay = await orchestrator.runFromPlan(
+      team,
+      orchestrator.createPlanArtifact(planned),
+    )
+    const direct = await runGovernedGoal('Check this request.', requiredGovernance)
+
+    expect(replay.success).toBe(true)
+    expect(normalizeTopology(replay.tasks)).toEqual(normalizeTopology(direct.tasks))
+    expect(workerCalls).toHaveLength(2)
+  })
+
+  it.each([
+    ['omitted', {}],
+    ['none', { governanceIntent: 'none' as const }],
+  ])('preserves coordinator planning when governance intent is %s', async (_label, declaration) => {
+    const coordinatorCalls: string[] = []
+    const result = await runGovernedGoal('Plan this request.', {
+      ...declaration,
+      planOnly: true,
+      coordinator: {
+        adapter: responseAdapter(
+          '```json\n[{"title":"Coordinator plan","description":"Plan it","assignee":"reviewer"}]\n```',
+          coordinatorCalls,
+        ),
+      },
+    })
+
+    expect(result.planOnly).toBe(true)
+    expect(result.tasks?.map((task) => task.title)).toEqual(['Coordinator plan'])
+    expect(result.agentResults.has('coordinator')).toBe(true)
+    expect(coordinatorCalls).toHaveLength(1)
+  })
+
   it('leaves declared roles unordered when requiredOrder is omitted', async () => {
     const result = await runGovernedGoal('Check this request.', {
       governanceIntent: 'required',
@@ -164,6 +238,7 @@ describe('runTeam declared governance intent', () => {
     await expect(runGovernedGoal('Review this request.', {
       governanceIntent: 'required',
       requiredRoles: ['reviewer', 'auditor'],
+      planOnly: true,
     })).rejects.toThrow(
       'runTeam requiredRoles must exist in the team roster; unknown role(s): auditor.',
     )

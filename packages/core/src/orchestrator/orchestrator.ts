@@ -523,6 +523,17 @@ export class OpenMultiAgent {
     if (governanceTaskSpecs !== undefined) {
       const queue = new TaskQueue()
       loadSpecsIntoQueue(governanceTaskSpecs, agentConfigs, queue)
+      if (options?.planOnly) {
+        const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
+        const traceRuntime = this.startTrace(identity, metadata)
+        const result = {
+          ...this.buildPlanOnlyTeamRunResult(new Map(), identity, goal, queue),
+          ...(metadata !== undefined ? { metadata } : {}),
+        }
+        traceRuntime?.close({ status: result.status ?? statusOnly('ok') })
+        this.completeOnlineEvaluation(pendingEvaluation, result)
+        return result
+      }
       return this.executeExplicitTaskQueue(
         team,
         queue,
@@ -952,29 +963,12 @@ export class OpenMultiAgent {
     }
 
     if (options?.planOnly) {
-      const planOnlyTasks: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
-        id: task.id,
-        title: task.title,
-        assignee: task.assignee,
-        status: task.status,
-        dependsOn: task.dependsOn ?? [],
-        description: task.description,
-        memoryScope: task.memoryScope,
-        maxRetries: task.maxRetries,
-        retryDelayMs: task.retryDelayMs,
-        retryBackoff: task.retryBackoff,
-        verify: task.verify,
-        metrics: undefined,
-      }))
       this.config.onProgress?.({
         type: 'agent_complete',
         agent: 'coordinator',
         data: decompositionResult,
       })
-      return finish({
-        ...this.buildTeamRunResult(agentResults, identity, goal, planOnlyTasks),
-        planOnly: true,
-      })
+      return finish(this.buildPlanOnlyTeamRunResult(agentResults, identity, goal, queue))
     }
 
     await executeQueue(queue, ctx)
@@ -1918,6 +1912,32 @@ export class OpenMultiAgent {
       agentResults: collapsed,
       totalTokenUsage: totalUsage,
       metrics,
+    }
+  }
+
+  private buildPlanOnlyTeamRunResult(
+    agentResults: Map<string, AgentRunResult>,
+    identity: RunIdentity,
+    goal: string,
+    queue: TaskQueue,
+  ): TeamRunResult {
+    const tasks: readonly TaskExecutionRecord[] = queue.list().map((task) => ({
+      id: task.id,
+      title: task.title,
+      assignee: task.assignee,
+      status: 'pending',
+      dependsOn: task.dependsOn ?? [],
+      description: task.description,
+      memoryScope: task.memoryScope,
+      maxRetries: task.maxRetries,
+      retryDelayMs: task.retryDelayMs,
+      retryBackoff: task.retryBackoff,
+      verify: task.verify,
+      metrics: undefined,
+    }))
+    return {
+      ...this.buildTeamRunResult(agentResults, identity, goal, tasks),
+      planOnly: true,
     }
   }
 }

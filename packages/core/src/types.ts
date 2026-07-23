@@ -1172,6 +1172,9 @@ export interface RunTeamOptions extends RunTasksOptions {
    * {@link requiredRoles} entry using the declared roster assignments.
    * `'none'` and an omitted value preserve the existing automatic routing
    * behavior.
+   *
+   * When combined with {@link planOnly}, the declared role topology is built
+   * and validated but not executed; `planOnly` wins.
    */
   readonly governanceIntent?: 'required' | 'preferred' | 'none'
   /**
@@ -1197,16 +1200,19 @@ export interface RunTeamOptions extends RunTasksOptions {
    */
   readonly preferredUnderBudget?: 'attempt' | 'degrade'
   /**
-   * When true, the coordinator decomposes the goal but no task agents run.
-   * The returned {@link TeamRunResult} has `planOnly: true`, `success: true`,
-   * `tasks` populated (all `pending`, no metrics), and `agentResults`
-   * containing only the coordinator's decomposition call. `totalTokenUsage`
-   * reflects the coordinator only.
+   * When true, returns a validated plan without running task agents. The
+   * returned {@link TeamRunResult} has `planOnly: true`, `success: true`, and
+   * `tasks` populated (all `pending`, no metrics).
    *
-   * Bypasses the simple-goal short-circuit so the coordinator always runs.
+   * With `governanceIntent: 'required' | 'preferred'`, no coordinator or task
+   * agent runs; the validated declared-role topology is returned instead, and
+   * `governanceConclusion` is `'not-applicable'`. Otherwise, `planOnly`
+   * bypasses the simple-goal short circuit and runs only the coordinator
+   * decomposition call, which is reflected in `agentResults` and token usage.
    *
-   * If {@link OrchestratorConfig.onPlanReady} is wired up and returns false,
-   * the rejection wins: result is `success: false` and `planOnly` is undefined.
+   * For coordinator-generated plans, if {@link OrchestratorConfig.onPlanReady}
+   * is wired up and returns false, the rejection wins: result is
+   * `success: false` and `planOnly` is undefined.
    */
   readonly planOnly?: boolean
   /**

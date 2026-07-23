@@ -105,6 +105,37 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     })
   })
 
+  it("keeps mode 'single' incompatible with planOnly", async () => {
+    const orchestrator = new OpenMultiAgent({ defaultModel: 'mock-model' })
+    const team = createGovernanceTeam(orchestrator)
+
+    await expect(orchestrator.runTeam(team, 'Plan this request.', {
+      mode: 'single',
+      planOnly: true,
+    })).rejects.toThrow("runTeam mode 'single' cannot be combined with planOnly.")
+  })
+
+  it("keeps mode 'team' on the coordinator plan when governance is also declared", async () => {
+    const coordinatorCalls: string[] = []
+    const coordinator = scriptedAdapter([{
+      output: '```json\n[{"title":"Coordinator plan","description":"Plan it","assignee":"reviewer"}]\n```',
+    }], coordinatorCalls)
+    const orchestrator = new OpenMultiAgent({ defaultModel: 'mock-model' })
+    const team = createGovernanceTeam(orchestrator)
+
+    const result = await orchestrator.runTeam(team, 'Plan this request.', {
+      ...requiredGovernance,
+      mode: 'team',
+      planOnly: true,
+      coordinator: { model: 'mock-model', adapter: coordinator },
+    })
+
+    expect(result.tasks?.map((task) => task.title)).toEqual(['Coordinator plan'])
+    expect(result.agentResults.has('coordinator')).toBe(true)
+    expect(result.agentResults.has('reviewer')).toBe(false)
+    expect(coordinatorCalls).toHaveLength(1)
+  })
+
   it('executes a forced Single but discloses an overridden required floor', async () => {
     const orchestrator = new OpenMultiAgent({ defaultModel: 'mock-model' })
     const team = createGovernanceTeam(orchestrator)

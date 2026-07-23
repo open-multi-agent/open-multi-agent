@@ -1699,11 +1699,10 @@ describe('OpenMultiAgent', () => {
       expect(result.tasks).toBeDefined()
       expect(result.tasks!.length).toBe(2)
 
-      // Tasks should be in pre-execution states only. Independent tasks remain
-      // 'pending'; tasks with unmet dependencies are 'blocked' (set by the
-      // queue at insert time). Neither has executed.
+      // Plan artifacts expose every task as pending, including tasks whose
+      // dependencies will block them once execution begins.
       for (const task of result.tasks!) {
-        expect(['pending', 'blocked']).toContain(task.status)
+        expect(task.status).toBe('pending')
         expect(task.metrics).toBeUndefined()
       }
 
