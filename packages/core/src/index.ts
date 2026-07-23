@@ -55,6 +55,8 @@
 // ---------------------------------------------------------------------------
 
 export { OpenMultiAgent, executeWithRetry, computeRetryDelay } from './orchestrator/orchestrator.js'
+export { evaluateGovernance } from './orchestrator/governance.js'
+export type { GovernanceDeclaration } from './orchestrator/governance.js'
 export { Scheduler } from './orchestrator/scheduler.js'
 export type { SchedulingStrategy } from './orchestrator/scheduler.js'
 
@@ -282,6 +284,7 @@ export type {
   // Team
   TeamConfig,
   TeamRunResult,
+  GovernanceConclusion,
   RunMetrics,
   RunTeamOptions,
   RunTasksOptions,

@@ -1102,6 +1102,28 @@ export interface RunTasksOptions extends RunIdentityOptions {
 export interface RunTeamOptions extends RunTasksOptions {
   readonly coordinator?: CoordinatorConfig
   /**
+   * Optional structured governance signal for this goal.
+   *
+   * `'required'` and `'preferred'` both bypass coordinator decomposition and
+   * the simple-goal short circuit. Instead, `runTeam()` executes one task per
+   * {@link requiredRoles} entry using the declared roster assignments.
+   * `'none'` and an omitted value preserve the existing automatic routing
+   * behavior.
+   */
+  readonly governanceIntent?: 'required' | 'preferred' | 'none'
+  /**
+   * Agent names from the team roster that must execute independent tasks when
+   * {@link governanceIntent} is `'required'` or `'preferred'`.
+   */
+  readonly requiredRoles?: readonly string[]
+  /**
+   * Optional execution order for {@link requiredRoles}. When provided, it must
+   * be a permutation of `requiredRoles`; each role depends on the previous one.
+   * When omitted, the declared role tasks have no dependencies and may run in
+   * parallel.
+   */
+  readonly requiredOrder?: readonly string[]
+  /**
    * When true, the coordinator decomposes the goal but no task agents run.
    * The returned {@link TeamRunResult} has `planOnly: true`, `success: true`,
    * `tasks` populated (all `pending`, no metrics), and `agentResults`
@@ -1148,6 +1170,9 @@ export interface RunTeamOptions extends RunTasksOptions {
   readonly verifyJudges?: readonly AgentConfig[]
 }
 
+/** Post-execution result of comparing required governance with execution facts. */
+export type GovernanceConclusion = 'satisfied' | 'unsatisfied' | 'not-applicable'
+
 /** Run-level aggregated metrics summary. */
 export interface RunMetrics {
   readonly totalTokens: TokenUsage
@@ -1164,6 +1189,14 @@ export interface RunMetrics {
 /** Aggregated result for a full team run. */
 export interface TeamRunResult extends RunOutcomeFields {
   readonly success: boolean
+  /**
+   * Post-execution governance verdict for this run.
+   *
+   * OMA-produced results always set this field. It remains optional on the
+   * interface so older serialized results and caller-created fixtures continue
+   * to type-check. `success` retains its existing runtime-error semantics.
+   */
+  readonly governanceConclusion?: GovernanceConclusion
   readonly goal?: string
   readonly tasks?: readonly TaskExecutionRecord[]
   /**
