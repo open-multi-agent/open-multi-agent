@@ -62,6 +62,8 @@ export {
 } from './orchestrator/orchestrator.js'
 export type {
   ExecutionRouter,
+  ExecutionRoutingDecisionRecord,
+  ExecutionRoutingDecisionSource,
   RoutingBudget,
   RoutingContext,
   RoutingDecision,
@@ -88,6 +90,7 @@ export type {
   RunViewerInputErrorCode,
   RunViewerLink,
   RunViewerModel,
+  RunViewerRoutingSummary,
   RunViewerOptions,
   RunViewerSourceMode,
   RunViewerSpan,
@@ -353,6 +356,7 @@ export type {
   PlanReadyTrace,
   AgentStreamTrace,
   ConsensusTrace,
+  RoutingDecisionTrace,
 
   // Memory
   MemoryEntry,

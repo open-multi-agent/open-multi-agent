@@ -16,6 +16,12 @@ export interface ExecutionReceiptDependencyEdge {
  * Agent output text is deliberately excluded as a source of evidence.
  */
 export interface ExecutionReceipt {
+  /** Stable ID referenced by the corresponding routing-decision record. */
+  readonly id?: string
+  /** Stable decision ID referenced by this receipt. */
+  readonly routingDecisionId?: string
+  /** Trace span containing the decision-time explanation, when traced. */
+  readonly routingDecisionSpanId?: string
   /** Machine-readable warnings copied from the run result, when present. */
   readonly flags?: readonly RunFlag[]
   readonly mode: 'single' | 'multi-agent'
@@ -195,6 +201,12 @@ function buildAgentReceipt(result: AgentRunResult, trace: TraceFacts): Execution
 
 function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionReceipt {
   const rawResult = result as unknown as UnknownRecord
+  const routingDecision = isRecord(rawResult['routingDecision'])
+    ? rawResult['routingDecision']
+    : undefined
+  const receiptId = readString(routingDecision?.['receiptId'])
+  const routingDecisionId = readString(routingDecision?.['decisionId'])
+  const routingDecisionSpanId = readString(routingDecision?.['traceSpanId'])
   const rawTasks = rawResult['tasks']
   const tasks = Array.isArray(rawTasks) ? rawTasks : []
   const traceTasks = readTraceTaskFacts(trace)
@@ -285,6 +297,9 @@ function buildTeamReceipt(result: TeamRunResult, trace: TraceFacts): ExecutionRe
   }
 
   return {
+    ...(receiptId ? { id: receiptId } : {}),
+    ...(routingDecisionId ? { routingDecisionId } : {}),
+    ...(routingDecisionSpanId ? { routingDecisionSpanId } : {}),
     ...(flags ? { flags } : {}),
     mode: rolesExecuted.length > 1 ? 'multi-agent' : 'single',
     rolesExecuted,

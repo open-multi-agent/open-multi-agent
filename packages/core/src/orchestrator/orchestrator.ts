@@ -91,6 +91,10 @@ import {
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
 import { buildExecutionReceipt } from '../observability/execution-receipt.js'
 import {
+  recordRoutingDecision,
+  type RoutingDecisionRecordInput,
+} from '../observability/routing-decision.js'
+import {
   createTraceRuntime,
   LEGACY_TRACE_METADATA_ONLY,
   traceRecordObserverFrom,
@@ -541,8 +545,14 @@ export class OpenMultiAgent {
       if (options?.planOnly) {
         const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
         const traceRuntime = this.startTrace(identity, metadata)
+        const routingDecision = recordRoutingDecision(identity, traceRuntime, {
+          source: 'declared',
+          mode: 'team',
+          reasons: ['Structured governance roles declared the execution topology.'],
+        })
         const result = {
           ...this.buildPlanOnlyTeamRunResult(new Map(), identity, goal, queue),
+          routingDecision,
           ...(metadata !== undefined ? { metadata } : {}),
         }
         traceRuntime?.close({ status: result.status ?? statusOnly('ok') })
@@ -561,10 +571,17 @@ export class OpenMultiAgent {
         undefined,
         pendingEvaluation,
         options,
+        {
+          source: 'declared',
+          mode: 'team',
+          reasons: ['Structured governance roles declared the execution topology.'],
+        },
       )
     }
 
-    const routingDecision: ExecutionRoutingDecision | undefined = explicitMode === undefined
+    const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
+    const traceRuntime = this.startTrace(identity, metadata)
+    const routerDecision: ExecutionRoutingDecision | undefined = explicitMode === undefined
       && !options?.planOnly
       && !preferredBudgetDegraded
       ? await resolveExecutionRouting(
@@ -573,6 +590,38 @@ export class OpenMultiAgent {
           new DeterministicRouter(),
         )
       : undefined
+    const routingDecisionInput: RoutingDecisionRecordInput = explicitMode !== undefined
+      ? {
+          source: 'override',
+          mode: explicitMode,
+          reasons: [
+            options?.governanceIntent !== undefined
+              ? `Caller mode '${explicitMode}' overrode the declared governance topology.`
+              : `Caller explicitly selected mode '${explicitMode}'.`,
+          ],
+        }
+      : preferredBudgetDegraded
+        ? {
+            source: 'policy',
+            mode: 'single',
+            reasons: ['preferredUnderBudget policy degraded the preferred governance topology under a configured budget.'],
+          }
+        : options?.planOnly
+          ? {
+              source: 'policy',
+              mode: 'team',
+              reasons: ['planOnly policy requires coordinator planning without task execution.'],
+            }
+          : {
+              source: 'router',
+              mode: routerDecision!.mode,
+              reasons: routerDecision!.reasons,
+              routerVersion: routerDecision!.routerVersion,
+              ...(routerDecision!.confidence !== undefined
+                ? { confidence: routerDecision!.confidence }
+                : {}),
+            }
+    const routingDecision = recordRoutingDecision(identity, traceRuntime, routingDecisionInput)
     const undeclared = options?.governanceIntent === undefined
     const confirmationState = createConsequentialConfirmationState()
     let consequentialUndeclared = undeclared && agentConfigs.some((agentConfig) => {
@@ -583,17 +632,16 @@ export class OpenMultiAgent {
       return hasGrantedConsequentialTool(effective, { includeDelegateTool: true })
     })
 
-    const { identity, metadata } = createRunFacts(identityOptionsForRun(options))
-    const traceRuntime = this.startTrace(identity, metadata)
     const finish = (result: TeamRunResult): TeamRunResult => {
+      const resultWithRouting = {
+        ...result,
+        routingDecision,
+        ...(metadata !== undefined ? { metadata } : {}),
+      }
       const governedResult = finalizeGovernanceRun(
-        {
-          ...result,
-          ...(routingDecision !== undefined ? { routingDecision } : {}),
-          ...(metadata !== undefined ? { metadata } : {}),
-        },
+        resultWithRouting,
         options,
-        buildExecutionReceipt(result),
+        buildExecutionReceipt(resultWithRouting),
         {
           modeOverride: explicitMode !== undefined,
           preferredBudgetDegraded,
@@ -628,7 +676,7 @@ export class OpenMultiAgent {
       && (
         explicitMode === 'single'
         || preferredBudgetDegraded
-        || routingDecision?.mode === 'single'
+        || routingDecision.mode === 'single'
       )
     ) {
       const bestAgent = selectBestAgent(goal, agentConfigs)
@@ -1624,6 +1672,7 @@ export class OpenMultiAgent {
     restoreMetadata?: RestoreMetadataResolution,
     pendingEvaluation?: PendingOnlineEvaluation,
     governanceDeclaration?: GovernanceDeclaration,
+    routingDecisionInput?: RoutingDecisionRecordInput,
   ): Promise<TeamRunResult> {
     const newRunFacts = identity === undefined
       ? createRunFacts(identityOptionsForRun(options))
@@ -1631,6 +1680,9 @@ export class OpenMultiAgent {
     const runIdentity = identity ?? newRunFacts!.identity
     const metadata = restoreMetadata?.metadata ?? newRunFacts?.metadata
     const traceRuntime = this.startTrace(runIdentity, metadata, restoreMetadata?.overridden)
+    const routingDecision = routingDecisionInput
+      ? recordRoutingDecision(runIdentity, traceRuntime, routingDecisionInput)
+      : undefined
     const agentConfigs = team.getAgents()
     const scheduler = new Scheduler(this.config.schedulingStrategy)
     scheduler.autoAssign(queue, agentConfigs)
@@ -1753,13 +1805,15 @@ export class OpenMultiAgent {
       ctx.outcomeStatus,
       ctx.outcomeErrorInfo,
     )
+    const resultWithRouting = {
+      ...result,
+      ...(routingDecision !== undefined ? { routingDecision } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
+    }
     const completedResult = finalizeGovernanceRun(
-      {
-        ...result,
-        ...(metadata !== undefined ? { metadata } : {}),
-      },
+      resultWithRouting,
       governanceDeclaration,
-      buildExecutionReceipt(result),
+      buildExecutionReceipt(resultWithRouting),
     )
     traceRuntime?.close({
       status: completedResult.status ?? statusOnly(completedResult.success ? 'ok' : 'error'),

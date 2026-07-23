@@ -4,15 +4,20 @@ import {
   DETERMINISTIC_ROUTER_VERSION,
   DeterministicRouter,
 } from '../src/orchestrator/execution-router.js'
+import { buildExecutionReceipt } from '../src/observability/execution-receipt.js'
+import { TRACE_RECORD_OBSERVER } from '../src/observability/runtime.js'
+import type { TraceRecord } from '../src/observability/records.js'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import type {
   AgentConfig,
   ExecutionRouter,
   LLMAdapter,
   LLMResponse,
+  OrchestratorConfig,
   RoutingContext,
   RoutingDecision,
   RunTeamOptions,
+  TraceEvent,
 } from '../src/types.js'
 
 const PLAN = `\`\`\`json
@@ -63,9 +68,11 @@ async function run(
   options?: RunTeamOptions,
   configRouter?: ExecutionRouter,
   roster = agents(),
+  extraConfig: OrchestratorConfig = {},
 ) {
   const orchestrator = new OpenMultiAgent({
     defaultModel: 'mock-model',
+    ...extraConfig,
     ...(configRouter ? { executionRouter: configRouter } : {}),
   })
   const team = orchestrator.createTeam('routing-team', {
@@ -113,6 +120,7 @@ describe('runTeam execution routing', () => {
 
     expect(result.routingDecision).toMatchObject({
       mode: 'single',
+      source: 'router',
       routerVersion: DETERMINISTIC_ROUTER_VERSION,
     })
     expect(result.tasks?.[0]?.id).toBe('short-circuit')
@@ -146,6 +154,65 @@ describe('runTeam execution routing', () => {
     expect(JSON.stringify(observed)).not.toContain('systemPrompt')
   })
 
+  it('records the routing decision in legacy and v2 traces and links its receipt', async () => {
+    const traces: TraceEvent[] = []
+    const records: TraceRecord[] = []
+    const tracedRouter = {
+      version: 'trace-router-v1',
+      decide: () => ({
+        mode: 'single' as const,
+        confidence: 0.85,
+        reasons: ['Single route chosen for trace coverage.'],
+        routerVersion: 'trace-router-v1',
+      }),
+    } satisfies ExecutionRouter
+    const result = await run(
+      'Say hello',
+      undefined,
+      tracedRouter,
+      agents(),
+      {
+        onTrace: (event) => { traces.push(event) },
+        [TRACE_RECORD_OBSERVER]: (record: TraceRecord) => { records.push(record) },
+      } as OrchestratorConfig & {
+        [TRACE_RECORD_OBSERVER]: (record: TraceRecord) => void
+      },
+    )
+
+    const routingTrace = traces.find(
+      (event): event is Extract<TraceEvent, { type: 'routing_decision' }> =>
+        event.type === 'routing_decision',
+    )
+    expect(routingTrace).toMatchObject({
+      source: 'router',
+      mode: 'single',
+      routerVersion: 'trace-router-v1',
+      confidence: 0.85,
+      reasons: ['Single route chosen for trace coverage.'],
+      receiptId: result.routingDecision?.receiptId,
+      decisionId: result.routingDecision?.decisionId,
+    })
+
+    const routingSpan = records.find((record) =>
+      record.recordType === 'span_end'
+      && record.kind === 'routing'
+      && record.name === 'decide_execution_route')
+    expect(routingSpan?.attributes).toMatchObject({
+      'oma.routing.mode': 'single',
+      'oma.routing.source': 'router',
+      'oma.routing.router_version': 'trace-router-v1',
+      'oma.routing.confidence': 0.85,
+      'oma.routing.reasons': ['Single route chosen for trace coverage.'],
+      'oma.routing.receipt_id': result.routingDecision?.receiptId,
+    })
+
+    const receipt = buildExecutionReceipt(result)
+    expect(result.routingDecision?.traceSpanId).toBe(routingSpan?.spanId)
+    expect(result.routingDecision?.receiptId).toBe(receipt.id)
+    expect(receipt.routingDecisionId).toBe(result.routingDecision?.decisionId)
+    expect(receipt.routingDecisionSpanId).toBe(result.routingDecision?.traceSpanId)
+  })
+
   it('lets a per-run router override the orchestrator router', async () => {
     const configured = {
       version: 'configured-v1',
@@ -171,7 +238,10 @@ describe('runTeam execution routing', () => {
 
     const result = await run('Say hello', { executionRouter: router })
 
-    expect(result.routingDecision).toEqual(decision('team-first-v1', 'team'))
+    expect(result.routingDecision).toMatchObject({
+      ...decision('team-first-v1', 'team'),
+      source: 'router',
+    })
     expect(result.agentResults.has('coordinator')).toBe(true)
     expect(result.tasks?.[0]?.id).not.toBe('short-circuit')
   })
@@ -218,7 +288,7 @@ describe('runTeam execution routing', () => {
     expect(result.routingDecision?.reasons.join(' ')).toContain(reason)
   })
 
-  it('bypasses routers for explicit mode and omits the decision', async () => {
+  it('bypasses routers and marks an explicit mode as an override', async () => {
     const router = {
       version: 'unused-v1',
       decide: vi.fn(() => decision('unused-v1', 'team')),
@@ -230,11 +300,15 @@ describe('runTeam execution routing', () => {
     })
 
     expect(router.decide).not.toHaveBeenCalled()
-    expect(result.routingDecision).toBeUndefined()
+    expect(result.routingDecision).toMatchObject({
+      source: 'override',
+      mode: 'single',
+    })
+    expect(result.routingDecision?.routerVersion).toBeUndefined()
     expect(result.tasks?.[0]?.id).toBe('short-circuit')
   })
 
-  it('bypasses routers for declared role governance and omits the decision', async () => {
+  it('bypasses routers and marks a declared role topology', async () => {
     const router = {
       version: 'unused-v1',
       decide: vi.fn(() => decision('unused-v1', 'single')),
@@ -247,11 +321,15 @@ describe('runTeam execution routing', () => {
     })
 
     expect(router.decide).not.toHaveBeenCalled()
-    expect(result.routingDecision).toBeUndefined()
+    expect(result.routingDecision).toMatchObject({
+      source: 'declared',
+      mode: 'team',
+    })
+    expect(result.routingDecision?.routerVersion).toBeUndefined()
     expect(result.tasks?.map((task) => task.assignee)).toEqual(['alpha', 'beta'])
   })
 
-  it('bypasses routers for planOnly and omits the decision', async () => {
+  it('bypasses routers and marks planOnly as a topology policy', async () => {
     const router = {
       version: 'unused-v1',
       decide: vi.fn(() => decision('unused-v1', 'single')),
@@ -263,7 +341,10 @@ describe('runTeam execution routing', () => {
     })
 
     expect(router.decide).not.toHaveBeenCalled()
-    expect(result.routingDecision).toBeUndefined()
+    expect(result.routingDecision).toMatchObject({
+      source: 'policy',
+      mode: 'team',
+    })
     expect(result.planOnly).toBe(true)
   })
 })

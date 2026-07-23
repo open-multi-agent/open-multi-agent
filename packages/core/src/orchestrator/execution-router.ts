@@ -17,6 +17,8 @@ import { isSimpleGoal } from './short-circuit.js'
 
 export type {
   ExecutionRouter,
+  ExecutionRoutingDecisionRecord,
+  ExecutionRoutingDecisionSource,
   RoutingBudget,
   RoutingContext,
   RoutingDecision,

@@ -109,10 +109,25 @@ describe('buildExecutionReceipt', () => {
   })
 
   it('reports a short-circuited team result as one executed role', () => {
-    const receipt = buildExecutionReceipt(teamResult([
+    const result = {
+      ...teamResult([
       task('short-circuit', 'security', [], 100),
-    ]))
+      ]),
+      routingDecision: {
+        decisionId: 'decision-1',
+        receiptId: 'receipt-1',
+        traceSpanId: 'span-routing',
+        source: 'router',
+        mode: 'single',
+        reasons: ['simple goal'],
+        routerVersion: 'deterministic-v1',
+      },
+    } satisfies TeamRunResult
+    const receipt = buildExecutionReceipt(result)
 
+    expect(receipt.id).toBe('receipt-1')
+    expect(receipt.routingDecisionId).toBe('decision-1')
+    expect(receipt.routingDecisionSpanId).toBe('span-routing')
     expect(receipt.mode).toBe('single')
     expect(receipt.rolesExecuted).toEqual(['security'])
     expect(receipt.independentReviewOccurred).toBe(false)

@@ -8,6 +8,7 @@ import type {
 /** Stable operation categories used by TraceRecord schema v2. */
 export type SpanKind =
   | 'run'
+  | 'routing'
   | 'agent'
   | 'task'
   | 'llm'

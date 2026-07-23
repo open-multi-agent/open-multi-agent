@@ -98,6 +98,8 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     expect(result.tasks?.some((task) => task.id === 'short-circuit')).toBe(false)
     expect(result.agentResults.get('coordinator')?.output).toContain('coordinator synthesis')
     expect(coordinatorCalls).toHaveLength(2)
+    expect(result.routingDecision).toMatchObject({ source: 'override', mode: 'team' })
+    expect(result.routingDecision?.routerVersion).toBeUndefined()
     expect(receipt).toMatchObject({
       mode: 'multi-agent',
       rolesExecuted: ['reviewer', 'security'],
@@ -134,6 +136,7 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     expect(result.agentResults.has('coordinator')).toBe(true)
     expect(result.agentResults.has('reviewer')).toBe(false)
     expect(coordinatorCalls).toHaveLength(1)
+    expect(result.routingDecision).toMatchObject({ source: 'override', mode: 'team' })
   })
 
   it('executes a forced Single but discloses an overridden required floor', async () => {
@@ -152,6 +155,7 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     expect(result.governanceConclusion).toBe('unsatisfied')
     expect(result.governanceReason).toBe('overridden')
     expect(result.flags).toContain(GOVERNANCE_OVERRIDDEN_FLAG)
+    expect(result.routingDecision).toMatchObject({ source: 'override', mode: 'single' })
   })
 
   it('marks required governance unsatisfied with a budget reason when roles cannot finish', async () => {
@@ -195,6 +199,8 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     expect(result.governanceConclusion).toBe('not-applicable')
     expect(result.governanceReason).toBeUndefined()
     expect(result.flags).toContain(REVIEW_SKIPPED_DUE_TO_BUDGET_FLAG)
+    expect(result.routingDecision).toMatchObject({ source: 'policy', mode: 'single' })
+    expect(result.routingDecision?.routerVersion).toBeUndefined()
   })
 
   it('preserves the required topology when no override occurs and budget is sufficient', async () => {
@@ -215,6 +221,7 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
       rolesExecuted: ['reviewer', 'security'],
       dependencyEdges: [{ from: 'reviewer', to: 'security' }],
     })
+    expect(result.routingDecision).toMatchObject({ source: 'declared', mode: 'team' })
   })
 
   it('keeps the existing preferred-role attempt when no degrade policy is selected', async () => {
@@ -231,6 +238,7 @@ describe('runTeam explicit mode and budget/governance resolution', () => {
     expect(result.governanceConclusion).toBe('not-applicable')
     expect(result.flags).toBeUndefined()
     expect(buildExecutionReceipt(result).rolesExecuted).toEqual(['reviewer', 'security'])
+    expect(result.routingDecision).toMatchObject({ source: 'declared', mode: 'team' })
   })
 
   it('applies a per-run cost ceiling through the existing estimator', async () => {

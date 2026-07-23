@@ -1178,6 +1178,32 @@ export interface RoutingDecision {
   readonly routerVersion: string
 }
 
+/** Why a `runTeam()` execution topology was selected. */
+export type ExecutionRoutingDecisionSource =
+  | 'override'
+  | 'declared'
+  | 'policy'
+  | 'router'
+  | 'legacy-deterministic'
+
+/**
+ * Observable routing fact attached to a `runTeam()` result.
+ *
+ * `routerVersion` is present only when `source` is `router` (or when reading a
+ * serialized legacy-deterministic record). Non-router paths remain explicit
+ * rather than impersonating a router decision.
+ */
+export interface ExecutionRoutingDecisionRecord {
+  readonly decisionId: string
+  readonly receiptId: string
+  readonly traceSpanId?: string
+  readonly source: ExecutionRoutingDecisionSource
+  readonly mode: RoutingDecision['mode']
+  readonly confidence?: number
+  readonly reasons: readonly string[]
+  readonly routerVersion?: string
+}
+
 /** Pluggable execution-topology policy for automatic `runTeam()` calls. */
 export interface ExecutionRouter {
   readonly version: string
@@ -1323,13 +1349,13 @@ export interface RunMetrics {
 export interface TeamRunResult extends RunOutcomeFields {
   readonly success: boolean
   /**
-   * Explainable topology decision for automatic execution routing.
+   * Explainable topology decision for this `runTeam()` invocation.
    *
-   * Present on auto `runTeam()` paths. Omitted when the caller selected
-   * `mode`, declared a role topology, chose governance budget degradation, or
-   * requested `planOnly`.
+   * Runtime results set this on routed, overridden, declared, and policy
+   * paths. It remains optional so older serialized results and caller-created
+   * fixtures continue to type-check.
    */
-  readonly routingDecision?: RoutingDecision
+  readonly routingDecision?: ExecutionRoutingDecisionRecord
   /**
    * Post-execution governance verdict for this run.
    *
@@ -1926,6 +1952,7 @@ export type TraceEventType =
   | 'plan_ready'
   | 'agent_stream'
   | 'consensus'
+  | 'routing_decision'
 
 /** Shared fields present on every trace event. */
 export interface TraceEventBase {
@@ -2017,6 +2044,18 @@ export interface ConsensusTrace extends TraceEventBase {
   readonly dissent?: string
 }
 
+/** Emitted when `runTeam()` selects its execution topology. */
+export interface RoutingDecisionTrace extends TraceEventBase {
+  readonly type: 'routing_decision'
+  readonly decisionId: string
+  readonly receiptId: string
+  readonly source: ExecutionRoutingDecisionSource
+  readonly mode: RoutingDecision['mode']
+  readonly confidence?: number
+  readonly reasons: readonly string[]
+  readonly routerVersion?: string
+}
+
 /** Discriminated union of all trace event types. */
 export type TraceEvent =
   | LLMCallTrace
@@ -2026,6 +2065,7 @@ export type TraceEvent =
   | PlanReadyTrace
   | AgentStreamTrace
   | ConsensusTrace
+  | RoutingDecisionTrace
 
 // ---------------------------------------------------------------------------
 // Memory
