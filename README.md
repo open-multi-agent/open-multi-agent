@@ -52,10 +52,10 @@
 
 - **Plan from the goal.** A coordinator decomposes the request into a task DAG at runtime, assigns the work, and synthesizes the results. There is no hand-wired graph to maintain.
 - **Deterministic control, human in the loop.** Preview and approve plans before anything runs, approve individual dispatches, freeze a plan and replay it, and verify answers with multi-agent consensus. When the topology must not drift, declare required roles and order instead of relying on prompt wording.
-- **Recover instead of rerun.** Checkpoints resume interrupted runs without repeating completed tasks. Retries, timeouts, loop detection, and token and cost budgets keep every run bounded.
-- **See every run.** Traces, stable run identity, and the offline Run Viewer ship in core: replay any run as a task DAG and span waterfall from your own disk, without a hosted service.
+- **Recover rather than rerun.** Checkpoints resume interrupted runs without repeating completed tasks. Retries, timeouts, loop detection, and token and cost budgets keep every run bounded.
+- **Observe every run.** Traces, stable run identity, and the offline Run Viewer ship in core: replay any run as a task DAG and span waterfall from your own disk, without a hosted service.
 - **Evaluate in the same package.** Version EvalSets, score with reference scorers, gate CI on offline reports, and sample production runs, all built on the run records the orchestrator already emits.
-- **Coding CLIs as team members.** Process and ACP backends let Claude Code, Gemini CLI, and Codex join a team as first-class agents: same task DAG, same shared memory, same budgets.
+- **Coding CLIs as first-class agents.** Process and ACP backends let Claude Code, Gemini CLI, and Codex join a team alongside LLM agents: same task DAG, same shared memory, same budgets.
 - **Mix any model.** Cloud (Claude, GPT), local open models, and natively integrated Chinese providers on one team. Any OpenAI-compatible endpoint or AI SDK provider plugs in the same way, and a fallback parser covers local models that emit tool calls as text.
 - **Run in your own environment.** Local, offline, air-gapped, or your own servers, on your own credentials. Built-in tools are default-deny, secrets are auto-redacted, and a minimal runtime footprint fits locked-down infrastructure.
 
