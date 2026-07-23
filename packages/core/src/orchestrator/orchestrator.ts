@@ -202,6 +202,7 @@ export class OpenMultiAgent {
    * Sensible defaults:
    *   - `maxConcurrency`: 5
    *   - `maxDelegationDepth`: 3
+   *   - `schedulingStrategy`: `'dependency-first'`
    *   - `defaultModel`:   `'claude-opus-4-6'`
    *   - `defaultProvider`: `'anthropic'`
    */
@@ -228,6 +229,7 @@ export class OpenMultiAgent {
     this.config = {
       maxConcurrency: config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
       maxDelegationDepth: config.maxDelegationDepth ?? DEFAULT_MAX_DELEGATION_DEPTH,
+      schedulingStrategy: config.schedulingStrategy ?? 'dependency-first',
       defaultModel: config.defaultModel ?? DEFAULT_MODEL,
       defaultProvider: config.defaultProvider ?? 'anthropic',
       defaultBaseURL: config.defaultBaseURL,
@@ -747,7 +749,7 @@ export class OpenMultiAgent {
     const taskSpecs = parseTaskSpecs(decompositionResult.output)
 
     const queue = new TaskQueue()
-    const scheduler = new Scheduler('dependency-first')
+    const scheduler = new Scheduler(this.config.schedulingStrategy)
     const taskMetrics = new Map<string, TaskExecutionMetrics>()
 
     if (taskSpecs && taskSpecs.length > 0) {
@@ -1552,7 +1554,7 @@ export class OpenMultiAgent {
     const metadata = restoreMetadata?.metadata ?? newRunFacts?.metadata
     const traceRuntime = this.startTrace(runIdentity, metadata, restoreMetadata?.overridden)
     const agentConfigs = team.getAgents()
-    const scheduler = new Scheduler('dependency-first')
+    const scheduler = new Scheduler(this.config.schedulingStrategy)
     scheduler.autoAssign(queue, agentConfigs)
 
     const pool = this.buildPool(agentConfigs)

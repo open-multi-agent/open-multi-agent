@@ -15,6 +15,7 @@ import type {
   TeamConfig,
   TraceEvent,
 } from '../src/types.js'
+import type { SchedulingStrategy } from '../src/orchestrator/scheduler.js'
 
 // ---------------------------------------------------------------------------
 // Mock LLM adapter
@@ -324,6 +325,110 @@ describe('OpenMultiAgent', () => {
       ])
 
       expect(result.success).toBe(true)
+    })
+
+    it.each<{
+      strategy: SchedulingStrategy
+      expected: Record<string, string>
+    }>([
+      {
+        strategy: 'round-robin',
+        expected: {
+          'Implement TypeScript service': 'researcher',
+          'Research market analysis': 'coder',
+          'Summarize findings': 'researcher',
+        },
+      },
+      {
+        strategy: 'least-busy',
+        expected: {
+          'Implement TypeScript service': 'researcher',
+          'Research market analysis': 'coder',
+          'Summarize findings': 'researcher',
+        },
+      },
+      {
+        strategy: 'capability-match',
+        expected: {
+          'Implement TypeScript service': 'coder',
+          'Research market analysis': 'researcher',
+          'Summarize findings': 'researcher',
+        },
+      },
+      {
+        strategy: 'dependency-first',
+        expected: {
+          'Implement TypeScript service': 'coder',
+          'Research market analysis': 'researcher',
+          'Summarize findings': 'researcher',
+        },
+      },
+    ])('applies the $strategy scheduling strategy from config', async ({ strategy, expected }) => {
+      mockAdapterResponses = ['first done', 'second done', 'third done']
+
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        schedulingStrategy: strategy,
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg([
+        {
+          ...agentConfig('researcher'),
+          systemPrompt: 'Research markets and analyze evidence.',
+        },
+        {
+          ...agentConfig('coder'),
+          systemPrompt: 'Implement TypeScript software services.',
+        },
+      ]))
+
+      const result = await oma.runTasks(team, [
+        { title: 'Implement TypeScript service', description: 'Implement software code' },
+        { title: 'Research market analysis', description: 'Research and analyze market evidence' },
+        {
+          title: 'Summarize findings',
+          description: 'Summarize the research',
+          dependsOn: ['Research market analysis'],
+        },
+      ])
+
+      const assignments = Object.fromEntries(
+        events
+          .filter((event) => event.type === 'task_start')
+          .map((event) => [(event.data as { title: string }).title, event.agent]),
+      )
+      expect(result.success).toBe(true)
+      expect(assignments).toEqual(expected)
+    })
+
+    it('defaults to dependency-first scheduling', async () => {
+      mockAdapterResponses = ['first done', 'second done', 'third done']
+
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg())
+
+      const result = await oma.runTasks(team, [
+        { title: 'Independent', description: 'Independent work' },
+        { title: 'Critical root', description: 'Start the pipeline' },
+        { title: 'Dependent', description: 'Finish the pipeline', dependsOn: ['Critical root'] },
+      ])
+
+      const assignments = Object.fromEntries(
+        events
+          .filter((event) => event.type === 'task_start')
+          .map((event) => [(event.data as { title: string }).title, event.agent]),
+      )
+      expect(result.success).toBe(true)
+      expect(assignments).toEqual({
+        Independent: 'worker-b',
+        'Critical root': 'worker-a',
+        Dependent: 'worker-a',
+      })
     })
 
     it('uses a clean slate for tasks without dependencies', async () => {
@@ -868,6 +973,48 @@ describe('OpenMultiAgent', () => {
       const result = await oma.runTeam(team, 'First design the database schema, then implement the REST API endpoints')
 
       expect(result.success).toBe(true)
+    })
+
+    it('uses schedulingStrategy for unassigned coordinator tasks', async () => {
+      mockAdapterResponses = [
+        '```json\n[{"title":"Implement TypeScript service","description":"Implement software code"},{"title":"Research market analysis","description":"Research and analyze market evidence"}]\n```',
+        'worker result',
+        'worker result',
+        'synthesis',
+      ]
+
+      const events: OrchestratorEvent[] = []
+      const oma = new OpenMultiAgent({
+        defaultModel: 'mock-model',
+        schedulingStrategy: 'capability-match',
+        onProgress: (event) => events.push(event),
+      })
+      const team = oma.createTeam('t', teamCfg([
+        {
+          ...agentConfig('researcher'),
+          systemPrompt: 'Research markets and analyze evidence.',
+        },
+        {
+          ...agentConfig('coder'),
+          systemPrompt: 'Implement TypeScript software services.',
+        },
+      ]))
+
+      const result = await oma.runTeam(
+        team,
+        'First implement the service, then research the market and synthesize both results.',
+      )
+
+      const assignments = Object.fromEntries(
+        events
+          .filter((event) => event.type === 'task_start')
+          .map((event) => [(event.data as { title: string }).title, event.agent]),
+      )
+      expect(result.success).toBe(true)
+      expect(assignments).toEqual({
+        'Implement TypeScript service': 'coder',
+        'Research market analysis': 'researcher',
+      })
     })
 
     it('supports coordinator model override without affecting workers', async () => {

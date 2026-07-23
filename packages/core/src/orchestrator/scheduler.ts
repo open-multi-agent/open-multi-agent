@@ -29,6 +29,10 @@ import { extractKeywords, keywordScore } from '../utils/keywords.js'
  * - `least-busy`        — Prefers the agent with the fewest `in_progress` tasks.
  * - `capability-match`  — Keyword-based affinity between task text and agent role.
  * - `dependency-first`  — Prioritise tasks that unblock the most other tasks.
+ *
+ * `dependency-first` is the orchestrator default and suits dependency-heavy
+ * DAGs. Use `round-robin` for interchangeable agents, `least-busy` for uneven
+ * task durations, and `capability-match` for clearly differentiated roles.
  */
 export type SchedulingStrategy =
   | 'round-robin'

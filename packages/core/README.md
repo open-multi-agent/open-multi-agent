@@ -52,7 +52,7 @@ The runtime schedules dependencies, runs independent work in parallel, shares co
 
 ## Contents
 
-[Quick Start](#quick-start) · [Execution Modes](#execution-modes) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Examples](#examples) · [Providers](#providers) · [Production](#production) · [Documentation](#documentation)
+[Quick Start](#quick-start) · [Execution Modes](#execution-modes) · [Scheduling](#scheduling) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Examples](#examples) · [Providers](#providers) · [Production](#production) · [Documentation](#documentation)
 
 ## Quick Start
 
@@ -120,6 +120,29 @@ const governed = await orchestrator.runTeam(team, 'Review the evidence and asses
 ```
 
 `required` and `preferred` both bypass automatic decomposition and the simple-goal short circuit. OMA creates one task per declared roster name, assigns it to that agent, and chains tasks in `requiredOrder`; dependency outputs are passed to downstream roles. The topology comes only from these structured fields, so equivalent goals in different languages use the same roles and order. `none` or an omitted `governanceIntent` preserves the existing automatic `runTeam()` behavior.
+
+## Scheduling
+
+Set `schedulingStrategy` on `OpenMultiAgent` to choose how unassigned tasks are
+mapped to agents. The setting applies to coordinator-generated `runTeam()`
+plans and explicit or restored task queues. Tasks with an explicit `assignee`
+keep that assignment.
+
+```typescript
+const orchestrator = new OpenMultiAgent({
+  schedulingStrategy: 'capability-match',
+})
+```
+
+| Strategy | Assignment behavior | Recommended when |
+|----------|---------------------|------------------|
+| `dependency-first` (default) | Assigns tasks that unblock the most downstream work first, rotating agents | The task graph has meaningful dependencies |
+| `round-robin` | Distributes tasks in queue order across the roster | Agents are interchangeable |
+| `least-busy` | Chooses the agent with the fewest active or newly assigned tasks | Task duration varies and load balance matters |
+| `capability-match` | Matches task text against agent names and system prompts | Agents have distinct, clearly described roles |
+
+These strategies select one scheduling dimension at a time; they are not
+combined or weighted.
 
 ## Capabilities
 
