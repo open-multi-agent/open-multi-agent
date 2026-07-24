@@ -119,9 +119,15 @@ const governed = await orchestrator.runTeam(team, 'Review the evidence and asses
   requiredRoles: ['researcher', 'analyst'],
   requiredOrder: ['researcher', 'analyst'],
 })
+
+if (governed.governanceConclusion !== 'satisfied') {
+  throw new Error('Required governance was not satisfied by the executed topology.')
+}
 ```
 
 `required` and `preferred` both bypass automatic decomposition and the simple-goal short circuit. OMA creates one task per declared roster name, assigns it to that agent, and chains tasks in `requiredOrder`; dependency outputs are passed to downstream roles. The topology comes only from these structured fields, so equivalent goals in different languages use the same roles and order. `none` or an omitted `governanceIntent` preserves the existing automatic `runTeam()` behavior.
+
+After execution, `governanceConclusion` is `satisfied`, `unsatisfied`, or `not-applicable`. Governance-sensitive applications must check it separately from `success`: the verdict comes from the structured execution receipt, not from role names or approval wording in the model answer. See [Tool configuration](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md#declared-governance-roles-in-runteam).
 
 ## Scheduling
 
