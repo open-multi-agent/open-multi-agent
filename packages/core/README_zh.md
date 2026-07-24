@@ -119,9 +119,15 @@ const governed = await orchestrator.runTeam(team, 'Review the evidence and asses
   requiredRoles: ['researcher', 'analyst'],
   requiredOrder: ['researcher', 'analyst'],
 })
+
+if (governed.governanceConclusion !== 'satisfied') {
+  throw new Error('Required governance was not satisfied by the executed topology.')
+}
 ```
 
 `required` 与 `preferred` 都会绕过自动拆解和简单目标短路。OMA 为每个声明的 roster 名称创建一个任务、指派给该 Agent，并按 `requiredOrder` 串联任务；依赖输出会传递给下游角色。拓扑只来自这些结构化字段，因此不同语言的等价目标会得到相同的角色与顺序。`none` 或省略 `governanceIntent` 时保持现有的自动 `runTeam()` 行为。
+
+执行结束后，`governanceConclusion` 的值为 `satisfied`、`unsatisfied` 或 `not-applicable`。对治理有要求的应用必须将它与 `success` 分开检查：该结论来自结构化执行回执，而不是模型回答中的角色名称或批准措辞。详见[工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md#declared-governance-roles-in-runteam)。
 
 ## 调度
 
