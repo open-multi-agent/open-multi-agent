@@ -108,5 +108,5 @@ ${teamOutput}`,
     messages: await convertToModelMessages(messages),
   })
 
-  return createUIMessageStreamResponse({ stream: toUIMessageStream({ stream: result.fullStream }) })
+  return createUIMessageStreamResponse({ stream: toUIMessageStream({ stream: result.stream }) })
 }
