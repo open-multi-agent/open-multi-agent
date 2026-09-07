@@ -50,7 +50,7 @@ export default function Home() {
 
         {isLoading && status === 'submitted' && (
           <div style={{ color: '#888', fontSize: 14, padding: '8px 0' }}>
-            Agents are collaborating &mdash; this may take a minute...
+            Agents are collaborating &mdash; this takes a few minutes...
           </div>
         )}
 

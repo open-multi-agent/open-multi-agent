@@ -3,7 +3,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { OpenMultiAgent } from '@open-multi-agent/core'
 import type { AgentConfig } from '@open-multi-agent/core'
 
-export const maxDuration = 120
+export const maxDuration = 360
 
 // --- DeepSeek via OpenAI-compatible API ---
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
@@ -69,9 +69,30 @@ export async function POST(req: Request) {
   const teamResult = await orchestrator.runTeam(
     team,
     `Research and write an article about: ${lastText}`,
+    // Execution routing sends a short goal down the single-agent path. An
+    // explicit mode outranks the router, so this keeps the demo on the
+    // researcher + writer team topology.
+    { mode: 'team' },
   )
 
-  const teamOutput = teamResult.agentResults.get('coordinator')?.output ?? ''
+  // The team path publishes the synthesized answer under 'coordinator'; the
+  // single-agent path publishes it under the winning agent's own name. Read
+  // both so this route survives whichever topology runs.
+  const teamOutput =
+    teamResult.agentResults.get('coordinator')?.output
+    ?? teamResult.agentResults.get('writer')?.output
+    ?? ''
+
+  // A failed run still leaves the coordinator's unparsed plan under
+  // 'coordinator', so check `success` rather than testing for an empty string.
+  if (!teamResult.success || teamOutput === '') {
+    return new Response(
+      `The agent team did not produce an article: ${
+        teamResult.errorInfo?.message ?? teamResult.status?.code ?? 'unknown error'
+      }`,
+      { status: 500 },
+    )
+  }
 
   // --- Phase 2: Stream result via Vercel AI SDK ---
   const result = streamText({
