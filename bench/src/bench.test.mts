@@ -437,7 +437,9 @@ test('fromCSV tolerates CRLF, a missing trailing newline, and an empty file', ()
 test('the README CSV column list matches the columns actually written', () => {
   // The list drifted once already: `variant` shipped in the CSV and never made
   // it into the README.
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf-8')
+  // Normalize CRLF: a Windows checkout separates paragraphs with `\r\n\r\n`,
+  // which contains no `\n\n` for the end-of-list search below.
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf-8').replaceAll('\r\n', '\n')
   const section = readme.slice(readme.indexOf('## CSV columns'))
   const documented = [...section.slice(0, section.indexOf('\n\n', section.indexOf('`')) + 2).matchAll(/`([a-z_]+)`/g)]
     .map((match) => match[1]!)
