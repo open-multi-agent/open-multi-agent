@@ -1,38 +1,29 @@
 # AGENTS.md
 
-This file is the canonical working agreement for AI agents editing this repository. Keep durable execution rules, high-risk invariants, and verification expectations here. Keep conceptual architecture and subsystem behavior in [`packages/core/README.md`](packages/core/README.md) and [`docs/`](docs/) so this file stays concise and accurate.
+This file is the canonical working agreement for AI agents editing this repository. It holds the execution rules, high-risk invariants, and verification expectations that apply across workspaces. Conceptual architecture lives in [`packages/core/README.md`](packages/core/README.md), subsystem behavior in [`docs/`](docs/), and package-specific traps in each package's own `AGENTS.md`, so this file stays concise and accurate.
 
-## Repository map
+## Repository layout
 
-This is a private npm-workspaces root. Run the commands below from the repository root unless a workspace-specific command is shown.
+This is a private npm-workspaces root. Run the commands below from the repository root unless a workspace-specific `-w` form is shown. Discover the workspaces with `ls packages/` and read each `package.json` for its scripts; the facts below are the ones that listing cannot tell you.
 
-| Workspace | Purpose | Main paths |
-|---|---|---|
-| `@open-multi-agent/core` | Multi-agent orchestration framework and `oma` CLI | `packages/core/src/`, `packages/core/tests/`, `packages/core/examples/` |
-| `@open-multi-agent/otel` | Optional OpenTelemetry adapter; versioned independently from core | `packages/otel/src/`, `packages/otel/tests/` |
-| `create-oma-app` | Published scaffolder and starter templates | `packages/create-oma-app/src/`, `packages/create-oma-app/templates/`, `packages/create-oma-app/tests/` |
-| `@open-multi-agent/release-bot` | Private OMA-powered release planning and deterministic publication automation; never published | `packages/release-bot/src/`, `packages/release-bot/tests/`, `.github/workflows/release-bot.yml`, `.github/workflows/publish.yml` |
-
-Root-level `README.md`, `docs/`, `.github/`, and `scripts/` apply across workspaces. Paths in this file are repository-relative; do not assume an unprefixed `src/` or `tests/` means the workspace you intend. [`bench/`](bench/README.md) is the A/B benchmark harness: it is not a workspace and is never published, it runs through `npx tsx`, and everything it produces is gitignored.
+- `@open-multi-agent/release-bot` is private and never published. It drives [`.github/workflows/release-bot.yml`](.github/workflows/release-bot.yml) and [`publish.yml`](.github/workflows/publish.yml).
+- `@open-multi-agent/otel` is versioned independently from core.
+- [`bench/`](bench/README.md) is the A/B benchmark harness: not a workspace, never published, runs through `npx tsx`, and everything it produces is gitignored.
+- Paths in this file are repository-relative. An unprefixed `src/` or `tests/` is ambiguous across workspaces, so name the package.
+- Package-specific rules live in nested `AGENTS.md` files (`ls packages/*/AGENTS.md`), each beside a `CLAUDE.md` that only imports it. They load when you work inside that package; read them before editing there.
 
 ## Commands
 
 ```bash
 npm run build          # Compile every workspace
-npm run lint           # Type-check every workspace
-npm test               # Run unit tests in every workspace (no API keys required)
+npm run lint           # Type-check every workspace; core lint also covers packages/core/examples/
+npm test               # Unit tests in every workspace; mocks provider SDKs, needs no network or API keys
 npm run test:scaffold  # End-to-end create-oma-app scaffold smoke test
 npm run test:example-catalog  # Validate example catalog metadata and coverage
-
-npm run dev            # Watch-mode compilation for @open-multi-agent/core
-npm run test:watch     # Core Vitest watch mode
-npm run test:coverage  # Core coverage suite
-npm run test:e2e       # Core provider E2E; requires real API keys
+npm run test:e2e       # Core provider E2E; needs real API keys, as do most examples
 
 node packages/core/dist/cli/oma.js help  # After build; `oma` when installed from npm
 ```
-
-Examples and core E2E tests may require real provider credentials. Unit tests mock provider SDKs and external processes and should run without network access or API keys.
 
 ## Working rules
 
@@ -40,11 +31,12 @@ Examples and core E2E tests may require real provider credentials. Unit tests mo
 - Change source files, tests, templates, or docs rather than generated `dist/` output.
 - Add or update tests for behavior changes. Update user-facing docs and examples when public behavior changes, or state why they are not applicable.
 - Keep dependency ownership explicit. Core must remain importable and runnable without optional integrations.
-- **Pin what stays in the repository; keep ranges on what a consumer installs.** Every `devDependencies` entry and the private release bot's dependencies are pinned exactly, and the root [`.npmrc`](.npmrc) sets `save-exact=true` so a new one arrives pinned. The published blocks stay semver ranges — core's `dependencies`, every `peerDependencies`, and otel's `@open-multi-agent/core` — because an exact version there overrides a consumer's own resolution and blocks their `npm audit fix` until we cut a release. `save-exact` will pin a new dependency added to one of those blocks, so widen it by hand; the `package` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) fails when one is left exact.
+- **Pin what stays in the repository; keep ranges on what a consumer installs.** `devDependencies` everywhere and the release bot's dependencies are exact; the root [`.npmrc`](.npmrc) sets `save-exact=true` so a new one arrives pinned. The published blocks stay semver ranges: core's `dependencies`, every `peerDependencies`, and otel's `@open-multi-agent/core`.
+- `save-exact` also pins a new entry in a published block, so widen it by hand. An exact version there overrides the consumer's own resolution and blocks their `npm audit fix` until we cut a release; the `package` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) fails when one is left exact.
 - Add optional provider SDKs as peer dependencies and load them lazily with dynamic `import()`. Do not maintain a fixed dependency or adapter count in documentation.
 - OpenTelemetry APIs, SDKs, semantic-convention packages, and exporters belong in `@open-multi-agent/otel`, never in the core root import. The application owns its tracer/provider lifecycle unless an API explicitly says otherwise.
-- Treat `docs/` as the source of truth for subsystem behavior. Keep this file to rules and concise invariants; link to docs instead of copying long explanations.
-- **The package READMEs are landing pages, not guides.** A new feature earns at most one short paragraph plus a link to its `docs/` page in [`packages/core/README.md`](packages/core/README.md); anything that needs more belongs in `docs/`. Update [`packages/core/README_zh.md`](packages/core/README_zh.md) in the same change or the translation drifts. Per-contributor credits live in [`CONTRIBUTORS.md`](CONTRIBUTORS.md), not in a README.
+- **`docs/` is the source of truth for subsystem behavior.** [docs/README.md](docs/README.md) indexes every page with the question it answers; run `ls docs/` before concluding a topic is undocumented. Keep this file to rules and concise invariants, and link to docs instead of copying explanations.
+- **The package READMEs are landing pages, not guides.** A new feature earns at most one short paragraph plus a link to its `docs/` page in [`packages/core/README.md`](packages/core/README.md); anything longer belongs in `docs/`. Update [`packages/core/README_zh.md`](packages/core/README_zh.md) in the same change or the translation drifts. Per-contributor credits live in [`CONTRIBUTORS.md`](CONTRIBUTORS.md), not in a README.
 - Follow conventional commits when a commit is requested. Reference a PR or issue when one exists. The full contribution flow is in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 - Publishing spans three packages with independent version tracks, a fixed publish order, and template pins that must move with the core version. Do not infer any of that from this file: [`.github/RELEASING.md`](.github/RELEASING.md) is the source of truth.
 - **Managed Git worktrees share repository metadata.** Never repair access by changing `.git` ownership or permissions. Use the current tool's normal Git and approval flow.
@@ -59,75 +51,25 @@ Always inspect the focused diff and run `git diff --check`. Run the smallest rel
 - **OpenTelemetry adapter:** relevant tests, then `npm run lint -w @open-multi-agent/otel`, `npm run test -w @open-multi-agent/otel`, and build when package output or public types may be affected.
 - **Release bot:** relevant tests, then `npm run lint -w @open-multi-agent/release-bot` and `npm run test -w @open-multi-agent/release-bot`; both build core first through their `pre` scripts, so they also catch a core API change that breaks the bot. Workflow changes follow [`.github/RELEASING.md`](.github/RELEASING.md).
 - **Scaffolder or templates:** relevant tests, then `npm run lint -w create-oma-app`, `npm run test -w create-oma-app`, and `npm run typecheck:template -w create-oma-app`. Run `npm run test:scaffold -w create-oma-app` when generated-project behavior changes.
-- **Examples or catalog metadata:** `npm run test:example-catalog` and `npm run lint -w @open-multi-agent/core`, which type-checks `packages/core/examples/` alongside `src/` via [`packages/core/tsconfig.lint.json`](packages/core/tsconfig.lint.json); add a runnable example smoke test when executable behavior changes. That config excludes `examples/fixtures/` and the self-contained example projects that carry their own `package.json`/`tsconfig.json`; add a new example of that shape to its `exclude` list, since core lint cannot resolve a package-name import of `@open-multi-agent/core` before `dist` exists.
+- **Examples or catalog metadata:** `npm run test:example-catalog` and `npm run lint -w @open-multi-agent/core`; add a runnable example smoke test when executable behavior changes. Which examples core lint excludes, and why, is in [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
 - **Cross-workspace or dependency changes:** `npm run lint`, `npm test`, and `npm run build`; add the package/import/template smoke checks relevant to the changed surface.
 - **Provider E2E:** run only when the changed surface requires real-provider verification and the necessary credentials are safely available. Never expose credential values.
 
 Before finishing, report every command run and its outcome. If a relevant check was skipped or could not run, state the reason and residual risk. CI remains the source of truth for the complete Node 20/22/24 pre-merge matrix.
 
-## Architecture entry points
-
-`packages/core/src/` is organized one directory per subsystem; run `ls packages/core/src/` to locate code rather than relying on any list of those directories, and use the linked docs below for behavior and contracts. Inside `orchestrator/`, `orchestrator.ts` is the entry point that the peer modules in that directory hang off.
-
-The published surface is `packages/core/src/index.ts` plus the subpath entry points declared under `exports` in `packages/core/package.json`; list them with `jq '.exports | keys' packages/core/package.json` rather than relying on any copy of that list. When adding or renaming one, keep that declaration, the backing source file, and the required entry-point list in the `package` job of [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in sync.
-
-`OpenMultiAgent` exposes three primary modes: `runAgent()` for a one-shot agent, `runTeam()` for coordinator-generated task DAGs, and `runTasks()` for explicit dependency pipelines. See the [core package README](packages/core/README.md#architecture) for the conceptual architecture.
-
 ## Non-obvious invariants
 
-These constraints span multiple files and can cause behavioral or compatibility bugs when missed:
+These constraints span multiple files and packages and can cause behavioral or compatibility bugs when missed. Each links to the `docs/` page that owns the full contract.
 
 - **Tool errors are values:** tool failures are returned as `ToolResult` with `isError: true`; they do not throw through the runner. LLM API failures propagate. Task failures cascade to dependents while independent tasks may continue.
 - **Built-in tools are default-deny:** a built-in is granted only through `AgentConfig.tools`, `toolPreset`, or `OrchestratorConfig.defaultToolPreset`. Registered custom/runtime tools are granted by registration but still honor `disallowedTools`. Ungranted calls return an error rather than executing. See [tool configuration](docs/tool-configuration.md).
 - **Per-call gates run below grants:** `onToolCall` runs after Zod validation and before execution. Denial returns an error `ToolResult`; throwing or invalid gates fail closed. Ungranted tools never reach the gate. `AgentConfig.onToolCall` overrides the orchestrator default. The optional shell classifier is exported from `/classifiers`.
 - **Delegation is orchestration-only and separately granted:** `delegate_to_agent` exists only in `runTeam()` and `runTasks()` workers and must be explicitly granted. Standalone `runAgent()` and the simple-goal short circuit do not register it. Self-delegation, cycles, unknown targets, excess depth, and unavailable pool capacity are rejected; delegated usage counts against the parent budget.
-- **Filesystem tools are sandboxed; `bash` is not:** filesystem built-ins resolve paths and symlinks within `AgentConfig.cwd` or `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables that sandbox and `process.cwd()` widens it. Shell execution has no equivalent filesystem boundary.
+- **Filesystem tools are sandboxed; `bash` is not:** filesystem built-ins resolve paths and symlinks within `AgentConfig.cwd` or `OrchestratorConfig.defaultCwd`, defaulting to `<cwd>/.agent-workspace`. `null` disables that sandbox and `process.cwd()` widens it. Shell execution has no equivalent filesystem boundary. See [sandbox and shell](docs/sandbox-and-shell.md).
 - **Reasoning is dropped unless opted in:** provider-native reasoning blocks that the target adapter cannot echo are discarded unless `preserveReasoningAsText` is enabled. Inline `<thinking>` text is never reconstructed into a signed reasoning block. See [context management](docs/context-management.md).
 - **Native tool calls win:** the local-model text extractor runs only when a server emits no native tool calls.
 - **External backends replace the LLM runner:** process and ACP backends perform their own work in `cwd`; the runner tool loop, sandbox, and context strategy do not apply, while queue, scheduler, memory, and budget behavior remain backend-agnostic. ACP permissions default to auto-approve and its cumulative context usage is recorded as per-turn deltas when updates exist. See [external agents](docs/external-agents.md).
-- **Ownership is opt-in, and its writes fail closed:** without a `runStore` a
-  checkpoint is recovery state with no owner, so two processes can restore the
-  same snapshot and both advance it. With one, a run acquires a lease before it
-  dispatches, checkpoint writes fence against its token, and lifecycle writes
-  reject rather than degrade to best-effort. A worker that lost its lease writes
-  no terminal status and never reports success. See [run store](docs/run-store.md).
+- **Ownership is opt-in, and its writes fail closed:** without a `runStore` a checkpoint is recovery state with no owner, so two processes can restore the same snapshot and both advance it. With one, a run acquires a lease before it dispatches, checkpoint writes fence against its token, and lifecycle writes reject rather than degrade to best-effort. A worker that lost its lease writes no terminal status and never reports success. See [run store](docs/run-store.md).
 - **Telemetry is not execution state:** losing telemetry must not roll back a durable run. Deleting traces must not delete checkpoints, shared memory, or remotely exported OpenTelemetry data. Observability delivery/export failures do not become agent, task, or run failures. See [observability](docs/observability.md).
 - **Evaluation observes results:** offline evaluation is separate; online sampling, scoring, and persistence are best-effort and isolated from the business response. Scorer failures become `scorer_error` and are excluded from score aggregates rather than converted to zero. See [evaluation](docs/evaluation.md).
 - **Secrets and PII are redacted best-effort:** traces, shell output, and dashboard payloads pass through redaction, but callers must still avoid deliberately persisting or logging secrets.
-
-## Subsystem documentation
-
-**This table is a curated selection, not a complete index.** `docs/` contains more files than are listed here. Run `ls docs/` for the full set before concluding that a topic is undocumented.
-
-| Topic | Source of truth |
-|---|---|
-| Context strategies and reasoning round-tripping | [docs/context-management.md](docs/context-management.md) |
-| Tool grants, presets, sandbox, delegation, MCP, and gates | [docs/tool-configuration.md](docs/tool-configuration.md) |
-| Providers, environment variables, local servers, and AI SDK | [docs/providers.md](docs/providers.md) |
-| LLM egress policy, enforcement matrix, and fail-closed surfaces | [docs/egress-policy.md](docs/egress-policy.md) |
-| Shared memory and custom stores | [docs/shared-memory.md](docs/shared-memory.md) |
-| Checkpoint and restore | [docs/checkpoint.md](docs/checkpoint.md) |
-| Authoritative run record, execution leases, and fencing | [docs/run-store.md](docs/run-store.md) |
-| Run event journal, lineage, and the model-visible boundary | [docs/run-journal.md](docs/run-journal.md) |
-| Tracing, stores, progress, Run Viewer, privacy, and OpenTelemetry | [docs/observability.md](docs/observability.md) |
-| Run Viewer inputs, rendering, and privacy boundary | [docs/run-viewer.md](docs/run-viewer.md) |
-| Evaluation, scorers, stores, reports, sampling, and gates | [docs/evaluation.md](docs/evaluation.md) |
-| Evaluation in CI and routing EvalSets | [evaluation-ci](docs/evaluation-ci.md), [evaluation-routing](docs/evaluation-routing.md) |
-| CLI commands and JSON schemas | [docs/cli.md](docs/cli.md) |
-| Coordinator planning, configuration, and the simple-goal short circuit | [docs/coordinator.md](docs/coordinator.md) |
-| Callback and hook surface across config, options, and tasks | [docs/hooks-and-callbacks.md](docs/hooks-and-callbacks.md) |
-| Filesystem sandbox and shell execution | [docs/sandbox-and-shell.md](docs/sandbox-and-shell.md) |
-| MCP connection, tool mapping, and process boundaries | [docs/mcp.md](docs/mcp.md) |
-| Structured agent input and content blocks | [docs/structured-input.md](docs/structured-input.md) |
-| Streaming surfaces and `StreamEvent` order | [docs/streaming.md](docs/streaming.md) |
-| Turn, timeout, loop, token, and cost ceilings | [docs/budgets-and-limits.md](docs/budgets-and-limits.md) |
-| Durable approval gates and decision records | [docs/durable-approvals.md](docs/durable-approvals.md) |
-| Exported error classes and retry classification | [docs/errors.md](docs/errors.md) |
-| Process and ACP backends | [docs/external-agents.md](docs/external-agents.md) |
-| Runtime footprint, network scope, state locations, and air-gapped deployment | [docs/self-hosting.md](docs/self-hosting.md) |
-| Routing, scheduling, consensus, recovery, and replay | [model-routing](docs/model-routing.md), [execution-routing](docs/execution-routing.md), [task-scheduling](docs/task-scheduling.md), [consensus](docs/consensus.md), [adaptive-recovery](docs/adaptive-recovery.md), [plan-replay](docs/plan-replay.md) |
-| Documentation index across every `docs/` page | [docs/README.md](docs/README.md) |
-
-## Adding an LLM adapter
-
-Implement `LLMAdapter.chat()` and `LLMAdapter.stream()`, add the provider to `SupportedProvider`, and register it in `packages/core/src/llm/adapter.ts` through dynamic `import()` so unused SDKs never resolve. OpenAI-compatible providers should accept `baseURL` and reuse `openai-common.ts`. Decide how the provider behaves under `egressPolicy` in `prepareProviderBaseURL`: an OpenAI-compatible provider needs an entry in `PROVIDER_DEFAULT_BASE_URLS` or a provider endpoint environment variable so its origin can be resolved and checked, and a provider whose SDK opens connections OMA cannot guard must be declared unsupported so it fails closed. Add the outcome to the enforcement matrix in [docs/egress-policy.md](docs/egress-policy.md). Add focused adapter tests and update [docs/providers.md](docs/providers.md) without introducing a hard-coded provider count.
