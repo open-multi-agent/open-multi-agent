@@ -63,6 +63,7 @@ End-to-end examples framed around a concrete problem (meeting summarization, tra
 | [`cookbook/personalized-interview-simulator`](cookbook/personalized-interview-simulator.ts) | Interactive interviewer loop with observer flags, shared memory, and a structured debrief. |
 | [`cookbook/narrative-puzzle-hint-arbitration`](cookbook/narrative-puzzle-hint-arbitration.ts) | Multi-source hint arbitration with an external safety veto outside the generation loop. |
 | [`cookbook/market-data-integrity-verify-loop`](cookbook/market-data-integrity-verify-loop.ts) | Binance L2 integrity gate: source-specific judges refute a provisional report until a verified revision passes. |
+| [`cookbook/building-permit-review-gate`](cookbook/building-permit-review-gate.ts) | Residential permit gate: floodplain and fire-access judges refute a provisional approval until a conditional decision passes. |
 | [`cookbook/translation-backtranslation`](cookbook/translation-backtranslation.ts) | Translate → back-translate with a different provider → flag semantic drift. |
 
 ## patterns — orchestration patterns

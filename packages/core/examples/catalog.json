@@ -187,6 +187,17 @@
       "level": "advanced"
     },
     {
+      "id": "building-permit-review-gate",
+      "path": "cookbook/building-permit-review-gate.ts",
+      "title": "Building Permit Review Gate",
+      "description": "Challenge a provisional residential permit approval with source-specific floodplain and fire-access judges before revising it to conditional.",
+      "section": "goal",
+      "goal": "use-case-recipes",
+      "capabilities": ["run-tasks", "task-dependencies", "structured-output", "consensus", "conflict-detection"],
+      "format": "script",
+      "level": "advanced"
+    },
+    {
       "id": "translation-backtranslation",
       "path": "cookbook/translation-backtranslation.ts",
       "title": "Translation and Backtranslation",

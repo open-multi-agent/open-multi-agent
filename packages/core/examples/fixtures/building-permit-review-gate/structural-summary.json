@@ -1,0 +1,13 @@
+{
+  "source": "MOCK structural summary S-2026-0417 (synthetic)",
+  "design_code": "IBC 2024 with local amendments",
+  "occupancy": "R-3",
+  "risk_category": "II",
+  "roof_live_load_psf": 20,
+  "floor_live_load_psf": 40,
+  "wind_speed_mph": 110,
+  "seismic_design_category": "D",
+  "foundation": "reinforced concrete stem wall on compacted fill, per MOCK soils report GS-2026-011",
+  "lateral_system": "plywood shear walls with holdowns at all corners",
+  "reviewer_note": "Member sizes, connections, and load path check out for the stated loads. Foundation adequacy below the finished floor and site-specific flood elevation are outside the scope of this summary."
+}

@@ -1,0 +1,11 @@
+{
+  "source": "MOCK floodplain overlay extract FIRM panel 06059C-0417F (synthetic)",
+  "parcel": "APN 042-117-09",
+  "flood_zone": "AE",
+  "base_flood_elevation_ft_navd88": 12.0,
+  "proposed_lowest_floor_ft_navd88": 10.8,
+  "shortfall_ft": 1.2,
+  "required_lowest_floor_ft_navd88": 13.0,
+  "bridge_invariant": "A permit in Zone AE may issue only when the lowest floor is at or above BFE plus 1 ft of freeboard (13.0 ft NAVD88 here) and a registered elevation certificate is on file. The applicant site plan carries no finished-floor elevation callout, so continuity with this overlay is unverified.",
+  "decision_rule": "Reject any APPROVE decision for this parcel until the revised report records the 10.8 ft vs 13.0 ft shortfall, cites flood-overlay.json, and conditions the permit on an elevation certificate plus plan revision."
+}

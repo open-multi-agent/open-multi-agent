@@ -1,0 +1,6 @@
+MOCK fire-access site visit report FA-2026-0417 (synthetic)
+Address: 418 Alder Street (APN 042-117-09)
+Access drive: 18 ft wide, 210 ft long, dead-end, no turnaround.
+Nearest hydrant: 420 ft from the proposed structure, measured along the access route.
+Gates: none proposed.
+Inspector note: width, turnaround, and hydrant distance are each evaluated against fire-code-excerpt.md.

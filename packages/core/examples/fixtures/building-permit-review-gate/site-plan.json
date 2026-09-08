@@ -1,0 +1,21 @@
+{
+  "source": "MOCK applicant site plan SP-2026-0417 (synthetic)",
+  "address": "418 Alder Street",
+  "parcel": "APN 042-117-09",
+  "zone": "R-1 single-family residential",
+  "lot_area_sqft": 6000,
+  "proposed_footprint_sqft": 2280,
+  "lot_coverage_percent": 38,
+  "max_lot_coverage_percent": 40,
+  "front_setback_ft": 22,
+  "min_front_setback_ft": 20,
+  "side_setback_ft": 6,
+  "min_side_setback_ft": 5,
+  "proposed_height_ft": 28,
+  "max_height_ft": 30,
+  "stories": 2,
+  "occupancy": "R-3 single-family dwelling",
+  "off_street_parking_spaces": 2,
+  "min_parking_spaces": 2,
+  "notes": "Plan shows grading and drainage arrows but no finished-floor elevation callout. Flood-zone determination is deferred to the overlay check, which is not part of this file."
+}
