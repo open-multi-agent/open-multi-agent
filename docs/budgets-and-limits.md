@@ -26,6 +26,7 @@ Two properties hold across all of them and are easy to get wrong:
 | One agent run | `maxTurns`, `timeoutMs`, `maxTokenBudget` on the agent |
 | One task | Run-level token and cost accounting after each attempt |
 | One orchestrator run | `maxTokenBudget`, `maxCostBudget`, `maxConcurrency`, `maxDelegationDepth` |
+| One team's runs | `maxConcurrency` on `TeamConfig`, narrowing the orchestrator cap |
 
 ## Turn ceiling: `maxTurns`
 
@@ -214,6 +215,44 @@ and returns the amount to add to the run's estimate. Its `context` carries:
 `phase` and `provider` are what make a per-provider or per-stage price table
 possible without threading your own state through the run.
 
+## Concurrency ceiling: `maxConcurrency`
+
+`OrchestratorConfig.maxConcurrency` (default `5`) bounds how many agent runs one
+orchestrator run may have in flight. `TeamConfig.maxConcurrency` bounds the same
+pool for one team's runs, and the two **intersect** — the smaller value wins:
+
+```ts
+const orchestrator = new OpenMultiAgent({ maxConcurrency: 5 })
+
+// This team is capped at 2 no matter which orchestrator runs it.
+const team = orchestrator.createTeam('rate-limited', {
+  name: 'rate-limited',
+  agents: [/* … */],
+  maxConcurrency: 2,
+})
+```
+
+A team can narrow the pool for its own runs but never widen it: a team asking
+for `10` under an orchestrator set to `2` still runs 2 at a time. Use the team
+cap when one workload has a constraint the rest of the application does not —
+a self-hosted model that serves one request at a time, or a provider whose
+rate limit applies to that team's key.
+
+The cap should be an integer `>= 1`. Any other value — `0`, a fraction, or the
+`NaN` that `Number(process.env.MAX_CONCURRENCY)` produces when the variable is
+unset — is reported as an `INVALID_TEAM_MAX_CONCURRENCY` warning on
+`onProgress`, and the orchestrator value applies instead. The value is checked
+here rather than left to the pool's semaphore, which rejects only values below
+`1` and would let `NaN` through to a pool that never grants a slot.
+
+The cap applies to `runTeam()` and `runTasks()`, which execute one team through
+a pool built for that run. `runAgent()` and consensus runs use no team pool.
+
+Concurrency interacts with delegation: `delegate_to_agent` needs a free pool
+slot, so a cap of `1` leaves no room for a delegated call and the delegation is
+rejected rather than deadlocking. Size the cap to cover parallel tasks plus any
+delegated runs they start.
+
 ## Delegation, consensus, and external backends
 
 - **Delegation.** A delegated run's usage is added to the parent agent's total
@@ -246,9 +285,10 @@ The `oma` CLI merges arbitrary JSON into `OrchestratorConfig` and passes
 unrecognized agent fields straight through, so anything JSON-expressible can be
 set without writing TypeScript:
 
-- **Works:** `maxTokenBudget` in the orchestrator JSON; `maxTurns`,
-  `timeoutMs`, `callTimeoutMs`, `maxToolOutputChars`, and `loopDetection` with
-  a string `onLoopDetected` on each agent in the team JSON.
+- **Works:** `maxTokenBudget` in the orchestrator JSON; `maxConcurrency` in
+  either the orchestrator JSON or the team JSON; `maxTurns`, `timeoutMs`,
+  `callTimeoutMs`, `maxToolOutputChars`, and `loopDetection` with a string
+  `onLoopDetected` on each agent in the team JSON.
 - **Does not work:** `maxCostBudget`, because it requires `estimateCost`, and a
   function cannot appear in JSON. Configuring it from the CLI throws at
   orchestrator construction. Likewise a function-valued `onLoopDetected`.
@@ -271,6 +311,7 @@ See [CLI reference](cli.md#configuration-files).
 | `estimateCost` | Per LLM result | none | Invalid return throws; the task fails | `OrchestratorConfig` |
 | `maxToolOutputChars` | One tool result | none | String result truncated head plus tail | `AgentConfig`; per-tool `maxOutputChars` wins |
 | `maxConcurrency` | Orchestrator run | `5` | Additional tasks wait for a slot | `OrchestratorConfig` |
+| `maxConcurrency` | One team's runs | orchestrator value | Same, at the lower of the two caps | `TeamConfig` |
 | `maxDelegationDepth` | Delegation chain | `3` | The delegate call is rejected | `OrchestratorConfig` |
 | `ToolExecutor` `maxConcurrency` | Parallel tool calls | `4` | Extra calls wait for a slot | `ToolExecutor` constructor only; not reachable from `AgentConfig` |
 

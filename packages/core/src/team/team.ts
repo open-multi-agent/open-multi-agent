@@ -64,13 +64,18 @@ class EventBus {
  * Coordinates a named group of agents with shared messaging, task queuing,
  * and optional shared memory.
  *
+ * `maxConcurrency` caps how many of this team's agent runs are in flight at
+ * once. It intersects with `OrchestratorConfig.maxConcurrency` (default `5`) —
+ * the smaller of the two wins — so a team can narrow the pool for its own runs
+ * but never widen it past the orchestrator ceiling.
+ *
  * @example
  * ```ts
  * const team = new Team({
  *   name: 'research-team',
  *   agents: [researcherConfig, writerConfig],
  *   sharedMemory: true,
- *   maxConcurrency: 2,
+ *   maxConcurrency: 2, // at most two of these agents run at a time
  * })
  *
  * team.on('task:complete', (data) => {

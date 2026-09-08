@@ -15,6 +15,17 @@
 
 ### Changed
 
+- `TeamConfig.maxConcurrency` now bounds the agent pool for that team's runs
+  instead of being accepted and ignored. It intersects with
+  `OrchestratorConfig.maxConcurrency` — the smaller of the two wins — so a team
+  can narrow the pool for its own runs but never widen it past the orchestrator
+  ceiling. A team that set a cap below the orchestrator's was previously running
+  at the orchestrator value (the default `5` when unset) and now runs at its
+  own, lower value; raise or remove the team cap to keep the previous
+  throughput. A cap that is not an integer `>= 1` is reported as an
+  `INVALID_TEAM_MAX_CONCURRENCY` warning on `onProgress` and the orchestrator
+  value applies, so a config an earlier release accepted still runs. Teams that
+  leave the field unset, `runAgent()`, and consensus runs are unchanged.
 - LICENSE now names Shenzhen YuanASI Technology Co., Ltd. alongside the
   open-multi-agent contributors, every package README closes with a maintainer
   line linking to yuanasi.com, and `author` in the three published package.json

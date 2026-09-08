@@ -447,6 +447,32 @@ function resolveRunBudgets(
 }
 
 /**
+ * Effective pool concurrency for one team run.
+ *
+ * `TeamConfig.maxConcurrency` intersects with the orchestrator ceiling rather
+ * than replacing it: the smaller value wins, so a team can narrow the pool for
+ * its own runs but never widen it past what the orchestrator allows.
+ *
+ * An unusable cap falls back to the orchestrator value and reports through
+ * `onInvalid` rather than throwing, so a config that this release started
+ * reading cannot fail a run that earlier releases accepted. The check cannot be
+ * left to `Semaphore`, which rejects only values below 1 — `NaN` would reach a
+ * pool that never grants a slot.
+ */
+function resolveTeamPoolConcurrency(
+  orchestratorMax: number,
+  teamMax: number | undefined,
+  onInvalid?: (teamMax: number) => void,
+): number {
+  if (teamMax === undefined) return orchestratorMax
+  if (!Number.isInteger(teamMax) || teamMax < 1) {
+    onInvalid?.(teamMax)
+    return orchestratorMax
+  }
+  return Math.min(orchestratorMax, teamMax)
+}
+
+/**
  * Top-level orchestrator for the open-multi-agent framework.
  *
  * Manages teams, coordinates task execution, and surfaces progress events.
@@ -1935,6 +1961,7 @@ export class OpenMultiAgent {
         ? confirmationState
         : undefined,
       runConfig,
+      team.config.maxConcurrency,
     )
     const activeCheckpoint = this.createActiveCheckpoint(
       team,
@@ -2630,7 +2657,12 @@ export class OpenMultiAgent {
         queue.skipRemaining('Skipped: durable approval rejected.')
         await saveRunCheckpoint(queue, {
           team,
-          pool: this.buildPool(team.getAgents()),
+          pool: this.buildPool(
+            team.getAgents(),
+            undefined,
+            this.config,
+            team.config.maxConcurrency,
+          ),
           scheduler: this.createScheduler(options?.modelRouting, () => queue.list()),
           agentResults,
           config: this.config,
@@ -3122,7 +3154,12 @@ export class OpenMultiAgent {
       ? createConsequentialConfirmationState()
       : undefined
     if (restoredConfirmationState) restoredConfirmationState.planApproved = true
-    const pool = this.buildPool(agentConfigs, restoredConfirmationState, runConfig)
+    const pool = this.buildPool(
+      agentConfigs,
+      restoredConfirmationState,
+      runConfig,
+      team.config.maxConcurrency,
+    )
     const ctx: RunContext = {
       team,
       pool,
@@ -3580,8 +3617,27 @@ export class OpenMultiAgent {
     agentConfigs: AgentConfig[],
     confirmationState?: ConsequentialConfirmationState,
     config: EffectiveOrchestratorConfig = this.config,
+    teamMaxConcurrency?: number,
   ): AgentPool {
-    const pool = new AgentPool(config.maxConcurrency)
+    const pool = new AgentPool(
+      resolveTeamPoolConcurrency(
+        config.maxConcurrency,
+        teamMaxConcurrency,
+        (invalid) => {
+          this.config.onProgress?.({
+            type: 'warning',
+            data: {
+              code: 'INVALID_TEAM_MAX_CONCURRENCY',
+              teamMaxConcurrency: invalid,
+              appliedMaxConcurrency: config.maxConcurrency,
+              reason:
+                'TeamConfig.maxConcurrency must be an integer >= 1. '
+                + 'The orchestrator value applies instead.',
+            },
+          } satisfies OrchestratorEvent)
+        },
+      ),
+    )
     for (const agentConfig of agentConfigs) {
       const effective: AgentConfig = applyDefaultToolPreset(
         applyAgentDefaults(agentConfig, config),

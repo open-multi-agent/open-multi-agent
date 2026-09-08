@@ -79,7 +79,7 @@ export const delegateToAgentTool: ToolDefinition<z.infer<typeof inputSchema>> = 
       return {
         data:
           'Agent pool has no free concurrency slot for a delegated run (nested run would block indefinitely). ' +
-          'Increase orchestrator maxConcurrency, wait for parallel work to finish, or avoid delegating while the pool is saturated.',
+          'Increase maxConcurrency on the orchestrator or the team, wait for parallel work to finish, or avoid delegating while the pool is saturated.',
         isError: true,
       }
     }

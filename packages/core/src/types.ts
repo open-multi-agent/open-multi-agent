@@ -1401,6 +1401,20 @@ export interface TeamConfig {
    * SDK-only: the CLI (`oma`) cannot pass runtime objects through its JSON config.
    */
   readonly sharedMemoryStore?: MemoryStore
+  /**
+   * Maximum agent runs this team may have in flight at once.
+   *
+   * Intersects with {@link OrchestratorConfig.maxConcurrency}: the smaller of
+   * the two wins, so a team can lower the orchestrator ceiling for its own runs
+   * but never raise it. Omitted leaves the orchestrator value in force. Should
+   * be an integer >= 1; any other value is reported as an
+   * `INVALID_TEAM_MAX_CONCURRENCY` warning on `onProgress` and the orchestrator
+   * value applies instead.
+   *
+   * Applies to `runTeam()` and `runTasks()`, which execute one team through a
+   * pool built for that run. `runAgent()` and consensus runs use no team pool
+   * and ignore this field.
+   */
   readonly maxConcurrency?: number
 }
 
