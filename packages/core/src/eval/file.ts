@@ -120,6 +120,7 @@ const scorerAggregateSchema: z.ZodTypeAny = z.lazy(() => z.object({
   min: z.number().finite().min(0).max(1),
   max: z.number().finite().min(0).max(1),
   passRate: z.number().finite().min(0).max(1).optional(),
+  passSampleCount: z.number().int().nonnegative().optional(),
   byTag: z.record(scorerAggregateSchema).optional(),
 }))
 

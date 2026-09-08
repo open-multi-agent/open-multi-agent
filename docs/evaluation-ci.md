@@ -50,9 +50,9 @@ const verdict = evaluateGate(report, {
   schemaVersion: 1,
   thresholds: [
     // A rule scorer plus passRate=1 is a deterministic quality gate.
-    { scorer: 'exact', metric: 'passRate', min: 1 },
+    { scorer: 'exact', metric: 'passRate', min: 1, minSamples: 20 },
     { scorer: 'relevancy', metric: 'avg', min: 0.8 },
-    { scorer: 'relevancy', metric: 'p50', min: 0.85, tag: 'critical' },
+    { scorer: 'relevancy', metric: 'p50', min: 0.85, tag: 'critical', minSamples: 10 },
   ],
   maxScorerErrorRate: 0.1,
   maxTargetErrorRate: 0,
@@ -71,9 +71,9 @@ The equivalent JSON policy is:
 {
   "schemaVersion": 1,
   "thresholds": [
-    { "scorer": "exact", "metric": "passRate", "min": 1 },
+    { "scorer": "exact", "metric": "passRate", "min": 1, "minSamples": 20 },
     { "scorer": "relevancy", "metric": "avg", "min": 0.8 },
-    { "scorer": "relevancy", "metric": "p50", "min": 0.85, "tag": "critical" }
+    { "scorer": "relevancy", "metric": "p50", "min": 0.85, "tag": "critical", "minSamples": 10 }
   ],
   "maxScorerErrorRate": 0.1,
   "maxTargetErrorRate": 0,
@@ -86,15 +86,23 @@ The equivalent JSON policy is:
 
 Thresholds support `avg`, `p50`, `p95`, `min`, and `passRate`, with optional
 tag scoping and inclusive `min`/`max` boundaries. A missing scorer, tag, or
-`passRate` source is a configuration failure rather than a silent pass. The
-health defaults fail when scorer errors exceed 10% of scored plus scorer-error
-records, or when any selected target fails.
+`passRate` source is a configuration failure rather than a silent pass. An
+optional `minSamples` positive integer additionally requires a minimum number
+of scored samples before a threshold can pass: score metrics compare it
+against the aggregate's `scoredCount`, while `passRate` compares it against
+`passSampleCount` (the scored records that explicitly define `pass`).
+Tag-scoped thresholds check the tag aggregate's own counts, and omitting
+`minSamples` preserves the previous behavior. The health defaults fail when
+scorer errors exceed 10% of scored plus scorer-error records, or when any
+selected target fails.
 
 Every verdict contains only `pass`, `failures`, and `warnings`. A failure has a
 stable `kind`, optional scorer/metric/tag coordinates, the observed `actual`,
 the configured `limit`, and a human-readable `message`. For failures about
 availability rather than a measured score, `missing_scorer` uses `actual: 0`
 and `limit: 1`, while `baseline_mismatch` uses `actual: 1` and `limit: 0`.
+A `minSamples` shortfall fails with kind `insufficient_samples`, carrying the
+observed sample count as `actual` and the required minimum as `limit`.
 
 A baseline is an ordinary JSON `EvalRunReport`, not a second file format. The
 recommended workflow is:

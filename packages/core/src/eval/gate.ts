@@ -10,6 +10,13 @@ export interface GateThreshold {
   readonly min?: number
   readonly max?: number
   readonly tag?: string
+  /**
+   * Minimum scored samples required for this threshold to pass. Score
+   * metrics compare against `scoredCount`; `passRate` compares against the
+   * records that define `pass` (`passSampleCount`). Omit to keep the
+   * previous behavior.
+   */
+  readonly minSamples?: number
 }
 
 export interface GatePolicy {
@@ -36,6 +43,7 @@ export interface GateFailure {
     | 'target_health'
     | 'baseline_mismatch'
     | 'missing_scorer'
+    | 'insufficient_samples'
   readonly scorer?: string
   readonly metric?: string
   readonly tag?: string
@@ -58,6 +66,7 @@ const gateThresholdSchema = z.object({
   min: unitInterval.optional(),
   max: unitInterval.optional(),
   tag: z.string().trim().min(1).optional(),
+  minSamples: z.number().int().positive().optional(),
 }).superRefine((threshold, context) => {
   if (threshold.min === undefined && threshold.max === undefined) {
     context.addIssue({
@@ -134,11 +143,28 @@ function thresholdFailures(
   report: EvalRunReport,
   threshold: GateThreshold,
 ): readonly GateFailure[] {
-  const actual = aggregateMetric(aggregateFor(report, threshold), threshold.metric)
+  const aggregate = aggregateFor(report, threshold)
+  const actual = aggregateMetric(aggregate, threshold.metric)
   if (actual === undefined) return [missingThresholdFailure(threshold)]
 
   const target = thresholdTarget(threshold)
   const failures: GateFailure[] = []
+  if (threshold.minSamples !== undefined) {
+    const samples = threshold.metric === 'passRate'
+      ? (aggregate?.passSampleCount ?? 0)
+      : (aggregate?.scoredCount ?? 0)
+    if (samples < threshold.minSamples) {
+      failures.push({
+        kind: 'insufficient_samples',
+        scorer: threshold.scorer,
+        metric: threshold.metric,
+        ...(threshold.tag !== undefined ? { tag: threshold.tag } : {}),
+        actual: samples,
+        limit: threshold.minSamples,
+        message: `Gate metric "${threshold.metric}" for ${target} has ${samples} scored sample(s), below the required minimum of ${threshold.minSamples}.`,
+      })
+    }
+  }
   if (threshold.min !== undefined && actual < threshold.min) {
     failures.push({
       kind: 'threshold',

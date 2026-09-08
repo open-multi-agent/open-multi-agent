@@ -26,13 +26,16 @@ function aggregate(options: {
   readonly version?: string
   readonly avg?: number
   readonly passRate?: number | null
+  readonly scoredCount?: number
+  readonly passSampleCount?: number
   readonly byTag?: Readonly<Record<string, ScorerAggregate>>
 } = {}): ScorerAggregate {
   const avg = options.avg ?? 0.8
+  const scoredCount = options.scoredCount ?? 10
   const passRate = options.passRate === undefined ? 0.8 : options.passRate
   return {
     scorer: { name: options.name ?? 'exact', version: options.version ?? '1' },
-    scoredCount: 10,
+    scoredCount,
     errorCount: 0,
     avg,
     p50: avg,
@@ -40,6 +43,7 @@ function aggregate(options: {
     min: avg,
     max: avg,
     ...(passRate !== null ? { passRate } : {}),
+    passSampleCount: options.passSampleCount ?? (passRate === null ? 0 : scoredCount),
     ...(options.byTag !== undefined ? { byTag: options.byTag } : {}),
   }
 }
@@ -122,6 +126,96 @@ describe('evaluateGate thresholds', () => {
     expect(verdict.failures[0]?.message).toContain('missing')
     expect(verdict.failures[1]?.message).toContain('tag "missing"')
     expect(verdict.failures[2]?.message).toContain('no scored records with a pass value')
+  })
+})
+
+describe('evaluateGate minSamples guard', () => {
+  it('fails below, passes at, and passes above the minimum scored samples', () => {
+    const below = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 2 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 3 }]),
+    )
+    const at = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 3 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 3 }]),
+    )
+    const above = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 4 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 3 }]),
+    )
+
+    expect(below.pass).toBe(false)
+    expect(below.failures).toEqual([
+      expect.objectContaining({ kind: 'insufficient_samples', metric: 'avg', actual: 2, limit: 3 }),
+    ])
+    expect(at.pass).toBe(true)
+    expect(above.pass).toBe(true)
+  })
+
+  it('checks the tag aggregate counts for tag-scoped thresholds', () => {
+    const current = report({
+      aggregate: aggregate({
+        scoredCount: 10,
+        byTag: { critical: aggregate({ scoredCount: 2 }) },
+      }),
+    })
+    const verdict = evaluateGate(current, policy([
+      { scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5, tag: 'critical' },
+      { scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5 },
+    ]))
+
+    expect(verdict.pass).toBe(false)
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({ kind: 'insufficient_samples', tag: 'critical', actual: 2, limit: 5 }),
+    ])
+  })
+
+  it('guards passRate with the pass-value count instead of scoredCount', () => {
+    const verdict = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 10, passSampleCount: 2, passRate: 1 }) }),
+      policy([{ scorer: 'exact', metric: 'passRate', min: 1, minSamples: 5 }]),
+    )
+
+    expect(verdict.pass).toBe(false)
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({ kind: 'insufficient_samples', metric: 'passRate', actual: 2, limit: 5 }),
+    ])
+  })
+
+  it('still reports a missing scorer instead of a sample count when the metric is unavailable', () => {
+    const verdict = evaluateGate(
+      report(),
+      policy([{ scorer: 'missing', metric: 'avg', min: 0.5, minSamples: 5 }]),
+    )
+
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({ kind: 'missing_scorer', scorer: 'missing' }),
+    ])
+  })
+
+  it('validates minSamples as a positive integer', () => {
+    const valid = evaluateGate(
+      report(),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 1 }]),
+    )
+    expect(valid.pass).toBe(true)
+
+    for (const minSamples of [0, -1, 1.5]) {
+      expect(() => evaluateGate(
+        report(),
+        policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples }]),
+      )).toThrow()
+    }
+  })
+
+  it('preserves current verdicts when minSamples is omitted', () => {
+    const verdict = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 1, passRate: null, avg: 0.9 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.8 }]),
+    )
+
+    expect(verdict.pass).toBe(true)
+    expect(verdict.failures).toEqual([])
   })
 })
 
