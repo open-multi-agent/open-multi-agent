@@ -39,11 +39,17 @@
 - The `oma` CLI default model for `provider: 'deepseek'` is now `deepseek-flash`
   (DeepSeek-V4.1-Flash), replacing `deepseek-v4-flash`. DeepSeek retired the
   V4-Flash model and now serves `deepseek-v4-flash` requests from V4.1-Flash, so
-  a CLI run without `--model` already reached V4.1; the new default names the
-  model it actually gets rather than a compatibility alias DeepSeek describes as
-  temporary. The old name still resolves, and library users that pass an
-  explicit `model` are unaffected. Provider docs, the adapter JSDoc, the
-  scaffolder env template, and the DeepSeek examples moved to the same name.
+  a CLI run without `--model` is already answered by V4.1; the new default names
+  the model it actually gets rather than a compatibility alias DeepSeek
+  describes as temporary. The old name still resolves, and library users that
+  pass an explicit `model` are unaffected. Provider docs, the adapter JSDoc, the
+  scaffolder env template, and the DeepSeek examples moved to the same name;
+  three `examples/basics` headers that still named the long-retired
+  `deepseek-chat` moved with them.
+- The DeepSeek adapter's JSDoc no longer states that thinking runs at `high`
+  effort. The adapter forwards whatever effort the caller passes and sets none
+  itself, and DeepSeek documents only that thinking is on by default. The
+  correction ships in the published `.d.ts`; runtime behavior is unchanged.
 
 ## 1.18.0 - 2026-09-04
 
