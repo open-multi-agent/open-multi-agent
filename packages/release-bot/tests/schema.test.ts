@@ -1,8 +1,13 @@
+import { buildStructuredOutputInstruction } from '@open-multi-agent/core'
+import type { ZodSchema } from 'zod'
 import { describe, expect, it } from 'vitest'
 import {
   buildReleaseDecision,
+  changeAnalysisSchema,
+  compatibilityAnalysisSchema,
   normalizeReleaseProposal,
   releaseProposalSchema,
+  releaseReviewSchema,
   type ReleaseEvidence,
 } from '../src/schema.js'
 
@@ -162,4 +167,43 @@ describe('release decision', () => {
       },
     })).toThrow(/breaking changes cannot ship as a patch/)
   })
+})
+
+describe('structured-output schema shape', () => {
+  // The model receives each schema as the JSON Schema embedded in its system
+  // prompt and emits the properties in that order. A nested object followed by
+  // another root-level property makes it close the nested object mid-answer,
+  // and twice it did not: change-analyst on 2026-09-04 and release-planner on
+  // 2026-09-11 both put the trailing root properties inside `changelog` and
+  // then ran out of matching brackets. Keeping every nested object last removes
+  // the boundary rather than relying on the model to hold it.
+  const schemas = {
+    changeAnalysisSchema,
+    compatibilityAnalysisSchema,
+    releaseProposalSchema,
+    releaseReviewSchema,
+  }
+
+  function propertyTypes(schema: ZodSchema): Array<[string, string]> {
+    const instruction = buildStructuredOutputInstruction(schema)
+    const fenced = instruction.match(/```\n([\s\S]*?)\n```/)
+    expect(fenced?.[1], 'instruction embeds a fenced JSON Schema').toBeDefined()
+    const jsonSchema = JSON.parse(fenced![1]!) as {
+      properties?: Record<string, { type?: string }>
+    }
+    expect(jsonSchema.properties, 'JSON Schema exposes properties').toBeDefined()
+    return Object.entries(jsonSchema.properties!).map(([name, value]) => [name, value.type ?? ''])
+  }
+
+  for (const [label, schema] of Object.entries(schemas)) {
+    it(`keeps every nested object last in ${label}`, () => {
+      const entries = propertyTypes(schema)
+      const lastObjectIndex = entries.map(([, type]) => type).lastIndexOf('object')
+      if (lastObjectIndex === -1) return
+      expect(
+        entries.slice(lastObjectIndex).map(([name]) => name),
+        'no property may follow a nested object',
+      ).toEqual([entries[lastObjectIndex]![0]])
+    })
+  }
 })

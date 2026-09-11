@@ -64,13 +64,15 @@ export const changelogSectionsSchema = z.object({
 
 export type ChangelogSections = z.infer<typeof changelogSectionsSchema>
 
+// `changelog` last, for the reason given on `releaseProposalSchema`. This is the
+// role whose 2026-09-04 run failed the same way.
 export const changeAnalysisSchema = z.object({
   releaseRecommended: z.boolean(),
   recommendedCoreBump: bumpSchema,
   recommendedCreateOmaAppBump: bumpSchema,
   recommendedOtelBump: bumpSchema,
-  changelog: changelogSectionsSchema,
   rationale: z.array(singleLine).min(1).max(12),
+  changelog: changelogSectionsSchema,
 })
 
 export type ChangeAnalysis = z.infer<typeof changeAnalysisSchema>
@@ -86,15 +88,22 @@ export const compatibilityAnalysisSchema = z.object({
 
 export type CompatibilityAnalysis = z.infer<typeof compatibilityAnalysisSchema>
 
+// `changelog` is declared last on purpose. The schema reaches the model as JSON
+// Schema, whose property order it follows, and `changelog` is the only nested
+// object here. Declared in the middle, the model has to close it before the next
+// root-level field after roughly five thousand characters of dense content, and
+// twice it did not: the 2026-09-11 planner run emitted `risks` and `rationale`
+// inside `changelog` and then ran out of matching brackets. Last, there is no
+// following root field to confuse it with and the tail is a plain `]}}`.
 export const releaseProposalSchema = z.object({
   decision: z.enum(['release', 'none']),
   coreBump: bumpSchema,
   createOmaAppBump: bumpSchema,
   otelBump: bumpSchema,
   summary: singleLine,
-  changelog: changelogSectionsSchema,
   risks: z.array(singleLine).max(12),
   rationale: z.array(singleLine).min(1).max(12),
+  changelog: changelogSectionsSchema,
 }).superRefine((proposal, context) => {
   if (proposal.decision === 'none') {
     for (const [name, bump] of [
