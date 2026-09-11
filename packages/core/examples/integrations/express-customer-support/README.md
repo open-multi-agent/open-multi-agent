@@ -2,7 +2,7 @@
 
 An Express REST API that wraps OMA's `runTasks()` explicit-DAG pipeline behind a single `POST /tickets` endpoint. A three-agent pipeline runs on every request:
 
-1. **classifier** (`deepseek-v4-flash`) — categorises the ticket and assigns urgency
+1. **classifier** (`deepseek-flash`) — categorises the ticket and assigns urgency
 2. **drafter** (`deepseek-v4-pro`) — writes a polished customer-facing reply (depends on classifier)
 3. **qa-reviewer** (`deepseek-v4-pro`) — reviews the draft for tone and accuracy (depends on classifier + drafter)
 
@@ -76,7 +76,7 @@ Exits 0 and prints the structured response on success, exits 1 on failure.
 | `MINIMAX_API_KEY` | — | Required if `minimax` is selected for any agent |
 | `AZURE_OPENAI_API_KEY` | — | Required if `azure-openai` is selected for any agent |
 | `CLASSIFIER_PROVIDER` | `deepseek` | Provider for the classifier agent |
-| `CLASSIFIER_MODEL`    | `deepseek-v4-flash` | Model for the classifier agent |
+| `CLASSIFIER_MODEL`    | `deepseek-flash` | Model for the classifier agent |
 | `DRAFTER_PROVIDER`    | `deepseek` | Provider for the drafter agent |
 | `DRAFTER_MODEL`       | `deepseek-v4-pro` | Model for the drafter agent |
 | `QA_PROVIDER`         | `deepseek` | Provider for the QA reviewer agent |
@@ -87,7 +87,7 @@ Supported `*_PROVIDER` values with startup key validation: `anthropic`, `openai`
 
 ## Swapping providers
 
-The defaults run the whole pipeline on DeepSeek — `deepseek-v4-flash` for the cheap classifier, `deepseek-v4-pro` for the drafter and QA reviewer — so one `DEEPSEEK_API_KEY` runs everything. Each agent's provider and model are independently overridable via env vars, so you can move any tier to another provider.
+The defaults run the whole pipeline on DeepSeek — `deepseek-flash` for the cheap classifier, `deepseek-v4-pro` for the drafter and QA reviewer — so one `DEEPSEEK_API_KEY` runs everything. Each agent's provider and model are independently overridable via env vars, so you can move any tier to another provider.
 
 Keep the cheap classifier on DeepSeek but run the drafter and QA reviewer on Anthropic:
 

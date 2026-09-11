@@ -2,7 +2,7 @@
  * Multi-Agent Team Collaboration with DeepSeek
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses a DeepSeek V4 model.
+ * to build a minimal Express.js REST API. Every agent uses a DeepSeek model.
  *
  * Run:
  *   npx tsx packages/core/examples/providers/deepseek.ts
@@ -11,8 +11,8 @@
  *   DEEPSEEK_API_KEY environment variable must be set.
  *
  * Available models:
- *   deepseek-v4-flash  — DeepSeek-V4-Flash-0731 (1M context)
- *   deepseek-v4-pro    — DeepSeek-V4-Pro-0813 (1M context)
+ *   deepseek-flash   — DeepSeek-V4.1-Flash (1M context)
+ *   deepseek-v4-pro  — DeepSeek-V4-Pro-0813 (1M context)
  */
 
 import { join } from 'node:path'
@@ -41,7 +41,7 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   provider: 'deepseek',
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
@@ -52,7 +52,7 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   provider: 'deepseek',
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
@@ -99,7 +99,7 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'deepseek-v4-flash',
+  defaultModel: 'deepseek-flash',
   defaultProvider: 'deepseek',
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,

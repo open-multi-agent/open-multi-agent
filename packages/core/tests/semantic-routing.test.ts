@@ -256,12 +256,12 @@ describe('LLMTaskProfiler', () => {
     }
     const taskProfiler = new LLMTaskProfiler({
       adapter: mockAdapter,
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
     })
 
     await taskProfiler.profile({
       goal: 'Summarize this note.',
-      roster: [{ name: 'alpha', model: 'deepseek-v4-flash' }],
+      roster: [{ name: 'alpha', model: 'deepseek-flash' }],
     })
 
     expect(mockAdapter.chat.mock.calls[0]?.[1]).toMatchObject({

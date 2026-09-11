@@ -80,7 +80,7 @@ EOF
 # LLM used by TDAM's extraction pipeline (any OpenAI-compatible endpoint).
 export TDAI_LLM_BASE_URL="https://api.deepseek.com/v1"
 export TDAI_LLM_API_KEY="sk-..."
-export TDAI_LLM_MODEL="deepseek-v4-flash"
+export TDAI_LLM_MODEL="deepseek-flash"
 export TDAI_DATA_DIR="$PWD/tdai-data"     # where SQLite memories live
 
 npx tsx node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/server.ts
@@ -184,7 +184,7 @@ distilled facts and injects them into the agents' prompts.
 
 Real output from the verification setup: TDAM v0.3.6 Gateway (npm package,
 `everyNConversations: 1`, Bearer auth enabled end-to-end), agents and
-extraction both on `deepseek-v4-flash`.
+extraction both on `deepseek-flash`.
 
 First run — no memories yet; captures distill into one episodic memory:
 

@@ -3,7 +3,7 @@
  *
  * Skipped by default. Run with: npm run test:e2e
  * Requires: DEEPSEEK_API_KEY environment variable
- * Optional: DEEPSEEK_E2E_MODEL (defaults to deepseek-v4-flash)
+ * Optional: DEEPSEEK_E2E_MODEL (defaults to deepseek-flash)
  */
 import { beforeAll, describe, it, expect } from 'vitest'
 import { z } from 'zod'
@@ -18,7 +18,7 @@ const describeE2E = process.env['RUN_E2E'] && process.env['DEEPSEEK_API_KEY']
 
 describeE2E('DeepSeekAdapter E2E', () => {
   let adapter: DeepSeekAdapter
-  const model = process.env['DEEPSEEK_E2E_MODEL'] ?? 'deepseek-v4-flash'
+  const model = process.env['DEEPSEEK_E2E_MODEL'] ?? 'deepseek-flash'
 
   beforeAll(() => {
     adapter = new DeepSeekAdapter()

@@ -74,7 +74,7 @@ function pickAgent(envPrefix: string, defaultProvider: SupportedProvider, defaul
   return { provider, model }
 }
 
-const classifierCfg = pickAgent('CLASSIFIER', 'deepseek', 'deepseek-v4-flash')
+const classifierCfg = pickAgent('CLASSIFIER', 'deepseek', 'deepseek-flash')
 const drafterCfg    = pickAgent('DRAFTER',    'deepseek', 'deepseek-v4-pro')
 const qaCfg         = pickAgent('QA',         'deepseek', 'deepseek-v4-pro')
 

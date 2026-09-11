@@ -36,6 +36,14 @@
   lost lease stops the run at the dispatch gate, and a worker that lost its
   lease reports the fence failure rather than success. Runs with no run store
   configured are unchanged.
+- The `oma` CLI default model for `provider: 'deepseek'` is now `deepseek-flash`
+  (DeepSeek-V4.1-Flash), replacing `deepseek-v4-flash`. DeepSeek retired the
+  V4-Flash model and now serves `deepseek-v4-flash` requests from V4.1-Flash, so
+  a CLI run without `--model` already reached V4.1; the new default names the
+  model it actually gets rather than a compatibility alias DeepSeek describes as
+  temporary. The old name still resolves, and library users that pass an
+  explicit `model` are unaffected. Provider docs, the adapter JSDoc, the
+  scaffolder env template, and the DeepSeek examples moved to the same name.
 
 ## 1.18.0 - 2026-09-04
 

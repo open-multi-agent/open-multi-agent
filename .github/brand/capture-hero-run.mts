@@ -36,13 +36,13 @@ import type { AgentConfig, OrchestratorEvent } from '../../packages/core/src/typ
 const MAX_TITLE_CHARS = 28
 
 // DeepSeek published list prices in USD per token (api-docs.deepseek.com/quick_start/pricing),
-// using the standard cache-miss input rate. OMA ships no price table by design — callers own
-// provider pricing — so this hero capture (the caller) prices its own usage and injects it onto
-// each LLM span below, lighting up the viewer's Cost metric, per-span cost, and per-task cost
-// roll-up with honest numbers instead of "Not recorded".
+// using the off-peak cache-miss input rate, verified 2026-09-12. OMA ships no price table by
+// design — callers own provider pricing — so this hero capture (the caller) prices its own usage
+// and injects it onto each LLM span below, lighting up the viewer's Cost metric, per-span cost,
+// and per-task cost roll-up with honest numbers instead of "Not recorded".
 const DEEPSEEK_PRICE_PER_TOKEN: Readonly<Record<string, { input: number; output: number }>> = {
-  'deepseek-v4-flash': { input: 0.14 / 1e6, output: 0.28 / 1e6 },
-  'deepseek-v4-pro': { input: 0.435 / 1e6, output: 0.87 / 1e6 },
+  'deepseek-flash': { input: 0.15 / 1e6, output: 0.6 / 1e6 },
+  'deepseek-v4-pro': { input: 0.66 / 1e6, output: 1.98 / 1e6 },
 }
 const MODEL_ATTR_KEYS = ['oma.llm.model', 'oma.model', 'gen_ai.request.model', 'gen_ai.response.model']
 const INPUT_TOKEN_ATTR_KEYS = ['oma.usage.input_tokens', 'gen_ai.usage.input_tokens']
@@ -126,7 +126,7 @@ ${PATH_RULE}`,
 
 const backendDev: AgentConfig = {
   name: 'backend-dev',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   provider: 'deepseek',
   systemPrompt: `You are a Node.js developer. Read the contract at ${OUTPUT_DIR}/CONTRACT.md, then
 implement the JWT sign/verify module using only Node's built-in \`crypto\` (no external packages).
@@ -140,7 +140,7 @@ ${PATH_RULE}`,
 
 const qaEngineer: AgentConfig = {
   name: 'qa-engineer',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   provider: 'deepseek',
   systemPrompt: `You are a QA engineer. Read ONLY the contract at ${OUTPUT_DIR}/CONTRACT.md (the
 implementation runs in parallel and is not available to you). Write a plain-Node test script
@@ -170,7 +170,7 @@ ${PATH_RULE}`,
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   provider: 'deepseek',
   systemPrompt: `You are a senior reviewer. Read exactly these three files with file_read:
 ${OUTPUT_DIR}/auth.js, ${OUTPUT_DIR}/auth.test.js, and ${OUTPUT_DIR}/THREAT-MODEL.md. Then RETURN
@@ -214,7 +214,7 @@ function handleProgress(event: OrchestratorEvent): void {
 // ---------------------------------------------------------------------------
 const capture = new DashboardTraceCaptureSink()
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'deepseek-v4-flash',
+  defaultModel: 'deepseek-flash',
   defaultProvider: 'deepseek',
   maxConcurrency: 3, // let the three parallel specialists genuinely overlap in the waterfall
   onProgress: handleProgress,

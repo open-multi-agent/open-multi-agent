@@ -45,7 +45,7 @@ Core E2E tests are separate because they require `RUN_E2E=1` and real provider c
 npm run test:e2e
 ```
 
-Set `DEEPSEEK_E2E_MODEL` to override the DeepSeek canary model; it defaults to `deepseek-v4-flash`.
+Set `DEEPSEEK_E2E_MODEL` to override the DeepSeek canary model; it defaults to `deepseek-flash`.
 
 The `Provider Canary` workflow runs the DeepSeek suite daily and can also be started manually. Maintainers must configure `DEEPSEEK_API_KEY` as a GitHub Actions repository secret; never add a provider credential to source files or workflow YAML.
 

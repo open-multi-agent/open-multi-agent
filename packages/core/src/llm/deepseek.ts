@@ -9,17 +9,21 @@ import type { EgressPolicy, LLMChatOptions, ThinkingConfig } from '../types.js'
 import { OpenAIAdapter } from './openai.js'
 
 /**
- * LLM adapter for DeepSeek V4 models. Both models support a 1M context window.
+ * LLM adapter for DeepSeek models. Both support a 1M context window.
  *
  * Thread-safe. Can be shared across agents.
  *
  * Usage:
  *   provider: 'deepseek'
- *   model: 'deepseek-v4-flash' (DeepSeek-V4-Flash-0731)
+ *   model: 'deepseek-flash' (DeepSeek-V4.1-Flash)
  *     or 'deepseek-v4-pro' (DeepSeek-V4-Pro-0813)
  *
- * V4 models enable thinking by default at `high` effort. Pass
- * `thinking: { enabled: false }` to opt out.
+ * `deepseek-flash` carries no version because DeepSeek moves the name to the
+ * current Flash generation. `deepseek-v4-flash` is still accepted, but that
+ * model is retired and those requests are served by V4.1-Flash.
+ *
+ * Both models enable thinking by default. Pass `thinking: { enabled: false }`
+ * to opt out.
  *
  * Legacy `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on
  * 2026-07-24.

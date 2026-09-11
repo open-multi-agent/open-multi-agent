@@ -23,7 +23,11 @@ import {
 } from './schema.js'
 import { createReleaseEvidenceTools } from './tools.js'
 
-const DEFAULT_MODEL = 'deepseek-v4-flash'
+// DeepSeek-V4.1-Flash. The name carries no version because DeepSeek moves it
+// to the current Flash generation; the previous `deepseek-v4-flash` is a
+// retired alias that the API still accepts and already serves from V4.1, so
+// pinning the alias bought no stability and only hid which model ran.
+const DEFAULT_MODEL = 'deepseek-flash'
 const DEFAULT_RUN_TIMEOUT_MS = 30 * 60_000
 const DEFAULT_MAX_TOKEN_BUDGET = 500_000
 

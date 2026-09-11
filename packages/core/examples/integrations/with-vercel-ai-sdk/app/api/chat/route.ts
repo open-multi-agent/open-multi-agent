@@ -7,7 +7,7 @@ export const maxDuration = 360
 
 // --- DeepSeek via OpenAI-compatible API ---
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
-const DEEPSEEK_MODEL = 'deepseek-v4-flash'
+const DEEPSEEK_MODEL = 'deepseek-flash'
 
 const deepseek = createOpenAICompatible({
   name: 'deepseek',

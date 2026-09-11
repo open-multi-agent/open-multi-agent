@@ -73,7 +73,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           RELEASE_BOT_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          RELEASE_BOT_MODEL: deepseek-v4-flash
+          RELEASE_BOT_MODEL: deepseek-flash
         run: node packages/release-bot/dist/cli.js prepare-pr
 
       # A weekly job that fails only into the Actions tab is a job nobody reads.

@@ -33,7 +33,7 @@
  *   AGENT_PROVIDER=grok AGENT_MODEL=grok-3 XAI_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  *   # DeepSeek
- *   AGENT_PROVIDER=deepseek AGENT_MODEL=deepseek-v4-flash DEEPSEEK_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
+ *   AGENT_PROVIDER=deepseek AGENT_MODEL=deepseek-flash DEEPSEEK_API_KEY=... ENGRAM_INVITE_KEY=ek_live_... npx tsx packages/core/examples/integrations/with-engram/research-team.ts
  *
  * Prerequisites:
  *   - API key env var for your chosen provider
