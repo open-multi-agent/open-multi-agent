@@ -93,6 +93,14 @@ describe('OMA release orchestration', () => {
       ['release-planner', { enabled: true, effort: 'max' }],
       ['release-reviewer', { enabled: true, effort: 'max' }],
     ]))
+    // Every role asks DeepSeek for JSON output mode so the provider, not the
+    // in-run correction, guarantees the answer parses.
+    expect(adapter.extraBodyByRole).toEqual(new Map([
+      ['change-analyst', { response_format: { type: 'json_object' } }],
+      ['compatibility-auditor', { response_format: { type: 'json_object' } }],
+      ['release-planner', { response_format: { type: 'json_object' } }],
+      ['release-reviewer', { response_format: { type: 'json_object' } }],
+    ]))
     expect(run.tokenUsage).toEqual({ input_tokens: 40, output_tokens: 20 })
   })
 
@@ -193,6 +201,7 @@ class ReleaseScriptAdapter implements LLMAdapter {
   readonly toolSets: string[][] = []
   readonly maxTokensByRole = new Map<string, number | undefined>()
   readonly thinkingByRole = new Map<string, ThinkingConfig | undefined>()
+  readonly extraBodyByRole = new Map<string, Record<string, unknown> | undefined>()
   plannerMessages = ''
   reviewerMessages = ''
   private sequence = 0
@@ -203,6 +212,7 @@ class ReleaseScriptAdapter implements LLMAdapter {
     this.toolSets.push((options.tools ?? []).map(tool => tool.name))
     this.maxTokensByRole.set(role, options.maxTokens)
     this.thinkingByRole.set(role, options.thinking)
+    this.extraBodyByRole.set(role, options.extraBody)
     const messageText = JSON.stringify(messages)
     if (role === 'release-planner') this.plannerMessages = messageText
     if (role === 'release-reviewer') this.reviewerMessages = messageText

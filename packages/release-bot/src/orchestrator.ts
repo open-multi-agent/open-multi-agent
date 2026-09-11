@@ -74,7 +74,7 @@ export async function generateReleaseDecision(
   const model = options.model ?? DEFAULT_MODEL
   const shared: Pick<AgentConfig,
     'model' | 'provider' | 'adapter' | 'apiKey' | 'temperature' | 'thinking' | 'maxTokens' |
-    'parallelToolCalls' | 'maxToolOutputChars' | 'compressToolResults'> = {
+    'parallelToolCalls' | 'extraBody' | 'maxToolOutputChars' | 'compressToolResults'> = {
       model,
       provider: options.adapter ? undefined : 'deepseek',
       adapter: options.adapter,
@@ -90,6 +90,15 @@ export async function generateReleaseDecision(
       // replace it because it is only checked after a call returns.
       maxTokens: 64_000,
       parallelToolCalls: false,
+      // DeepSeek's JSON output mode makes the provider guarantee that the
+      // answer parses. Two roles failed in 2026-09 on bracket mismatches deep
+      // inside long nested output, and the in-run correction failed the same
+      // way; #599 moved the nested object last as a workaround. The mode is
+      // accepted together with thinking and tool calls, and the structured
+      // output instruction already carries the word "json" that DeepSeek
+      // requires in the prompt. Schema conformance is still validated by OMA;
+      // this only removes the syntax failure class.
+      extraBody: { response_format: { type: 'json_object' } },
       maxToolOutputChars: 75_000,
       compressToolResults: { minChars: 2_000 },
     }

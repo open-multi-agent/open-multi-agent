@@ -27,7 +27,11 @@ as the truncation it is. The evidence roles have five turns and the planner and
 reviewer three. Every DAG task has `maxRetries: 0`, so a failed role is not
 silently rerun as a whole new analysis (OMA's one in-run structured-output
 correction still applies). The complete planning DAG has a thirty-minute
-wall-clock deadline.
+wall-clock deadline. Every request also sets DeepSeek's JSON output mode
+(`response_format: json_object`), so the provider guarantees that the answer
+parses as JSON. OMA still validates the answer against the role's schema, so
+the in-run correction only has to handle a schema mismatch, not a bracket
+error in several thousand characters of nested output.
 
 Repository diffs are untrusted evidence. The analyst and compatibility auditor
 receive only three custom read-only tools: immutable release evidence, a
