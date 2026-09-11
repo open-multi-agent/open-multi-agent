@@ -44,6 +44,13 @@
   `onAgentStream` coverage in `runTasks()`, `done` stream-event payloads per
   layer, retryable-error classification, and the `RedactingStore` example
   constructor call.
+- The `delegate_to_agent` error returned when the pool has no free slot now
+  points at both ceilings: "Increase maxConcurrency on the orchestrator or the
+  team" rather than the orchestrator alone. Callers that match on that string
+  should update it.
+- The `@open-multi-agent/core` package description on npm was rewritten to lead
+  with running in your own environment, approval gates, and a verifiable record
+  of every run.
 - LICENSE now names Shenzhen YuanASI Technology Co., Ltd. alongside the
   open-multi-agent contributors, package READMEs close with a maintainer line,
   and the `author` field in the published package.json files points at YuanASI.
@@ -52,21 +59,21 @@
 ### Compatibility
 
 - Runs that do not configure a run store keep the existing single-process
-  checkpoint and restore behavior; `restore()` becomes the resume command only
-  when a run store is in use.
+  checkpoint and restore behavior. `restore()` is the resume command either way;
+  with a run store it additionally makes a suspended record eligible and takes
+  the lease before reconciling the approval ledger.
 - A team that set `maxConcurrency` below the orchestrator value previously ran
   at the orchestrator value and now runs at its own lower cap. Raise or remove
   the team cap, or raise `OrchestratorConfig.maxConcurrency`, to keep the
   previous parallelism; leave the field unset to keep the old behavior exactly.
 - Non-integer or less-than-1 team caps no longer pass through silently. They
   emit an `INVALID_TEAM_MAX_CONCURRENCY` warning on `onProgress` and fall back
-  to the orchestrator value. Review `onProgress` handlers that match warning or
-  event codes exhaustively.
-- The old `deepseek-v4-flash` name still resolves according to the supplied
-  evidence, and library callers that pass an explicit `model` are unaffected.
-  Callers, cost maps, telemetry filters, or snapshot assertions that key on the
-  model string should be reviewed because the CLI default now sends
-  `deepseek-flash`.
+  to the orchestrator value. This is a new code on the existing `warning` event;
+  no event type was added.
+- The old `deepseek-v4-flash` name still resolves, and library callers that pass
+  an explicit `model` are unaffected. Cost maps, telemetry filters, or snapshot
+  assertions that key on the model string should be reviewed because the CLI
+  default now sends `deepseek-flash`.
 - No existing export was removed or renamed and every new config field is
   optional, so existing code keeps compiling and running unchanged unless it
   opts into the run store or relies on ignored team concurrency caps.
