@@ -79,7 +79,7 @@
   opts into the run store or relies on ignored team concurrency caps.
 - The otel package changed only in shipped-file metadata; it has no public API
   or runtime change.
-- The `_env.example` that create-oma-app scaffolds now names `deepseek-flash`
+- The `.env.example` that create-oma-app scaffolds now names `deepseek-flash`
   in the commented-out `OMA_MODEL` line of its DeepSeek section; existing
   generated projects are not rewritten by this release.
 
