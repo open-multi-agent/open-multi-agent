@@ -42,7 +42,7 @@
 ## 在你自己的环境里跑
 
 - **不上报遥测。** 包内没有统计上报、许可证检查、更新检查或任何回连请求。代码里的"telemetry"指本地 trace 记录，写到你自己构造的 sink。见[自托管与数据驻留](docs/self-hosting.md)。
-- **没有托管控制面。** `@open-multi-agent/core` 是一个库。没有 OMA 后端，没有账号；所有持久化都经过你提供的 store。
+- **没有托管控制面。** `@open-multi-agent/core` 是一个库。没有 OMA 后端，没有账号，也没有这样的计划；所有持久化都经过你提供的 store。
 - **你的密钥。** 凭证来自你的环境变量或配置，只发往你指定的 provider。
 - **本地模型。** 通过 `baseURL` 把 OpenAI 兼容适配器指向 Ollama、vLLM 或 llama-server；对以文本形式返回工具调用的本地模型，有容错解析器兜底。
 - **云端模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Amazon Bedrock、Google Gemini、xAI Grok、GitHub Copilot 适配器，另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。见 [Provider 文档](docs/providers.md)。
@@ -133,11 +133,33 @@ console.log(result.totalTokenUsage)
 
 [Coordinator](docs/coordinator.md) 说明它决定什么、能看到什么。[计划回放](docs/plan-replay.md)固化已审批的计划，[Consensus](docs/consensus.md) 用独立评审 Agent 验证输出，[外部 Agent](docs/external-agents.md) 通过 process 与 ACP backend 把 Claude Code、Gemini CLI、Codex 放到同一张任务图上。
 
-## 不做的事
+## 基于 OMA 构建
 
-- **没有托管云。** 没有由 OMA 运营的后端、账号或托管运行时，也没有这样的计划。数据在哪里，就在哪里跑。
-- **没有 SaaS 看板。** Run Viewer 是从你的 trace store 离线渲染出的静态页面。需要接入自有监控，用可选的 OpenTelemetry 适配器导出。
-- **不绑定厂商。** Provider、记忆存储、checkpoint 存储、journal 后端都是可以自行实现的接口。运行记录存在你自己的文件和存储里。
+`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**，作者 [Ali Sünbül](https://github.com/xeloxa)。WordPress 安全分析平台，在 Docker runtime 里直接使用 OMA 内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
+- **[Bilig WorkPaper](https://github.com/proompteng/bilig)**：公式工作簿 MCP 服务，提供双向收录的 OMA 集成，可编辑输入、重新计算公式、校验回读结果并持久化 WorkPaper JSON。
+
+<details>
+<summary>更多用户与集成</summary>
+
+**用户**
+
+- **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 Coordinator 与上下文压缩，在显存受限的条件下维持自治 Agent 循环持续运行。自框架发布首月起持续贡献。
+- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**，作者 [kidoom](https://github.com/kidoom)。AI pull request 审查助手，运行 OMA 审查 team，用 `defineTool` 定义仓库上下文工具，并加入自定义 `ContextStrategy` 做 token-aware 的 diff 压缩。
+- **[StuFlow](https://github.com/znc15/StuFlow)**，作者 [znc15](https://github.com/znc15)。终端 AI 编码助手，以 OMA 为编排内核，通过 `runAgent` / `runTasks` / `runTeam` 驱动自定义 coordinator，搭配 DeepSeek。
+- **[Reports to Charts Studio](https://github.com/NARNIX0/Evident-Project)**。把文档和研究表格转换成可直接用于幻灯片的图表，使用由五个角色组成的数据提取评审组，结合结构化输出与确定性校验。
+
+**集成**
+
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
+- **[baize-oma](https://github.com/timywel/baize-oma)**：HTTP 适配层，把 OMA 的 `runAgent()` 和 `runTeam()` 暴露为 Baize slot 能力。
+
+</details>
+
+在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
 
 我们为需要的组织在 OMA 上构建由客户自己拥有的系统。邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)，或微信扫码联系。
 
