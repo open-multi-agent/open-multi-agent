@@ -114,7 +114,6 @@ const result = await oma.runTeam(team, '找出逾期发票并起草催款提醒�
 - **[temodar-agent](https://github.com/xeloxa/temodar-agent)**，作者 [Ali Sünbül](https://github.com/xeloxa)。WordPress 安全分析平台，在 Docker runtime 里直接使用 OMA 内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。(约 60 stars)
 - **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 Coordinator 与上下文压缩，在显存受限的条件下维持自治 Agent 循环持续运行。自框架发布首月起持续贡献。
 - **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
-- **[Bilig WorkPaper](https://github.com/proompteng/bilig)**：公式工作簿 MCP 服务，提供双向收录的 OMA 集成，可编辑输入、重新计算公式、校验回读结果并持久化 WorkPaper JSON。(约 35 stars)
 
 <details>
 <summary>更多用户与集成</summary>
