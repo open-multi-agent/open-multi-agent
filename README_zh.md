@@ -137,11 +137,7 @@ const result = await oma.runTeam(team, '找出逾期发票并起草催款提醒�
 
 在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
 
-我们为需要的组织在 OMA 上构建由客户自己拥有的系统。邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)，或微信扫码联系。
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
-</p>
+我们为需要的组织在 OMA 上构建由客户自己拥有的 AI 系统。邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)，或微信 13760249135。
 
 ## 赞助商
 
