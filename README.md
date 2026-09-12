@@ -36,8 +36,6 @@
 
 No telemetry. No hosted control plane. Your keys, your models — cloud, local (Ollama, vLLM, llama-server), or Chinese providers — your environment. Nothing stops working when the people who built it leave.
 
-`open-multi-agent` is a library for TypeScript backends that drops into any Node.js app. The whole run stays data you can inspect, approve, and replay; the Run Viewer further down replays a real run from the trace store.
-
 ## Get started
 
 Requires Node.js 20 or newer. For production, use a currently maintained
