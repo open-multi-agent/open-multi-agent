@@ -32,7 +32,7 @@
  *
  * - **Coordinator pattern** — `runTeam()` spins up a temporary "coordinator" agent
  *   that breaks the high-level goal into tasks, assigns them, and synthesises the
- *   final answer. This is the framework's killer feature.
+ *   final answer.
  * - **Parallel-by-default** — Independent tasks (no shared dependency) run in
  *   parallel up to `maxConcurrency`.
  * - **Graceful failure** — A failed task marks itself `'failed'` and its direct
@@ -1174,7 +1174,7 @@ export class OpenMultiAgent {
   }
 
   // -------------------------------------------------------------------------
-  // Auto-orchestrated team run (KILLER FEATURE)
+  // Auto-orchestrated team run
   // -------------------------------------------------------------------------
 
   /**

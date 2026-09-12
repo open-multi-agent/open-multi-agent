@@ -8,8 +8,8 @@
 </h1>
 
 <p align="center">
-  <strong>Describe the goal, not the graph.</strong><br/>
-  A self-organizing team of agents that runs in your environment, pauses for approval on consequential actions, and leaves a verifiable record of every run.
+  <strong>Agents your organization can own, approve, and audit.</strong><br/>
+  A self-hosted TypeScript agent runtime: consequential actions wait for durable, tamper-evident approvals, and every run leaves a record you can verify offline, byte for byte.
 </p>
 
 <p align="center">
@@ -283,7 +283,7 @@ persistence boundary.
 
 Core already provides run identity, trace sinks, execution receipts, queryable in-memory/file stores, and an offline Run Viewer. These cover local debugging, audit artifacts, and post-run analysis without OpenTelemetry.
 
-[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) is an **optional enterprise integration** for teams that already operate a centralized OpenTelemetry stack. It converts OMA traces into standard OTel spans so multi-agent runs can join company-wide monitoring, alerting, and incident workflows. The application owns the provider and its lifecycle; telemetry failures never change the run result.
+[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) is an **optional integration** for teams that already operate a centralized OpenTelemetry stack. It converts OMA traces into standard OTel spans so multi-agent runs can join company-wide monitoring, alerting, and incident workflows. The application owns the provider and its lifecycle; telemetry failures never change the run result.
 
 See the [observability guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md) and the [migration guide](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md).
 

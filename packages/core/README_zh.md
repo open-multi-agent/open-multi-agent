@@ -8,8 +8,8 @@
 </h1>
 
 <p align="center">
-  <strong>只描述目标，不画任务图。</strong><br/>
-  多智能体自主分工协作，在自有环境中运行：关键操作经审批放行，每次运行留有可核验记录。
+  <strong>自己拥有、自己审批、自己审计的 Agent 运行时。</strong><br/>
+  自托管的 TypeScript Agent 运行时：关键操作要等一条持久化、防篡改的审批，每次运行留下一份可离线逐字节核验的记录。
 </p>
 
 <p align="center">
@@ -266,7 +266,7 @@ Coordinator -> 任务 DAG -> Scheduler -> AgentPool
 
 Core 已提供运行标识、trace sink、执行回执、可查询的内存/文件存储和离线 Run Viewer，足以完成本地排障、审计留档与运行后分析，无需安装 OpenTelemetry。
 
-[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 是面向已有集中式 OpenTelemetry 平台团队的**可选企业集成**。它把 OMA trace 转成标准 OTel span，让多 agent 运行接入企业统一监控、告警和故障处理流程。应用负责 provider 及其生命周期；telemetry 故障不会改变业务运行结果。
+[`@open-multi-agent/otel`](https://github.com/open-multi-agent/open-multi-agent/blob/main/packages/otel/README.md) 是面向已有集中式 OpenTelemetry 平台团队的**可选集成**。它把 OMA trace 转成标准 OTel span，让多 agent 运行接入统一监控、告警和故障处理流程。应用负责 provider 及其生命周期；telemetry 故障不会改变业务运行结果。
 
 详见[可观测性指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability.md)与[迁移指南](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/observability-migration.md)。
 

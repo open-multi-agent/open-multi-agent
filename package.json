@@ -2,7 +2,7 @@
   "name": "open-multi-agent",
   "version": "0.0.0",
   "private": true,
-  "description": "Private workspace root for the open-multi-agent monorepo. The published package is @open-multi-agent/core in packages/core.",
+  "description": "Self-hosted TypeScript agent runtime with durable approvals and verifiable run records. Own it, approve it, audit it.",
   "workspaces": [
     "packages/*"
   ],
