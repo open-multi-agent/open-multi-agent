@@ -1,4 +1,4 @@
-# OMA — 自己拥有、自己审批、自己审计的 Agent 运行时
+# OMA — Agent 的所有权、审批权与审计权，归于使用它的组织
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@open-multi-agent/core"><img src="https://img.shields.io/npm/v/@open-multi-agent/core" alt="npm version"></a>
