@@ -8,7 +8,7 @@
 </h1>
 
 <p align="center">
-  <strong>自己拥有、自己审批、自己审计的 Agent 运行时。</strong><br/>
+  <strong>Agent 的所有权、审批权与审计权，归于使用它的组织。</strong><br/>
   自托管的 TypeScript Agent 运行时：关键操作要等一条持久化、防篡改的审批，每次运行留下一份可离线逐字节核验的记录。
 </p>
 
@@ -105,9 +105,51 @@ const result = await oma.runTeam(team, '找出逾期发票并起草催款提醒�
 
 ## 在你自己的环境里跑
 
-- **不上报遥测。** 不发统计、许可证、更新或任何回连请求；对外 HTTP 只发往你配置的 Provider，指向本地服务后就不再出机器。[自托管与数据驻留](docs/self-hosting.md)
+- **不上报遥测，没有托管控制面。** 它是一个库，没有 OMA 后端和账号，也没有这样的计划；不发统计、许可证、更新或任何回连请求。[自托管与数据驻留](docs/self-hosting.md)
 - **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
 - **出网策略。** `offline` 或 `allowlist`，在内置适配器建立连接前生效；下级策略只能收紧上级，无法完整约束的传输层直接失败关闭，process 与 ACP backend 不在覆盖范围内。[LLM 出网策略](docs/egress-policy.md)
+
+## 基于 OMA 构建
+
+`open-multi-agent` 2026-04-01 发布，MIT 协议。当前公开在用与集成的项目：
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)**，作者 [Ali Sünbül](https://github.com/xeloxa)。WordPress 安全分析平台，在 Docker runtime 里直接使用 OMA 内置工具（`bash`、`file_*`、`grep`）。已确认生产环境使用。
+- **[Engram](https://www.engram-memory.com)**："AI 记忆的 Git"。在 agent 之间即时同步知识并标记冲突。([repo](https://github.com/Agentscreator/engram-memory)，约 80 stars)
+- **[Bilig WorkPaper](https://github.com/proompteng/bilig)**：公式工作簿 MCP 服务，提供双向收录的 OMA 集成，可编辑输入、重新计算公式、校验回读结果并持久化 WorkPaper JSON。
+
+<details>
+<summary>更多用户与集成</summary>
+
+**用户**
+
+- **[Mark Galyan](https://github.com/apollo-mg)** 在本地量化模型上完全离线运行 OMA，借助 Coordinator 与上下文压缩，在显存受限的条件下维持自治 Agent 循环持续运行。自框架发布首月起持续贡献。
+- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)**，作者 [kidoom](https://github.com/kidoom)。AI pull request 审查助手，运行 OMA 审查 team，用 `defineTool` 定义仓库上下文工具，并加入自定义 `ContextStrategy` 做 token-aware 的 diff 压缩。
+- **[StuFlow](https://github.com/znc15/StuFlow)**，作者 [znc15](https://github.com/znc15)。终端 AI 编码助手，以 OMA 为编排内核，通过 `runAgent` / `runTasks` / `runTeam` 驱动自定义 coordinator，搭配 DeepSeek。
+- **[Reports to Charts Studio](https://github.com/NARNIX0/Evident-Project)**。把文档和研究表格转换成可直接用于幻灯片的图表，使用由五个角色组成的数据提取评审组，结合结构化输出与确定性校验。
+
+**集成**
+
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**：Sidecar，检测跨运行的委派环、重复和速率突增。
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**：agentic-coding 脚手架，把 OMA 列为可选编排后端，附带 `runTeam` 工作流模板。
+- **[baize-oma](https://github.com/timywel/baize-oma)**：HTTP 适配层，把 OMA 的 `runAgent()` 和 `runTeam()` 暴露为 Baize slot 能力。
+
+</details>
+
+在生产或 side project 中使用了 `open-multi-agent`？[请开个 Discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)，我们会将其列在这里。做了集成？收录方式见[集成指南](packages/core/examples/integrations/README.md)。深度集成的产品见 [Featured partner 计划](docs/featured-partner.md)。
+
+我们为需要的组织在 OMA 上构建由客户自己拥有的系统。邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)，或微信扫码联系。
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
+</p>
+
+## 赞助商
+
+支持 `open-multi-agent` 的付费赞助商。赞助不影响技术决策与模型推荐。
+
+**Provider**
+
+- **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**：全模态 AI 推理平台，单一 API 打通视频、图像与 LLM，覆盖 300+ 精选模型。$5 credit 兑换码面向 OMA 用户开放，先到先得。见 [Atlas Cloud 接入指南](docs/providers-atlascloud_zh.md)。
 
 ## 可选的 Coordinator
 
@@ -145,26 +187,6 @@ console.log(result.totalTokenUsage)
 <p align="center"><em>内置离线 Run Viewer 基于 trace store 回放一次真实运行：任务 DAG、span 瀑布与逐任务证据，不依赖任何托管服务。</em></p>
 
 [Coordinator](docs/coordinator.md) 说明它决定什么、能看到什么。[计划回放](docs/plan-replay.md)固化已审批的计划，[Consensus](docs/consensus.md) 用独立评审 Agent 验证输出，[外部 Agent](docs/external-agents.md) 通过 process 与 ACP backend 把 Claude Code、Gemini CLI、Codex 放到同一张任务图上。
-
-## 不做的事
-
-- **没有托管云。** 没有由 OMA 运营的后端、账号、控制面或托管运行时，也没有这样的计划。数据在哪里，就在哪里跑。
-- **没有 SaaS 看板。** Run Viewer 是从你的 trace store 离线渲染出的静态页面。需要接入自有监控，用可选的 OpenTelemetry 适配器导出。
-- **不绑定厂商。** Provider、记忆存储、checkpoint 存储、journal 后端都是可以自行实现的接口。运行记录存在你自己的文件和存储里。
-
-我们为需要的组织在 OMA 上构建由客户自己拥有的系统。邮件 [jack@yuanasi.com](mailto:jack@yuanasi.com)，或微信扫码联系。
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/wechat-qr.jpg" alt="微信扫码添加 JackChen 咨询" width="180">
-</p>
-
-## 赞助商
-
-支持 `open-multi-agent` 的付费赞助商。赞助不影响技术决策与模型推荐。
-
-**Provider**
-
-- **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**：全模态 AI 推理平台，单一 API 打通视频、图像与 LLM，覆盖 300+ 精选模型。$5 credit 兑换码面向 OMA 用户开放，先到先得。见 [Atlas Cloud 接入指南](docs/providers-atlascloud_zh.md)。
 
 ## 包
 

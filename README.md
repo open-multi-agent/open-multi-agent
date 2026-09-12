@@ -108,9 +108,47 @@ Declare `governanceIntent: 'required'` with `requiredRoles`, and the run is judg
 
 ## Runs where you run
 
-- **No telemetry.** The package makes no analytics, license, update, or phone-home request. Its only outbound HTTP goes to the provider your configuration names; point that at a local server and nothing leaves the machine. [Self-hosting](docs/self-hosting.md)
+- **No telemetry, no hosted control plane.** A library with no OMA backend or account, and none planned. It makes no analytics, license, update, or phone-home request. [Self-hosting](docs/self-hosting.md)
 - **Your keys, your models.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Bedrock, Gemini, Grok, and Copilot, and for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu; Ollama, vLLM, and llama-server through `baseURL`; any OpenAI-compatible endpoint and Vercel AI SDK providers. [Providers](docs/providers.md)
 - **Egress policy.** `offline` or `allowlist`, checked before a built-in adapter connects. A child policy can only tighten its parent, an unenforceable transport fails closed, and process and ACP backends sit outside it. [LLM egress policy](docs/egress-policy.md)
+
+## Built with OMA
+
+`open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
+
+- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** by [Ali Sünbül](https://github.com/xeloxa). WordPress security analysis platform running OMA's built-in tools (`bash`, `file_*`, `grep`) inside a Docker runtime. Confirmed production use.
+- **[Engram](https://www.engram-memory.com)**: "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory), ~80 stars)
+- **[Bilig WorkPaper](https://github.com/proompteng/bilig)**: Formula-workbook MCP server with a reciprocal OMA integration for editing inputs, recalculating formulas, verifying readback, and persisting WorkPaper JSON.
+
+<details>
+<summary>More users and integrations</summary>
+
+**Users**
+
+- **[Mark Galyan](https://github.com/apollo-mg)** runs OMA fully offline on local quantized models, using the coordinator and context compaction to keep autonomous agent loops alive under tight VRAM limits. Contributor since the framework's first month.
+- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)** by [kidoom](https://github.com/kidoom). AI pull-request review assistant running an OMA review team, with `defineTool` repo-context tools and a custom `ContextStrategy` for token-aware diff compression.
+- **[StuFlow](https://github.com/znc15/StuFlow)** by [znc15](https://github.com/znc15). Terminal AI coding assistant on OMA's orchestration core, driving `runAgent` / `runTasks` / `runTeam` with a custom coordinator, paired with DeepSeek.
+- **[Reports to Charts Studio](https://github.com/NARNIX0/Evident-Project)**. Turns documents and research tables into slide-ready charts, using a five-role extraction council with structured outputs and deterministic validation.
+
+**Integrations**
+
+- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**: Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
+- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**: Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
+- **[baize-oma](https://github.com/timywel/baize-oma)**: HTTP adapter exposing OMA `runAgent()` and `runTeam()` as Baize slot capabilities.
+
+</details>
+
+Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here. Built an integration? The [integration guide](packages/core/examples/integrations/README.md) covers how to get listed. For a deep integration, see the [Featured partner program](docs/featured-partner.md).
+
+We build customer-owned systems on OMA for organizations that need one. Email [jack@yuanasi.com](mailto:jack@yuanasi.com).
+
+## Sponsors
+
+Paid sponsors supporting `open-multi-agent`. Sponsorship does not affect technical decisions or model recommendations.
+
+**Providers**
+
+- **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**: Full-modal AI inference platform giving one API for video, image, and LLM across 300+ curated models. $5 credit vouchers for OMA users, first come first served. See the [Atlas Cloud setup guide](docs/providers-atlascloud.md).
 
 ## Optional coordinator
 
@@ -148,22 +186,6 @@ console.log(result.totalTokenUsage)
 <p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
 
 [Coordinator](docs/coordinator.md) covers what it decides and what it is allowed to see. [Plan replay](docs/plan-replay.md) freezes an approved plan, [Consensus](docs/consensus.md) verifies outputs with independent judges, and [External agents](docs/external-agents.md) puts Claude Code, Gemini CLI, and Codex on the same task graph through process and ACP backends.
-
-## Non-goals
-
-- **No hosted cloud.** There is no OMA-run backend, account, control plane, or managed runtime, and none is planned. Run it where your data already lives.
-- **No SaaS dashboard.** The Run Viewer is a static page rendered offline from your trace store. Export to your own monitoring through the optional OpenTelemetry adapter if you want one.
-- **No vendor lock-in.** Providers, memory stores, checkpoint stores, and journal backends are interfaces you can implement. Run records live in files and stores you own.
-
-We build customer-owned systems on OMA for organizations that need one. Email [jack@yuanasi.com](mailto:jack@yuanasi.com).
-
-## Sponsors
-
-Paid sponsors supporting `open-multi-agent`. Sponsorship does not affect technical decisions or model recommendations.
-
-**Providers**
-
-- **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**: Full-modal AI inference platform giving one API for video, image, and LLM across 300+ curated models. $5 credit vouchers for OMA users, first come first served. See the [Atlas Cloud setup guide](docs/providers-atlascloud.md).
 
 ## Packages
 
