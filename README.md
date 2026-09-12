@@ -21,30 +21,6 @@ No telemetry. No hosted control plane. Your keys, your models — cloud, local (
   <strong>English</strong> · <a href="./README_zh.md">中文</a>
 </p>
 
-## Durable approvals
-
-A plan, task dispatch, or tool-call gate can return `suspend`. The request is stored beside the checkpoint, bound to a SHA-256 hash of exactly what the reviewer saw, and the run resumes from that content after a restart. A decision is atomic and first-wins; a tampered request or a store without compare-and-set fails closed.
-
-[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts) (16 cases) · [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts) (7 cases) · [Guide](docs/durable-approvals.md)
-
-## Verifiable journal
-
-Attach a journal backend and the run records every block the model saw, every tool call and result, and every context rewrite. `verifyRun()` reads it back cold, offline, and checks that each block's named source event still reproduces it byte for byte; an evicted window is reported as inconclusive, not as a failure. It proves lineage and content, not that the file was never edited.
-
-[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts) (11 cases) · [Guide](docs/run-journal.md)
-
-## Governance floor
-
-Declare `governanceIntent: 'required'` with `requiredRoles`, and the run is judged on an execution receipt: which roles ran, in what order, with which dependency edges, and whether an independent review happened. The evaluator never sees agent output text, and a run can succeed and still report `unsatisfied`.
-
-[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts) (16 cases) · [Guide](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [Receipts](docs/observability.md#execution-receipts)
-
-## Runs where you run
-
-- **No telemetry, no hosted control plane.** A library with no OMA backend or account, and none planned. It makes no analytics, license, update, or phone-home request. [Self-hosting](docs/self-hosting.md)
-- **Your keys, your models.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Bedrock, Gemini, Grok, and Copilot, and for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu; Ollama, vLLM, and llama-server through `baseURL`; any OpenAI-compatible endpoint and Vercel AI SDK providers. [Providers](docs/providers.md)
-- **Egress policy.** `offline` or `allowlist`, checked before a built-in adapter connects. A child policy can only tighten its parent, an unenforceable transport fails closed, and process and ACP backends sit outside it. [LLM egress policy](docs/egress-policy.md)
-
 ## Get started
 
 Requires Node.js 20 or newer. For production, use a currently maintained
@@ -95,42 +71,29 @@ Set `OPENAI_API_KEY` to run this example. [Providers](docs/providers.md) covers 
 
 `runAgent()` runs a single agent, `runTasks()` executes an explicit pipeline, and `runTeam()` plans from a goal. The [Core package guide](packages/core/README.md) walks through all three modes, provider and credential setup, and the production checklist. The [example index](packages/core/examples/README.md) lists every runnable example across basics, cookbook workflows, patterns, providers, and integrations.
 
-## Optional coordinator
+## Durable approvals
 
-`runTeam()` decomposes a goal into a task graph across agents. One model call turns the goal into task specs with assignees and dependencies, a deterministic scheduler executes them, and a second call writes the final answer from the completed task outputs. The coordinator is never consulted mid-run, and the finished run is data you can read back. Use `runAgent()` or `runTasks()` when you already know the work.
+A plan, task dispatch, or tool-call gate can return `suspend`. The request is stored beside the checkpoint, bound to a SHA-256 hash of exactly what the reviewer saw, and the run resumes from that content after a restart. A decision is atomic and first-wins; a tampered request or a store without compare-and-set fails closed.
 
-```typescript
-import { OpenMultiAgent } from '@open-multi-agent/core'
+[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts) (16 cases) · [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts) (7 cases) · [Guide](docs/durable-approvals.md)
 
-const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
+## Verifiable journal
 
-const team = oma.createTeam('research-team', {
-  name: 'research-team',
-  agents: [
-    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
-    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
-  ],
-  sharedMemory: true,
-})
+Attach a journal backend and the run records every block the model saw, every tool call and result, and every context rewrite. `verifyRun()` reads it back cold, offline, and checks that each block's named source event still reproduces it byte for byte; an evicted window is reported as inconclusive, not as a failure. It proves lineage and content, not that the file was never edited.
 
-const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts) (11 cases) · [Guide](docs/run-journal.md)
 
-// Nothing above declares a task graph. The coordinator planned one at runtime,
-// and the finished run is data you can read back.
-for (const task of result.tasks ?? []) {
-  console.log(`[${task.status}] ${task.title} → ${task.assignee ?? 'unassigned'}`, task.dependsOn)
-}
+## Governance floor
 
-console.log(result.agentResults.get('coordinator')?.output)
-console.log(result.totalTokenUsage)
-```
+Declare `governanceIntent: 'required'` with `requiredRoles`, and the run is judged on an execution receipt: which roles ran, in what order, with which dependency edges, and whether an independent review happened. The evaluator never sees agent output text, and a run can succeed and still report `unsatisfied`.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
-</p>
-<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
+[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts) (16 cases) · [Guide](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [Receipts](docs/observability.md#execution-receipts)
 
-[Coordinator](docs/coordinator.md) covers what it decides and what it is allowed to see. [Plan replay](docs/plan-replay.md) freezes an approved plan, [Consensus](docs/consensus.md) verifies outputs with independent judges, and [External agents](docs/external-agents.md) puts Claude Code, Gemini CLI, and Codex on the same task graph through process and ACP backends.
+## Runs where you run
+
+- **No telemetry, no hosted control plane.** A library with no OMA backend or account, and none planned. It makes no analytics, license, update, or phone-home request. [Self-hosting](docs/self-hosting.md)
+- **Your keys, your models.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Bedrock, Gemini, Grok, and Copilot, and for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu; Ollama, vLLM, and llama-server through `baseURL`; any OpenAI-compatible endpoint and Vercel AI SDK providers. [Providers](docs/providers.md)
+- **Egress policy.** `offline` or `allowlist`, checked before a built-in adapter connects. A child policy can only tighten its parent, an unenforceable transport fails closed, and process and ACP backends sit outside it. [LLM egress policy](docs/egress-policy.md)
 
 ## Built with OMA
 
@@ -169,6 +132,43 @@ Paid sponsors supporting `open-multi-agent`. Sponsorship does not affect technic
 **Providers**
 
 - **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**: Full-modal AI inference platform giving one API for video, image, and LLM across 300+ curated models. $5 credit vouchers for OMA users, first come first served. See the [Atlas Cloud setup guide](docs/providers-atlascloud.md).
+
+## Optional coordinator
+
+`runTeam()` decomposes a goal into a task graph across agents. One model call turns the goal into task specs with assignees and dependencies, a deterministic scheduler executes them, and a second call writes the final answer from the completed task outputs. The coordinator is never consulted mid-run, and the finished run is data you can read back. Use `runAgent()` or `runTasks()` when you already know the work.
+
+```typescript
+import { OpenMultiAgent } from '@open-multi-agent/core'
+
+const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
+
+const team = oma.createTeam('research-team', {
+  name: 'research-team',
+  agents: [
+    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
+    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
+  ],
+  sharedMemory: true,
+})
+
+const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+
+// Nothing above declares a task graph. The coordinator planned one at runtime,
+// and the finished run is data you can read back.
+for (const task of result.tasks ?? []) {
+  console.log(`[${task.status}] ${task.title} → ${task.assignee ?? 'unassigned'}`, task.dependsOn)
+}
+
+console.log(result.agentResults.get('coordinator')?.output)
+console.log(result.totalTokenUsage)
+```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
+</p>
+<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
+
+[Coordinator](docs/coordinator.md) covers what it decides and what it is allowed to see. [Plan replay](docs/plan-replay.md) freezes an approved plan, [Consensus](docs/consensus.md) verifies outputs with independent judges, and [External agents](docs/external-agents.md) puts Claude Code, Gemini CLI, and Codex on the same task graph through process and ACP backends.
 
 ## Packages
 

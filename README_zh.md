@@ -21,30 +21,6 @@
   <a href="./README.md">English</a> · <strong>中文</strong>
 </p>
 
-## 持久化审批
-
-计划、任务派发和工具调用 gate 都可以返回 `suspend`。审批请求写在 checkpoint 旁边，绑定审批人实际看到内容的 SHA-256 哈希，进程重启后从这份内容继续。决定原子、先到先得；内容被篡改，或存储不支持 compare-and-set，直接失败关闭。
-
-[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts)（16 条）· [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts)（7 条）· [文档](docs/durable-approvals.md)
-
-## 可核验日志
-
-接上 journal 后端，运行会记下模型看到的每个 block、每次工具调用及结果、每次上下文改写。`verifyRun()` 离线冷读整份日志，检查每个 block 引用的来源事件是否仍能逐字节复现它；日志窗口被淘汰只报"无法判定"，不算失败。它证明的是血缘与内容，不是文件从未被改过。
-
-[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts)（11 条）· [文档](docs/run-journal.md)
-
-## 治理底线
-
-声明 `governanceIntent: 'required'` 与 `requiredRoles`，运行就按执行回执判定：哪些角色真正执行、先后顺序、依赖边、是否发生独立审查。评估器拿不到 Agent 输出文本；运行可以成功结束，同时报 `unsatisfied`。
-
-[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts)（16 条）· [文档](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [执行回执](docs/observability.md#execution-receipts)
-
-## 在你自己的环境里跑
-
-- **不上报遥测，没有托管控制面。** 它是一个库，没有 OMA 后端和账号，也没有这样的计划；不发统计、许可证、更新或任何回连请求。[自托管与数据驻留](docs/self-hosting.md)
-- **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
-- **出网策略。** `offline` 或 `allowlist`，在内置适配器建立连接前生效；下级策略只能收紧上级，无法完整约束的传输层直接失败关闭，process 与 ACP backend 不在覆盖范围内。[LLM 出网策略](docs/egress-policy.md)
-
 ## 快速开始
 
 要求 Node.js 20 或更高版本。生产环境请使用仍处于维护期的 Node.js LTS 版本。Node.js 20 上游已停止维护，OMA 仅将其保留为迁移过渡窗口，会在下一个 major 版本移除，最早不早于 2026-10-31。
@@ -92,42 +68,29 @@ const result = await oma.runTeam(team, '找出逾期发票并起草催款提醒�
 
 `runAgent()` 运行单个 Agent，`runTasks()` 执行显式流水线，`runTeam()` 从目标自动规划。三种模式、Provider 与凭证配置、生产检查清单见[核心包使用指南](packages/core/README_zh.md)。[示例索引](packages/core/examples/README.md)收录全部可运行示例，覆盖基础、cookbook 流程、模式、Provider 与集成。
 
-## 可选的 Coordinator
+## 持久化审批
 
-`runTeam()` 把一个目标分解为跨 Agent 的任务图。一次模型调用把目标转成带负责人和依赖关系的任务规格，确定性调度器负责执行，第二次调用基于已完成任务的输出写出最终答案。Coordinator 在运行中途不会再被咨询，运行结束后整个过程都是可以读回的数据。已经知道要做什么时，用 `runAgent()` 或 `runTasks()`。
+计划、任务派发和工具调用 gate 都可以返回 `suspend`。审批请求写在 checkpoint 旁边，绑定审批人实际看到内容的 SHA-256 哈希，进程重启后从这份内容继续。决定原子、先到先得；内容被篡改，或存储不支持 compare-and-set，直接失败关闭。
 
-```typescript
-import { OpenMultiAgent } from '@open-multi-agent/core'
+[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts)（16 条）· [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts)（7 条）· [文档](docs/durable-approvals.md)
 
-const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
+## 可核验日志
 
-const team = oma.createTeam('research-team', {
-  name: 'research-team',
-  agents: [
-    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
-    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
-  ],
-  sharedMemory: true,
-})
+接上 journal 后端，运行会记下模型看到的每个 block、每次工具调用及结果、每次上下文改写。`verifyRun()` 离线冷读整份日志，检查每个 block 引用的来源事件是否仍能逐字节复现它；日志窗口被淘汰只报"无法判定"，不算失败。它证明的是血缘与内容，不是文件从未被改过。
 
-const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts)（11 条）· [文档](docs/run-journal.md)
 
-// 以上代码没有声明任何任务图，任务 DAG 由 Coordinator 在运行时生成，
-// 运行结束后整个过程都是可以读回的数据。
-for (const task of result.tasks ?? []) {
-  console.log(`[${task.status}] ${task.title} → ${task.assignee ?? 'unassigned'}`, task.dependsOn)
-}
+## 治理底线
 
-console.log(result.agentResults.get('coordinator')?.output)
-console.log(result.totalTokenUsage)
-```
+声明 `governanceIntent: 'required'` 与 `requiredRoles`，运行就按执行回执判定：哪些角色真正执行、先后顺序、依赖边、是否发生独立审查。评估器拿不到 Agent 输出文本；运行可以成功结束，同时报 `unsatisfied`。
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer 回放真实运行：任务 DAG 与 span 瀑布双视图，展示每个任务的状态、负责人、token 与工具调用" width="960" height="540" loading="lazy">
-</p>
-<p align="center"><em>内置离线 Run Viewer 基于 trace store 回放一次真实运行：任务 DAG、span 瀑布与逐任务证据，不依赖任何托管服务。</em></p>
+[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts)（16 条）· [文档](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [执行回执](docs/observability.md#execution-receipts)
 
-[Coordinator](docs/coordinator.md) 说明它决定什么、能看到什么。[计划回放](docs/plan-replay.md)固化已审批的计划，[Consensus](docs/consensus.md) 用独立评审 Agent 验证输出，[外部 Agent](docs/external-agents.md) 通过 process 与 ACP backend 把 Claude Code、Gemini CLI、Codex 放到同一张任务图上。
+## 在你自己的环境里跑
+
+- **不上报遥测，没有托管控制面。** 它是一个库，没有 OMA 后端和账号，也没有这样的计划；不发统计、许可证、更新或任何回连请求。[自托管与数据驻留](docs/self-hosting.md)
+- **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
+- **出网策略。** `offline` 或 `allowlist`，在内置适配器建立连接前生效；下级策略只能收紧上级，无法完整约束的传输层直接失败关闭，process 与 ACP backend 不在覆盖范围内。[LLM 出网策略](docs/egress-policy.md)
 
 ## 基于 OMA 构建
 
@@ -170,6 +133,43 @@ console.log(result.totalTokenUsage)
 **Provider**
 
 - **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**：全模态 AI 推理平台，单一 API 打通视频、图像与 LLM，覆盖 300+ 精选模型。$5 credit 兑换码面向 OMA 用户开放，先到先得。见 [Atlas Cloud 接入指南](docs/providers-atlascloud_zh.md)。
+
+## 可选的 Coordinator
+
+`runTeam()` 把一个目标分解为跨 Agent 的任务图。一次模型调用把目标转成带负责人和依赖关系的任务规格，确定性调度器负责执行，第二次调用基于已完成任务的输出写出最终答案。Coordinator 在运行中途不会再被咨询，运行结束后整个过程都是可以读回的数据。已经知道要做什么时，用 `runAgent()` 或 `runTasks()`。
+
+```typescript
+import { OpenMultiAgent } from '@open-multi-agent/core'
+
+const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
+
+const team = oma.createTeam('research-team', {
+  name: 'research-team',
+  agents: [
+    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
+    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
+  ],
+  sharedMemory: true,
+})
+
+const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+
+// 以上代码没有声明任何任务图，任务 DAG 由 Coordinator 在运行时生成，
+// 运行结束后整个过程都是可以读回的数据。
+for (const task of result.tasks ?? []) {
+  console.log(`[${task.status}] ${task.title} → ${task.assignee ?? 'unassigned'}`, task.dependsOn)
+}
+
+console.log(result.agentResults.get('coordinator')?.output)
+console.log(result.totalTokenUsage)
+```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer 回放真实运行：任务 DAG 与 span 瀑布双视图，展示每个任务的状态、负责人、token 与工具调用" width="960" height="540" loading="lazy">
+</p>
+<p align="center"><em>内置离线 Run Viewer 基于 trace store 回放一次真实运行：任务 DAG、span 瀑布与逐任务证据，不依赖任何托管服务。</em></p>
+
+[Coordinator](docs/coordinator.md) 说明它决定什么、能看到什么。[计划回放](docs/plan-replay.md)固化已审批的计划，[Consensus](docs/consensus.md) 用独立评审 Agent 验证输出，[外部 Agent](docs/external-agents.md) 通过 process 与 ACP backend 把 Claude Code、Gemini CLI、Codex 放到同一张任务图上。
 
 ## 包
 
