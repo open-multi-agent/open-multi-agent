@@ -23,36 +23,27 @@
 
 ## 持久化审批
 
-计划、任务派发和工具调用三类 gate 都可以返回 `suspend`，而不是在回调里当场决定。审批请求作为独立的一行写在 checkpoint 旁边，绑定审批人实际看到内容的 SHA-256 哈希；进程重启后，运行从那份已审内容继续。决定是原子的，先到先得。已存请求的内容与哈希不再一致，或者存储不支持 compare-and-set，都直接失败关闭，不退化为尽力而为。
+计划、任务派发和工具调用 gate 都可以返回 `suspend`。审批请求写在 checkpoint 旁边，绑定审批人实际看到内容的 SHA-256 哈希，进程重启后从这份内容继续。决定原子、先到先得；内容被篡改，或存储不支持 compare-and-set，直接失败关闭。
 
-源码：[`packages/core/src/approval/durable.ts`](packages/core/src/approval/durable.ts)。测试：[`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts)（16 条）与 [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts)（7 条）。文档：[持久化审批](docs/durable-approvals.md)。
+[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts)（16 条）· [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts)（7 条）· [文档](docs/durable-approvals.md)
 
 ## 可核验日志
 
-接上一个 journal 后端，运行就会追加记录模型看到的每个 block、每次工具调用及其结果、每次上下文改写、每次计划与任务状态变化。每个模型可见的 block 都记下它来自哪个事件；`verifyRun()` 离线冷读整份日志，用按键排序后的规范化 SHA-256 检查被引用的事件是否仍能逐字节复现该 block。自相矛盾判为失败；日志窗口被淘汰只报"无法判定"，不算在运行头上。它证明的是血缘与内容复现，不是文件从未被改过：没有签名哈希链。
+接上 journal 后端，运行会记下模型看到的每个 block、每次工具调用及结果、每次上下文改写。`verifyRun()` 离线冷读整份日志，检查每个 block 引用的来源事件是否仍能逐字节复现它；日志窗口被淘汰只报"无法判定"，不算失败。它证明的是血缘与内容，不是文件从未被改过。
 
-源码：[`packages/core/src/journal/verify.ts`](packages/core/src/journal/verify.ts) 与 [`journal/hash.ts`](packages/core/src/journal/hash.ts)。测试：[`verify-run.test.ts`](packages/core/tests/verify-run.test.ts)（11 条）。文档：[运行事件日志](docs/run-journal.md)。
+[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts)（11 条）· [文档](docs/run-journal.md)
 
 ## 治理底线
 
-在 team 运行上声明 `governanceIntent: 'required'`、`requiredRoles` 和可选的 `requiredOrder`。OMA 不读目标文本，按声明的角色逐一建任务；运行结束后，用执行回执核对声明：哪些角色真正执行了、观测到的先后顺序、任务之间的依赖边、是否发生了独立审查。评估器拿不到 Agent 的输出文本，模型自称"已经审过"不改变任何结论。运行成功与治理结论分开记录：运行可以正常结束，同时报 `unsatisfied`。
+声明 `governanceIntent: 'required'` 与 `requiredRoles`，运行就按执行回执判定：哪些角色真正执行、先后顺序、依赖边、是否发生独立审查。评估器拿不到 Agent 输出文本；运行可以成功结束，同时报 `unsatisfied`。
 
-源码：[`packages/core/src/orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) 与 [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts)。测试：[`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts)（16 条）。文档：[声明式治理角色](docs/tool-configuration.md#declared-governance-roles-in-runteam)、[执行回执](docs/observability.md#execution-receipts)。
+[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts)（16 条）· [文档](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [执行回执](docs/observability.md#execution-receipts)
 
 ## 在你自己的环境里跑
 
-- **不上报遥测。** 包内没有统计上报、许可证检查、更新检查或任何回连请求。代码里的"telemetry"指本地 trace 记录，写到你自己构造的 sink。见[自托管与数据驻留](docs/self-hosting.md)。
-- **没有托管控制面。** `@open-multi-agent/core` 是一个库。没有 OMA 后端，没有账号，也没有这样的计划；所有持久化都经过你提供的 store。
-- **你的密钥。** 凭证来自你的环境变量或配置，只发往你指定的 provider。
-- **本地模型。** 通过 `baseURL` 把 OpenAI 兼容适配器指向 Ollama、vLLM 或 llama-server；对以文本形式返回工具调用的本地模型，有容错解析器兜底。
-- **云端模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Amazon Bedrock、Google Gemini、xAI Grok、GitHub Copilot 适配器，另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。见 [Provider 文档](docs/providers.md)。
-- **国产模型。** 内置 DeepSeek、豆包、混元、MiniMax、MiMo、七牛适配器。
-- **出网策略。** `offline` 或 `allowlist` 策略在内置适配器建立连接前生效。更窄的 agent 或 run 级策略只能收紧上层，框架无法完整约束的传输层直接失败关闭。外部 process 与 ACP backend 不在该策略覆盖范围内。见 [LLM 出网策略](docs/egress-policy.md)。
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer 回放真实运行：任务 DAG 与 span 瀑布双视图，展示每个任务的状态、负责人、token 与工具调用" width="960" height="540" loading="lazy">
-</p>
-<p align="center"><em>内置离线 Run Viewer 基于 trace store 回放一次真实运行：任务 DAG、span 瀑布与逐任务证据，不依赖任何托管服务。</em></p>
+- **不上报遥测，没有托管控制面。** 它是一个库，没有 OMA 后端和账号，也没有这样的计划；不发统计、许可证、更新或任何回连请求。[自托管与数据驻留](docs/self-hosting.md)
+- **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
+- **出网策略。** `offline` 或 `allowlist`，在内置适配器建立连接前生效；下级策略只能收紧上级，无法完整约束的传输层直接失败关闭，process 与 ACP backend 不在覆盖范围内。[LLM 出网策略](docs/egress-policy.md)
 
 ## 快速开始
 
@@ -130,6 +121,11 @@ for (const task of result.tasks ?? []) {
 console.log(result.agentResults.get('coordinator')?.output)
 console.log(result.totalTokenUsage)
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer 回放真实运行：任务 DAG 与 span 瀑布双视图，展示每个任务的状态、负责人、token 与工具调用" width="960" height="540" loading="lazy">
+</p>
+<p align="center"><em>内置离线 Run Viewer 基于 trace store 回放一次真实运行：任务 DAG、span 瀑布与逐任务证据，不依赖任何托管服务。</em></p>
 
 [Coordinator](docs/coordinator.md) 说明它决定什么、能看到什么。[计划回放](docs/plan-replay.md)固化已审批的计划，[Consensus](docs/consensus.md) 用独立评审 Agent 验证输出，[外部 Agent](docs/external-agents.md) 通过 process 与 ACP backend 把 Claude Code、Gemini CLI、Codex 放到同一张任务图上。
 

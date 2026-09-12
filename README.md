@@ -23,36 +23,27 @@ No telemetry. No hosted control plane. Your keys, your models — cloud, local (
 
 ## Durable approvals
 
-A plan, task dispatch, or tool-call gate can return `suspend` instead of deciding inline. The request is written as its own row beside the checkpoint, bound to a SHA-256 hash of exactly what the reviewer was shown, and the run continues from that reviewed content after a process restart. A decision is atomic and first-wins. A stored request whose content no longer matches its hash, or a store without compare-and-set, fails closed rather than degrading to best effort.
+A plan, task dispatch, or tool-call gate can return `suspend`. The request is stored beside the checkpoint, bound to a SHA-256 hash of exactly what the reviewer saw, and the run resumes from that content after a restart. A decision is atomic and first-wins; a tampered request or a store without compare-and-set fails closed.
 
-Source: [`packages/core/src/approval/durable.ts`](packages/core/src/approval/durable.ts). Tests: [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts) (16 cases) and [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts) (7 cases). Guide: [Durable approvals](docs/durable-approvals.md).
+[`approval/durable.ts`](packages/core/src/approval/durable.ts) · [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts) (16 cases) · [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts) (7 cases) · [Guide](docs/durable-approvals.md)
 
 ## Verifiable journal
 
-Attach a journal backend and a run appends every block the model was shown, every tool call and result, every context rewrite, and every plan and task transition. Each model-visible block names the event it came from, and `verifyRun()` reads the journal back cold, offline, and checks that the named event still reproduces the block byte for byte through a canonical SHA-256 over sorted keys. A contradiction is a failure. An evicted window is reported as inconclusive, never counted against the run. It proves lineage and content reproduction, not that the file was never edited: there is no signed hash chain.
+Attach a journal backend and the run records every block the model saw, every tool call and result, and every context rewrite. `verifyRun()` reads it back cold, offline, and checks that each block's named source event still reproduces it byte for byte; an evicted window is reported as inconclusive, not as a failure. It proves lineage and content, not that the file was never edited.
 
-Source: [`packages/core/src/journal/verify.ts`](packages/core/src/journal/verify.ts) and [`journal/hash.ts`](packages/core/src/journal/hash.ts). Tests: [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts) (11 cases). Guide: [Run journal](docs/run-journal.md).
+[`journal/verify.ts`](packages/core/src/journal/verify.ts) · [`journal/hash.ts`](packages/core/src/journal/hash.ts) · [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts) (11 cases) · [Guide](docs/run-journal.md)
 
 ## Governance floor
 
-Declare `governanceIntent: 'required'` with `requiredRoles` and an optional `requiredOrder` on a team run. OMA builds one task per declared role without reading the goal text, and after the run it evaluates the declaration against an execution receipt: which roles actually executed, in what observed order, with which dependency edges, and whether an independent review occurred. The evaluator has no access to agent output text, so a model claiming it was reviewed changes nothing. Runtime success and the governance conclusion stay separate: a run can finish and still report `unsatisfied`.
+Declare `governanceIntent: 'required'` with `requiredRoles`, and the run is judged on an execution receipt: which roles ran, in what order, with which dependency edges, and whether an independent review happened. The evaluator never sees agent output text, and a run can succeed and still report `unsatisfied`.
 
-Source: [`packages/core/src/orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) and [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts). Tests: [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts) (16 cases). Guides: [Declared governance roles](docs/tool-configuration.md#declared-governance-roles-in-runteam) and [Execution receipts](docs/observability.md#execution-receipts).
+[`orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) · [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts) · [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts) (16 cases) · [Guide](docs/tool-configuration.md#declared-governance-roles-in-runteam) · [Receipts](docs/observability.md#execution-receipts)
 
 ## Runs where you run
 
-- **No telemetry.** The package makes no analytics, license, update, or phone-home request. "Telemetry" inside this codebase means local trace records written to a sink you construct. See [Self-hosting and data residency](docs/self-hosting.md).
-- **No hosted control plane.** `@open-multi-agent/core` is a library. There is no OMA backend and no account, and none is planned; everything it persists goes through a store you supply.
-- **Your keys.** Credentials come from your environment or configuration and go only to the provider you name.
-- **Local models.** Point the OpenAI-compatible adapter at Ollama, vLLM, or llama-server through `baseURL`. A fallback parser handles local models that emit tool calls as text.
-- **Cloud providers.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Amazon Bedrock, Google Gemini, xAI Grok, and GitHub Copilot, plus any OpenAI-compatible endpoint and Vercel AI SDK providers. See [Providers](docs/providers.md).
-- **Chinese providers.** Built-in adapters for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu.
-- **Egress policy.** An `offline` or `allowlist` policy is checked before a built-in adapter opens a connection. A narrower agent or run policy can only tighten the parent, and a transport the framework cannot fully enforce fails closed. External process and ACP backends run outside this policy. See [LLM egress policy](docs/egress-policy.md).
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
-</p>
-<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
+- **No telemetry, no hosted control plane.** A library with no OMA backend or account, and none planned. It makes no analytics, license, update, or phone-home request. [Self-hosting](docs/self-hosting.md)
+- **Your keys, your models.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Bedrock, Gemini, Grok, and Copilot, and for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu; Ollama, vLLM, and llama-server through `baseURL`; any OpenAI-compatible endpoint and Vercel AI SDK providers. [Providers](docs/providers.md)
+- **Egress policy.** `offline` or `allowlist`, checked before a built-in adapter connects. A child policy can only tighten its parent, an unenforceable transport fails closed, and process and ACP backends sit outside it. [LLM egress policy](docs/egress-policy.md)
 
 ## Get started
 
@@ -133,6 +124,11 @@ for (const task of result.tasks ?? []) {
 console.log(result.agentResults.get('coordinator')?.output)
 console.log(result.totalTokenUsage)
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
+</p>
+<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
 
 [Coordinator](docs/coordinator.md) covers what it decides and what it is allowed to see. [Plan replay](docs/plan-replay.md) freezes an approved plan, [Consensus](docs/consensus.md) verifies outputs with independent judges, and [External agents](docs/external-agents.md) puts Claude Code, Gemini CLI, and Codex on the same task graph through process and ACP backends.
 
