@@ -1,16 +1,4 @@
-<h1 align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg">
-    <img alt="" src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="72">
-  </picture>
-  <br>Open Multi-Agent
-</h1>
-
-<p align="center">
-  <strong>Describe the goal, not the graph.</strong><br/>
-  A self-organizing team of agents that runs in your environment, pauses for approval on consequential actions, and leaves a verifiable record of every run.
-</p>
+# OMA — agents your organization can own, approve, and audit
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@open-multi-agent/core"><img src="https://img.shields.io/npm/v/@open-multi-agent/core" alt="npm version"></a>
@@ -21,20 +9,50 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
 </p>
 
+A self-hosted TypeScript agent runtime. Risky actions wait for durable, content-bound approvals that survive restarts and reject tampered inputs. Any run can write a journal you verify byte-for-byte, offline. Governance decisions are judged on execution receipts, never on what the model says it did.
+
+No telemetry. No hosted control plane. Your keys, your models — cloud, local (Ollama, vLLM, llama-server), or Chinese providers — your environment. Nothing stops working when the people who built it leave.
+
 <p align="center">
   <a href="https://open-multi-agent.com/?utm_source=github&utm_medium=readme">Website</a> ·
   <a href="https://open-multi-agent.com/getting-started/introduction/?utm_source=github&utm_medium=readme">Docs</a> ·
   <a href="./packages/core/examples/">Examples</a> ·
-  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a>
-</p>
-
-<p align="center">
+  <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
   <strong>English</strong> · <a href="./README_zh.md">中文</a>
 </p>
 
-<br />
+## Durable approvals
 
-`open-multi-agent` is an AI agent orchestration framework for TypeScript backends that drops into any Node.js app. It runs **dynamic workflows**: a coordinator turns one goal into a task DAG at runtime, a deterministic scheduler executes it across the team, and the whole run stays data you can inspect, approve, and replay. The Run Viewer further down replays a real run from the trace store.
+A plan, task dispatch, or tool-call gate can return `suspend` instead of deciding inline. The request is written as its own row beside the checkpoint, bound to a SHA-256 hash of exactly what the reviewer was shown, and the run continues from that reviewed content after a process restart. A decision is atomic and first-wins. A stored request whose content no longer matches its hash, or a store without compare-and-set, fails closed rather than degrading to best effort.
+
+Source: [`packages/core/src/approval/durable.ts`](packages/core/src/approval/durable.ts). Tests: [`durable-approval.test.ts`](packages/core/tests/durable-approval.test.ts) (16 cases) and [`durable-approval-validation.test.ts`](packages/core/tests/durable-approval-validation.test.ts) (7 cases). Guide: [Durable approvals](docs/durable-approvals.md).
+
+## Verifiable journal
+
+Attach a journal backend and a run appends every block the model was shown, every tool call and result, every context rewrite, and every plan and task transition. Each model-visible block names the event it came from, and `verifyRun()` reads the journal back cold, offline, and checks that the named event still reproduces the block byte for byte through a canonical SHA-256 over sorted keys. A contradiction is a failure. An evicted window is reported as inconclusive, never counted against the run. It proves lineage and content reproduction, not that the file was never edited: there is no signed hash chain.
+
+Source: [`packages/core/src/journal/verify.ts`](packages/core/src/journal/verify.ts) and [`journal/hash.ts`](packages/core/src/journal/hash.ts). Tests: [`verify-run.test.ts`](packages/core/tests/verify-run.test.ts) (11 cases). Guide: [Run journal](docs/run-journal.md).
+
+## Governance floor
+
+Declare `governanceIntent: 'required'` with `requiredRoles` and an optional `requiredOrder` on a team run. OMA builds one task per declared role without reading the goal text, and after the run it evaluates the declaration against an execution receipt: which roles actually executed, in what observed order, with which dependency edges, and whether an independent review occurred. The evaluator has no access to agent output text, so a model claiming it was reviewed changes nothing. Runtime success and the governance conclusion stay separate: a run can finish and still report `unsatisfied`.
+
+Source: [`packages/core/src/orchestrator/governance.ts`](packages/core/src/orchestrator/governance.ts) and [`observability/execution-receipt.ts`](packages/core/src/observability/execution-receipt.ts). Tests: [`governance-floor.test.ts`](packages/core/tests/governance-floor.test.ts) (16 cases). Guides: [Declared governance roles](docs/tool-configuration.md#declared-governance-roles-in-runteam) and [Execution receipts](docs/observability.md#execution-receipts).
+
+## Runs where you run
+
+- **No telemetry.** The package makes no analytics, license, update, or phone-home request. "Telemetry" inside this codebase means local trace records written to a sink you construct. See [Self-hosting and data residency](docs/self-hosting.md).
+- **No hosted control plane.** `@open-multi-agent/core` is a library. There is no OMA backend and no account; everything it persists goes through a store you supply.
+- **Your keys.** Credentials come from your environment or configuration and go only to the provider you name.
+- **Local models.** Point the OpenAI-compatible adapter at Ollama, vLLM, or llama-server through `baseURL`. A fallback parser handles local models that emit tool calls as text.
+- **Cloud providers.** Built-in adapters for Anthropic, OpenAI, Azure OpenAI, Amazon Bedrock, Google Gemini, xAI Grok, and GitHub Copilot, plus any OpenAI-compatible endpoint and Vercel AI SDK providers. See [Providers](docs/providers.md).
+- **Chinese providers.** Built-in adapters for DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, and Qiniu.
+- **Egress policy.** An `offline` or `allowlist` policy is checked before a built-in adapter opens a connection. A narrower agent or run policy can only tighten the parent, and a transport the framework cannot fully enforce fails closed. External process and ACP backends run outside this policy. See [LLM egress policy](docs/egress-policy.md).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
+</p>
+<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
 
 ## Get started
 
@@ -58,33 +76,42 @@ npm install @open-multi-agent/core
 ```
 
 ```typescript
-import { OpenMultiAgent } from '@open-multi-agent/core'
+import { FileStore, OpenMultiAgent } from '@open-multi-agent/core'
 
-const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
-
-const team = oma.createTeam('research-team', {
-  name: 'research-team',
-  agents: [
-    { name: 'researcher', systemPrompt: 'Find the relevant facts.' },
-    { name: 'analyst', systemPrompt: 'Compare evidence and identify tradeoffs.' },
-  ],
-  sharedMemory: true,
+// Your keys and your endpoint: a hosted provider, or a local server through baseURL.
+const oma = new OpenMultiAgent({
+  defaultProvider: 'openai',
+  defaultModel: 'gpt-5.4',
+  // Consequential tool calls (file writes, shell) pause for a human decision.
+  onToolCall: ({ consequential }) => (consequential ? { action: 'suspend' } : { action: 'allow' }),
 })
 
-const result = await oma.runTeam(team, 'Compare three approaches and recommend one.')
+const team = oma.createTeam('ops', {
+  name: 'ops',
+  agents: [{ name: 'operator', systemPrompt: 'Reconcile overdue invoices.', toolPreset: 'readwrite' }],
+})
 
-console.log(result.agentResults.get('coordinator')?.output)
+// The checkpoint store keeps the run and its pending approvals durable.
+const result = await oma.runTeam(team, 'Find overdue invoices and draft the reminders.', {
+  checkpoint: { store: new FileStore('./.oma/run.json') },
+})
+
+// result.status?.code === 'suspended' until a reviewer decides result.pendingApprovals,
+// each bound to a hash of exactly what the reviewer was shown.
 ```
 
-<details>
-<summary>Full example: DAG readback, token usage, and model overrides</summary>
+Set `OPENAI_API_KEY` to run this example. [Providers](docs/providers.md) covers other hosted models, local servers, OpenAI-compatible endpoints, and AI SDK providers.
+
+`runAgent()` runs a single agent, `runTasks()` executes an explicit pipeline, and `runTeam()` plans from a goal. The [Core package guide](packages/core/README.md) walks through all three modes, provider and credential setup, and the production checklist. The [example index](packages/core/examples/README.md) lists every runnable example across basics, cookbook workflows, patterns, providers, and integrations.
+
+## Optional coordinator
+
+`runTeam()` decomposes a goal into a task graph across agents. One model call turns the goal into task specs with assignees and dependencies, a deterministic scheduler executes them, and a second call writes the final answer from the completed task outputs. The coordinator is never consulted mid-run, and the finished run is data you can read back. Use `runAgent()` or `runTasks()` when you already know the work.
 
 ```typescript
 import { OpenMultiAgent } from '@open-multi-agent/core'
 
-const model = process.env.OMA_MODEL ?? 'gpt-5.4'
-
-const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: model })
+const oma = new OpenMultiAgent({ defaultProvider: 'openai', defaultModel: 'gpt-5.4' })
 
 const team = oma.createTeam('research-team', {
   name: 'research-team',
@@ -107,79 +134,15 @@ console.log(result.agentResults.get('coordinator')?.output)
 console.log(result.totalTokenUsage)
 ```
 
-</details>
+[Coordinator](docs/coordinator.md) covers what it decides and what it is allowed to see. [Plan replay](docs/plan-replay.md) freezes an approved plan, [Consensus](docs/consensus.md) verifies outputs with independent judges, and [External agents](docs/external-agents.md) puts Claude Code, Gemini CLI, and Codex on the same task graph through process and ACP backends.
 
-<details>
-<summary>Pause consequential tool calls for approval</summary>
+## Non-goals
 
-```typescript
-import { FileStore, OpenMultiAgent } from '@open-multi-agent/core'
+- **No hosted cloud.** There is no OMA-run backend, account, or managed runtime, and none is planned. Run it where your data already lives.
+- **No SaaS dashboard.** The Run Viewer is a static page rendered offline from your trace store. Export to your own monitoring through the optional OpenTelemetry adapter if you want one.
+- **No vendor lock-in.** Providers, memory stores, checkpoint stores, and journal backends are interfaces you can implement. Run records live in files and stores you own.
 
-// Your keys and your endpoint: a hosted provider, or a local server through baseURL.
-const oma = new OpenMultiAgent({
-  defaultProvider: 'openai',
-  defaultModel: 'gpt-5.4',
-  // Consequential tool calls (file writes, shell) pause for a human decision.
-  onToolCall: ({ consequential }) => (consequential ? { action: 'suspend' } : { action: 'allow' }),
-})
-
-const team = oma.createTeam('ops', {
-  name: 'ops',
-  agents: [{ name: 'operator', systemPrompt: 'Reconcile overdue invoices.', toolPreset: 'readwrite' }],
-})
-
-// The coordinator plans the task DAG from the goal; the checkpoint store keeps the run durable.
-const result = await oma.runTeam(team, 'Find overdue invoices and draft the reminders.', {
-  checkpoint: { store: new FileStore('./.oma/run.json') },
-})
-
-// result.status?.code === 'suspended' until a reviewer decides result.pendingApprovals,
-// each bound to a hash of exactly what the reviewer was shown.
-```
-
-</details>
-
-Set `OPENAI_API_KEY` to run this example. [Providers](docs/providers.md) covers other hosted models, local servers, OpenAI-compatible endpoints, and AI SDK providers.
-
-`runTeam()` plans from a goal, `runAgent()` runs a single agent, and `runTasks()` executes an explicit pipeline. The [Core package guide](packages/core/README.md) walks through all three modes, provider and credential setup, and the production checklist. The [example index](packages/core/examples/README.md) lists every runnable example across basics, cookbook workflows, patterns, providers, and integrations.
-
-## Why OMA
-
-**Every seam, an interface. Every run, a record.**
-
-OMA combines dynamic orchestration with the control, evidence, and recovery paths needed to move multi-agent systems from prototype to production.
-
-- **Dynamic orchestration.** Describe the goal and let the coordinator build the task DAG, assign work, and synthesize the result at runtime. There is no hand-wired graph to maintain.
-- **Controlled execution.** Preview, approve, or durably suspend plans, task dispatches, and tool calls; the framework ships the approval API and durable records, and the review surface and transport are yours to build. Freeze approved plans for replay. Declare required roles and order when topology cannot drift, and verify outputs with multi-agent consensus.
-- **Reliability.** Resume interrupted runs from checkpoints, or opt into append-only plan repair at task outcome barriers. Retries, timeouts, loop detection, and token and cost budgets keep execution bounded.
-- **Observability and evaluation.** Follow each run through stable identity, execution receipts, and traces; the record is verifiable for order and lineage, not tamper-evident. Replay the task DAG and span waterfall in the offline Run Viewer, or export through the optional OpenTelemetry adapter. The same records feed versioned EvalSets, offline reports, CI gates, and production sampling.
-- **Safety and privacy.** Tools are default-deny, individual calls are gated, and explicit privacy controls apply to telemetry and persisted state.
-- **Open runtime.** Process and ACP backends put Claude Code, Gemini CLI, and Codex on the same task DAG, shared memory, and budgets as LLM agents, though those backends run outside the per-call tool gate, filesystem sandbox, and LLM egress policy. Mix cloud and local models, natively integrated Chinese providers, OpenAI-compatible endpoints, and AI SDK providers, with a fallback parser for local models that emit tool calls as text. Run on your own infrastructure and credentials, locally, offline, or air-gapped; see [Self-hosting and data residency](docs/self-hosting.md).
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/demo-dashboard-hero.gif" alt="OMA Run Viewer replaying a real multi-agent run: task DAG and span waterfall views with per-task status, assignee, tokens, and tool calls" width="960" height="540" loading="lazy">
-</p>
-<p align="center"><em>The offline Run Viewer replaying a real run from the trace store: task DAG, span waterfall, and per-task evidence, with no hosted service involved.</em></p>
-
-## Built with OMA
-
-`open-multi-agent` launched 2026-04-01 under MIT. Known users and integrations to date:
-
-- **[temodar-agent](https://github.com/xeloxa/temodar-agent)** by [Ali Sünbül](https://github.com/xeloxa). WordPress security analysis platform running OMA's built-in tools (`bash`, `file_*`, `grep`) inside a Docker runtime. Confirmed production use.
-- **[Mark Galyan](https://github.com/apollo-mg)** runs OMA fully offline on local quantized models, using the coordinator and context compaction to keep autonomous agent loops alive under tight VRAM limits. Contributor since the framework's first month.
-- **[PR-Copilot](https://github.com/kidoom/PR-Copilot)** by [kidoom](https://github.com/kidoom). AI pull-request review assistant running an OMA review team, with `defineTool` repo-context tools and a custom `ContextStrategy` for token-aware diff compression.
-- **[StuFlow](https://github.com/znc15/StuFlow)** by [znc15](https://github.com/znc15). Terminal AI coding assistant on OMA's orchestration core, driving `runAgent` / `runTasks` / `runTeam` with a custom coordinator, paired with DeepSeek.
-- **[Reports to Charts Studio](https://github.com/NARNIX0/Evident-Project)**. Turns documents and research tables into slide-ready charts, using a five-role extraction council with structured outputs and deterministic validation.
-
-**Integrations**
-
-- **[Engram](https://www.engram-memory.com)**: "Git for AI memory." Syncs knowledge across agents instantly and flags conflicts. ([repo](https://github.com/Agentscreator/engram-memory), ~80 stars)
-- **[@agentsonar/oma](https://github.com/agentsonar/agentsonar-oma)**: Sidecar detecting cross-run delegation cycles, repetition, and rate bursts.
-- **[CodingScaffold](https://github.com/JRS1986/CodingScaffold)**: Agentic-coding scaffold that lists OMA as an optional orchestration backend, with a `runTeam` workflow template.
-- **[Bilig WorkPaper](https://github.com/proompteng/bilig)**: Formula-workbook MCP server with a reciprocal OMA integration for editing inputs, recalculating formulas, verifying readback, and persisting WorkPaper JSON.
-- **[baize-oma](https://github.com/timywel/baize-oma)**: HTTP adapter exposing OMA `runAgent()` and `runTeam()` as Baize slot capabilities.
-
-Using `open-multi-agent` in production or a side project? [Open a discussion](https://github.com/open-multi-agent/open-multi-agent/discussions) and we will list it here. Built an integration? The [integration guide](packages/core/examples/integrations/README.md) covers how to get listed. For a deep integration, see the [Featured partner program](docs/featured-partner.md).
+We build customer-owned systems on OMA for organizations that need one. Email [jack@yuanasi.com](mailto:jack@yuanasi.com).
 
 ## Sponsors
 
@@ -189,25 +152,13 @@ Paid sponsors supporting `open-multi-agent`. Sponsorship does not affect technic
 
 - **[Atlas Cloud](https://www.atlascloud.ai/console/coding-plan)**: Full-modal AI inference platform giving one API for video, image, and LLM across 300+ curated models. $5 credit vouchers for OMA users, first come first served. See the [Atlas Cloud setup guide](docs/providers-atlascloud.md).
 
-## When OMA fits
-
-OMA is designed for TypeScript teams that want the task graph to emerge from the goal at runtime.
-
-Choose a graph-first framework when the workflow must be authored node by node. Use an LLM toolkit alone when one agent call is enough. OMA sits at the orchestration layer when several agents, dependencies, approvals, or recovery steps must work together.
-
-For a named head-to-head against LangGraph, Mastra, CrewAI, the Vercel AI SDK, and others, see the [comparison page](https://open-multi-agent.com/compare/?utm_source=github&utm_medium=readme).
-
 ## Packages
 
-- **[`@open-multi-agent/core`](packages/core/README.md)**: Orchestration runtime, tools, memory, checkpoints, traces, CLI, and offline Run Viewer.
-- **[`@open-multi-agent/otel`](packages/otel/README.md)**: Optional enterprise integration for production teams with a centralized OpenTelemetry stack.
+- **[`@open-multi-agent/core`](packages/core/README.md)**: Runtime, tools, memory, checkpoints, approvals, journal, traces, CLI, and offline Run Viewer.
+- **[`@open-multi-agent/otel`](packages/otel/README.md)**: Optional OpenTelemetry adapter for teams with a centralized OpenTelemetry stack.
 - **[`create-oma-app`](packages/create-oma-app/README.md)**: Scaffolder behind `npm create oma-app`; starter templates with a no-key local demo.
 
 Core users can store traces locally and inspect them with the offline Run Viewer. Install the OTel package only when OMA traces should appear in the same monitoring system as the rest of your application.
-
-## Commercial support
-
-Need to embed agent capabilities in an existing product or business system? We help teams scope AI use cases, embed agent capabilities, and support delivery. Email [jack@yuanasi.com](mailto:jack@yuanasi.com).
 
 ## Documentation
 
