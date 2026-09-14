@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- Added an optional positive-integer `GateThreshold.minSamples` so an
+  evaluation gate only accepts a threshold result that is backed by enough
+  evidence. Score metrics compare it against the selected aggregate's
+  `scoredCount` and `passRate` compares it against `passSampleCount`.
+  Tag-scoped thresholds use the tag aggregate's own counts. A count below the
+  minimum reports the new `insufficient_samples` failure kind carrying the
+  observed count and the configured limit, and a report written before
+  `passSampleCount` existed fails closed at zero rather than skipping the
+  guard. Baseline regression checks honor the same minimum: when either side
+  holds fewer samples, that comparison is skipped with a warning, so adding
+  `minSamples` turns a regression failure computed against a small baseline
+  into a warning. Omitting `minSamples` preserves the previous behavior and the
+  report schema version is unchanged.
+- Added `ScorerAggregate.passSampleCount`, the count of scored records that
+  define `pass`. It is emitted whenever `passRate` is, including on tag
+  aggregates, and gives `passRate` guards the denominator that `scoredCount`
+  does not provide.
+
 ## 1.19.0 - 2026-09-11
 
 ### Added

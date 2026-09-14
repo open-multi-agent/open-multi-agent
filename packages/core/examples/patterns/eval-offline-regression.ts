@@ -116,8 +116,10 @@ if (baseline === undefined || candidate === undefined) throw new Error('Expected
 const verdict = evaluateGate(candidate, {
   schemaVersion: 1,
   thresholds: [
-    { scorer: 'exact_match', metric: 'passRate', min: 1 },
-    { scorer: 'answer_relevancy', metric: 'avg', min: 0.9 },
+    // minSamples is the fixture's own size: 2 cases at 2 repeats. Require far
+    // more in production, or a perfect score over a handful of samples passes.
+    { scorer: 'exact_match', metric: 'passRate', min: 1, minSamples: 4 },
+    { scorer: 'answer_relevancy', metric: 'avg', min: 0.9, minSamples: 4 },
   ],
   maxScorerErrorRate: 0,
   maxTargetErrorRate: 0,

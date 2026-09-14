@@ -28,6 +28,7 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@LambIessz](https://github.com/LambIessz) (orchestrator cost budget, MessageBus persistence in checkpoints, retryable route fallback)
 - [@Bobuyoucrypto](https://github.com/Bobuyoucrypto) (Windows bash timeout process-tree kill)
 - [@green3sf](https://github.com/green3sf) (structured output refresh after an accepted verify revision)
+- [@Zhongghaoming](https://github.com/Zhongghaoming) (evaluation gate minimum-samples guard)
 
 ## Provider integrations
 

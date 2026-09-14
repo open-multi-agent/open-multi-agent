@@ -123,6 +123,16 @@ does not produce a comparable score. Threshold and health checks still run.
 If baseline rules are configured but no baseline report is supplied, OMA warns
 and skips regression checks.
 
+A threshold that sets `minSamples` applies it to the regression comparison as
+well. When either the current or the baseline aggregate holds fewer samples
+than the minimum, OMA warns and skips that comparison instead of reporting a
+regression computed from a sample set the gate already called too small to
+judge. This loosens one check while it tightens another: a short baseline that
+previously produced a `regression` failure now produces only a warning, while a
+short current report still fails its own threshold with `insufficient_samples`.
+Commit a baseline large enough to satisfy every `minSamples` it serves, and
+read these warnings as a prompt to rerun the baseline rather than as noise.
+
 Use `oma eval gate` when report generation and quality enforcement are separate
 CI stages. It prints the exact verdict JSON to stdout:
 
