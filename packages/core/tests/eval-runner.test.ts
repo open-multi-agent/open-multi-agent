@@ -250,9 +250,20 @@ describe('runEvalSet', () => {
       min: 0.2,
       max: 1,
       passRate: 0.5,
+      passSampleCount: 2,
     })
-    expect(aggregate.byTag?.['single']).toMatchObject({ p50: 0.2, p95: 0.2, scoredCount: 1 })
-    expect(aggregate.byTag?.['pair']).toMatchObject({ p50: 0.2, p95: 0.8, scoredCount: 2 })
+    expect(aggregate.byTag?.['single']).toMatchObject({
+      p50: 0.2,
+      p95: 0.2,
+      scoredCount: 1,
+      passSampleCount: 1,
+    })
+    expect(aggregate.byTag?.['pair']).toMatchObject({
+      p50: 0.2,
+      p95: 0.8,
+      scoredCount: 2,
+      passSampleCount: 2,
+    })
   })
 
   it('links StoredRun traces and run identity into scorer context and records', async () => {

@@ -135,7 +135,7 @@ console.log(report.aggregates[0]?.passRate) // 1
 
 Each case/repeat target runs once, then that sample's scorers run serially. Different samples run in parallel up to `concurrency` (default `2`). Aborting stops new samples from being scheduled, waits for already-started samples, and returns a partial report with `aborted: true`.
 
-Report percentiles use the nearest-rank method. For two sorted scores, p50 is the lower score and p95 is the higher score. `passRate` only includes scored records that explicitly contain `pass`; scorer errors are excluded from every score denominator. `byTag` repeats the same aggregation for each case tag. Target token usage is counted once per sample, even when multiple scorers run, and costs are summed only within the same currency.
+Report percentiles use the nearest-rank method. For two sorted scores, p50 is the lower score and p95 is the higher score. `passRate` only includes scored records that explicitly contain `pass`; `passSampleCount` records that same denominator, while scorer errors are excluded from every score denominator. `byTag` repeats the same aggregation for each case tag. Target token usage is counted once per sample, even when multiple scorers run, and costs are summed only within the same currency.
 
 ## Sample production runs online
 

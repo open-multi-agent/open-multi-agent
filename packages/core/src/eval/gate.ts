@@ -9,6 +9,7 @@ export interface GateThreshold {
   readonly metric: GateMetric
   readonly min?: number
   readonly max?: number
+  readonly minSamples?: number
   readonly tag?: string
 }
 
@@ -36,6 +37,7 @@ export interface GateFailure {
     | 'target_health'
     | 'baseline_mismatch'
     | 'missing_scorer'
+    | 'insufficient_samples'
   readonly scorer?: string
   readonly metric?: string
   readonly tag?: string
@@ -57,6 +59,10 @@ const gateThresholdSchema = z.object({
   metric: z.enum(['avg', 'p50', 'p95', 'min', 'passRate']),
   min: unitInterval.optional(),
   max: unitInterval.optional(),
+  minSamples: z.number()
+    .int('minSamples must be a positive integer')
+    .positive('minSamples must be a positive integer')
+    .optional(),
   tag: z.string().trim().min(1).optional(),
 }).superRefine((threshold, context) => {
   if (threshold.min === undefined && threshold.max === undefined) {
@@ -130,12 +136,67 @@ function missingThresholdFailure(threshold: GateThreshold): GateFailure {
   }
 }
 
+function sampleCountFor(
+  aggregate: ScorerAggregate,
+  threshold: GateThreshold,
+): number {
+  return threshold.metric === 'passRate'
+    ? aggregate.passSampleCount ?? 0
+    : aggregate.scoredCount
+}
+
+function insufficientSamplesFailure(
+  threshold: GateThreshold,
+  sampleCount: number,
+  aggregate: ScorerAggregate,
+  limit: number,
+): GateFailure {
+  const target = thresholdTarget(threshold)
+  const missingPassSampleCount = threshold.metric === 'passRate'
+    && aggregate.passSampleCount === undefined
+  const message = missingPassSampleCount
+    ? `Gate aggregate for ${target} does not carry passSampleCount, so metric "${threshold.metric}" has 0 samples, below minimum ${threshold.minSamples}.`
+    : `Gate metric "${threshold.metric}" for ${target} has ${sampleCount} samples, below minimum ${threshold.minSamples}.`
+
+  return {
+    kind: 'insufficient_samples',
+    scorer: threshold.scorer,
+    metric: threshold.metric,
+    ...(threshold.tag !== undefined ? { tag: threshold.tag } : {}),
+    actual: sampleCount,
+    limit,
+    message,
+  }
+}
+
+function regressionSampleCountWarning(
+  side: 'current' | 'baseline',
+  threshold: GateThreshold,
+  sampleCount: number,
+  minSamples: number,
+): string {
+  return `Regression check for gate metric "${threshold.metric}" for ${thresholdTarget(threshold)} was skipped because the ${side} aggregate has ${sampleCount} samples, below minimum ${minSamples}.`
+}
+
 function thresholdFailures(
   report: EvalRunReport,
   threshold: GateThreshold,
 ): readonly GateFailure[] {
-  const actual = aggregateMetric(aggregateFor(report, threshold), threshold.metric)
-  if (actual === undefined) return [missingThresholdFailure(threshold)]
+  const aggregate = aggregateFor(report, threshold)
+  const actual = aggregateMetric(aggregate, threshold.metric)
+  if (aggregate === undefined || actual === undefined) return [missingThresholdFailure(threshold)]
+
+  if (threshold.minSamples !== undefined) {
+    const sampleCount = sampleCountFor(aggregate, threshold)
+    if (sampleCount < threshold.minSamples) {
+      return [insufficientSamplesFailure(
+        threshold,
+        sampleCount,
+        aggregate,
+        threshold.minSamples,
+      )]
+    }
+  }
 
   const target = thresholdTarget(threshold)
   const failures: GateFailure[] = []
@@ -256,8 +317,38 @@ export function evaluateGate(
         continue
       }
 
-      const currentValue = aggregateMetric(aggregateFor(report, threshold), threshold.metric)
-      const baselineValue = aggregateMetric(aggregateFor(baseline, threshold), threshold.metric)
+      const currentAggregate = aggregateFor(report, threshold)
+      const baselineAggregate = aggregateFor(baseline, threshold)
+      if (threshold.minSamples !== undefined) {
+        const currentSampleCount = currentAggregate === undefined
+          ? undefined
+          : sampleCountFor(currentAggregate, threshold)
+        if (currentSampleCount !== undefined && currentSampleCount < threshold.minSamples) {
+          warnings.add(regressionSampleCountWarning(
+            'current',
+            threshold,
+            currentSampleCount,
+            threshold.minSamples,
+          ))
+          continue
+        }
+
+        const baselineSampleCount = baselineAggregate === undefined
+          ? undefined
+          : sampleCountFor(baselineAggregate, threshold)
+        if (baselineSampleCount !== undefined && baselineSampleCount < threshold.minSamples) {
+          warnings.add(regressionSampleCountWarning(
+            'baseline',
+            threshold,
+            baselineSampleCount,
+            threshold.minSamples,
+          ))
+          continue
+        }
+      }
+
+      const currentValue = aggregateMetric(currentAggregate, threshold.metric)
+      const baselineValue = aggregateMetric(baselineAggregate, threshold.metric)
       if (currentValue === undefined || baselineValue === undefined) {
         warnings.add(
           `Baseline metric "${threshold.metric}" for ${thresholdTarget(threshold)} is unavailable; regression check was skipped.`,

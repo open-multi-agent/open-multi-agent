@@ -108,6 +108,7 @@ function reportFixture(): EvalRunReport {
         min: 0,
         max: 1,
         passRate: 0.5,
+        passSampleCount: 2,
         byTag: {
           edge: {
             scorer: { name: 'exact<&"\'', version: '1' },
@@ -119,6 +120,7 @@ function reportFixture(): EvalRunReport {
             min: 0,
             max: 0,
             passRate: 0,
+            passSampleCount: 1,
           },
         },
       },
@@ -198,6 +200,35 @@ describe('loadGatePolicy', () => {
     })
     expect(Object.isFrozen(policy)).toBe(true)
     expect(Object.isFrozen(policy.thresholds)).toBe(true)
+  })
+
+  it('preserves minSamples in gate policy thresholds', async () => {
+    const path = join(await temporaryDirectory(), 'gate.json')
+    await writeFile(path, JSON.stringify({
+      schemaVersion: 1,
+      thresholds: [{ scorer: 'exact', metric: 'passRate', min: 1, minSamples: 5 }],
+    }), 'utf8')
+
+    const policy = await loadGatePolicy(path)
+
+    expect(policy.thresholds[0]).toEqual({
+      scorer: 'exact',
+      metric: 'passRate',
+      min: 1,
+      minSamples: 5,
+    })
+  })
+
+  it('rejects invalid minSamples values in gate policies', async () => {
+    for (const minSamples of [0, -1, 1.5]) {
+      const path = join(await temporaryDirectory(), 'gate.json')
+      await writeFile(path, JSON.stringify({
+        schemaVersion: 1,
+        thresholds: [{ scorer: 'exact', metric: 'passRate', min: 1, minSamples }],
+      }), 'utf8')
+
+      await expect(loadGatePolicy(path)).rejects.toThrow('minSamples')
+    }
   })
 
   it('rejects malformed JSON and reports schema issue paths', async () => {

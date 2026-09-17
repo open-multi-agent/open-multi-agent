@@ -14,6 +14,8 @@ export interface ScorerAggregate {
   readonly min: number
   readonly max: number
   readonly passRate?: number
+  /** Number of scored records that define `pass`; present when `passRate` is. */
+  readonly passSampleCount?: number
   readonly byTag?: Readonly<Record<string, ScorerAggregate>>
 }
 
@@ -69,7 +71,10 @@ function aggregateOne(
     min: scores[0] ?? 0,
     max: scores[scores.length - 1] ?? 0,
     ...(passed.length > 0
-      ? { passRate: passed.filter((record) => record.pass === true).length / passed.length }
+      ? {
+          passRate: passed.filter((record) => record.pass === true).length / passed.length,
+          passSampleCount: passed.length,
+        }
       : {}),
   }
 }

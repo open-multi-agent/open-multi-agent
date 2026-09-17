@@ -26,13 +26,15 @@ function aggregate(options: {
   readonly version?: string
   readonly avg?: number
   readonly passRate?: number | null
+  readonly scoredCount?: number
+  readonly passSampleCount?: number | null
   readonly byTag?: Readonly<Record<string, ScorerAggregate>>
 } = {}): ScorerAggregate {
   const avg = options.avg ?? 0.8
   const passRate = options.passRate === undefined ? 0.8 : options.passRate
   return {
     scorer: { name: options.name ?? 'exact', version: options.version ?? '1' },
-    scoredCount: 10,
+    scoredCount: options.scoredCount ?? 10,
     errorCount: 0,
     avg,
     p50: avg,
@@ -40,6 +42,9 @@ function aggregate(options: {
     min: avg,
     max: avg,
     ...(passRate !== null ? { passRate } : {}),
+    ...(passRate !== null && options.passSampleCount !== null && options.passSampleCount !== undefined
+      ? { passSampleCount: options.passSampleCount }
+      : {}),
     ...(options.byTag !== undefined ? { byTag: options.byTag } : {}),
   }
 }
@@ -123,6 +128,123 @@ describe('evaluateGate thresholds', () => {
     expect(verdict.failures[1]?.message).toContain('tag "missing"')
     expect(verdict.failures[2]?.message).toContain('no scored records with a pass value')
   })
+
+  it('rejects minSamples that are zero, negative, or non-integer', () => {
+    for (const minSamples of [0, -1, 1.5]) {
+      expect(() => evaluateGate(report(), policy([
+        { scorer: 'exact', metric: 'avg', min: 0.5, minSamples },
+      ]))).toThrow('minSamples must be a positive integer')
+    }
+  })
+
+  it('fails below, passes at and above minSamples for score metrics', () => {
+    const below = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 2 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5 }]),
+    )
+    const at = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 5 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5 }]),
+    )
+    const above = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 10 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5 }]),
+    )
+
+    expect(below.failures).toEqual([
+      expect.objectContaining({
+        kind: 'insufficient_samples',
+        scorer: 'exact',
+        metric: 'avg',
+        actual: 2,
+        limit: 5,
+      }),
+    ])
+    expect(at.pass).toBe(true)
+    expect(above.pass).toBe(true)
+  })
+
+  it('respects tag scoping for minSamples', () => {
+    const tagged = aggregate({ scoredCount: 2, avg: 0.9, passRate: 0.9, passSampleCount: 2 })
+    const current = report({
+      aggregate: aggregate({ scoredCount: 20, byTag: { critical: tagged } }),
+    })
+
+    const verdict = evaluateGate(current, policy([
+      { scorer: 'exact', metric: 'avg', min: 0.5, minSamples: 5, tag: 'critical' },
+    ]))
+
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({
+        kind: 'insufficient_samples',
+        scorer: 'exact',
+        metric: 'avg',
+        tag: 'critical',
+        actual: 2,
+        limit: 5,
+      }),
+    ])
+  })
+
+  it('uses passSampleCount for passRate, not scoredCount', () => {
+    const current = report({
+      aggregate: aggregate({ scoredCount: 10, passRate: 1, passSampleCount: 3 }),
+    })
+
+    const verdict = evaluateGate(current, policy([
+      { scorer: 'exact', metric: 'passRate', min: 1, minSamples: 5 },
+    ]))
+
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({
+        kind: 'insufficient_samples',
+        scorer: 'exact',
+        metric: 'passRate',
+        actual: 3,
+        limit: 5,
+      }),
+    ])
+  })
+
+  it('fails closed when an old report omits passSampleCount for passRate', () => {
+    const oldAggregate: ScorerAggregate = {
+      scorer: { name: 'exact', version: '1' },
+      scoredCount: 10,
+      errorCount: 0,
+      avg: 0.8,
+      p50: 0.8,
+      p95: 0.8,
+      min: 0.8,
+      max: 0.8,
+      passRate: 1,
+    }
+    const current = report({ aggregate: oldAggregate })
+
+    const verdict = evaluateGate(current, policy([
+      { scorer: 'exact', metric: 'passRate', min: 1, minSamples: 5 },
+    ]))
+
+    expect(verdict.failures).toEqual([
+      expect.objectContaining({
+        kind: 'insufficient_samples',
+        scorer: 'exact',
+        metric: 'passRate',
+        actual: 0,
+        limit: 5,
+      }),
+    ])
+    expect(verdict.failures[0]?.message).toContain('does not carry passSampleCount')
+  })
+
+  it('preserves current verdicts when minSamples is omitted', () => {
+    const verdict = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 2 }) }),
+      policy([{ scorer: 'exact', metric: 'avg', min: 0.5 }]),
+    )
+
+    expect(verdict.pass).toBe(true)
+    expect(verdict.failures).toEqual([])
+  })
 })
 
 describe('evaluateGate baseline regression', () => {
@@ -202,6 +324,67 @@ describe('evaluateGate baseline regression', () => {
     expect(verdict.failures).toEqual([])
     expect(verdict.warnings).toHaveLength(1)
     expect(verdict.warnings[0]).toContain('Scorer version drift')
+  })
+
+  it('skips regression when either report is below minSamples', () => {
+    const thresholds = [
+      { scorer: 'exact', metric: 'avg' as const, min: 0, minSamples: 5 },
+    ]
+
+    const currentBelow = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 2, avg: 0.5 }) }),
+      policy(thresholds, { baseline: { maxRegression: 0 } }),
+      report({ aggregate: aggregate({ scoredCount: 5, avg: 1 }) }),
+    )
+    const baselineBelow = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 5, avg: 0.5 }) }),
+      policy(thresholds, { baseline: { maxRegression: 0 } }),
+      report({ aggregate: aggregate({ scoredCount: 2, avg: 1 }) }),
+    )
+    const sufficient = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 5, avg: 0.5 }) }),
+      policy(thresholds, { baseline: { maxRegression: 0 } }),
+      report({ aggregate: aggregate({ scoredCount: 5, avg: 1 }) }),
+    )
+
+    expect(currentBelow.failures).toEqual([
+      expect.objectContaining({ kind: 'insufficient_samples', actual: 2, limit: 5 }),
+    ])
+    expect(currentBelow.warnings).toHaveLength(1)
+    expect(currentBelow.warnings[0]).toContain('current aggregate has 2 samples')
+    expect(baselineBelow.pass).toBe(true)
+    expect(baselineBelow.failures).toEqual([])
+    expect(baselineBelow.warnings).toHaveLength(1)
+    expect(baselineBelow.warnings[0]).toContain('baseline aggregate has 2 samples')
+    expect(sufficient.failures).toEqual([
+      expect.objectContaining({ kind: 'regression', actual: 0.5, limit: 0 }),
+    ])
+  })
+
+  it('treats a baseline without passSampleCount as insufficient for passRate', () => {
+    const oldBaseline: ScorerAggregate = {
+      scorer: { name: 'exact', version: '1' },
+      scoredCount: 10,
+      errorCount: 0,
+      avg: 1,
+      p50: 1,
+      p95: 1,
+      min: 1,
+      max: 1,
+      passRate: 1,
+    }
+    const verdict = evaluateGate(
+      report({ aggregate: aggregate({ scoredCount: 10, passRate: 0.5, passSampleCount: 10 }) }),
+      policy([
+        { scorer: 'exact', metric: 'passRate', min: 0, minSamples: 5 },
+      ], { baseline: { maxRegression: 0 } }),
+      report({ aggregate: oldBaseline }),
+    )
+
+    expect(verdict.pass).toBe(true)
+    expect(verdict.failures).toEqual([])
+    expect(verdict.warnings).toHaveLength(1)
+    expect(verdict.warnings[0]).toContain('baseline aggregate has 0 samples')
   })
 })
 

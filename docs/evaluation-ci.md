@@ -50,9 +50,9 @@ const verdict = evaluateGate(report, {
   schemaVersion: 1,
   thresholds: [
     // A rule scorer plus passRate=1 is a deterministic quality gate.
-    { scorer: 'exact', metric: 'passRate', min: 1 },
-    { scorer: 'relevancy', metric: 'avg', min: 0.8 },
-    { scorer: 'relevancy', metric: 'p50', min: 0.85, tag: 'critical' },
+    { scorer: 'exact', metric: 'passRate', min: 1, minSamples: 20 },
+    { scorer: 'relevancy', metric: 'avg', min: 0.8, minSamples: 10 },
+    { scorer: 'relevancy', metric: 'p50', min: 0.85, tag: 'critical', minSamples: 5 },
   ],
   maxScorerErrorRate: 0.1,
   maxTargetErrorRate: 0,
@@ -71,9 +71,9 @@ The equivalent JSON policy is:
 {
   "schemaVersion": 1,
   "thresholds": [
-    { "scorer": "exact", "metric": "passRate", "min": 1 },
-    { "scorer": "relevancy", "metric": "avg", "min": 0.8 },
-    { "scorer": "relevancy", "metric": "p50", "min": 0.85, "tag": "critical" }
+    { "scorer": "exact", "metric": "passRate", "min": 1, "minSamples": 20 },
+    { "scorer": "relevancy", "metric": "avg", "min": 0.8, "minSamples": 10 },
+    { "scorer": "relevancy", "metric": "p50", "min": 0.85, "tag": "critical", "minSamples": 5 }
   ],
   "maxScorerErrorRate": 0.1,
   "maxTargetErrorRate": 0,
@@ -85,16 +85,25 @@ The equivalent JSON policy is:
 ```
 
 Thresholds support `avg`, `p50`, `p95`, `min`, and `passRate`, with optional
-tag scoping and inclusive `min`/`max` boundaries. A missing scorer, tag, or
-`passRate` source is a configuration failure rather than a silent pass. The
-health defaults fail when scorer errors exceed 10% of scored plus scorer-error
-records, or when any selected target fails.
+tag scoping, inclusive `min`/`max` boundaries, and an optional positive integer
+`minSamples`. Score-metric guards use the selected aggregate's `scoredCount`;
+`passRate` guards use its `passSampleCount`. Tag-scoped thresholds therefore
+use the tag aggregate's own counts. A missing scorer, tag, or `passRate` source
+is a configuration failure rather than a silent pass. A count below
+`minSamples` reports `insufficient_samples` with the observed `actual` count
+and configured `limit`. For `passRate`, an older report that omits
+`passSampleCount` fails closed with `actual: 0` rather than skipping the guard.
+Omitting `minSamples` preserves the previous threshold behavior. The health
+defaults fail when scorer errors exceed 10% of scored plus scorer-error records,
+or when any selected target fails.
 
 Every verdict contains only `pass`, `failures`, and `warnings`. A failure has a
 stable `kind`, optional scorer/metric/tag coordinates, the observed `actual`,
 the configured `limit`, and a human-readable `message`. For failures about
 availability rather than a measured score, `missing_scorer` uses `actual: 0`
 and `limit: 1`, while `baseline_mismatch` uses `actual: 1` and `limit: 0`.
+`insufficient_samples` uses the available sample count as `actual` and the
+required count as `limit`.
 
 A baseline is an ordinary JSON `EvalRunReport`, not a second file format. The
 recommended workflow is:
@@ -113,6 +122,16 @@ skips that scorer's regression checks because a changed judge prompt or model
 does not produce a comparable score. Threshold and health checks still run.
 If baseline rules are configured but no baseline report is supplied, OMA warns
 and skips regression checks.
+
+A threshold that sets `minSamples` applies it to the regression comparison as
+well. When either the current or the baseline aggregate holds fewer samples
+than the minimum, OMA warns and skips that comparison instead of reporting a
+regression computed from a sample set the gate already called too small to
+judge. This loosens one check while it tightens another: a short baseline that
+previously produced a `regression` failure now produces only a warning, while a
+short current report still fails its own threshold with `insufficient_samples`.
+Commit a baseline large enough to satisfy every `minSamples` it serves, and
+read these warnings as a prompt to rerun the baseline rather than as noise.
 
 Use `oma eval gate` when report generation and quality enforcement are separate
 CI stages. It prints the exact verdict JSON to stdout:
