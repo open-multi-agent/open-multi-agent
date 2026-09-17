@@ -4,12 +4,12 @@
     <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg">
     <img alt="" src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="72">
   </picture>
-  <br>Open Multi-Agent
+  <br>OMA
 </h1>
 
 <p align="center">
   <strong>Agents your organization can own, approve, and audit.</strong><br/>
-  A self-hosted TypeScript agent runtime: consequential actions wait for durable, tamper-evident approvals, and every run leaves a record you can verify offline, byte for byte.
+  OMA (Open Multi-Agent) is a self-hosted TypeScript agent runtime: consequential actions wait for durable, tamper-evident approvals, and every run leaves a record you can verify offline, byte for byte.
 </p>
 
 <p align="center">

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to Open Multi-Agent! This guide covers the basics to get you started.
+Thanks for your interest in contributing to OMA (Open Multi-Agent)! This guide covers the basics to get you started.
 
 ## Setup
 

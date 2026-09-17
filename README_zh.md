@@ -4,12 +4,12 @@
     <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg">
     <img alt="" src="https://raw.githubusercontent.com/open-multi-agent/open-multi-agent/main/.github/brand/logo-mark-light.svg" width="72">
   </picture>
-  <br>Open Multi-Agent
+  <br>OMA
 </h1>
 
 <p align="center">
   <strong>Agent 的所有权、审批权与审计权，归于使用它的组织。</strong><br/>
-  自托管的 TypeScript Agent 运行时：关键操作要等一条持久化、防篡改的审批，每次运行留下一份可离线逐字节核验的记录。
+  OMA（Open Multi-Agent）是自托管的 TypeScript Agent 运行时：关键操作要等一条持久化、防篡改的审批，每次运行留下一份可离线逐字节核验的记录。
 </p>
 
 <p align="center">
