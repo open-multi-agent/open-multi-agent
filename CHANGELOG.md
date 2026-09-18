@@ -2,25 +2,57 @@
 
 ## Unreleased
 
+## 1.20.0 - 2026-09-18
+
 ### Added
 
-- Added an optional positive-integer `GateThreshold.minSamples` so an
-  evaluation gate only accepts a threshold result that is backed by enough
-  evidence. Score metrics compare it against the selected aggregate's
-  `scoredCount` and `passRate` compares it against `passSampleCount`.
-  Tag-scoped thresholds use the tag aggregate's own counts. A count below the
-  minimum reports the new `insufficient_samples` failure kind carrying the
-  observed count and the configured limit, and a report written before
-  `passSampleCount` existed fails closed at zero rather than skipping the
-  guard. Baseline regression checks honor the same minimum: when either side
-  holds fewer samples, that comparison is skipped with a warning, so adding
-  `minSamples` turns a regression failure computed against a small baseline
-  into a warning. Omitting `minSamples` preserves the previous behavior and the
-  report schema version is unchanged.
-- Added `ScorerAggregate.passSampleCount`, the count of scored records that
-  define `pass`. It is emitted whenever `passRate` is, including on tag
-  aggregates, and gives `passRate` guards the denominator that `scoredCount`
-  does not provide.
+- Added an optional positive-integer GateThreshold minSamples guard. A threshold
+  below the minimum reports insufficient_samples with the observed count as
+  actual and the configured minimum as limit; score metrics compare against the
+  selected aggregate scoredCount, passRate compares against passSampleCount, and
+  tag-scoped thresholds use the tag aggregate own counts.
+- Added ScorerAggregate passSampleCount, the number of scored records that
+  define pass. It is emitted whenever passRate is emitted, including on tag
+  aggregates.
+
+### Changed
+
+- Baseline regression comparisons are skipped with a warning when either the
+  current or baseline aggregate holds fewer than minSamples samples; this can
+  turn a previously reported regression failure into a warning.
+- A report or baseline written before passSampleCount existed fails closed at
+  zero samples for passRate guards rather than skipping the guard.
+- Updated the shipped README and npm package description to lead with OMA as the
+  project name and reposition around owning, approving, and auditing.
+
+### Compatibility
+
+- Omitting minSamples preserves previous threshold and regression behavior, and
+  the report schema version remains unchanged, so existing gate policies and
+  reports need no migration to keep prior behavior.
+- Before enabling minSamples on a passRate threshold, regenerate baselines with
+  a core version that emits passSampleCount; otherwise that regression
+  comparison skips with a warning, and a passRate guard evaluated against an old
+  current report fails closed with actual zero.
+- Adding minSamples changes gate outcomes in both directions: a short baseline
+  can downgrade a regression failure to a warning, while a short current report
+  still fails its own threshold with insufficient_samples.
+- A previously ignored minSamples key with a non-positive or non-integer value
+  now throws minSamples must be a positive integer; remove or correct such keys
+  in existing gate policies.
+- If code exhaustively switches on GateFailure kind, add an insufficient_samples
+  case. The new kind carries the observed sample count as actual and the
+  configured minimum as limit, with optional scorer, metric, and tag
+  coordinates.
+- Report JSON now includes passSampleCount on every aggregate that carries
+  passRate, including tag aggregates. Update snapshots, hashes, or strict
+  validators; the unchanged schema version cannot distinguish the two shapes.
+- Do not rely on an older core to enforce a policy that declares minSamples,
+  because that core strips the unknown key and silently skips the guard; pin the
+  gate execution side to a core version that supports it.
+- No Node or dependency action is required: the core manifest change is a
+  description-only edit, and the otel and create-oma-app workspaces have no
+  changes in this range.
 
 ## 1.19.0 - 2026-09-11
 
