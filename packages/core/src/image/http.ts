@@ -51,12 +51,17 @@ function truncate(value: string): string {
   return value.length > MAX_DETAIL_CHARS ? `${value.slice(0, MAX_DETAIL_CHARS)}…` : value
 }
 
-/** The `{ error: { code, message } }` shape both built-in providers use. */
+/** Fields read from the `{ error: { code, type, message } }` shape the built-in providers use. */
 export interface ProviderErrorBody {
   readonly code?: string
   readonly type?: string
   readonly message?: string
+  /** The whole `error` object (or body), for provider rules that need more fields. */
+  readonly error?: Readonly<Record<string, unknown>>
 }
+
+/** An adapter's own rule for recognizing a safety rejection. */
+export type ContentPolicyRule = (body: ProviderErrorBody, status: number) => boolean
 
 export function parseProviderErrorBody(text: string): ProviderErrorBody {
   let parsed: unknown
@@ -74,7 +79,7 @@ export function parseProviderErrorBody(text: string): ProviderErrorBody {
     const value = inner[key]
     return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
   }
-  return { code: pick('code'), type: pick('type'), message: pick('message') }
+  return { code: pick('code'), type: pick('type'), message: pick('message'), error: inner }
 }
 
 /**
@@ -87,7 +92,7 @@ export function classifyHttpError(
   status: number,
   bodyText: string,
   retryAfterHeader: string | null,
-  isContentPolicy: (body: ProviderErrorBody) => boolean,
+  isContentPolicy: ContentPolicyRule,
 ): ImageModelError {
   const body = parseProviderErrorBody(bodyText)
   const detail = truncate(body.message ?? bodyText)
@@ -101,7 +106,7 @@ export function classifyHttpError(
   }
   if (status === 408) return new ImageModelError('timeout', message, true, options)
   if (status >= 500) return new ImageModelError('api_error', message, true, options)
-  if (isContentPolicy(body)) return new ImageModelError('content_policy', message, false, options)
+  if (isContentPolicy(body, status)) return new ImageModelError('content_policy', message, false, options)
   return new ImageModelError('invalid_request', message, false, options)
 }
 
@@ -116,7 +121,7 @@ export async function sendImageRequest(
   url: string,
   init: RequestInit,
   signal: AbortSignal,
-  isContentPolicy: (body: ProviderErrorBody) => boolean,
+  isContentPolicy: ContentPolicyRule,
 ): Promise<unknown> {
   let response: Response
   let text: string

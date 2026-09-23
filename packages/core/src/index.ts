@@ -284,6 +284,8 @@ export type {
 export { runImage } from './image/run-image.js'
 export { OpenAIImageAdapter } from './image/openai.js'
 export type { OpenAIImageAdapterOptions } from './image/openai.js'
+export { OpenRouterImageAdapter } from './image/openrouter.js'
+export type { OpenRouterImageAdapterOptions } from './image/openrouter.js'
 export { SeedreamImageAdapter } from './image/seedream.js'
 export type { SeedreamImageAdapterOptions } from './image/seedream.js'
 export type {

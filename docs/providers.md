@@ -253,8 +253,11 @@ The coordinator accepts the same hook via `runTeam(team, goal, { coordinator: { 
 
 Image generation and editing do not go through `provider` or `LLMAdapter`. They
 use `ImageModelAdapter` and `runImage()`, with built-in adapters for the OpenAI
-Images API (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) and Seedream on Volcengine Ark
-(`ARK_API_KEY`). See [image generation](image-generation.md).
+Images API (`OPENAI_API_KEY`, `OPENAI_BASE_URL`), OpenRouter
+(`OPENROUTER_API_KEY`), and Seedream on Volcengine Ark (`ARK_API_KEY`). The
+OpenRouter image adapter is separate from the text route above because its
+image endpoint has its own request shape. See
+[image generation](image-generation.md).
 
 ## Extended thinking / reasoning
 

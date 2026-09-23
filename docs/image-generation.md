@@ -93,7 +93,11 @@ Content-policy detection is per provider, because providers signal it
 differently. The OpenAI adapter matches the error codes `moderation_blocked`
 and `content_policy_violation`. The Seedream adapter matches Ark error codes
 ending in `SensitiveContentDetected`, both in an error response and in a
-per-image error inside a 200 response. Anything else lands in
+per-image error inside a 200 response. The OpenRouter adapter matches a 403
+carrying OpenRouter's moderation metadata (`reasons` or `flagged_input`), and
+an upstream error whose code, in `error.metadata.provider_code` or in the
+original body in `error.metadata.raw`, one of the two rules above recognizes.
+Anything else lands in
 `invalid_request`, which is also non-retryable, so an unrecognized rejection
 still moves to the next model rather than being retried.
 
@@ -125,13 +129,15 @@ record to durable storage from the callback if you need it to survive a crash;
 | Adapter | Endpoint | Credentials | Notes |
 |---|---|---|---|
 | `OpenAIImageAdapter` | `POST /images/generations` without images, `POST /images/edits` (multipart) with images | `apiKey` or `OPENAI_API_KEY`; `baseURL` or `OPENAI_BASE_URL` | Reads `data[0].b64_json` and never downloads a returned URL, so it targets models that return base64, such as the `gpt-image` family. Works with OpenAI-compatible endpoints through `baseURL`. |
+| `OpenRouterImageAdapter` | `POST /images` on OpenRouter | `apiKey` or `OPENROUTER_API_KEY` | Sends input images as `input_references` data URLs and reads `data[0].b64_json`. OpenRouter's request shape differs from the OpenAI Images API, so `OpenAIImageAdapter` with an OpenRouter `baseURL` does not work. Rejects a mask. Its classification follows OpenRouter's documented error format and has not been checked against live responses. |
 | `SeedreamImageAdapter` | `POST /images/generations` on Volcengine Ark | `apiKey` or `ARK_API_KEY` | Same endpoint and key as the Doubao text adapter. Sends input images as data URLs, always requests `b64_json`, and sets `watermark: false` unless configured. Rejects a mask. |
 
-Both accept `providerOptions` for extra body fields, such as `quality` or
-`moderation` for OpenAI and `seed` for Seedream, and `maxInputImages` to fail
-over-long requests before any network call.
+All three accept `providerOptions` for extra body fields, such as `quality` or
+`moderation` for OpenAI, `aspect_ratio` or a `provider` routing object for
+OpenRouter, and `seed` for Seedream, and `maxInputImages` to fail over-long
+requests before any network call.
 
-Both honor `egressPolicy` the same way the text adapters do: every request is
+All three honor `egressPolicy` the same way the text adapters do: every request is
 checked against the policy and redirects are rejected. See
 [LLM egress policy](egress-policy.md).
 
