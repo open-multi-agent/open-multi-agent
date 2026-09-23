@@ -22,6 +22,7 @@ which question the page answers, so you can pick one without opening five.
 | [Tool configuration](tool-configuration.md) | How are built-in, custom, and delegation tools granted, filtered, and gated per call? |
 | [Sandbox and shell execution](sandbox-and-shell.md) | Where can a filesystem tool reach, and where does a granted `bash` command actually run? |
 | [MCP tools](mcp.md) | What does `connectMCPTools()` do, and which OMA controls extend into the MCP child process? |
+| [Image generation and editing](image-generation.md) | How do I generate or edit an image across a fallback chain of image models, and what does each attempt record? |
 | [Structured agent input](structured-input.md) | How do I pass caller-owned conversation history, images, or files instead of a single prompt string? |
 | [External agents](external-agents.md) | How do process and ACP backends put coding CLIs on the same task DAG, and what stops applying to them? |
 

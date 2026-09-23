@@ -36,6 +36,8 @@ Terminal: `InvalidTaskRequirementsError`, `TokenBudgetExceededError`, `CostBudge
 
 Retryable: `LLMCallTimeoutError`, `RoutingTimeoutError`, errors carrying no numeric status (network blips), 408, 409, 429, and every 5xx.
 
+`ImageModelError` is the exception to both lists: `isRetryableError()` returns its own `retryable` flag, which the adapter set when it classified the response.
+
 `executeWithRetry()` (`packages/core/src/orchestrator/retry.ts`) consumes that classification at the task level. Retry is off by default (`maxRetries: 0`). It prefers `result.errorInfo.retryable === false` over re-classifying `result.error`, so a framework failure whose raw `Error` was stripped by a hook or a serialization seam still skips pointless attempts. Two cases bypass retry entirely: a `'suspended'` status is a durable continuation boundary, and a `DurableApprovalError` is rethrown rather than retried.
 
 ## Budget errors
@@ -148,6 +150,14 @@ Thrown before an SDK request when a built-in adapter cannot faithfully map a mod
 
 Thrown before an SDK request when an adapter has no wire mapping for a whole model-visible content block. Raised by the Gemini, Bedrock, Anthropic, and AI SDK adapters. The class exists specifically so this case does not fall through `isRetryableError()`'s conservative default and spend the whole backoff ladder, plus a checkpoint rewrite per attempt, on a capability gap that cannot resolve itself. See [structured input](structured-input.md#which-adapters-accept-which-blocks).
 
+## Image model errors
+
+### `ImageModelError`
+
+`code: 'IMAGE_MODEL_ERROR'`. Carries `type` (`timeout`, `rate_limit`, `content_policy`, `invalid_request`, `api_error`, `network`, or `invalid_output`), `retryable`, and optional `provider`, `status`, `retryAfterMs`, and `providerCode`.
+
+Thrown by an `ImageModelAdapter` for one failed provider call. `runImage()` never lets it escape: it records the failure as an attempt and uses `retryable` to decide between retrying the same model and moving to the next one, then resolves with `status: 'failed'` if the chain runs out. You meet the class directly only when calling an adapter yourself or writing one. See [image generation](image-generation.md#error-types).
+
 ## Egress policy errors
 
 ### `EgressPolicyError`
@@ -213,6 +223,7 @@ Two more error classes ship on the public surface but belong to their own subsys
 | `InvalidMessageError` | root | Malformed `LLMMessage[]`, uncloneable input, or a disallowed `beforeRun` rewrite | No | Thrown from input preparation; a failed result with `kind: 'callback'` from `beforeRun` |
 | `StructuredOutputValidationError` | root | `outputSchema` still unsatisfied after the corrective retry | No | Failed run result with `kind: 'validation'` |
 | `UnsupportedToolCallError` | root | A provider returned a tool-call type OMA cannot execute | No | Failed run result, `errorInfo.code: 'UNSUPPORTED_TOOL_CALL'` |
+| `ImageModelError` | root | An image adapter call failed; `type` says how | Per `retryable` | Attempt records and the failed `runImage()` result; thrown only from a direct adapter call |
 | `EgressPolicyError` | root | Invalid policy, denied origin, unenforceable adapter, or unresolved target | No | `status.code: 'rejected'`; also rejects `createAdapter()` |
 | `UnsupportedToolResultContentError` | root | An adapter cannot map a model-visible tool-result part | No | Failed run result |
 | `UnsupportedContentBlockError` | root | An adapter has no wire mapping for a content block | No | Failed run result |

@@ -249,6 +249,13 @@ await oma.runAgent(
 
 The coordinator accepts the same hook via `runTeam(team, goal, { coordinator: { adapter: new AISdkAdapter(...) } })`. For a full application, see [`integrations/with-vercel-ai-sdk`](../packages/core/examples/integrations/with-vercel-ai-sdk/).
 
+## Image models
+
+Image generation and editing do not go through `provider` or `LLMAdapter`. They
+use `ImageModelAdapter` and `runImage()`, with built-in adapters for the OpenAI
+Images API (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) and Seedream on Volcengine Ark
+(`ARK_API_KEY`). See [image generation](image-generation.md).
+
 ## Extended thinking / reasoning
 
 One `thinking` config on `AgentConfig` maps to each provider's native reasoning setting:

@@ -261,6 +261,55 @@ export class UnsupportedContentBlockError extends Error {
 }
 
 /**
+ * Normalized failure classes for an image model call. Adapters map provider
+ * responses onto these so the retry and fallback loop in `runImage` never has
+ * to parse provider-specific payloads.
+ */
+export type ImageModelErrorType =
+  | 'timeout'
+  | 'rate_limit'
+  | 'content_policy'
+  | 'invalid_request'
+  | 'api_error'
+  | 'network'
+  | 'invalid_output'
+
+/**
+ * Raised by an image model adapter for one failed call. `retryable` decides
+ * whether `runImage` tries the same model again or moves to the next one.
+ */
+export class ImageModelError extends Error {
+  readonly code = 'IMAGE_MODEL_ERROR'
+  /** Provider name reported by the adapter that raised the error. */
+  readonly provider?: string
+  /** HTTP status of the failed response, when there was one. */
+  readonly status?: number
+  /** Delay the provider asked for through Retry-After, in milliseconds. */
+  readonly retryAfterMs?: number
+  /** Provider error code from the response body, when present. */
+  readonly providerCode?: string
+
+  constructor(
+    readonly type: ImageModelErrorType,
+    message: string,
+    readonly retryable: boolean,
+    options: {
+      readonly provider?: string
+      readonly status?: number
+      readonly retryAfterMs?: number
+      readonly providerCode?: string
+    } = {},
+  ) {
+    super(message)
+    this.name = 'ImageModelError'
+    this.provider = options.provider
+    this.status = options.status
+    this.retryAfterMs = options.retryAfterMs
+    this.providerCode = options.providerCode
+  }
+}
+
+/**
  * Raised before an adapter call when `enforceLineage` is on and a model-visible
  * block cannot name the journal event it came from.
  *
@@ -343,6 +392,7 @@ export function isRetryableError(error: unknown): boolean {
   if (error instanceof EgressPolicyError) return false
   if (error instanceof UnsupportedToolResultContentError) return false
   if (error instanceof UnsupportedContentBlockError) return false
+  if (error instanceof ImageModelError) return error.retryable
   // A lineage gap is a property of the conversation, not of the transport:
   // the same request would fail the same way on every attempt.
   if (error instanceof JournalLineageError) return false

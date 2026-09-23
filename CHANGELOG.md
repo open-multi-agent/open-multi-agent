@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Added `runImage()` for image generation and editing across an ordered chain
+  of image models, with per-model retries that honor Retry-After, fallback on
+  non-retryable failures, an optional `validate` check on each returned image,
+  and a record for every provider call through `result.attempts` and
+  `onAttempt`.
+- Added the `ImageModelAdapter` interface and two built-in adapters that call
+  provider HTTP APIs directly: `OpenAIImageAdapter` for the OpenAI Images API
+  and OpenAI-compatible endpoints, and `SeedreamImageAdapter` for Seedream on
+  Volcengine Ark. Both classify safety rejections as `content_policy`, fail
+  rather than drop input they cannot use, and honor `egressPolicy`.
+- Added `ImageModelError`; `isRetryableError()` returns its `retryable` flag.
+
 ## 1.20.0 - 2026-09-18
 
 ### Added

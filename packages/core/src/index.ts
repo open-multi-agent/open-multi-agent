@@ -206,8 +206,10 @@ export {
   RoutingProfilerFailedError,
   RoutingTimeoutError,
   EgressPolicyError,
+  ImageModelError,
   isRetryableError,
 } from './errors.js'
+export type { ImageModelErrorType } from './errors.js'
 export { createRunIdentity, createRestoreIdentity, validateRunId } from './observability/identity.js'
 export { classifyRunFailure } from './observability/status.js'
 export type {
@@ -274,6 +276,28 @@ export type {
   TraceStoreErrorCode,
   StoredRun,
 } from './observability/index.js'
+
+// ---------------------------------------------------------------------------
+// Image generation
+// ---------------------------------------------------------------------------
+
+export { runImage } from './image/run-image.js'
+export { OpenAIImageAdapter } from './image/openai.js'
+export type { OpenAIImageAdapterOptions } from './image/openai.js'
+export { SeedreamImageAdapter } from './image/seedream.js'
+export type { SeedreamImageAdapterOptions } from './image/seedream.js'
+export type {
+  ImageAttemptRecord,
+  ImageCallOptions,
+  ImageInput,
+  ImageModelAdapter,
+  ImageModelOutput,
+  ImageOutput,
+  ImageRequest,
+  ImageValidationResult,
+  RunImageOptions,
+  RunImageResult,
+} from './image/types.js'
 
 // ---------------------------------------------------------------------------
 // Memory
