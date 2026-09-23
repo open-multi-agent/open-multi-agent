@@ -97,7 +97,8 @@ per-image error inside a 200 response. The OpenRouter adapter matches a 403
 carrying OpenRouter's moderation metadata (`reasons` or `flagged_input`), and
 an upstream error whose code, in `error.metadata.provider_code` or in the
 original body in `error.metadata.raw`, one of the two rules above recognizes.
-Anything else lands in
+These rules run before the timeout and 5xx rules, so a rejection a gateway
+forwards with a 5xx status is not retried. Anything else lands in
 `invalid_request`, which is also non-retryable, so an unrecognized rejection
 still moves to the next model rather than being retried.
 

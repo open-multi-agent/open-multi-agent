@@ -338,6 +338,21 @@ describe('OpenRouterImageAdapter', () => {
     expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'content_policy', retryable: false })
   })
 
+  it('classifies an upstream rejection forwarded with a 5xx status as content_policy, not a retryable api_error', async () => {
+    stubFetch(
+      jsonResponse({
+        error: {
+          code: 502,
+          message: 'Provider returned error',
+          metadata: { provider_name: 'OpenAI', raw: JSON.stringify({ error: { code: 'moderation_blocked' } }) },
+        },
+      }, 502),
+      jsonResponse({ error: { code: 502, message: 'Provider returned error', metadata: { provider_name: 'OpenAI' } } }, 502),
+    )
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'content_policy', retryable: false, status: 502 })
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'api_error', retryable: true, status: 502 })
+  })
+
   it('classifies an upstream rejection reported in metadata.provider_code as content_policy', async () => {
     stubFetch(jsonResponse({
       error: { code: 400, message: 'Provider returned error', metadata: { provider_name: 'OpenAI', provider_code: 'moderation_blocked' } },

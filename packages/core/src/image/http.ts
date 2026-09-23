@@ -104,9 +104,11 @@ export function classifyHttpError(
       retryAfterMs: parseRetryAfter(retryAfterHeader),
     })
   }
+  // Checked before the retryable branches: a gateway can forward an upstream
+  // safety rejection with a 5xx status, and retrying it cannot succeed.
+  if (isContentPolicy(body, status)) return new ImageModelError('content_policy', message, false, options)
   if (status === 408) return new ImageModelError('timeout', message, true, options)
   if (status >= 500) return new ImageModelError('api_error', message, true, options)
-  if (isContentPolicy(body, status)) return new ImageModelError('content_policy', message, false, options)
   return new ImageModelError('invalid_request', message, false, options)
 }
 
