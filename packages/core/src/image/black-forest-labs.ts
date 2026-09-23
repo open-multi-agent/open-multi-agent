@@ -27,6 +27,7 @@ import {
   joinUrl,
   sendImageRequest,
 } from './http.js'
+import { sniffImage } from './sniff.js'
 import type {
   ImageCallOptions,
   ImageModelAdapter,
@@ -277,9 +278,6 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     ))
     const taskId = typeof submitted?.['id'] === 'string' ? submitted['id'] : undefined
     const pollingUrl = typeof submitted?.['polling_url'] === 'string' ? submitted['polling_url'] : undefined
-    if (pollingUrl === undefined) {
-      throw this.fail('invalid_output', 'submit response has no polling_url', true)
-    }
 
     // Built before polling so a failure after the submit still reports the
     // task and its cost, and with the same dimensions the request body sent.
@@ -292,6 +290,17 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
     for (const field of ['cost', 'input_mp', 'output_mp']) {
       if (typeof submitted?.[field] === 'number') params[field] = submitted[field]
+    }
+
+    // A 2xx submit may already have created and billed a task, so a submit
+    // response the adapter cannot follow ends the turn like any later failure.
+    if (pollingUrl === undefined) {
+      throw new ImageModelError(
+        'invalid_output',
+        `${this.provider} submit response has no polling_url; not resubmitting the task`,
+        false,
+        { provider: this.provider, params },
+      )
     }
 
     let data: Uint8Array
@@ -327,6 +336,16 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
         )
       }
       throw error
+    }
+    // A delivery URL can answer 200 with an error page. Checked here rather
+    // than left to runImage, whose retry of an invalid output would resubmit.
+    if (sniffImage(data) === undefined) {
+      throw new ImageModelError(
+        'invalid_output',
+        `${this.provider} result download is not a PNG, JPEG, or WebP image; not resubmitting the task`,
+        false,
+        { provider: this.provider, params },
+      )
     }
     return {
       data,

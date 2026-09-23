@@ -658,12 +658,37 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(headersOf(pollInit)['x-key']).toBeUndefined()
   })
 
-  it('fails on a submit response without polling_url, and ends the turn on a permanent download failure', async () => {
-    stubFetch(jsonResponse({ id: 'task-1' }), submitted(), ready(), new Response('gone', { status: 404 }))
-    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'invalid_output', retryable: true })
+  it('ends the turn on a submit response without polling_url, and on a permanent download failure', async () => {
+    stubFetch(jsonResponse({ id: 'task-1', cost: 3 }), submitted(), ready(), new Response('gone', { status: 404 }))
+    const noPolling = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    expect(noPolling).toMatchObject({ type: 'invalid_output', retryable: false })
+    expect(noPolling.params).toMatchObject({ taskId: 'task-1', cost: 3 })
     const download = await failure(adapter().generate({ prompt: 'x' }, { signal }))
     expect(download).toMatchObject({ type: 'api_error', retryable: false, status: 404 })
     expect(download.message).toContain('not resubmitting')
+  })
+
+  it('ends the turn on a 200 download that is not an image, without letting runImage resubmit', async () => {
+    const fetchMock = stubFetch(
+      submitted(),
+      ready(),
+      new Response('<html>expired</html>', { status: 200 }),
+    )
+    const result = await runImage({
+      chain: [new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 0 })],
+      request: { prompt: 'x' },
+      backoffBaseMs: 0,
+    })
+    const submits = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/flux-2-pro'))
+    expect(submits).toHaveLength(1)
+    expect(result.status).toBe('failed')
+    expect(result.attempts).toHaveLength(1)
+    expect(result.attempts[0]).toMatchObject({
+      status: 'failed',
+      errorType: 'invalid_output',
+      retryable: false,
+      params: { taskId: 'task-1' },
+    })
   })
 
   it('does not let runImage resubmit after a permanent download failure', async () => {
