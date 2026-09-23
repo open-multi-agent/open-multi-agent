@@ -27,7 +27,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
-const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'size', 'image', 'image[]', 'mask'])
+const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'image', 'image[]', 'mask'])
 
 /**
  * Error codes the Images API uses for a safety rejection:
@@ -55,9 +55,10 @@ export interface OpenAIImageAdapterOptions {
   readonly maxInputImages?: number
   /**
    * Extra body fields sent with every call, for example `quality`,
-   * `background`, or `moderation`. Values are sent as-is. Fields the adapter
-   * sets itself (`model`, `prompt`, `n`, `size`, `image`, `image[]`, `mask`)
-   * are rejected at construction.
+   * `background`, or `moderation`. Values are sent as-is. A `size` here is a
+   * default that `request.size` overrides. Fields that carry the request itself
+   * (`model`, `prompt`, `n`, `image`, `image[]`, `mask`) are rejected at
+   * construction.
    */
   readonly providerOptions?: Readonly<Record<string, string | number | boolean>>
   /** Restrict outbound requests; see the egress policy docs. */
@@ -107,11 +108,11 @@ export class OpenAIImageAdapter implements ImageModelAdapter {
 
     const headers = { Authorization: `Bearer ${this.apiKey}` }
     const params: Record<string, unknown> = {
+      ...this.providerOptions,
       model: this.model,
-      size: request.size,
+      ...(request.size !== undefined ? { size: request.size } : {}),
       inputImages: images.length,
       mask: request.mask !== undefined,
-      ...this.providerOptions,
     }
 
     let body: unknown
@@ -140,7 +141,11 @@ export class OpenAIImageAdapter implements ImageModelAdapter {
       form.append('prompt', request.prompt)
       form.append('n', '1')
       if (request.size !== undefined) form.append('size', request.size)
-      for (const [key, value] of Object.entries(this.providerOptions)) form.append(key, String(value))
+      for (const [key, value] of Object.entries(this.providerOptions)) {
+        // request.size, appended above, takes precedence over a default size.
+        if (key === 'size' && request.size !== undefined) continue
+        form.append(key, String(value))
+      }
       const field = images.length > 1 ? 'image[]' : 'image'
       images.forEach((image, index) => {
         form.append(

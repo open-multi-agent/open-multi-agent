@@ -30,7 +30,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
-const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'size', 'input_references'])
+const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'input_references'])
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -81,9 +81,10 @@ export interface OpenRouterImageAdapterOptions {
   readonly maxInputImages?: number
   /**
    * Extra body fields sent with every call, for example `aspect_ratio`,
-   * `seed`, or a `provider` routing object. Values are sent as-is. Fields the
-   * adapter sets itself (`model`, `prompt`, `n`, `size`, `input_references`)
-   * are rejected at construction.
+   * `seed`, or a `provider` routing object. Values are sent as-is. A `size`
+   * here is a default that `request.size` overrides. Fields that carry the
+   * request itself (`model`, `prompt`, `n`, `input_references`) are rejected
+   * at construction.
    */
   readonly providerOptions?: Readonly<Record<string, unknown>>
   /** Restrict outbound requests; see the egress policy docs. */
@@ -164,10 +165,10 @@ export class OpenRouterImageAdapter implements ImageModelAdapter {
     const { data } = firstBase64Image(this.provider, body)
     const usage = asRecord(body)?.['usage']
     const params: Record<string, unknown> = {
-      model: this.model,
-      size: request.size,
-      inputImages: images.length,
       ...this.providerOptions,
+      model: this.model,
+      ...(request.size !== undefined ? { size: request.size } : {}),
+      inputImages: images.length,
     }
     return {
       data,

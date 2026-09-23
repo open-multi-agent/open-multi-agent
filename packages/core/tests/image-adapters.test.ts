@@ -106,10 +106,23 @@ describe('OpenAIImageAdapter', () => {
   })
 
   it('rejects providerOptions that would replace adapter-set fields', () => {
-    for (const key of ['model', 'prompt', 'n', 'size', 'image', 'image[]', 'mask']) {
+    for (const key of ['model', 'prompt', 'n', 'image', 'image[]', 'mask']) {
       expect(() => new OpenAIImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { [key]: 'x' } }))
         .toThrow(`openai providerOptions cannot set ${key}`)
     }
+  })
+
+  it('treats a size in providerOptions as a default that request.size overrides, without a duplicate field', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ data: [{ b64_json: b64(pngHeader(8, 8)) }] }),
+      jsonResponse({ data: [{ b64_json: b64(pngHeader(8, 8)) }] }),
+    )
+    const custom = new OpenAIImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { size: '1024x1024' } })
+    await custom.generate({ prompt: 'x', images: [input(pngHeader(4, 4))] }, { signal })
+    await custom.generate({ prompt: 'x', images: [input(pngHeader(4, 4))], size: '1536x1024' }, { signal })
+    const forms = fetchMock.mock.calls.map(([, init]) => init?.body as FormData)
+    expect(forms[0]!.getAll('size')).toEqual(['1024x1024'])
+    expect(forms[1]!.getAll('size')).toEqual(['1536x1024'])
   })
 
   it('refuses more images than maxInputImages without calling the API', async () => {
@@ -227,10 +240,23 @@ describe('SeedreamImageAdapter', () => {
     await new SeedreamImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { seed: 7 } }).generate({ prompt: 'x' }, { signal })
     expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toMatchObject({ seed: 7, response_format: 'b64_json' })
 
-    for (const key of ['response_format', 'image', 'prompt', 'watermark']) {
+    for (const key of ['response_format', 'image', 'prompt', 'model']) {
       expect(() => new SeedreamImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { [key]: 'x' } }))
         .toThrow(`seedream providerOptions cannot set ${key}`)
     }
+  })
+
+  it('treats size and watermark in providerOptions as defaults, with request.size taking precedence', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ data: [{ b64_json: b64(jpegHeader(8, 8)) }] }),
+      jsonResponse({ data: [{ b64_json: b64(jpegHeader(8, 8)) }] }),
+    )
+    const custom = new SeedreamImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { size: '2k', watermark: true } })
+    await custom.generate({ prompt: 'x' }, { signal })
+    await custom.generate({ prompt: 'x', size: '4k' }, { signal })
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
+    expect(bodies[0]).toMatchObject({ size: '2k', watermark: true })
+    expect(bodies[1]).toMatchObject({ size: '4k', watermark: true })
   })
 
   it('refuses a mask instead of dropping it', async () => {
@@ -300,6 +326,18 @@ describe('OpenRouterImageAdapter', () => {
       apiKey: 'k',
       providerOptions: { input_references: [], prompt: 'other' },
     })).toThrow('openrouter providerOptions cannot set input_references, prompt')
+  })
+
+  it('treats a size in providerOptions as a default that request.size overrides', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ data: [{ b64_json: b64(pngHeader(8, 8)) }] }),
+      jsonResponse({ data: [{ b64_json: b64(pngHeader(8, 8)) }] }),
+    )
+    const custom = new OpenRouterImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { size: '1024x1024' } })
+    await custom.generate({ prompt: 'x' }, { signal })
+    await custom.generate({ prompt: 'x', size: '1536x1024' }, { signal })
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
+    expect(bodies.map(body => body.size)).toEqual(['1024x1024', '1536x1024'])
   })
 
   it('omits input_references for text-to-image', async () => {

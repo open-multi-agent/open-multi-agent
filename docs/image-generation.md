@@ -136,10 +136,11 @@ record to durable storage from the callback if you need it to survive a crash;
 All three accept `providerOptions` for extra body fields, such as `quality` or
 `moderation` for OpenAI, `aspect_ratio` or a `provider` routing object for
 OpenRouter, and `seed` for Seedream, and `maxInputImages` to fail over-long
-requests before any network call. A `providerOptions` key the adapter sets
-itself, such as `prompt`, `size`, or the field that carries input images, is
-rejected with a `TypeError` when the adapter is constructed, so an option can
-never silently replace the request.
+requests before any network call. A `size` in `providerOptions` is a default
+that `request.size` overrides. A key that carries the request itself, such as
+`model`, `prompt`, or the field that holds input images, is rejected with a
+`TypeError` when the adapter is constructed, so an option can never silently
+replace the prompt or the images.
 
 All three honor `egressPolicy` the same way the text adapters do: every request is
 checked against the policy and redirects are rejected. See
