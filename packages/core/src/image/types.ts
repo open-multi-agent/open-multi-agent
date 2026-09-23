@@ -38,6 +38,12 @@ export interface ImageCallOptions {
    * `DOMException` named `TimeoutError`; any other reason is a cancellation.
    */
   readonly signal: AbortSignal
+  /**
+   * Longest Retry-After the caller is willing to wait, in ms. An adapter that
+   * waits internally (for example while polling a task) should fail instead of
+   * waiting longer. `runImage` passes its own `maxRetryAfterMs`.
+   */
+  readonly maxRetryAfterMs?: number
 }
 
 /** What an adapter returns for one successful call. */

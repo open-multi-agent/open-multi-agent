@@ -45,6 +45,7 @@ async function callWithDeadline(
   adapter: ImageModelAdapter,
   options: RunImageOptions,
   timeoutMs: number,
+  maxRetryAfterMs: number,
 ) {
   const deadline = new AbortController()
   // A deadline aborts with a TimeoutError reason, the same convention as
@@ -64,7 +65,7 @@ async function callWithDeadline(
   if (options.signal?.aborted) attempt.abort(options.signal.reason)
   else options.signal?.addEventListener('abort', abortAttempt, { once: true })
   try {
-    return await adapter.generate(options.request, { signal: attempt.signal })
+    return await adapter.generate(options.request, { signal: attempt.signal, maxRetryAfterMs })
   } catch (error) {
     if (options.signal?.aborted) throw callerAbortReason(options.signal)
     if (deadline.signal.aborted) {
@@ -147,7 +148,7 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
       let failure: ImageModelError
 
       try {
-        const raw = await callWithDeadline(adapter, options, attemptTimeoutMs)
+        const raw = await callWithDeadline(adapter, options, attemptTimeoutMs, maxRetryAfterMs)
         const sniffed = sniffImage(raw.data)
         if (sniffed === undefined) {
           throw new ImageModelError(
@@ -213,6 +214,7 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
           errorType: failure.type,
           errorMessage: failure.message,
           retryable: failure.retryable,
+          ...(failure.params !== undefined ? { params: failure.params } : {}),
         })
       }
 

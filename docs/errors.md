@@ -154,7 +154,7 @@ Thrown before an SDK request when an adapter has no wire mapping for a whole mod
 
 ### `ImageModelError`
 
-`code: 'IMAGE_MODEL_ERROR'`. Carries `type` (`timeout`, `rate_limit`, `content_policy`, `invalid_request`, `api_error`, `network`, or `invalid_output`), `retryable`, and optional `provider`, `status`, `retryAfterMs`, and `providerCode`.
+`code: 'IMAGE_MODEL_ERROR'`. Carries `type` (`timeout`, `rate_limit`, `content_policy`, `invalid_request`, `api_error`, `network`, or `invalid_output`), `retryable`, and optional `provider`, `status`, `retryAfterMs`, `providerCode`, and `params` (task ID, cost, or other details of work the provider already accepted, copied into the failed attempt record).
 
 Thrown by an `ImageModelAdapter` for one failed provider call. `runImage()` never lets it escape: it records the failure as an attempt and uses `retryable` to decide between retrying the same model and moving to the next one, then resolves with `status: 'failed'` if the chain runs out. You meet the class directly only when calling an adapter yourself or writing one. See [image generation](image-generation.md#error-types).
 

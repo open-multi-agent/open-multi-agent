@@ -225,6 +225,21 @@ describe('runImage', () => {
     expect(seen[1]).toBe(reason)
   })
 
+  it('passes maxRetryAfterMs to the adapter and records params carried by a failure', async () => {
+    let seenCap: number | undefined
+    const a: ImageModelAdapter = {
+      provider: 'fake',
+      model: 'a',
+      async generate(_request, options) {
+        seenCap = options.maxRetryAfterMs
+        throw new ImageModelError('api_error', 'task failed', false, { params: { taskId: 't-9', cost: 2 } })
+      },
+    }
+    const result = await runImage({ chain: [a], request, maxRetryAfterMs: 5_000 })
+    expect(seenCap).toBe(5_000)
+    expect(result.attempts[0]).toMatchObject({ status: 'failed', params: { taskId: 't-9', cost: 2 } })
+  })
+
   it('keeps an adapter verdict that a deadline is final and moves to the next model', async () => {
     const final = (options: ImageCallOptions) =>
       new Promise<ImageModelOutput>((_resolve, reject) => {

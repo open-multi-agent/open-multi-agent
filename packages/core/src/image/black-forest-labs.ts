@@ -36,6 +36,8 @@ import type {
 
 const DEFAULT_BASE_URL = 'https://api.bfl.ai/v1'
 const DEFAULT_POLL_INTERVAL_MS = 500
+/** Matches the runImage default, for a direct call that sets no cap. */
+const DEFAULT_MAX_RETRY_AFTER_MS = 60_000
 const MODERATED_STATUSES = new Set(['Request Moderated', 'Content Moderated'])
 const FAILED_STATUSES = new Set(['Error', 'Failed'])
 
@@ -171,12 +173,15 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
    * task. Anything else throws at once, including a 4xx on the download: an
    * expired delivery link cannot recover in place, so runImage decides.
    */
-  private async untilSettled<T>(call: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  private async untilSettled<T>(call: () => Promise<T>, signal: AbortSignal, maxRetryAfterMs: number): Promise<T> {
     for (;;) {
       try {
         return await call()
       } catch (error) {
         if (signal.aborted || !isTransient(error)) throw error
+        // A wait longer than the caller allows ends the turn instead of
+        // stalling it until the deadline.
+        if ((error.retryAfterMs ?? 0) > maxRetryAfterMs) throw error
         await abortableDelay(Math.max(this.pollIntervalMs, error.retryAfterMs ?? 0), signal)
         if (signal.aborted) throw signal.reason
       }
@@ -188,6 +193,7 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     pollingUrl: string,
     key: Record<string, string>,
     signal: AbortSignal,
+    maxRetryAfterMs: number,
   ): Promise<Uint8Array> {
     const noContentPolicyCode = () => false
     let sampleUrl: string | undefined
@@ -199,7 +205,7 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
         this.keyedGet(pollingUrl, key),
         signal,
         noContentPolicyCode,
-      ), signal))
+      ), signal, maxRetryAfterMs))
       const rawStatus = poll?.['status'] ?? poll?.['state']
       const status = typeof rawStatus === 'string' ? rawStatus : undefined
       if (status === 'Ready') {
@@ -221,29 +227,14 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
 
     const finalSampleUrl = sampleUrl
-    try {
-      return await this.untilSettled(() => downloadImage(
-        this.fetchImpl,
-        this.provider,
-        finalSampleUrl,
-        // Delivery URLs are pre-signed, so the download never carries the key.
-        { method: 'GET' },
-        signal,
-      ), signal)
-    } catch (error) {
-      // A download failure that is not transient (an expired or missing
-      // result, for example) cannot recover in place, and a retry would pay
-      // for a second task. It ends this model's turn in the chain.
-      if (!signal.aborted && error instanceof ImageModelError && error.retryable) {
-        throw new ImageModelError(error.type, `${error.message}; not resubmitting the task`, false, {
-          provider: this.provider,
-          status: error.status,
-          retryAfterMs: error.retryAfterMs,
-          providerCode: error.providerCode,
-        })
-      }
-      throw error
-    }
+    return this.untilSettled(() => downloadImage(
+      this.fetchImpl,
+      this.provider,
+      finalSampleUrl,
+      // Delivery URLs are pre-signed, so the download never carries the key.
+      { method: 'GET' },
+      signal,
+    ), signal, maxRetryAfterMs)
   }
 
   async generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput> {
@@ -290,28 +281,8 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       throw this.fail('invalid_output', 'submit response has no polling_url', true)
     }
 
-    let data: Uint8Array
-    try {
-      data = await this.awaitResult(pollingUrl, key, options.signal)
-    } catch (error) {
-      // The task exists and may still finish. A retry of this adapter would
-      // submit and pay for a second one, so a deadline reached after the
-      // submit is final for this model and runImage moves to the next.
-      if (options.signal.aborted) {
-        // Only a deadline is final. A caller that cancelled gets its own
-        // reason back, as with any other aborted call.
-        if (!isDeadlineReason(options.signal.reason)) throw options.signal.reason
-        throw new ImageModelError(
-          'timeout',
-          `${this.provider} task ${taskId ?? '(unknown)'} did not finish before the attempt deadline; not resubmitting it`,
-          false,
-          { provider: this.provider },
-        )
-      }
-      throw error
-    }
-    // The same dimensions the request body carried, so a request.size that
-    // overrides default width and height is what the attempt record shows.
+    // Built before polling so a failure after the submit still reports the
+    // task and its cost, and with the same dimensions the request body sent.
     const params: Record<string, unknown> = {
       ...this.providerOptions,
       model: this.model,
@@ -321,6 +292,41 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
     for (const field of ['cost', 'input_mp', 'output_mp']) {
       if (typeof submitted?.[field] === 'number') params[field] = submitted[field]
+    }
+
+    let data: Uint8Array
+    try {
+      data = await this.awaitResult(pollingUrl, key, options.signal, options.maxRetryAfterMs ?? DEFAULT_MAX_RETRY_AFTER_MS)
+    } catch (error) {
+      if (options.signal.aborted) {
+        // Only a deadline is final. A caller that cancelled gets its own
+        // reason back, as with any other aborted call.
+        if (!isDeadlineReason(options.signal.reason)) throw options.signal.reason
+        throw new ImageModelError(
+          'timeout',
+          `${this.provider} task ${taskId ?? '(unknown)'} did not finish before the attempt deadline; not resubmitting it`,
+          false,
+          { provider: this.provider, params },
+        )
+      }
+      // The task exists and may have been billed. Nothing after the submit may
+      // make runImage retry this adapter, since a retry submits and pays for a
+      // second task, so every failure from here ends this model's turn.
+      if (error instanceof ImageModelError) {
+        throw new ImageModelError(
+          error.type,
+          error.retryable ? `${error.message}; not resubmitting the task` : error.message,
+          false,
+          {
+            provider: this.provider,
+            status: error.status,
+            retryAfterMs: error.retryAfterMs,
+            providerCode: error.providerCode,
+            params,
+          },
+        )
+      }
+      throw error
     }
     return {
       data,

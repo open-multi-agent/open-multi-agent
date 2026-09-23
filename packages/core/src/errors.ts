@@ -288,6 +288,12 @@ export class ImageModelError extends Error {
   readonly retryAfterMs?: number
   /** Provider error code from the response body, when present. */
   readonly providerCode?: string
+  /**
+   * Parameters and usage of work the provider already accepted before the
+   * failure, such as a task ID or a reported cost. `runImage` copies them into
+   * the failed attempt record. Must not contain image bytes or credentials.
+   */
+  readonly params?: Readonly<Record<string, unknown>>
 
   constructor(
     readonly type: ImageModelErrorType,
@@ -298,6 +304,7 @@ export class ImageModelError extends Error {
       readonly status?: number
       readonly retryAfterMs?: number
       readonly providerCode?: string
+      readonly params?: Readonly<Record<string, unknown>>
     } = {},
   ) {
     super(message)
@@ -306,6 +313,7 @@ export class ImageModelError extends Error {
     this.status = options.status
     this.retryAfterMs = options.retryAfterMs
     this.providerCode = options.providerCode
+    this.params = options.params
   }
 }
 

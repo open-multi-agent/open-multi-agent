@@ -609,10 +609,44 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('classifies failed and lost tasks as retryable', async () => {
-    stubFetch(submitted(), status('Error'), submitted(), status('Task not found'))
-    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'api_error', retryable: true })
-    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'invalid_output', retryable: true })
+  it('ends the turn without a resubmit on failed, lost, and sample-less tasks, keeping the task and cost', async () => {
+    stubFetch(
+      submitted(), status('Error'),
+      submitted(), status('Task not found'),
+      submitted(), status('Ready', { result: {} }),
+    )
+    const failed = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    const lost = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    const noSample = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    expect(failed).toMatchObject({ type: 'api_error', retryable: false })
+    expect(lost).toMatchObject({ type: 'invalid_output', retryable: false })
+    expect(noSample).toMatchObject({ type: 'invalid_output', retryable: false })
+    for (const error of [failed, lost, noSample]) {
+      expect(error.params).toMatchObject({ taskId: 'task-1', cost: 3, input_mp: 1, output_mp: 2 })
+    }
+  })
+
+  it('ends the turn instead of waiting out a Retry-After above the caller cap', async () => {
+    const fetchMock = stubFetch(submitted(), jsonResponse({ detail: 'slow down' }, 429, { 'Retry-After': '30' }))
+    const started = Date.now()
+    const error = await failure(adapter().generate({ prompt: 'x' }, { signal, maxRetryAfterMs: 1_000 }))
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(error).toMatchObject({ type: 'rate_limit', retryable: false, retryAfterMs: 30_000 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('records the task and its cost on a failed runImage attempt after the submit', async () => {
+    stubFetch(submitted(), status('Request Moderated'))
+    const result = await runImage({
+      chain: [new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 0 })],
+      request: { prompt: 'x' },
+    })
+    expect(result.attempts).toHaveLength(1)
+    expect(result.attempts[0]).toMatchObject({
+      status: 'failed',
+      errorType: 'content_policy',
+      params: { taskId: 'task-1', cost: 3 },
+    })
   })
 
   it('does not send the key to a polling URL outside bfl.ai', async () => {

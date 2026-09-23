@@ -15,6 +15,10 @@
   Volcengine Ark. Both classify safety rejections as `content_policy`, fail
   rather than drop input they cannot use, and honor `egressPolicy`.
 - Added `ImageModelError`; `isRetryableError()` returns its `retryable` flag.
+  Its optional `params` carries details of work the provider already
+  accepted, such as a task ID and cost, into the failed attempt record.
+  `ImageCallOptions.maxRetryAfterMs` tells an adapter that waits internally
+  the longest Retry-After `runImage()` allows.
 - Added `OpenRouterImageAdapter` for OpenRouter's `/images` endpoint. It sends
   input images as `input_references`, and classifies both OpenRouter's own
   moderation rejections and upstream rejections forwarded in `error.metadata`
