@@ -5,6 +5,7 @@
 import { EgressPolicyError, ImageModelError } from '../errors.js'
 import { createEgressFetch } from '../llm/egress.js'
 import type { EgressPolicy } from '../types.js'
+import { sniffImage } from './sniff.js'
 import type { ImageInput } from './types.js'
 
 type FetchLike = typeof globalThis.fetch
@@ -37,6 +38,16 @@ export function assertNoReservedOptions(
       `${provider} providerOptions cannot set ${clashes.join(', ')}; the adapter sets ${clashes.length === 1 ? 'it' : 'them'} from the request or its own options`,
     )
   }
+}
+
+/**
+ * The media type of returned image bytes, read from the bytes themselves.
+ * Providers let callers pick the output format through `providerOptions`, so a
+ * fixed declaration would be wrong for a direct adapter caller. `fallback` is
+ * used only when the bytes are not a recognized image.
+ */
+export function detectedMediaType(bytes: Uint8Array, fallback: string): string {
+  return sniffImage(bytes)?.mediaType ?? fallback
 }
 
 /** Join a base URL and a path without doubling or dropping the slash. */

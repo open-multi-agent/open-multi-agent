@@ -98,6 +98,13 @@ describe('OpenAIImageAdapter', () => {
     expect((init?.headers as Record<string, string>)['Content-Type']).toBeUndefined()
   })
 
+  it('declares the media type of the returned bytes, not a fixed one', async () => {
+    stubFetch(jsonResponse({ data: [{ b64_json: b64(jpegHeader(8, 8)) }] }))
+    const jpeg = new OpenAIImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { output_format: 'jpeg' } })
+    const output = await jpeg.generate({ prompt: 'x' }, { signal })
+    expect(output.mediaType).toBe('image/jpeg')
+  })
+
   it('uses the singular image field for one input image', async () => {
     const fetchMock = stubFetch(jsonResponse({ data: [{ b64_json: b64(pngHeader(8, 8)) }] }))
     await adapter().generate({ prompt: 'x', images: [input(pngHeader(4, 4))] }, { signal })
@@ -517,6 +524,31 @@ describe('BlackForestLabsImageAdapter', () => {
     const bodies = [fetchMock.mock.calls[0]!, fetchMock.mock.calls[3]!].map(([, init]) => JSON.parse(String(init?.body)))
     expect(bodies[0]).toMatchObject({ width: 800, height: 600 })
     expect(bodies[1]).toMatchObject({ width: 1024, height: 768 })
+  })
+
+  it('declares the media type of the bytes it downloaded, whatever output_format asked for', async () => {
+    stubFetch(submitted(), ready(), imageResponse(pngHeader(512, 512)))
+    const png = new BlackForestLabsImageAdapter({
+      model: 'flux-2-pro',
+      apiKey: 'k',
+      pollIntervalMs: 0,
+      providerOptions: { output_format: 'png' },
+    })
+    const output = await png.generate({ prompt: 'x' }, { signal })
+    expect(output.mediaType).toBe('image/png')
+  })
+
+  it('records the width and height actually sent when request.size overrides the defaults', async () => {
+    stubFetch(submitted(), ready(), imageResponse())
+    const custom = new BlackForestLabsImageAdapter({
+      model: 'flux-2-pro',
+      apiKey: 'k',
+      pollIntervalMs: 0,
+      providerOptions: { width: 800, height: 600 },
+    })
+    const output = await custom.generate({ prompt: 'x', size: '1024x768' }, { signal })
+    expect(output.params).toMatchObject({ width: 1024, height: 768 })
+    expect(output.params).not.toHaveProperty('size')
   })
 
   it('keeps polling through the in-progress Reasoning and Generating states', async () => {

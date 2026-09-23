@@ -12,6 +12,7 @@ import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
   assertNoReservedOptions,
+  detectedMediaType,
   firstBase64Image,
   imageFetch,
   joinUrl,
@@ -172,8 +173,7 @@ export class OpenRouterImageAdapter implements ImageModelAdapter {
     }
     return {
       data,
-      // runImage re-derives the real type from the bytes.
-      mediaType: 'image/png',
+      mediaType: detectedMediaType(data, 'image/png'),
       params: usage === undefined ? params : { ...params, usage },
     }
   }

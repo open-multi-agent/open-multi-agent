@@ -12,6 +12,7 @@ import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
   assertNoReservedOptions,
+  detectedMediaType,
   extensionFor,
   firstBase64Image,
   imageFetch,
@@ -177,8 +178,7 @@ export class OpenAIImageAdapter implements ImageModelAdapter {
       : undefined
     return {
       data,
-      // gpt-image defaults to PNG; runImage re-derives the real type from the bytes.
-      mediaType: 'image/png',
+      mediaType: detectedMediaType(data, 'image/png'),
       params: usage === undefined ? params : { ...params, usage },
     }
   }

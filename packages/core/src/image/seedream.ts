@@ -11,6 +11,7 @@ import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
   assertNoReservedOptions,
+  detectedMediaType,
   firstBase64Image,
   imageFetch,
   joinUrl,
@@ -167,7 +168,7 @@ export class SeedreamImageAdapter implements ImageModelAdapter {
     }
     return {
       data,
-      mediaType: 'image/jpeg',
+      mediaType: detectedMediaType(data, 'image/jpeg'),
       params: usage === undefined ? params : { ...params, usage },
     }
   }

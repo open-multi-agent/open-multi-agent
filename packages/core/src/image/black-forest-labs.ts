@@ -17,6 +17,7 @@ import type { EgressPolicy } from '../types.js'
 import { abortableDelay } from '../utils/abort.js'
 import {
   assertNoReservedOptions,
+  detectedMediaType,
   downloadImage,
   imageFetch,
   joinUrl,
@@ -155,6 +156,7 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     const key = { 'x-key': this.apiKey }
     const noContentPolicyCode = () => false
 
+    const dimensions = sizeFields(request.size)
     const inputFields: Record<string, string> = {}
     images.forEach((image, index) => {
       inputFields[index === 0 ? 'input_image' : `input_image_${index + 1}`] =
@@ -171,7 +173,7 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
         body: JSON.stringify({
           ...this.providerOptions,
           prompt: request.prompt,
-          ...sizeFields(request.size),
+          ...dimensions,
           ...inputFields,
         }),
       },
@@ -222,10 +224,12 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       { method: 'GET' },
       options.signal,
     )
+    // The same dimensions the request body carried, so a request.size that
+    // overrides default width and height is what the attempt record shows.
     const params: Record<string, unknown> = {
       ...this.providerOptions,
       model: this.model,
-      ...(request.size !== undefined ? { size: request.size } : {}),
+      ...dimensions,
       inputImages: images.length,
       taskId,
     }
@@ -234,8 +238,7 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
     return {
       data,
-      // runImage re-derives the real type from the bytes.
-      mediaType: 'image/jpeg',
+      mediaType: detectedMediaType(data, 'image/jpeg'),
       params,
     }
   }
