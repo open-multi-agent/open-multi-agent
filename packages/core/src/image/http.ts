@@ -21,6 +21,24 @@ export function imageFetch(egressPolicy: EgressPolicy | undefined, provider: str
     : createEgressFetch(egressPolicy, provider, lateFetch)
 }
 
+/**
+ * Reject `providerOptions` keys the adapter sets from the request or its own
+ * options. Letting them through would let a stray option replace the prompt or
+ * the input images without any error, so the conflict fails at construction.
+ */
+export function assertNoReservedOptions(
+  provider: string,
+  providerOptions: Readonly<Record<string, unknown>>,
+  isReserved: (key: string) => boolean,
+): void {
+  const clashes = Object.keys(providerOptions).filter(isReserved)
+  if (clashes.length > 0) {
+    throw new TypeError(
+      `${provider} providerOptions cannot set ${clashes.join(', ')}; the adapter sets ${clashes.length === 1 ? 'it' : 'them'} from the request or its own options`,
+    )
+  }
+}
+
 /** Join a base URL and a path without doubling or dropping the slash. */
 export function joinUrl(baseURL: string, path: string): string {
   return `${baseURL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`

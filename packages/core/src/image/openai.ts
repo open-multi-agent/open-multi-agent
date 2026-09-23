@@ -11,6 +11,7 @@
 import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
+  assertNoReservedOptions,
   extensionFor,
   firstBase64Image,
   imageFetch,
@@ -26,6 +27,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
+const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'size', 'image', 'image[]', 'mask'])
 
 /**
  * Error codes the Images API uses for a safety rejection:
@@ -53,7 +55,9 @@ export interface OpenAIImageAdapterOptions {
   readonly maxInputImages?: number
   /**
    * Extra body fields sent with every call, for example `quality`,
-   * `background`, or `moderation`. Values are sent as-is.
+   * `background`, or `moderation`. Values are sent as-is. Fields the adapter
+   * sets itself (`model`, `prompt`, `n`, `size`, `image`, `image[]`, `mask`)
+   * are rejected at construction.
    */
   readonly providerOptions?: Readonly<Record<string, string | number | boolean>>
   /** Restrict outbound requests; see the egress policy docs. */
@@ -75,6 +79,7 @@ export class OpenAIImageAdapter implements ImageModelAdapter {
     this.baseURL = options.baseURL ?? process.env['OPENAI_BASE_URL'] ?? DEFAULT_BASE_URL
     this.maxInputImages = options.maxInputImages
     this.providerOptions = options.providerOptions ?? {}
+    assertNoReservedOptions(this.provider, this.providerOptions, key => RESERVED_OPTIONS.has(key))
     this.fetchImpl = imageFetch(options.egressPolicy, this.provider)
   }
 
@@ -119,11 +124,11 @@ export class OpenAIImageAdapter implements ImageModelAdapter {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            ...this.providerOptions,
             model: this.model,
             prompt: request.prompt,
             n: 1,
             ...(request.size !== undefined ? { size: request.size } : {}),
-            ...this.providerOptions,
           }),
         },
         options.signal,

@@ -105,6 +105,13 @@ describe('OpenAIImageAdapter', () => {
     expect(form.getAll('image[]')).toHaveLength(0)
   })
 
+  it('rejects providerOptions that would replace adapter-set fields', () => {
+    for (const key of ['model', 'prompt', 'n', 'size', 'image', 'image[]', 'mask']) {
+      expect(() => new OpenAIImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { [key]: 'x' } }))
+        .toThrow(`openai providerOptions cannot set ${key}`)
+    }
+  })
+
   it('refuses more images than maxInputImages without calling the API', async () => {
     const fetchMock = stubFetch()
     const limited = new OpenAIImageAdapter({ model: 'm', apiKey: 'k', maxInputImages: 1 })
@@ -215,16 +222,15 @@ describe('SeedreamImageAdapter', () => {
     expect(typeof body.image).toBe('string')
   })
 
-  it('does not let providerOptions switch the output to a URL', async () => {
+  it('sends free providerOptions and rejects ones that would replace adapter-set fields', async () => {
     const fetchMock = stubFetch(jsonResponse({ data: [{ b64_json: b64(jpegHeader(8, 8)) }] }))
-    const custom = new SeedreamImageAdapter({
-      model: 'm',
-      apiKey: 'k',
-      providerOptions: { seed: 7, response_format: 'url' },
-    })
-    await custom.generate({ prompt: 'x' }, { signal })
-    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))
-    expect(body).toMatchObject({ seed: 7, response_format: 'b64_json' })
+    await new SeedreamImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { seed: 7 } }).generate({ prompt: 'x' }, { signal })
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toMatchObject({ seed: 7, response_format: 'b64_json' })
+
+    for (const key of ['response_format', 'image', 'prompt', 'watermark']) {
+      expect(() => new SeedreamImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { [key]: 'x' } }))
+        .toThrow(`seedream providerOptions cannot set ${key}`)
+    }
   })
 
   it('refuses a mask instead of dropping it', async () => {
@@ -286,6 +292,14 @@ describe('OpenRouterImageAdapter', () => {
       { type: 'image_url', image_url: { url: expect.stringMatching(/^data:image\/jpeg;base64,/) } },
     ])
     expect(output.params).toMatchObject({ inputImages: 2, usage: { total_tokens: 9 } })
+  })
+
+  it('rejects providerOptions that would replace the prompt or the input images', () => {
+    expect(() => new OpenRouterImageAdapter({
+      model: 'm',
+      apiKey: 'k',
+      providerOptions: { input_references: [], prompt: 'other' },
+    })).toThrow('openrouter providerOptions cannot set input_references, prompt')
   })
 
   it('omits input_references for text-to-image', async () => {

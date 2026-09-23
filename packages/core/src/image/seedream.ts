@@ -10,6 +10,7 @@
 import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
+  assertNoReservedOptions,
   firstBase64Image,
   imageFetch,
   joinUrl,
@@ -25,6 +26,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+const RESERVED_OPTIONS = new Set(['model', 'prompt', 'image', 'size', 'watermark', 'response_format'])
 
 /**
  * Ark reports safety rejections with codes such as
@@ -50,7 +52,9 @@ export interface SeedreamImageAdapterOptions {
   readonly watermark?: boolean
   /**
    * Extra body fields sent with every call, for example `seed`. Values are
-   * sent as-is and may override the defaults above.
+   * sent as-is. Fields the adapter sets itself (`model`, `prompt`, `image`,
+   * `size`, `watermark`, `response_format`) are rejected at construction; use
+   * the `watermark` option instead.
    */
   readonly providerOptions?: Readonly<Record<string, unknown>>
   /** Restrict outbound requests; see the egress policy docs. */
@@ -74,6 +78,7 @@ export class SeedreamImageAdapter implements ImageModelAdapter {
     this.maxInputImages = options.maxInputImages
     this.watermark = options.watermark ?? false
     this.providerOptions = options.providerOptions ?? {}
+    assertNoReservedOptions(this.provider, this.providerOptions, key => RESERVED_OPTIONS.has(key))
     this.fetchImpl = imageFetch(options.egressPolicy, this.provider)
   }
 
@@ -115,12 +120,12 @@ export class SeedreamImageAdapter implements ImageModelAdapter {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          ...this.providerOptions,
           model: this.model,
           prompt: request.prompt,
           ...(image !== undefined ? { image } : {}),
           ...(request.size !== undefined ? { size: request.size } : {}),
           watermark: this.watermark,
-          ...this.providerOptions,
           response_format: 'b64_json',
         }),
       },

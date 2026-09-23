@@ -11,6 +11,7 @@
 import { ImageModelError } from '../errors.js'
 import type { EgressPolicy } from '../types.js'
 import {
+  assertNoReservedOptions,
   firstBase64Image,
   imageFetch,
   joinUrl,
@@ -29,6 +30,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+const RESERVED_OPTIONS = new Set(['model', 'prompt', 'n', 'size', 'input_references'])
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -79,7 +81,9 @@ export interface OpenRouterImageAdapterOptions {
   readonly maxInputImages?: number
   /**
    * Extra body fields sent with every call, for example `aspect_ratio`,
-   * `seed`, or a `provider` routing object. Values are sent as-is.
+   * `seed`, or a `provider` routing object. Values are sent as-is. Fields the
+   * adapter sets itself (`model`, `prompt`, `n`, `size`, `input_references`)
+   * are rejected at construction.
    */
   readonly providerOptions?: Readonly<Record<string, unknown>>
   /** Restrict outbound requests; see the egress policy docs. */
@@ -101,6 +105,7 @@ export class OpenRouterImageAdapter implements ImageModelAdapter {
     this.baseURL = options.baseURL ?? DEFAULT_BASE_URL
     this.maxInputImages = options.maxInputImages
     this.providerOptions = options.providerOptions ?? {}
+    assertNoReservedOptions(this.provider, this.providerOptions, key => RESERVED_OPTIONS.has(key))
     this.fetchImpl = imageFetch(options.egressPolicy, this.provider)
   }
 
@@ -137,6 +142,7 @@ export class OpenRouterImageAdapter implements ImageModelAdapter {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          ...this.providerOptions,
           model: this.model,
           prompt: request.prompt,
           n: 1,
@@ -149,7 +155,6 @@ export class OpenRouterImageAdapter implements ImageModelAdapter {
                 })),
               }
             : {}),
-          ...this.providerOptions,
         }),
       },
       options.signal,
