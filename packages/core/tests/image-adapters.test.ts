@@ -551,6 +551,30 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(output.params).not.toHaveProperty('size')
   })
 
+  it('retries transient poll and download failures without submitting a second task', async () => {
+    const fetchMock = stubFetch(
+      submitted(),
+      new Response('busy', { status: 503 }),
+      new TypeError('fetch failed'),
+      jsonResponse({ detail: 'slow down' }, 429, { 'Retry-After': '0' }),
+      ready(),
+      new Response('bad gateway', { status: 502 }),
+      imageResponse(),
+    )
+    const output = await adapter().generate({ prompt: 'x' }, { signal })
+    const submits = fetchMock.mock.calls.filter(([url]) => String(url) === 'https://api.bfl.ai/v1/flux-2-pro')
+    expect(submits).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledTimes(7)
+    expect(output.params).toMatchObject({ taskId: 'task-1' })
+  })
+
+  it('still fails at once on a non-retryable poll error', async () => {
+    const fetchMock = stubFetch(submitted(), jsonResponse({ detail: 'bad key' }, 401))
+    const error = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    expect(error).toMatchObject({ type: 'invalid_request', retryable: false, status: 401 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps polling through the in-progress Reasoning and Generating states', async () => {
     const fetchMock = stubFetch(submitted(), status('Reasoning'), status('Generating'), ready(), imageResponse())
     await adapter().generate({ prompt: 'x' }, { signal })

@@ -10,6 +10,10 @@
  * or `Content Moderated`), not an HTTP error. The adapter treats both as a
  * non-retryable `content_policy` failure at once, rather than polling on
  * until the attempt deadline.
+ *
+ * Once a task is submitted, transient failures while polling or downloading
+ * are retried inside the same attempt, so a retry never pays for a second
+ * task. Only the submit counts as the provider call runImage retries.
  */
 
 import { ImageModelError } from '../errors.js'
@@ -34,6 +38,13 @@ const DEFAULT_BASE_URL = 'https://api.bfl.ai/v1'
 const DEFAULT_POLL_INTERVAL_MS = 500
 const MODERATED_STATUSES = new Set(['Request Moderated', 'Content Moderated'])
 const FAILED_STATUSES = new Set(['Error', 'Failed'])
+
+/** A failure that says nothing about the task and is worth repeating in place. */
+function isTransient(error: unknown): error is ImageModelError {
+  if (!(error instanceof ImageModelError) || !error.retryable) return false
+  if (error.type === 'rate_limit' || error.type === 'network' || error.type === 'timeout') return true
+  return error.type === 'api_error' && (error.status ?? 0) >= 500
+}
 
 /** Keys that carry the request itself: the prompt and every input image field. */
 function isReservedOption(key: string): boolean {
@@ -142,6 +153,26 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       : { method: 'GET' }
   }
 
+  /**
+   * Run a status poll or the image download for a task that already exists.
+   * A transient failure (rate limit, timeout, network, 5xx) is retried here
+   * until the attempt deadline, waiting at least as long as a Retry-After,
+   * because letting it reach runImage would resubmit and pay for a second
+   * task. Anything else throws at once, including a 4xx on the download: an
+   * expired delivery link cannot recover in place, so runImage decides.
+   */
+  private async untilSettled<T>(call: () => Promise<T>, signal: AbortSignal): Promise<T> {
+    for (;;) {
+      try {
+        return await call()
+      } catch (error) {
+        if (signal.aborted || !isTransient(error)) throw error
+        await abortableDelay(Math.max(this.pollIntervalMs, error.retryAfterMs ?? 0), signal)
+        if (signal.aborted) throw signal.reason
+      }
+    }
+  }
+
   async generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput> {
     const images = request.images ?? []
     if (request.mask !== undefined) {
@@ -188,14 +219,14 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
 
     let sampleUrl: string | undefined
     while (sampleUrl === undefined) {
-      const poll = asRecord(await sendImageRequest(
+      const poll = asRecord(await this.untilSettled(() => sendImageRequest(
         this.fetchImpl,
         this.provider,
         pollingUrl,
         this.keyedGet(pollingUrl, key),
         options.signal,
         noContentPolicyCode,
-      ))
+      ), options.signal))
       const rawStatus = poll?.['status'] ?? poll?.['state']
       const status = typeof rawStatus === 'string' ? rawStatus : undefined
       if (status === 'Ready') {
@@ -216,14 +247,15 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       }
     }
 
-    const data = await downloadImage(
+    const finalSampleUrl = sampleUrl
+    const data = await this.untilSettled(() => downloadImage(
       this.fetchImpl,
       this.provider,
-      sampleUrl,
+      finalSampleUrl,
       // Delivery URLs are pre-signed, so the download never carries the key.
       { method: 'GET' },
       options.signal,
-    )
+    ), options.signal)
     // The same dimensions the request body carried, so a request.size that
     // overrides default width and height is what the attempt record shows.
     const params: Record<string, unknown> = {

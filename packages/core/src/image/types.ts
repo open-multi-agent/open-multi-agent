@@ -56,8 +56,10 @@ export interface ImageModelAdapter {
   readonly model: string
   /**
    * Run one call. Failures should throw {@link ImageModelError}; anything else
-   * is recorded as a non-retryable `api_error`. Must not retry internally, so
-   * every provider call shows up as its own attempt.
+   * is recorded as a non-retryable `api_error`. Must not resubmit a
+   * generation internally, so every billable call shows up as its own
+   * attempt. Retrying a status poll or download for a task already submitted
+   * is fine, and avoids paying for a second task.
    */
   generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput>
 }

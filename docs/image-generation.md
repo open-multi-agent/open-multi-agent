@@ -71,8 +71,11 @@ When every model fails, `runImage()` resolves with `status: 'failed'` and the
 last error; it does not throw. It rejects only for invalid options or when the
 caller's `signal` aborts, in which case no further model is tried.
 
-Adapters must not retry internally. Every provider call is one attempt, so the
-attempt records show the real number of calls and their cost.
+Adapters must not resubmit a generation internally. Every billable provider
+call is one attempt, so the attempt records show the real number of calls and
+their cost. An adapter for an asynchronous provider may retry a status poll or
+the result download of a task it already submitted, since that costs nothing
+and a resubmit would pay for a second task.
 
 ## Error types
 
@@ -133,7 +136,7 @@ record to durable storage from the callback if you need it to survive a crash;
 | Adapter | Endpoint | Credentials | Notes |
 |---|---|---|---|
 | `OpenAIImageAdapter` | `POST /images/generations` without images, `POST /images/edits` (multipart) with images | `apiKey` or `OPENAI_API_KEY`; `baseURL` or `OPENAI_BASE_URL` | Reads `data[0].b64_json` and never downloads a returned URL, so it targets models that return base64, such as the `gpt-image` family. Works with OpenAI-compatible endpoints through `baseURL`. |
-| `BlackForestLabsImageAdapter` | `POST /{model}` on Black Forest Labs, then the returned `polling_url`, then the `result.sample` URL | `apiKey` or `BFL_API_KEY` | Asynchronous: polls every `pollIntervalMs` (default 500) until the task is ready, bounded by the `runImage()` attempt deadline. Sends input images as `input_image`, `input_image_2`, and so on, and `size` as `width` and `height` (other formats are refused; use `providerOptions.aspect_ratio`). The key goes only to the API origin and to HTTPS hosts under `bfl.ai`, keyed requests refuse redirects, and the pre-signed image download carries no key. Rejects a mask. Not checked against live responses. |
+| `BlackForestLabsImageAdapter` | `POST /{model}` on Black Forest Labs, then the returned `polling_url`, then the `result.sample` URL | `apiKey` or `BFL_API_KEY` | Asynchronous: polls every `pollIntervalMs` (default 500) until the task is ready, bounded by the `runImage()` attempt deadline. Transient failures while polling or downloading are retried inside the same attempt, so a submitted task is never paid for twice. Sends input images as `input_image`, `input_image_2`, and so on, and `size` as `width` and `height` (other formats are refused; use `providerOptions.aspect_ratio`). The key goes only to the API origin and to HTTPS hosts under `bfl.ai`, keyed requests refuse redirects, and the pre-signed image download carries no key. Rejects a mask. Not checked against live responses. |
 | `OpenRouterImageAdapter` | `POST /images` on OpenRouter | `apiKey` or `OPENROUTER_API_KEY` | Sends input images as `input_references` data URLs and reads `data[0].b64_json`. OpenRouter's request shape differs from the OpenAI Images API, so `OpenAIImageAdapter` with an OpenRouter `baseURL` does not work. Rejects a mask. Its classification follows OpenRouter's documented error format and has not been checked against live responses. |
 | `SeedreamImageAdapter` | `POST /images/generations` on Volcengine Ark | `apiKey` or `ARK_API_KEY` | Same endpoint and key as the Doubao text adapter. Sends input images as data URLs, always requests `b64_json`, and sets `watermark: false` unless configured. Rejects a mask. |
 
@@ -180,7 +183,8 @@ const myAdapter: ImageModelAdapter = {
 Forward `signal` to every request so deadlines and cancellation stop the call.
 Throw `ImageModelError` for every failure you can classify; anything else is
 recorded as a non-retryable `api_error`. Fail rather than truncate when the
-provider cannot use every input image, and do not retry inside the adapter.
+provider cannot use every input image, and do not resubmit a generation inside
+the adapter.
 
 ## What is not covered
 
