@@ -46,6 +46,11 @@ function isTransient(error: unknown): error is ImageModelError {
   return error.type === 'api_error' && (error.status ?? 0) >= 500
 }
 
+/** Whether an abort reason is a deadline (runImage and AbortSignal.timeout both use TimeoutError). */
+function isDeadlineReason(reason: unknown): boolean {
+  return reason instanceof Error && reason.name === 'TimeoutError'
+}
+
 /** Keys that carry the request itself: the prompt and every input image field. */
 function isReservedOption(key: string): boolean {
   return key === 'prompt' || key === 'image' || key === 'mask' || /^input_image(_\d+)?$/.test(key)
@@ -216,14 +221,29 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
 
     const finalSampleUrl = sampleUrl
-    return this.untilSettled(() => downloadImage(
-      this.fetchImpl,
-      this.provider,
-      finalSampleUrl,
-      // Delivery URLs are pre-signed, so the download never carries the key.
-      { method: 'GET' },
-      signal,
-    ), signal)
+    try {
+      return await this.untilSettled(() => downloadImage(
+        this.fetchImpl,
+        this.provider,
+        finalSampleUrl,
+        // Delivery URLs are pre-signed, so the download never carries the key.
+        { method: 'GET' },
+        signal,
+      ), signal)
+    } catch (error) {
+      // A download failure that is not transient (an expired or missing
+      // result, for example) cannot recover in place, and a retry would pay
+      // for a second task. It ends this model's turn in the chain.
+      if (!signal.aborted && error instanceof ImageModelError && error.retryable) {
+        throw new ImageModelError(error.type, `${error.message}; not resubmitting the task`, false, {
+          provider: this.provider,
+          status: error.status,
+          retryAfterMs: error.retryAfterMs,
+          providerCode: error.providerCode,
+        })
+      }
+      throw error
+    }
   }
 
   async generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput> {
@@ -278,6 +298,9 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       // submit and pay for a second one, so a deadline reached after the
       // submit is final for this model and runImage moves to the next.
       if (options.signal.aborted) {
+        // Only a deadline is final. A caller that cancelled gets its own
+        // reason back, as with any other aborted call.
+        if (!isDeadlineReason(options.signal.reason)) throw options.signal.reason
         throw new ImageModelError(
           'timeout',
           `${this.provider} task ${taskId ?? '(unknown)'} did not finish before the attempt deadline; not resubmitting it`,

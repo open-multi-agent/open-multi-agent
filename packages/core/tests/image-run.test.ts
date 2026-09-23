@@ -206,6 +206,25 @@ describe('runImage', () => {
     expect(result.status).toBe('succeeded')
   })
 
+  it('aborts the attempt signal with a TimeoutError on the deadline and with the caller reason on cancel', async () => {
+    const seen: unknown[] = []
+    const record = (options: ImageCallOptions) =>
+      new Promise<ImageModelOutput>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          seen.push(options.signal.reason)
+          reject(options.signal.reason)
+        }, { once: true })
+      })
+    await runImage({ chain: [scripted('a', [record]).adapter], request, attemptTimeoutMs: 10, maxRetriesPerModel: 0 })
+    expect((seen[0] as Error).name).toBe('TimeoutError')
+
+    const controller = new AbortController()
+    const reason = new Error('user cancelled')
+    setTimeout(() => controller.abort(reason), 5)
+    await expect(runImage({ chain: [scripted('b', [record]).adapter], request, signal: controller.signal })).rejects.toBe(reason)
+    expect(seen[1]).toBe(reason)
+  })
+
   it('keeps an adapter verdict that a deadline is final and moves to the next model', async () => {
     const final = (options: ImageCallOptions) =>
       new Promise<ImageModelOutput>((_resolve, reject) => {

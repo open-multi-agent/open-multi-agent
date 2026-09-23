@@ -47,14 +47,21 @@ async function callWithDeadline(
   timeoutMs: number,
 ) {
   const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(), timeoutMs)
-  // The attempt signal fires on either the deadline or the caller. The listener
-  // on the caller's signal is removed when the attempt ends, so a long-lived
-  // caller signal does not accumulate one per attempt.
+  // A deadline aborts with a TimeoutError reason, the same convention as
+  // AbortSignal.timeout(), so an adapter can tell it from a caller cancellation.
+  const timer = setTimeout(
+    () => deadline.abort(new DOMException(`Attempt exceeded ${timeoutMs}ms`, 'TimeoutError')),
+    timeoutMs,
+  )
+  // The attempt signal fires on either the deadline or the caller, carrying
+  // that source's reason. The listener on the caller's signal is removed when
+  // the attempt ends, so a long-lived caller signal does not accumulate one
+  // per attempt.
   const attempt = new AbortController()
-  const abortAttempt = () => attempt.abort()
-  deadline.signal.addEventListener('abort', abortAttempt, { once: true })
-  if (options.signal?.aborted) attempt.abort()
+  const onDeadline = () => attempt.abort(deadline.signal.reason)
+  const abortAttempt = () => attempt.abort(options.signal?.reason)
+  deadline.signal.addEventListener('abort', onDeadline, { once: true })
+  if (options.signal?.aborted) attempt.abort(options.signal.reason)
   else options.signal?.addEventListener('abort', abortAttempt, { once: true })
   try {
     return await adapter.generate(options.request, { signal: attempt.signal })

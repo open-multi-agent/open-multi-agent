@@ -32,7 +32,11 @@ export interface ImageRequest {
 
 /** Per-call options `runImage` passes to an adapter. */
 export interface ImageCallOptions {
-  /** Aborts when the attempt times out or the caller cancels. Adapters must forward it to I/O. */
+  /**
+   * Aborts when the attempt times out or the caller cancels. Adapters must
+   * forward it to I/O. A deadline set by `runImage` aborts with a
+   * `DOMException` named `TimeoutError`; any other reason is a cancellation.
+   */
   readonly signal: AbortSignal
 }
 

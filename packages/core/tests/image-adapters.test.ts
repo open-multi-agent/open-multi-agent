@@ -624,10 +624,51 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(headersOf(pollInit)['x-key']).toBeUndefined()
   })
 
-  it('fails on a submit response without polling_url and on a failed download', async () => {
+  it('fails on a submit response without polling_url, and ends the turn on a permanent download failure', async () => {
     stubFetch(jsonResponse({ id: 'task-1' }), submitted(), ready(), new Response('gone', { status: 404 }))
     expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'invalid_output', retryable: true })
-    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'api_error', retryable: true, status: 404 })
+    const download = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    expect(download).toMatchObject({ type: 'api_error', retryable: false, status: 404 })
+    expect(download.message).toContain('not resubmitting')
+  })
+
+  it('does not let runImage resubmit after a permanent download failure', async () => {
+    const fetchMock = stubFetch(
+      submitted(),
+      ready(),
+      new Response('expired', { status: 403 }),
+      jsonResponse({ data: [{ b64_json: b64(jpegHeader(64, 64)) }] }),
+    )
+    const result = await runImage({
+      chain: [
+        new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 0 }),
+        new SeedreamImageAdapter({ model: 'doubao-seedream-4-0-250828', apiKey: 'k' }),
+      ],
+      request: { prompt: 'x' },
+      backoffBaseMs: 0,
+    })
+    const submits = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/flux-2-pro'))
+    expect(submits).toHaveLength(1)
+    expect(result.status).toBe('succeeded')
+    expect(result.attempts.map(r => [r.provider, r.status, r.retryable])).toEqual([
+      ['black-forest-labs', 'failed', false],
+      ['seedream', 'succeeded', undefined],
+    ])
+  })
+
+  it('gives a direct caller its own abort reason after the submit, and a final timeout only for a deadline', async () => {
+    const pending = () => vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith('/flux-2-pro') ? submitted() : status('Pending'),
+    )
+    vi.stubGlobal('fetch', pending())
+    const controller = new AbortController()
+    const reason = new Error('user cancelled')
+    setTimeout(() => controller.abort(reason), 15)
+    await expect(adapter().generate({ prompt: 'x' }, { signal: controller.signal })).rejects.toBe(reason)
+
+    vi.stubGlobal('fetch', pending())
+    const timedOut = await failure(adapter().generate({ prompt: 'x' }, { signal: AbortSignal.timeout(15) }))
+    expect(timedOut).toMatchObject({ type: 'timeout', retryable: false })
   })
 
   it('refuses a mask and a size it cannot express, without calling the API', async () => {
