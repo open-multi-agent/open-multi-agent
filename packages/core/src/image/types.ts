@@ -137,8 +137,8 @@ export interface RunImageOptions {
     request: ImageRequest,
   ) => ImageValidationResult | Promise<ImageValidationResult>
   /**
-   * Called after every attempt. Errors it throws are ignored, so a failing
-   * sink never changes the outcome of the call.
+   * Called after every attempt. It is not awaited, and a throw or rejection is
+   * ignored, so a failing or stalled sink never changes or delays the call.
    */
   readonly onAttempt?: (record: ImageAttemptRecord) => void | Promise<void>
   /** Cancels the whole chain. `runImage` rejects with the signal's reason. */

@@ -115,8 +115,10 @@ and message, the adapter's reported parameters and usage, and the output format
 and size. Records never contain credentials; only `rejectedOutput` carries image
 bytes.
 
-`onAttempt` is awaited, but an error it throws is ignored: a failing log sink
-does not change the result.
+`onAttempt` is not awaited, and a throw or rejection from it is ignored: a
+failing or stalled log sink neither changes nor delays the result. Write each
+record to durable storage from the callback if you need it to survive a crash;
+`result.attempts` holds the same records once `runImage()` settles.
 
 ## Built-in adapters
 

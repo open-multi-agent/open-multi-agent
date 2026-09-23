@@ -238,6 +238,54 @@ describe('runImage', () => {
     expect(seen.map(r => r.status)).toEqual(['failed', 'succeeded'])
   })
 
+  it('does not wait on an attempt sink that never settles or rejects', async () => {
+    const a = scripted('a', [retryable(), png()])
+    const b = scripted('b', [png()])
+    const stalled = await runImage({
+      chain: [a.adapter],
+      request,
+      backoffBaseMs: 0,
+      onAttempt: () => new Promise<void>(() => {}),
+    })
+    const rejecting = await runImage({
+      chain: [b.adapter],
+      request,
+      onAttempt: () => Promise.reject(new Error('exporter down')),
+    })
+
+    expect(stalled.status).toBe('succeeded')
+    expect(stalled.attempts).toHaveLength(2)
+    expect(rejecting.status).toBe('succeeded')
+  })
+
+  it('rejects with the caller reason when the caller aborts while validate is pending', async () => {
+    const controller = new AbortController()
+    const reason = new Error('user cancelled')
+    const a = scripted('a', [png()])
+    const validate = async () => {
+      controller.abort(reason)
+      return { ok: true as const }
+    }
+
+    await expect(runImage({ chain: [a.adapter], request, validate, signal: controller.signal })).rejects.toBe(reason)
+  })
+
+  it('removes its listener from a reused caller signal after each attempt', async () => {
+    const controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener')
+    const remove = vi.spyOn(controller.signal, 'removeEventListener')
+    const a = scripted('a', [retryable(), png(), png(), png()])
+
+    for (let i = 0; i < 3; i++) {
+      await runImage({ chain: [a.adapter], request, backoffBaseMs: 0, signal: controller.signal })
+    }
+
+    const added = add.mock.calls.filter(([type]) => type === 'abort').map(([, listener]) => listener)
+    const removed = remove.mock.calls.filter(([type]) => type === 'abort').map(([, listener]) => listener)
+    expect(added.length).toBeGreaterThanOrEqual(4)
+    expect(removed).toEqual(expect.arrayContaining(added))
+  })
+
   it('returns the last failure when every model fails', async () => {
     const a = scripted('a', [retryable('network')])
     const b = scripted('b', [fatal()])

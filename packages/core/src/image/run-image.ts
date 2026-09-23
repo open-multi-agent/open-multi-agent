@@ -5,7 +5,7 @@
  */
 
 import { ImageModelError } from '../errors.js'
-import { abortableDelay, mergeAbortSignals } from '../utils/abort.js'
+import { abortableDelay } from '../utils/abort.js'
 import { sniffImage } from './sniff.js'
 import type {
   ImageAttemptRecord,
@@ -48,11 +48,16 @@ async function callWithDeadline(
 ) {
   const deadline = new AbortController()
   const timer = setTimeout(() => deadline.abort(), timeoutMs)
-  const signal = options.signal === undefined
-    ? deadline.signal
-    : mergeAbortSignals(options.signal, deadline.signal)
+  // The attempt signal fires on either the deadline or the caller. The listener
+  // on the caller's signal is removed when the attempt ends, so a long-lived
+  // caller signal does not accumulate one per attempt.
+  const attempt = new AbortController()
+  const abortAttempt = () => attempt.abort()
+  deadline.signal.addEventListener('abort', abortAttempt, { once: true })
+  if (options.signal?.aborted) attempt.abort()
+  else options.signal?.addEventListener('abort', abortAttempt, { once: true })
   try {
-    return await adapter.generate(options.request, { signal })
+    return await adapter.generate(options.request, { signal: attempt.signal })
   } catch (error) {
     if (options.signal?.aborted) throw callerAbortReason(options.signal)
     if (deadline.signal.aborted) {
@@ -72,6 +77,7 @@ async function callWithDeadline(
     )
   } finally {
     clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortAttempt)
   }
 }
 
@@ -105,13 +111,16 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
   const attempts: ImageAttemptRecord[] = []
   let lastError: ImageModelError | undefined
 
-  const record = async (entry: ImageAttemptRecord): Promise<void> => {
+  // Attempt sinks are observability: they are not awaited, and neither a throw
+  // nor a stalled promise may change or delay the result.
+  const record = (entry: ImageAttemptRecord): void => {
     attempts.push(entry)
     if (options.onAttempt === undefined) return
     try {
-      await options.onAttempt(entry)
+      const pending = options.onAttempt(entry)
+      if (pending !== undefined) Promise.resolve(pending).catch(() => {})
     } catch {
-      // Attempt sinks are observability; a failing one must not change the result.
+      // Ignored for the same reason.
     }
   }
 
@@ -143,9 +152,11 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
         const verdict = options.validate === undefined
           ? { ok: true as const }
           : await options.validate(output, options.request)
+        // A caller that cancelled while validate was pending gets its abort, not an image.
+        if (options.signal?.aborted) throw callerAbortReason(options.signal)
 
         if (verdict.ok) {
-          await record({
+          record({
             ...base,
             startMs: attemptStart,
             durationMs: Date.now() - attemptStart,
@@ -169,7 +180,7 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
           verdict.retryable ?? true,
           { provider: adapter.provider },
         )
-        await record({
+        record({
           ...base,
           startMs: attemptStart,
           durationMs: Date.now() - attemptStart,
@@ -184,7 +195,7 @@ export async function runImage(options: RunImageOptions): Promise<RunImageResult
       } catch (error) {
         if (!(error instanceof ImageModelError)) throw error
         failure = error
-        await record({
+        record({
           ...base,
           startMs: attemptStart,
           durationMs: Date.now() - attemptStart,
