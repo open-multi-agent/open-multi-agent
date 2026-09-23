@@ -57,18 +57,23 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
+function isBflHttpsHost(url: URL): boolean {
+  return url.protocol === 'https:' && (url.hostname === 'bfl.ai' || url.hostname.endsWith('.bfl.ai'))
+}
+
 /**
- * Whether the API key may be sent to a URL the API returned. BFL hands out
- * polling and delivery URLs on sibling hosts (for example `api.us1.bfl.ai`),
- * so the check accepts the configured origin or any HTTPS host under
- * `bfl.ai`, and nothing else.
+ * Whether the API key may be sent to a URL the API returned. The configured
+ * origin always qualifies. BFL hands out polling URLs on sibling hosts (for
+ * example `api.us1.bfl.ai`), so those qualify too, but only when the
+ * configured base URL is itself a BFL host: behind a proxy the key belongs to
+ * the proxy and must not follow a forwarded BFL URL.
  */
 function mayCarryKey(url: string, baseURL: string): boolean {
   try {
     const target = new URL(url)
-    if (target.origin === new URL(baseURL).origin) return true
-    return target.protocol === 'https:' &&
-      (target.hostname === 'bfl.ai' || target.hostname.endsWith('.bfl.ai'))
+    const base = new URL(baseURL)
+    if (target.origin === base.origin) return true
+    return isBflHttpsHost(base) && isBflHttpsHost(target)
   } catch {
     return false
   }
@@ -173,6 +178,54 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
     }
   }
 
+  /** Poll a submitted task until it is ready, then download its image. */
+  private async awaitResult(
+    pollingUrl: string,
+    key: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<Uint8Array> {
+    const noContentPolicyCode = () => false
+    let sampleUrl: string | undefined
+    while (sampleUrl === undefined) {
+      const poll = asRecord(await this.untilSettled(() => sendImageRequest(
+        this.fetchImpl,
+        this.provider,
+        pollingUrl,
+        this.keyedGet(pollingUrl, key),
+        signal,
+        noContentPolicyCode,
+      ), signal))
+      const rawStatus = poll?.['status'] ?? poll?.['state']
+      const status = typeof rawStatus === 'string' ? rawStatus : undefined
+      if (status === 'Ready') {
+        const sample = asRecord(poll?.['result'])?.['sample']
+        if (typeof sample !== 'string') throw this.fail('invalid_output', 'task is Ready but has no result.sample', true)
+        sampleUrl = sample
+      } else if (status !== undefined && MODERATED_STATUSES.has(status)) {
+        throw this.fail('content_policy', `task ${status}`, false)
+      } else if (status !== undefined && FAILED_STATUSES.has(status)) {
+        throw this.fail('api_error', `task ${status}`, true)
+      } else if (status === 'Task not found') {
+        throw this.fail('invalid_output', 'task not found while polling', true)
+      } else {
+        // Pending, or a status this adapter does not know: keep waiting. The
+        // attempt deadline in runImage bounds the loop through the signal.
+        await abortableDelay(this.pollIntervalMs, signal)
+        if (signal.aborted) throw signal.reason
+      }
+    }
+
+    const finalSampleUrl = sampleUrl
+    return this.untilSettled(() => downloadImage(
+      this.fetchImpl,
+      this.provider,
+      finalSampleUrl,
+      // Delivery URLs are pre-signed, so the download never carries the key.
+      { method: 'GET' },
+      signal,
+    ), signal)
+  }
+
   async generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput> {
     const images = request.images ?? []
     if (request.mask !== undefined) {
@@ -217,45 +270,23 @@ export class BlackForestLabsImageAdapter implements ImageModelAdapter {
       throw this.fail('invalid_output', 'submit response has no polling_url', true)
     }
 
-    let sampleUrl: string | undefined
-    while (sampleUrl === undefined) {
-      const poll = asRecord(await this.untilSettled(() => sendImageRequest(
-        this.fetchImpl,
-        this.provider,
-        pollingUrl,
-        this.keyedGet(pollingUrl, key),
-        options.signal,
-        noContentPolicyCode,
-      ), options.signal))
-      const rawStatus = poll?.['status'] ?? poll?.['state']
-      const status = typeof rawStatus === 'string' ? rawStatus : undefined
-      if (status === 'Ready') {
-        const sample = asRecord(poll?.['result'])?.['sample']
-        if (typeof sample !== 'string') throw this.fail('invalid_output', 'task is Ready but has no result.sample', true)
-        sampleUrl = sample
-      } else if (status !== undefined && MODERATED_STATUSES.has(status)) {
-        throw this.fail('content_policy', `task ${status}`, false)
-      } else if (status !== undefined && FAILED_STATUSES.has(status)) {
-        throw this.fail('api_error', `task ${status}`, true)
-      } else if (status === 'Task not found') {
-        throw this.fail('invalid_output', 'task not found while polling', true)
-      } else {
-        // Pending, or a status this adapter does not know: keep waiting. The
-        // attempt deadline in runImage bounds the loop through the signal.
-        await abortableDelay(this.pollIntervalMs, options.signal)
-        if (options.signal.aborted) throw options.signal.reason
+    let data: Uint8Array
+    try {
+      data = await this.awaitResult(pollingUrl, key, options.signal)
+    } catch (error) {
+      // The task exists and may still finish. A retry of this adapter would
+      // submit and pay for a second one, so a deadline reached after the
+      // submit is final for this model and runImage moves to the next.
+      if (options.signal.aborted) {
+        throw new ImageModelError(
+          'timeout',
+          `${this.provider} task ${taskId ?? '(unknown)'} did not finish before the attempt deadline; not resubmitting it`,
+          false,
+          { provider: this.provider },
+        )
       }
+      throw error
     }
-
-    const finalSampleUrl = sampleUrl
-    const data = await this.untilSettled(() => downloadImage(
-      this.fetchImpl,
-      this.provider,
-      finalSampleUrl,
-      // Delivery URLs are pre-signed, so the download never carries the key.
-      { method: 'GET' },
-      options.signal,
-    ), options.signal)
     // The same dimensions the request body carried, so a request.size that
     // overrides default width and height is what the attempt record shows.
     const params: Record<string, unknown> = {

@@ -656,18 +656,57 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('stops polling when the runImage attempt deadline fires', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) =>
+  it('treats a deadline after the submit as final, so runImage never resubmits the task', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) =>
       String(url).endsWith('/flux-2-pro') ? submitted() : status('Pending'),
-    ))
+    )
+    vi.stubGlobal('fetch', fetchMock)
     const result = await runImage({
       chain: [new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 5 })],
       request: { prompt: 'x' },
       attemptTimeoutMs: 40,
-      maxRetriesPerModel: 0,
+      backoffBaseMs: 0,
     })
+    const submits = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/flux-2-pro'))
+    expect(submits).toHaveLength(1)
     expect(result.status).toBe('failed')
-    expect(result.attempts[0]).toMatchObject({ errorType: 'timeout', retryable: true })
+    expect(result.attempts).toHaveLength(1)
+    expect(result.attempts[0]).toMatchObject({ errorType: 'timeout', retryable: false })
+    expect(result.attempts[0]!.errorMessage).toContain('task-1')
+  })
+
+  it('still retries a deadline reached before the submit completed', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason), { once: true })
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await runImage({
+      chain: [new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 5 })],
+      request: { prompt: 'x' },
+      attemptTimeoutMs: 20,
+      maxRetriesPerModel: 1,
+      backoffBaseMs: 0,
+    })
+    expect(result.attempts.map(r => [r.errorType, r.retryable])).toEqual([['timeout', true], ['timeout', true]])
+  })
+
+  it('sends the key to BFL sibling hosts only when the base URL is a BFL host', async () => {
+    const fetchMock = stubFetch(submitted(), ready(), imageResponse())
+    const proxied = new BlackForestLabsImageAdapter({
+      model: 'flux-2-pro',
+      apiKey: 'proxy-key',
+      baseURL: 'https://bfl-proxy.example.com/v1',
+      pollIntervalMs: 0,
+    })
+    await proxied.generate({ prompt: 'x' }, { signal })
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0]!
+    expect(submitUrl).toBe('https://bfl-proxy.example.com/v1/flux-2-pro')
+    expect(headersOf(submitInit)['x-key']).toBe('proxy-key')
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1]!
+    expect(pollUrl).toBe(POLL)
+    expect(headersOf(pollInit)['x-key']).toBeUndefined()
   })
 
   it('lets runImage move to the next model on a moderated task without retrying', async () => {

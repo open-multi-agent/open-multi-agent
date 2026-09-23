@@ -77,6 +77,13 @@ their cost. An adapter for an asynchronous provider may retry a status poll or
 the result download of a task it already submitted, since that costs nothing
 and a resubmit would pay for a second task.
 
+When the attempt deadline fires, `runImage()` normally records a retryable
+`timeout`. An adapter can make that deadline final by throwing a
+non-retryable `ImageModelError` when its signal aborts, and `runImage()` keeps
+that verdict and moves to the next model. The Black Forest Labs adapter does
+this once its task is submitted, so an outage past the deadline never pays for
+a second task.
+
 ## Error types
 
 Adapters throw `ImageModelError` with a normalized `type` and a `retryable`
@@ -85,7 +92,7 @@ flag. The built-in adapters classify responses as follows:
 | Type | Built-in adapters raise it for | Retryable |
 |---|---|---|
 | `rate_limit` | HTTP 429, with `retryAfterMs` from Retry-After | Yes |
-| `timeout` | HTTP 408, or the attempt deadline firing | Yes |
+| `timeout` | HTTP 408, or the attempt deadline firing | Yes, unless the adapter marks it final (see [Retry and fallback](#retry-and-fallback)) |
 | `api_error` | HTTP 5xx; any non-`ImageModelError` thrown by an adapter | 5xx yes, other no |
 | `network` | A transport failure before a response | Yes |
 | `content_policy` | The provider's own safety rejection code (see below) | No |
@@ -136,7 +143,7 @@ record to durable storage from the callback if you need it to survive a crash;
 | Adapter | Endpoint | Credentials | Notes |
 |---|---|---|---|
 | `OpenAIImageAdapter` | `POST /images/generations` without images, `POST /images/edits` (multipart) with images | `apiKey` or `OPENAI_API_KEY`; `baseURL` or `OPENAI_BASE_URL` | Reads `data[0].b64_json` and never downloads a returned URL, so it targets models that return base64, such as the `gpt-image` family. Works with OpenAI-compatible endpoints through `baseURL`. |
-| `BlackForestLabsImageAdapter` | `POST /{model}` on Black Forest Labs, then the returned `polling_url`, then the `result.sample` URL | `apiKey` or `BFL_API_KEY` | Asynchronous: polls every `pollIntervalMs` (default 500) until the task is ready, bounded by the `runImage()` attempt deadline. Transient failures while polling or downloading are retried inside the same attempt, so a submitted task is never paid for twice. Sends input images as `input_image`, `input_image_2`, and so on, and `size` as `width` and `height` (other formats are refused; use `providerOptions.aspect_ratio`). The key goes only to the API origin and to HTTPS hosts under `bfl.ai`, keyed requests refuse redirects, and the pre-signed image download carries no key. Rejects a mask. Not checked against live responses. |
+| `BlackForestLabsImageAdapter` | `POST /{model}` on Black Forest Labs, then the returned `polling_url`, then the `result.sample` URL | `apiKey` or `BFL_API_KEY` | Asynchronous: polls every `pollIntervalMs` (default 500) until the task is ready, bounded by the `runImage()` attempt deadline. Transient failures while polling or downloading are retried inside the same attempt, so a submitted task is never paid for twice. Sends input images as `input_image`, `input_image_2`, and so on, and `size` as `width` and `height` (other formats are refused; use `providerOptions.aspect_ratio`). The key goes to the configured origin and, only when `baseURL` is itself a BFL host, to other HTTPS hosts under `bfl.ai`, so a proxy's key never follows a forwarded BFL URL. Keyed requests refuse redirects, and the pre-signed image download carries no key. A deadline reached after the task is submitted is a final, non-retryable `timeout`. Rejects a mask. Not checked against live responses. |
 | `OpenRouterImageAdapter` | `POST /images` on OpenRouter | `apiKey` or `OPENROUTER_API_KEY` | Sends input images as `input_references` data URLs and reads `data[0].b64_json`. OpenRouter's request shape differs from the OpenAI Images API, so `OpenAIImageAdapter` with an OpenRouter `baseURL` does not work. Rejects a mask. Its classification follows OpenRouter's documented error format and has not been checked against live responses. |
 | `SeedreamImageAdapter` | `POST /images/generations` on Volcengine Ark | `apiKey` or `ARK_API_KEY` | Same endpoint and key as the Doubao text adapter. Sends input images as data URLs, always requests `b64_json`, and sets `watermark: false` unless configured. Rejects a mask. |
 

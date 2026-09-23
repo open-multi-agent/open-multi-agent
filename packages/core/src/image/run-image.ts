@@ -61,6 +61,9 @@ async function callWithDeadline(
   } catch (error) {
     if (options.signal?.aborted) throw callerAbortReason(options.signal)
     if (deadline.signal.aborted) {
+      // An adapter may declare a deadline final, for example after it has
+      // started paid work that a retry would repeat. Keep that verdict.
+      if (error instanceof ImageModelError && !error.retryable) throw error
       throw new ImageModelError(
         'timeout',
         `${adapter.provider} call exceeded ${timeoutMs}ms`,

@@ -206,6 +206,21 @@ describe('runImage', () => {
     expect(result.status).toBe('succeeded')
   })
 
+  it('keeps an adapter verdict that a deadline is final and moves to the next model', async () => {
+    const final = (options: ImageCallOptions) =>
+      new Promise<ImageModelOutput>((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new ImageModelError('timeout', 'task still running', false)), { once: true })
+      })
+    const a = scripted('a', [final, png()])
+    const b = scripted('b', [png()])
+    const result = await runImage({ chain: [a.adapter, b.adapter], request, attemptTimeoutMs: 20, backoffBaseMs: 0 })
+
+    expect(a.calls).toHaveLength(1)
+    expect(result.attempts[0]).toMatchObject({ errorType: 'timeout', retryable: false, errorMessage: 'task still running' })
+    expect(result.status).toBe('succeeded')
+    if (result.status === 'succeeded') expect(result.model).toBe('b')
+  })
+
   it('rejects with the caller reason and stops the chain when the caller aborts', async () => {
     const controller = new AbortController()
     const reason = new Error('user cancelled')
