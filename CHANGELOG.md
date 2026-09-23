@@ -19,6 +19,10 @@
   input images as `input_references`, and classifies both OpenRouter's own
   moderation rejections and upstream rejections forwarded in `error.metadata`
   as `content_policy`.
+- Added `BlackForestLabsImageAdapter` for FLUX models. It submits, polls, and
+  downloads the result, reports a moderated task as `content_policy` as soon
+  as the poll status says so, sends the API key only to BFL hosts, and never
+  sends it with the image download.
 
 ## 1.20.0 - 2026-09-18
 

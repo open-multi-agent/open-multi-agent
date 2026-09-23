@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ImageModelError } from '../src/errors.js'
+import { BlackForestLabsImageAdapter } from '../src/image/black-forest-labs.js'
 import { OpenAIImageAdapter } from '../src/image/openai.js'
 import { OpenRouterImageAdapter } from '../src/image/openrouter.js'
 import { runImage } from '../src/image/run-image.js'
@@ -441,6 +442,182 @@ describe('OpenRouterImageAdapter', () => {
     const error = await failure(guarded.generate({ prompt: 'x' }, { signal }))
     expect(error).toMatchObject({ type: 'invalid_request', retryable: false })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('BlackForestLabsImageAdapter', () => {
+  const POLL = 'https://api.us1.bfl.ai/v1/get_result?id=task-1'
+  const SAMPLE = 'https://delivery-us1.bfl.ai/results/task-1/sample.jpeg?sig=abc'
+  const submitted = (pollingUrl = POLL) =>
+    jsonResponse({ id: 'task-1', polling_url: pollingUrl, cost: 3, input_mp: 1, output_mp: 2 })
+  const status = (value: string, extra: Record<string, unknown> = {}) => jsonResponse({ id: 'task-1', status: value, ...extra })
+  const ready = () => status('Ready', { result: { sample: SAMPLE } })
+  const imageResponse = (bytes = jpegHeader(1024, 768)) => new Response(bytes, { status: 200 })
+  const adapter = () => new BlackForestLabsImageAdapter({
+    model: 'flux-2-pro',
+    apiKey: 'bfl-test',
+    pollIntervalMs: 0,
+    providerOptions: { output_format: 'jpeg', safety_tolerance: 2 },
+  })
+  const headersOf = (init: RequestInit | undefined) => (init?.headers ?? {}) as Record<string, string>
+
+  it('submits, polls until Ready, and downloads the sample without the key', async () => {
+    const first = pngHeader(4, 4)
+    const fetchMock = stubFetch(submitted(), status('Pending'), ready(), imageResponse())
+
+    const output = await adapter().generate(
+      { prompt: 'replace the lamp', images: [input(first), input(jpegHeader(4, 4), 'image/jpeg')], size: '1024x768' },
+      { signal },
+    )
+
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0]!
+    expect(submitUrl).toBe('https://api.bfl.ai/v1/flux-2-pro')
+    expect(headersOf(submitInit)['x-key']).toBe('bfl-test')
+    expect(submitInit?.redirect).toBe('error')
+    const body = JSON.parse(String(submitInit?.body))
+    expect(body).toMatchObject({
+      prompt: 'replace the lamp',
+      width: 1024,
+      height: 768,
+      input_image: b64(first),
+      output_format: 'jpeg',
+      safety_tolerance: 2,
+    })
+    expect(typeof body.input_image_2).toBe('string')
+    expect(body).not.toHaveProperty('input_image_3')
+
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1]!
+    expect(pollUrl).toBe(POLL)
+    expect(headersOf(pollInit)['x-key']).toBe('bfl-test')
+    expect(pollInit?.redirect).toBe('error')
+
+    const [downloadUrl, downloadInit] = fetchMock.mock.calls[3]!
+    expect(downloadUrl).toBe(SAMPLE)
+    expect(headersOf(downloadInit)['x-key']).toBeUndefined()
+
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(Buffer.from(output.data).equals(Buffer.from(jpegHeader(1024, 768)))).toBe(true)
+    expect(output.params).toMatchObject({ model: 'flux-2-pro', inputImages: 2, taskId: 'task-1', cost: 3, input_mp: 1, output_mp: 2 })
+  })
+
+  it('rejects providerOptions that carry the prompt or input images, and treats width and height as defaults', async () => {
+    for (const key of ['prompt', 'image', 'mask', 'input_image', 'input_image_2']) {
+      expect(() => new BlackForestLabsImageAdapter({ model: 'm', apiKey: 'k', providerOptions: { [key]: 'x' } }))
+        .toThrow(`black-forest-labs providerOptions cannot set ${key}`)
+    }
+    const fetchMock = stubFetch(submitted(), ready(), imageResponse(), submitted(), ready(), imageResponse())
+    const custom = new BlackForestLabsImageAdapter({
+      model: 'flux-2-pro',
+      apiKey: 'k',
+      pollIntervalMs: 0,
+      providerOptions: { width: 800, height: 600 },
+    })
+    await custom.generate({ prompt: 'x' }, { signal })
+    await custom.generate({ prompt: 'x', size: '1024x768' }, { signal })
+    const bodies = [fetchMock.mock.calls[0]!, fetchMock.mock.calls[3]!].map(([, init]) => JSON.parse(String(init?.body)))
+    expect(bodies[0]).toMatchObject({ width: 800, height: 600 })
+    expect(bodies[1]).toMatchObject({ width: 1024, height: 768 })
+  })
+
+  it('keeps polling through the in-progress Reasoning and Generating states', async () => {
+    const fetchMock = stubFetch(submitted(), status('Reasoning'), status('Generating'), ready(), imageResponse())
+    await adapter().generate({ prompt: 'x' }, { signal })
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+
+  it('reads the status from a state field too', async () => {
+    const fetchMock = stubFetch(submitted(), jsonResponse({ state: 'Ready', result: { sample: SAMPLE } }), imageResponse())
+    await adapter().generate({ prompt: 'x' }, { signal })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it.each(['Request Moderated', 'Content Moderated'])('stops at once with content_policy on %s', async moderated => {
+    const fetchMock = stubFetch(submitted(), status('Pending'), status(moderated))
+    const error = await failure(adapter().generate({ prompt: 'x' }, { signal }))
+    expect(error).toMatchObject({ type: 'content_policy', retryable: false, provider: 'black-forest-labs' })
+    expect(error.message).toContain(moderated)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('classifies failed and lost tasks as retryable', async () => {
+    stubFetch(submitted(), status('Error'), submitted(), status('Task not found'))
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'api_error', retryable: true })
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'invalid_output', retryable: true })
+  })
+
+  it('does not send the key to a polling URL outside bfl.ai', async () => {
+    const foreign = 'https://poll.example.com/get_result?id=task-1'
+    const fetchMock = stubFetch(submitted(foreign), ready(), imageResponse())
+    await adapter().generate({ prompt: 'x' }, { signal })
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1]!
+    expect(pollUrl).toBe(foreign)
+    expect(headersOf(pollInit)['x-key']).toBeUndefined()
+  })
+
+  it('fails on a submit response without polling_url and on a failed download', async () => {
+    stubFetch(jsonResponse({ id: 'task-1' }), submitted(), ready(), new Response('gone', { status: 404 }))
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'invalid_output', retryable: true })
+    expect(await failure(adapter().generate({ prompt: 'x' }, { signal }))).toMatchObject({ type: 'api_error', retryable: true, status: 404 })
+  })
+
+  it('refuses a mask and a size it cannot express, without calling the API', async () => {
+    const fetchMock = stubFetch()
+    const withMask = await failure(adapter().generate(
+      { prompt: 'x', images: [input(pngHeader(4, 4))], mask: input(pngHeader(4, 4)) },
+      { signal },
+    ))
+    const badSize = await failure(adapter().generate({ prompt: 'x', size: '2k' }, { signal }))
+    expect(withMask).toMatchObject({ type: 'invalid_request', retryable: false })
+    expect(badSize).toMatchObject({ type: 'invalid_request', retryable: false })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('checks the polling origin against the egress policy, not only the API origin', async () => {
+    const fetchMock = stubFetch(submitted())
+    const guarded = new BlackForestLabsImageAdapter({
+      model: 'flux-2-pro',
+      apiKey: 'k',
+      pollIntervalMs: 0,
+      egressPolicy: { mode: 'allowlist', allowedOrigins: ['https://api.bfl.ai'] },
+    })
+    const error = await failure(guarded.generate({ prompt: 'x' }, { signal }))
+    expect(error).toMatchObject({ type: 'invalid_request', retryable: false })
+    expect(error.message).toContain('https://api.us1.bfl.ai')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops polling when the runImage attempt deadline fires', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) =>
+      String(url).endsWith('/flux-2-pro') ? submitted() : status('Pending'),
+    ))
+    const result = await runImage({
+      chain: [new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 5 })],
+      request: { prompt: 'x' },
+      attemptTimeoutMs: 40,
+      maxRetriesPerModel: 0,
+    })
+    expect(result.status).toBe('failed')
+    expect(result.attempts[0]).toMatchObject({ errorType: 'timeout', retryable: true })
+  })
+
+  it('lets runImage move to the next model on a moderated task without retrying', async () => {
+    stubFetch(
+      submitted(),
+      status('Request Moderated'),
+      jsonResponse({ data: [{ b64_json: b64(jpegHeader(512, 512)) }] }),
+    )
+    const result = await runImage({
+      chain: [
+        new BlackForestLabsImageAdapter({ model: 'flux-2-pro', apiKey: 'k', pollIntervalMs: 0 }),
+        new SeedreamImageAdapter({ model: 'doubao-seedream-4-0-250828', apiKey: 'k' }),
+      ],
+      request: { prompt: 'x' },
+    })
+    expect(result.status).toBe('succeeded')
+    expect(result.attempts.map(r => [r.provider, r.status, r.errorType])).toEqual([
+      ['black-forest-labs', 'failed', 'content_policy'],
+      ['seedream', 'succeeded', undefined],
+    ])
   })
 })
 

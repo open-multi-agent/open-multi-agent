@@ -98,7 +98,10 @@ carrying OpenRouter's moderation metadata (`reasons` or `flagged_input`), and
 an upstream error whose code, in `error.metadata.provider_code` or in the
 original body in `error.metadata.raw`, one of the two rules above recognizes.
 These rules run before the timeout and 5xx rules, so a rejection a gateway
-forwards with a 5xx status is not retried. Anything else lands in
+forwards with a 5xx status is not retried. The Black Forest Labs adapter
+reports a task whose poll status is `Request Moderated` or
+`Content Moderated` as soon as it sees it, instead of polling on until the
+attempt deadline. Anything else lands in
 `invalid_request`, which is also non-retryable, so an unrecognized rejection
 still moves to the next model rather than being retried.
 
@@ -130,21 +133,26 @@ record to durable storage from the callback if you need it to survive a crash;
 | Adapter | Endpoint | Credentials | Notes |
 |---|---|---|---|
 | `OpenAIImageAdapter` | `POST /images/generations` without images, `POST /images/edits` (multipart) with images | `apiKey` or `OPENAI_API_KEY`; `baseURL` or `OPENAI_BASE_URL` | Reads `data[0].b64_json` and never downloads a returned URL, so it targets models that return base64, such as the `gpt-image` family. Works with OpenAI-compatible endpoints through `baseURL`. |
+| `BlackForestLabsImageAdapter` | `POST /{model}` on Black Forest Labs, then the returned `polling_url`, then the `result.sample` URL | `apiKey` or `BFL_API_KEY` | Asynchronous: polls every `pollIntervalMs` (default 500) until the task is ready, bounded by the `runImage()` attempt deadline. Sends input images as `input_image`, `input_image_2`, and so on, and `size` as `width` and `height` (other formats are refused; use `providerOptions.aspect_ratio`). The key goes only to the API origin and to HTTPS hosts under `bfl.ai`, keyed requests refuse redirects, and the pre-signed image download carries no key. Rejects a mask. Not checked against live responses. |
 | `OpenRouterImageAdapter` | `POST /images` on OpenRouter | `apiKey` or `OPENROUTER_API_KEY` | Sends input images as `input_references` data URLs and reads `data[0].b64_json`. OpenRouter's request shape differs from the OpenAI Images API, so `OpenAIImageAdapter` with an OpenRouter `baseURL` does not work. Rejects a mask. Its classification follows OpenRouter's documented error format and has not been checked against live responses. |
 | `SeedreamImageAdapter` | `POST /images/generations` on Volcengine Ark | `apiKey` or `ARK_API_KEY` | Same endpoint and key as the Doubao text adapter. Sends input images as data URLs, always requests `b64_json`, and sets `watermark: false` unless configured. Rejects a mask. |
 
-All three accept `providerOptions` for extra body fields, such as `quality` or
-`moderation` for OpenAI, `aspect_ratio` or a `provider` routing object for
-OpenRouter, and `seed` for Seedream, and `maxInputImages` to fail over-long
-requests before any network call. A `size` in `providerOptions` is a default
-that `request.size` overrides. A key that carries the request itself, such as
-`model`, `prompt`, or the field that holds input images, is rejected with a
-`TypeError` when the adapter is constructed, so an option can never silently
-replace the prompt or the images.
+All built-in adapters accept `providerOptions` for extra body fields, such as
+`quality` or `moderation` for OpenAI, `aspect_ratio` or a `provider` routing
+object for OpenRouter, `seed` for Seedream, and `output_format` or
+`safety_tolerance` for Black Forest Labs, and `maxInputImages` to fail
+over-long requests before any network call. A `size` in `providerOptions`
+(`width` and `height` for Black Forest Labs) is a default that `request.size`
+overrides. A key that carries the request itself, such as `model`, `prompt`,
+or the field that holds input images, is rejected with a `TypeError` when the
+adapter is constructed, so an option can never silently replace the prompt or
+the images.
 
-All three honor `egressPolicy` the same way the text adapters do: every request is
-checked against the policy and redirects are rejected. See
-[LLM egress policy](egress-policy.md).
+All built-in adapters honor `egressPolicy` the same way the text adapters do:
+every request is checked against the policy and redirects are rejected. Black
+Forest Labs polls and delivers from hosts other than its API origin, so an
+allowlist for it must also include the polling and delivery origins its
+responses name. See [LLM egress policy](egress-policy.md).
 
 ## Writing an adapter
 

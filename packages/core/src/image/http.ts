@@ -175,6 +175,46 @@ export async function sendImageRequest(
   }
 }
 
+/**
+ * Download raw image bytes, for providers that deliver output by URL. Error
+ * handling matches {@link sendImageRequest}; any non-2xx status is a retryable
+ * failure, since a delivery link that fails is not a verdict on the request.
+ */
+export async function downloadImage(
+  fetchImpl: FetchLike,
+  provider: string,
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal,
+): Promise<Uint8Array> {
+  let response: Response
+  let bytes: ArrayBuffer
+  try {
+    response = await fetchImpl(url, { ...init, signal })
+    bytes = await response.arrayBuffer()
+  } catch (error) {
+    if (signal.aborted) throw error
+    if (error instanceof EgressPolicyError) {
+      throw new ImageModelError('invalid_request', error.message, false, { provider })
+    }
+    throw new ImageModelError(
+      'network',
+      `${provider} image download failed: ${error instanceof Error ? error.message : String(error)}`,
+      true,
+      { provider },
+    )
+  }
+  if (!response.ok) {
+    throw new ImageModelError(
+      'api_error',
+      `${provider} image download returned HTTP ${response.status}`,
+      true,
+      { provider, status: response.status },
+    )
+  }
+  return new Uint8Array(bytes)
+}
+
 /** Decode the first `b64_json` entry of an OpenAI-shaped `data` array. */
 export function firstBase64Image(provider: string, body: unknown): { data: Uint8Array; item: Record<string, unknown> } {
   const data = body !== null && typeof body === 'object'

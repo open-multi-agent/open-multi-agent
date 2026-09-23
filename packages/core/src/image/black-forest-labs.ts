@@ -1,0 +1,242 @@
+/**
+ * @fileoverview Image adapter for Black Forest Labs (FLUX).
+ *
+ * BFL is asynchronous: `POST /{model}` returns a task ID and a `polling_url`,
+ * the adapter polls until the task leaves `Pending`, then downloads the image
+ * from the pre-signed `result.sample` URL without credentials. Input images
+ * go in `input_image`, `input_image_2`, and so on, as raw base64.
+ *
+ * A moderated task is reported through the poll status (`Request Moderated`
+ * or `Content Moderated`), not an HTTP error. The adapter treats both as a
+ * non-retryable `content_policy` failure at once, rather than polling on
+ * until the attempt deadline.
+ */
+
+import { ImageModelError } from '../errors.js'
+import type { EgressPolicy } from '../types.js'
+import { abortableDelay } from '../utils/abort.js'
+import {
+  assertNoReservedOptions,
+  downloadImage,
+  imageFetch,
+  joinUrl,
+  sendImageRequest,
+} from './http.js'
+import type {
+  ImageCallOptions,
+  ImageModelAdapter,
+  ImageModelOutput,
+  ImageRequest,
+} from './types.js'
+
+const DEFAULT_BASE_URL = 'https://api.bfl.ai/v1'
+const DEFAULT_POLL_INTERVAL_MS = 500
+const MODERATED_STATUSES = new Set(['Request Moderated', 'Content Moderated'])
+const FAILED_STATUSES = new Set(['Error', 'Failed'])
+
+/** Keys that carry the request itself: the prompt and every input image field. */
+function isReservedOption(key: string): boolean {
+  return key === 'prompt' || key === 'image' || key === 'mask' || /^input_image(_\d+)?$/.test(key)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+/**
+ * Whether the API key may be sent to a URL the API returned. BFL hands out
+ * polling and delivery URLs on sibling hosts (for example `api.us1.bfl.ai`),
+ * so the check accepts the configured origin or any HTTPS host under
+ * `bfl.ai`, and nothing else.
+ */
+function mayCarryKey(url: string, baseURL: string): boolean {
+  try {
+    const target = new URL(url)
+    if (target.origin === new URL(baseURL).origin) return true
+    return target.protocol === 'https:' &&
+      (target.hostname === 'bfl.ai' || target.hostname.endsWith('.bfl.ai'))
+  } catch {
+    return false
+  }
+}
+
+function sizeFields(size: string | undefined): Record<string, number> {
+  if (size === undefined) return {}
+  const match = /^(\d+)x(\d+)$/.exec(size)
+  if (match === null) {
+    throw new ImageModelError(
+      'invalid_request',
+      `black-forest-labs size must be WIDTHxHEIGHT, got "${size}"; use providerOptions for aspect_ratio`,
+      false,
+      { provider: 'black-forest-labs' },
+    )
+  }
+  return { width: Number(match[1]), height: Number(match[2]) }
+}
+
+export interface BlackForestLabsImageAdapterOptions {
+  /** Model endpoint, for example `flux-2-pro` or `flux-kontext-pro`. */
+  readonly model: string
+  /** Defaults to `BFL_API_KEY`. */
+  readonly apiKey?: string
+  /** Defaults to the global BFL endpoint. */
+  readonly baseURL?: string
+  /**
+   * Most input images to send. A request with more fails as `invalid_request`
+   * before any network call. Unset means the endpoint enforces its own limit.
+   */
+  readonly maxInputImages?: number
+  /** Delay between status polls, in ms. Default 500. */
+  readonly pollIntervalMs?: number
+  /**
+   * Extra body fields sent with every call, for example `aspect_ratio`,
+   * `output_format`, `safety_tolerance`, or `seed`. Values are sent as-is.
+   * `width` and `height` here are defaults that `request.size` overrides.
+   * Fields that carry the request itself (`prompt`, `image`, `mask`,
+   * `input_image`, `input_image_2`, and so on) are rejected at construction.
+   */
+  readonly providerOptions?: Readonly<Record<string, unknown>>
+  /**
+   * Restrict outbound requests; see the egress policy docs. BFL polls and
+   * delivers from hosts other than the API origin, so an allowlist has to
+   * include those origins too.
+   */
+  readonly egressPolicy?: EgressPolicy
+}
+
+export class BlackForestLabsImageAdapter implements ImageModelAdapter {
+  readonly provider = 'black-forest-labs'
+  readonly model: string
+  private readonly apiKey: string | undefined
+  private readonly baseURL: string
+  private readonly maxInputImages: number | undefined
+  private readonly pollIntervalMs: number
+  private readonly providerOptions: Readonly<Record<string, unknown>>
+  private readonly fetchImpl: typeof globalThis.fetch
+
+  constructor(options: BlackForestLabsImageAdapterOptions) {
+    this.model = options.model
+    this.apiKey = options.apiKey ?? process.env['BFL_API_KEY']
+    this.baseURL = options.baseURL ?? DEFAULT_BASE_URL
+    this.maxInputImages = options.maxInputImages
+    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
+    this.providerOptions = options.providerOptions ?? {}
+    assertNoReservedOptions(this.provider, this.providerOptions, isReservedOption)
+    this.fetchImpl = imageFetch(options.egressPolicy, this.provider)
+  }
+
+  private fail(type: 'invalid_request' | 'invalid_output' | 'api_error' | 'content_policy', message: string, retryable: boolean): ImageModelError {
+    return new ImageModelError(type, `${this.provider} ${message}`, retryable, { provider: this.provider })
+  }
+
+  /**
+   * A GET to a URL the API returned. The key goes only to BFL hosts, and a
+   * keyed request refuses redirects so the key cannot follow one elsewhere.
+   */
+  private keyedGet(url: string, key: Record<string, string>): RequestInit {
+    return mayCarryKey(url, this.baseURL)
+      ? { method: 'GET', headers: key, redirect: 'error' }
+      : { method: 'GET' }
+  }
+
+  async generate(request: ImageRequest, options: ImageCallOptions): Promise<ImageModelOutput> {
+    const images = request.images ?? []
+    if (request.mask !== undefined) {
+      throw this.fail('invalid_request', 'adapter does not send a separate mask; describe the edit in the prompt instead', false)
+    }
+    if (this.maxInputImages !== undefined && images.length > this.maxInputImages) {
+      throw this.fail('invalid_request', `accepts at most ${this.maxInputImages} input images, got ${images.length}`, false)
+    }
+    if (this.apiKey === undefined || this.apiKey === '') {
+      throw this.fail('invalid_request', 'API key is not set', false)
+    }
+    const key = { 'x-key': this.apiKey }
+    const noContentPolicyCode = () => false
+
+    const inputFields: Record<string, string> = {}
+    images.forEach((image, index) => {
+      inputFields[index === 0 ? 'input_image' : `input_image_${index + 1}`] =
+        Buffer.from(image.data).toString('base64')
+    })
+    const submitted = asRecord(await sendImageRequest(
+      this.fetchImpl,
+      this.provider,
+      joinUrl(this.baseURL, this.model),
+      {
+        method: 'POST',
+        headers: { ...key, 'Content-Type': 'application/json' },
+        redirect: 'error',
+        body: JSON.stringify({
+          ...this.providerOptions,
+          prompt: request.prompt,
+          ...sizeFields(request.size),
+          ...inputFields,
+        }),
+      },
+      options.signal,
+      noContentPolicyCode,
+    ))
+    const taskId = typeof submitted?.['id'] === 'string' ? submitted['id'] : undefined
+    const pollingUrl = typeof submitted?.['polling_url'] === 'string' ? submitted['polling_url'] : undefined
+    if (pollingUrl === undefined) {
+      throw this.fail('invalid_output', 'submit response has no polling_url', true)
+    }
+
+    let sampleUrl: string | undefined
+    while (sampleUrl === undefined) {
+      const poll = asRecord(await sendImageRequest(
+        this.fetchImpl,
+        this.provider,
+        pollingUrl,
+        this.keyedGet(pollingUrl, key),
+        options.signal,
+        noContentPolicyCode,
+      ))
+      const rawStatus = poll?.['status'] ?? poll?.['state']
+      const status = typeof rawStatus === 'string' ? rawStatus : undefined
+      if (status === 'Ready') {
+        const sample = asRecord(poll?.['result'])?.['sample']
+        if (typeof sample !== 'string') throw this.fail('invalid_output', 'task is Ready but has no result.sample', true)
+        sampleUrl = sample
+      } else if (status !== undefined && MODERATED_STATUSES.has(status)) {
+        throw this.fail('content_policy', `task ${status}`, false)
+      } else if (status !== undefined && FAILED_STATUSES.has(status)) {
+        throw this.fail('api_error', `task ${status}`, true)
+      } else if (status === 'Task not found') {
+        throw this.fail('invalid_output', 'task not found while polling', true)
+      } else {
+        // Pending, or a status this adapter does not know: keep waiting. The
+        // attempt deadline in runImage bounds the loop through the signal.
+        await abortableDelay(this.pollIntervalMs, options.signal)
+        if (options.signal.aborted) throw options.signal.reason
+      }
+    }
+
+    const data = await downloadImage(
+      this.fetchImpl,
+      this.provider,
+      sampleUrl,
+      // Delivery URLs are pre-signed, so the download never carries the key.
+      { method: 'GET' },
+      options.signal,
+    )
+    const params: Record<string, unknown> = {
+      ...this.providerOptions,
+      model: this.model,
+      ...(request.size !== undefined ? { size: request.size } : {}),
+      inputImages: images.length,
+      taskId,
+    }
+    for (const field of ['cost', 'input_mp', 'output_mp']) {
+      if (typeof submitted?.[field] === 'number') params[field] = submitted[field]
+    }
+    return {
+      data,
+      // runImage re-derives the real type from the bytes.
+      mediaType: 'image/jpeg',
+      params,
+    }
+  }
+}
