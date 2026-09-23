@@ -62,6 +62,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
+import { requiresBudgetThinking } from './anthropic-models.js'
 import { assertValidMessages } from './validate.js'
 import { createEgressFetch } from './egress.js'
 import { UnsupportedContentBlockError, UnsupportedToolResultContentError } from '../errors.js'
@@ -354,16 +355,13 @@ function fromAnthropicContentBlock(
  * `budget_tokens < max_tokens` rule for Claude 4.x manual mode) is not yet
  * wired up — see RFC #200 phase 2.
  */
-const BUDGET_ONLY_THINKING_MODEL =
-  /^claude-(?:3-7-sonnet|sonnet-4(?:-0|-5)?|opus-4(?:-0|-1|-5)?|haiku-4-5)(?:-\d{8}|-latest)?$/
-
 function toAnthropicThinkingParam(
   thinking: ThinkingConfig | undefined,
   maxTokens: number,
   model: string,
 ): ThinkingConfigParam | { type: 'adaptive' } | undefined {
   if (thinking === undefined || !thinking.enabled) return undefined
-  if (thinking.budgetTokens === undefined && !BUDGET_ONLY_THINKING_MODEL.test(model)) {
+  if (thinking.budgetTokens === undefined && !requiresBudgetThinking(model)) {
     return { type: 'adaptive' }
   }
   const budget = thinking.budgetTokens ?? 1024

@@ -269,7 +269,12 @@ describe('LLMTaskProfiler', () => {
     })
   })
 
-  it('omits temperature for the Anthropic adapter, whose current models reject it', async () => {
+  it.each([
+    ['claude-sonnet-5', undefined],
+    ['claude-opus-4-7', undefined],
+    ['claude-sonnet-4-6', 0],
+    ['claude-haiku-4-5', 0],
+  ])('sends temperature only to Claude models that accept it (%s)', async (model, temperature) => {
     const mockAdapter = {
       ...adapter(JSON.stringify({
         evidenceSources: 'single',
@@ -287,15 +292,15 @@ describe('LLMTaskProfiler', () => {
     }
     const taskProfiler = new LLMTaskProfiler({
       adapter: mockAdapter,
-      model: 'claude-sonnet-5',
+      model,
     })
 
     await taskProfiler.profile({
       goal: 'Summarize this note.',
-      roster: [{ name: 'alpha', model: 'claude-sonnet-5' }],
+      roster: [{ name: 'alpha', model }],
     })
 
-    expect(mockAdapter.chat.mock.calls[0]?.[1]).not.toHaveProperty('temperature')
+    expect(mockAdapter.chat.mock.calls[0]?.[1]?.temperature).toBe(temperature)
   })
 })
 

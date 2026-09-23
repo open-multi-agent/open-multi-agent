@@ -23,6 +23,7 @@ import {
   extractJSON,
   validateOutput,
 } from '../agent/structured-output.js'
+import { acceptsSamplingParams } from '../llm/anthropic-models.js'
 
 const MAX_PROFILE_REASONS = 5
 const MAX_PROFILE_REASON_CHARS = 200
@@ -131,8 +132,11 @@ export class LLMTaskProfiler implements TaskProfiler {
       model: this.model,
       maxTokens: this.maxTokens,
       // Claude Opus 4.7, Sonnet 5, and later reject a non-default temperature
-      // with HTTP 400, so the Anthropic adapter gets the model default.
-      ...(this.adapter.name === 'anthropic' ? {} : { temperature: 0 }),
+      // with HTTP 400, so those models get the model default. Earlier Claude
+      // models keep temperature 0 for repeatable routing decisions.
+      ...(this.adapter.name === 'anthropic' && !acceptsSamplingParams(this.model)
+        ? {}
+        : { temperature: 0 }),
       // DeepSeek V4 enables thinking by default. Profiling is a bounded
       // classification call whose only useful output is the JSON profile;
       // leaving thinking enabled can spend its whole output budget on
