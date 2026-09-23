@@ -568,6 +568,20 @@ describe('BlackForestLabsImageAdapter', () => {
     expect(output.params).toMatchObject({ taskId: 'task-1' })
   })
 
+  it('retries a rate-limited or timed-out download in place, honoring Retry-After', async () => {
+    const fetchMock = stubFetch(
+      submitted(),
+      ready(),
+      new Response('slow down', { status: 429, headers: { 'Retry-After': '0' } }),
+      new Response('timeout', { status: 408 }),
+      imageResponse(),
+    )
+    await adapter().generate({ prompt: 'x' }, { signal })
+    const submits = fetchMock.mock.calls.filter(([url]) => String(url) === 'https://api.bfl.ai/v1/flux-2-pro')
+    expect(submits).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+
   it('still fails at once on a non-retryable poll error', async () => {
     const fetchMock = stubFetch(submitted(), jsonResponse({ detail: 'bad key' }, 401))
     const error = await failure(adapter().generate({ prompt: 'x' }, { signal }))

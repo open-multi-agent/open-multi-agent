@@ -190,6 +190,7 @@ export async function sendImageRequest(
  * Download raw image bytes, for providers that deliver output by URL. Error
  * handling matches {@link sendImageRequest}; any non-2xx status is a retryable
  * failure, since a delivery link that fails is not a verdict on the request.
+ * 429 and 408 are typed `rate_limit` and `timeout`, the rest `api_error`.
  */
 export async function downloadImage(
   fetchImpl: FetchLike,
@@ -216,12 +217,18 @@ export async function downloadImage(
     )
   }
   if (!response.ok) {
-    throw new ImageModelError(
-      'api_error',
-      `${provider} image download returned HTTP ${response.status}`,
-      true,
-      { provider, status: response.status },
-    )
+    const message = `${provider} image download returned HTTP ${response.status}`
+    const options = { provider, status: response.status }
+    // Rate limits and timeouts keep their own types so a caller can tell them
+    // from a dead link and retry the download in place.
+    if (response.status === 429) {
+      throw new ImageModelError('rate_limit', message, true, {
+        ...options,
+        retryAfterMs: parseRetryAfter(response.headers.get('retry-after')),
+      })
+    }
+    if (response.status === 408) throw new ImageModelError('timeout', message, true, options)
+    throw new ImageModelError('api_error', message, true, options)
   }
   return new Uint8Array(bytes)
 }
