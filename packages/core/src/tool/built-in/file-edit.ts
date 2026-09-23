@@ -28,7 +28,10 @@ export const fileEditTool = defineTool({
   inputSchema: z.object({
     path: z
       .string()
-      .describe('Absolute path to the file to edit.'),
+      .describe(
+        'Absolute path to the file to edit. Must be inside the agent\'s working directory ' +
+          'unless the sandbox is disabled; a path outside it returns an error.',
+      ),
     old_string: z
       .string()
       .describe(

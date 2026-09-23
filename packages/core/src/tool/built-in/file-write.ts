@@ -28,8 +28,8 @@ export const fileWriteTool = defineTool({
     path: z
       .string()
       .describe(
-        'Absolute path to the file to write. ' +
-          'The path must be absolute (starting with /).',
+        'Absolute path to the file to write. Must be inside the agent\'s working directory ' +
+          'unless the sandbox is disabled; a path outside it returns an error.',
       ),
     content: z.string().describe('The full content to write to the file.'),
   }),

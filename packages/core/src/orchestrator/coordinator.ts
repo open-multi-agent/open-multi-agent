@@ -458,8 +458,6 @@ export function buildCoordinatorOutputFormatSection(hasVerifyJudges?: boolean): 
     '  2. Lean toward including a task only when the structured manifest describes X as needing that input.',
     '  3. Avoid adding a dependency just because the information "would be useful" or matches general best practice; if the manifest gives no indication X consumes that input, prefer to leave it out.',
     '  4. When uncertain, prefer fewer dependencies over more — extra parents cost parallelism and tokens.',
-    '',
-    'Return only the JSON array. Do not use Markdown code fences or extra text.',
   )
   return lines.join('\n')
 }

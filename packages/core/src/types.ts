@@ -819,7 +819,9 @@ export interface ToolDefinition<TInput = Record<string, unknown>, TData = string
  * and {@link LLMChatOptions}.
  *
  * - `budgetTokens` maps to Anthropic's `thinking.budget_tokens` and Gemini's
- *   `thinkingConfig.thinkingBudget`.
+ *   `thinkingConfig.thinkingBudget`. Omit it for Claude Opus 4.7, Sonnet 5,
+ *   and later, which reject `budget_tokens`; the Anthropic adapter then sends
+ *   adaptive thinking.
  * - `effort` maps to OpenAI-compatible `reasoning_effort`, including
  *   DeepSeek's `high` / `max` levels. It is carried as an explicit value
  *   rather than derived from `budgetTokens` so the call site stays

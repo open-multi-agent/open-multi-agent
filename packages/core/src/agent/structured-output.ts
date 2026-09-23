@@ -23,9 +23,7 @@ export function buildStructuredOutputInstruction(schema: ZodSchema): string {
   return [
     '',
     '## Output Format (REQUIRED)',
-    'You MUST respond with ONLY valid JSON that conforms to the following JSON Schema.',
-    'Do NOT include any text, markdown fences, or explanation outside the JSON object.',
-    'Do NOT wrap the JSON in ```json code fences.',
+    'Respond with only valid JSON that conforms to the following JSON Schema, with no text or code fence around it.',
     '',
     '```',
     JSON.stringify(jsonSchema, null, 2),

@@ -747,20 +747,31 @@ describe('AnthropicAdapter', () => {
       })
     })
 
-    it('defaults budget_tokens to 1024 when enabled without explicit value', async () => {
+    it('defaults budget_tokens to 1024 on a budget-only model when enabled without explicit value', async () => {
       mockCreate.mockResolvedValue(makeAnthropicResponse())
 
       // maxTokens must exceed the 1024 default budget — the API enforces
       // budget_tokens < max_tokens.
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ maxTokens: 4096, thinking: { enabled: true } }),
+        chatOpts({ model: 'claude-haiku-4-5', maxTokens: 4096, thinking: { enabled: true } }),
       )
 
       expect(mockCreate.mock.calls[0][0].thinking).toEqual({
         type: 'enabled',
         budget_tokens: 1024,
       })
+    })
+
+    it('sends adaptive thinking when enabled without a budget on a current model', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+
+      await adapter.chat(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'claude-sonnet-5', maxTokens: 4096, thinking: { enabled: true } }),
+      )
+
+      expect(mockCreate.mock.calls[0][0].thinking).toEqual({ type: 'adaptive' })
     })
 
     it('omits thinking field when config is absent or disabled', async () => {
@@ -803,7 +814,7 @@ describe('AnthropicAdapter', () => {
       await expect(
         adapter.chat(
           [textMsg('user', 'Hi')],
-          chatOpts({ maxTokens: 1024, thinking: { enabled: true } }),
+          chatOpts({ model: 'claude-haiku-4-5', maxTokens: 1024, thinking: { enabled: true } }),
         ),
       ).rejects.toThrow(/budgetTokens \(1024\) must be < maxTokens \(1024\)/)
     })

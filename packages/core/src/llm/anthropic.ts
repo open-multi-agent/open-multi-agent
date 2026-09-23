@@ -342,25 +342,30 @@ function fromAnthropicContentBlock(
  *      value less than max_tokens"). Throws early with a clear message
  *      rather than letting Anthropic return a 400.
  *
- * Defaults `budgetTokens` to 1024 when enabled without an explicit value;
- * combined with the second constraint, this means a caller passing
- * `thinking.enabled = true` MUST also set `maxTokens > 1024`.
- *
- * Model compatibility: emits `{type: 'enabled', budget_tokens}` which is
- * supported by Claude Sonnet 3.7 and all Claude 4.x models up to and
- * including 4.6 (deprecated on 4.6 in favor of `adaptive`). Claude Opus 4.7+
- * accepts only `{type: 'adaptive'}` and rejects this shape with HTTP 400.
- * Adaptive thinking support is tracked as a follow-up to RFC #200's phase 1.
+ * Model compatibility: an explicit `budgetTokens` always emits
+ * `{type: 'enabled', budget_tokens}`, which Claude Opus 4.7+, Sonnet 5, and
+ * later reject with HTTP 400. Without `budgetTokens`, models that predate
+ * adaptive thinking (Sonnet 3.7 through the 4.5 generation) get a 1024-token
+ * budget, so a caller enabling thinking on them must set `maxTokens > 1024`;
+ * every other model gets `{type: 'adaptive'}`. The legacy list is closed, so
+ * new model IDs default to adaptive.
  *
  * The `interleaved-thinking-2025-05-14` beta header (which would relax the
  * `budget_tokens < max_tokens` rule for Claude 4.x manual mode) is not yet
  * wired up — see RFC #200 phase 2.
  */
+const BUDGET_ONLY_THINKING_MODEL =
+  /^claude-(?:3-7-sonnet|sonnet-4(?:-0|-5)?|opus-4(?:-0|-1|-5)?|haiku-4-5)(?:-\d{8}|-latest)?$/
+
 function toAnthropicThinkingParam(
   thinking: ThinkingConfig | undefined,
   maxTokens: number,
-): ThinkingConfigParam | undefined {
+  model: string,
+): ThinkingConfigParam | { type: 'adaptive' } | undefined {
   if (thinking === undefined || !thinking.enabled) return undefined
+  if (thinking.budgetTokens === undefined && !BUDGET_ONLY_THINKING_MODEL.test(model)) {
+    return { type: 'adaptive' }
+  }
   const budget = thinking.budgetTokens ?? 1024
   if (budget < 1024) {
     throw new Error(
@@ -440,7 +445,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
-        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens),
+        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens, options.model),
         // Cast covers arbitrary `extraBody` keys not declared by the SDK.
       } as MessageCreateParamsNonStreaming,
       {
@@ -499,7 +504,7 @@ export class AnthropicAdapter implements LLMAdapter {
         messages: anthropicMessages,
         system: options.systemPrompt,
         tools: options.tools ? toAnthropicTools(options.tools) : undefined,
-        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens),
+        thinking: toAnthropicThinkingParam(options.thinking, effectiveMaxTokens, options.model),
       } as MessageStreamParams,
       {
         signal: options.abortSignal,

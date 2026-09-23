@@ -268,6 +268,35 @@ describe('LLMTaskProfiler', () => {
       extraBody: { thinking: { type: 'disabled' } },
     })
   })
+
+  it('omits temperature for the Anthropic adapter, whose current models reject it', async () => {
+    const mockAdapter = {
+      ...adapter(JSON.stringify({
+        evidenceSources: 'single',
+        independentReview: 'none',
+        conflictingObjectives: false,
+        sideEffectIntent: 'none',
+        permissionIsolation: 'none',
+        decomposable: false,
+        parallelizable: false,
+        complexity: 'low',
+        confidence: 0.95,
+        reasons: ['The task is a bounded classification request.'],
+      })),
+      name: 'anthropic',
+    }
+    const taskProfiler = new LLMTaskProfiler({
+      adapter: mockAdapter,
+      model: 'claude-sonnet-5',
+    })
+
+    await taskProfiler.profile({
+      goal: 'Summarize this note.',
+      roster: [{ name: 'alpha', model: 'claude-sonnet-5' }],
+    })
+
+    expect(mockAdapter.chat.mock.calls[0]?.[1]).not.toHaveProperty('temperature')
+  })
 })
 
 describe('hybrid runTeam routing', () => {

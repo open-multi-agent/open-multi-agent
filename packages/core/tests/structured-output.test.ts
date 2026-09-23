@@ -168,7 +168,7 @@ describe('buildStructuredOutputInstruction', () => {
     expect(instruction).toContain('"type": "object"')
     expect(instruction).toContain('"summary"')
     expect(instruction).toContain('"score"')
-    expect(instruction).toContain('ONLY valid JSON')
+    expect(instruction).toContain('only valid JSON')
   })
 
   it('includes description from Zod schema', () => {

@@ -21,7 +21,8 @@ export const globTool = defineTool({
     'List file paths under a directory that match an optional filename glob. ' +
     'Does not read file contents — use `grep` to search inside files. ' +
     'Skips common bulky directories (node_modules, .git, dist, etc.). ' +
-    'Paths in the result are relative to the process working directory. ' +
+    'Paths in the result are relative to the agent\'s working directory, or to the ' +
+    'filesystem root when the sandbox is disabled. ' +
     'Results are capped by `maxFiles`.',
 
   inputSchema: z.object({
@@ -29,7 +30,8 @@ export const globTool = defineTool({
       .string()
       .optional()
       .describe(
-        'Absolute directory or file path to list. Defaults to the tool working directory.',
+        'Absolute directory or file path to list, inside the agent\'s working directory ' +
+          'unless the sandbox is disabled. Defaults to that working directory.',
       ),
     pattern: z
       .string()

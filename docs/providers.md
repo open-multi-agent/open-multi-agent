@@ -263,7 +263,7 @@ const agent = {
 }
 ```
 
-- `budgetTokens` maps to Anthropic `thinking.budget_tokens` and Gemini `thinkingConfig.thinkingBudget`.
+- `budgetTokens` maps to Anthropic `thinking.budget_tokens` and Gemini `thinkingConfig.thinkingBudget`. Claude Opus 4.7, Sonnet 5, and later models reject `budget_tokens`; omit `budgetTokens` and the Anthropic adapter sends adaptive thinking instead. Models from before adaptive thinking (Sonnet 3.7 through the 4.5 generation) still receive a 1024-token default budget.
 - `effort` (`'low' | 'medium' | 'high'`) maps to OpenAI-compatible `reasoning_effort`. Values outside the framework union (such as `'minimal'` or `'none'`) can be passed via `extraBody: { reasoning_effort: '<value>' }`.
 - DeepSeek additionally maps `enabled` to `thinking: { type: 'enabled' | 'disabled' }` and accepts `effort: 'max'`. DeepSeek V4 enables thinking by default at `high` effort when no framework-level thinking config is supplied. Other built-in OpenAI-family adapters ignore the DeepSeek-only `max` value. Explicit `extraBody` values take precedence.
 - Adapters ignore fields they don't recognise, so one config is safe across a mixed-provider team.

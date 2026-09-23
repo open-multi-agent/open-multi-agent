@@ -23,7 +23,10 @@ export const fileReadTool = defineTool({
     'entire file into the context window.',
 
   inputSchema: z.object({
-    path: z.string().describe('Absolute path to the file to read.'),
+    path: z.string().describe(
+      'Absolute path to the file to read. Must be inside the agent\'s working directory ' +
+        'unless the sandbox is disabled; a path outside it returns an error.',
+    ),
     offset: z
       .number()
       .int()

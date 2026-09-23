@@ -279,28 +279,24 @@ function createAgents(assignments: PipelineAssignments): AgentConfig[] {
       ...assignments.researcher,
       systemPrompt: RESEARCHER_PROMPT,
       maxTurns: 2,
-      temperature: 0.2,
     },
     {
       name: 'classifier',
       ...assignments.classifier,
       systemPrompt: CLASSIFIER_PROMPT,
       maxTurns: 2,
-      temperature: 0.2,
     },
     {
       name: 'drafter',
       ...assignments.drafter,
       systemPrompt: DRAFTER_PROMPT,
       maxTurns: 2,
-      temperature: 0.3,
     },
     {
       name: 'reviewer',
       ...assignments.reviewer,
       systemPrompt: REVIEWER_PROMPT,
       maxTurns: 2,
-      temperature: 0.2,
     },
   ]
 }

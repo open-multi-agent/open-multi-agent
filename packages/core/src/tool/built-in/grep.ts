@@ -44,8 +44,8 @@ export const grepTool = defineTool({
       .string()
       .optional()
       .describe(
-        'Absolute directory or file path to search in. ' +
-          'Defaults to the tool working directory.',
+        'Absolute directory or file path to search in, inside the agent\'s working directory ' +
+          'unless the sandbox is disabled. Defaults to that working directory.',
       ),
     glob: z
       .string()

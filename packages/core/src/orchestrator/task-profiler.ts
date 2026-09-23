@@ -130,7 +130,9 @@ export class LLMTaskProfiler implements TaskProfiler {
     const response = await this.adapter.chat(messages, {
       model: this.model,
       maxTokens: this.maxTokens,
-      temperature: 0,
+      // Claude Opus 4.7, Sonnet 5, and later reject a non-default temperature
+      // with HTTP 400, so the Anthropic adapter gets the model default.
+      ...(this.adapter.name === 'anthropic' ? {} : { temperature: 0 }),
       // DeepSeek V4 enables thinking by default. Profiling is a bounded
       // classification call whose only useful output is the JSON profile;
       // leaving thinking enabled can spend its whole output budget on

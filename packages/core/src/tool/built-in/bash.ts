@@ -30,9 +30,10 @@ export const bashTool = defineTool({
   name: 'bash',
   consequential: true,
   description:
-    'Execute a bash command and return its stdout and stderr. ' +
-    'Use this for file system operations, running scripts, installing packages, ' +
-    'and any task that requires shell access. ' +
+    'Execute a bash command and return its stdout and stderr, plus the exit code when it is non-zero. ' +
+    'Use this for running scripts, builds, tests, and package installs. ' +
+    'Unlike the file_* tools, grep, and glob, it is not confined to the agent\'s working ' +
+    'directory, so prefer those tools for reading, searching, and editing files when they are available. ' +
     'The command runs in a non-interactive shell (bash -c). ' +
     'Long-running commands should use the timeout parameter.',
 
