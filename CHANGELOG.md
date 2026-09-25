@@ -2,31 +2,85 @@
 
 ## Unreleased
 
+## 1.21.0 - 2026-09-25
+
 ### Added
 
-- Added `runImage()` for image generation and editing across an ordered chain
-  of image models, with per-model retries that honor Retry-After, fallback on
-  non-retryable failures, an optional `validate` check on each returned image,
-  and a record for every provider call through `result.attempts` and
-  `onAttempt`.
-- Added the `ImageModelAdapter` interface and two built-in adapters that call
-  provider HTTP APIs directly: `OpenAIImageAdapter` for the OpenAI Images API
-  and OpenAI-compatible endpoints, and `SeedreamImageAdapter` for Seedream on
-  Volcengine Ark. Both classify safety rejections as `content_policy`, fail
-  rather than drop input they cannot use, and honor `egressPolicy`.
-- Added `ImageModelError`; `isRetryableError()` returns its `retryable` flag.
-  Its optional `params` carries details of work the provider already
-  accepted, such as a task ID and cost, into the failed attempt record.
-  `ImageCallOptions.maxRetryAfterMs` tells an adapter that waits internally
-  the longest Retry-After `runImage()` allows.
-- Added `OpenRouterImageAdapter` for OpenRouter's `/images` endpoint. It sends
-  input images as `input_references`, and classifies both OpenRouter's own
-  moderation rejections and upstream rejections forwarded in `error.metadata`
-  as `content_policy`.
-- Added `BlackForestLabsImageAdapter` for FLUX models. It submits, polls, and
-  downloads the result, reports a moderated task as `content_policy` as soon
-  as the poll status says so, sends the API key only to BFL hosts, and never
-  sends it with the image download.
+- Added runImage() for image generation and editing across an ordered chain of
+  image models, with per-model retries that honor Retry-After, fallback on
+  non-retryable failures, an optional validate check on each returned image, and
+  a record of every provider call through result.attempts and onAttempt.
+- Added the ImageModelAdapter interface and four built-in adapters that call
+  provider HTTP APIs directly and honor egressPolicy: OpenAIImageAdapter (OpenAI
+  Images API and OpenAI-compatible endpoints), SeedreamImageAdapter (Seedream on
+  Volcengine Ark), OpenRouterImageAdapter (OpenRouter /images, sending input
+  images as input_references), and BlackForestLabsImageAdapter (FLUX models,
+  submit/poll/download).
+- Added ImageModelError with normalized ImageModelErrorType values;
+  isRetryableError() returns its retryable flag, its optional params carries
+  details of already-accepted provider work such as a task ID and cost into the
+  failed attempt record, and ImageCallOptions.maxRetryAfterMs tells an adapter
+  that waits internally the longest Retry-After runImage() allows.
+- Image adapters classify safety or moderation rejections, including upstream
+  rejections forwarded in error.metadata, as non-retryable content_policy, fail
+  rather than drop input they cannot use, and report the media type read from
+  the returned image bytes.
+
+### Changed
+
+- Enabling thinking without budgetTokens now sends adaptive thinking on Claude
+  Opus 4.7, Sonnet 5, and later, which previously rejected the request with HTTP
+  400; pre-adaptive models keep the 1024-token budget default.
+- The task profiler omits temperature for Claude models that reject non-default
+  sampling parameters, avoiding HTTP 400 routing failures on Opus 4.7, Sonnet 5,
+  and later.
+- The bash tool description now states that it is not confined to the agent's
+  working directory, prefers the file tools, grep, and glob for file work, and
+  reports a non-zero exit code; built-in tool descriptions now match glob's path
+  output, and the synthesis prompt no longer carries an unscoped JSON-only
+  instruction.
+- create-oma-app is republished as a patch so its templates pin the new core
+  version exactly; otel is unchanged and keeps its semver range against core.
+
+### Fixed
+
+- Enabling thinking without budgetTokens no longer produces HTTP 400 on current
+  Claude models (Opus 4.7, Sonnet 5, and later); those models now receive
+  adaptive thinking instead of an explicit budget.
+- The task profiler no longer sends temperature to Claude models that reject
+  non-default sampling parameters, fixing HTTP 400 routing failures on Opus 4.7,
+  Sonnet 5, and later.
+
+### Compatibility
+
+- No breaking changes: core public API changes are additive exports only, no
+  export was removed, renamed, or narrowed, and no engines floor or published
+  dependency major changed; isRetryableError() gains an answer for
+  ImageModelError while all pre-existing error classes keep their prior answers,
+  and no import path changes.
+- Callers that pass an explicit thinking.budgetTokens on Claude Opus 4.7 or
+  Sonnet 5 must still omit it; passing it explicitly still emits budget_tokens
+  and is rejected with HTTP 400.
+- Callers that relied on the implicit 1024-token thinking budget on Claude
+  4.6-generation models now get adaptive thinking and should re-check maxTokens
+  and thinking-cost assumptions.
+- If a model ID is routed through a proxy, alias, or non-canonical suffix,
+  verify thinking and temperature behavior against that endpoint before
+  upgrading: the legacy-model list in anthropic-models.ts is closed, and unknown
+  IDs default to adaptive thinking and no temperature.
+- For the new image adapters, supply credentials via apiKey or the environment
+  (OPENAI_API_KEY, OPENROUTER_API_KEY, ARK_API_KEY, BFL_API_KEY);
+  providerOptions keys that carry the request itself (prompt, model, n, input
+  image fields, mask, response_format where applicable) are rejected with a
+  TypeError at construction, while size and Seedream watermark are accepted as
+  defaults that the request overrides.
+- An egressPolicy allowlist used with the Black Forest Labs adapter must include
+  the poll and download hosts in addition to the API origin.
+- create-oma-app republishes as a patch so its templates pin the new core
+  version exactly; already-generated projects keep working and can upgrade core
+  independently.
+- otel stays at its current version with its existing semver range against core;
+  it is not republished and remains compatible with the new core.
 
 ## 1.20.0 - 2026-09-18
 

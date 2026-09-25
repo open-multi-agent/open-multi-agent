@@ -1,6 +1,6 @@
 {
   "name": "@open-multi-agent/core",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "description": "Self-hosted TypeScript agent runtime with durable approvals and verifiable run records. Own it, approve it, audit it.",
   "files": [
     "dist",
