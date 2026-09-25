@@ -72,8 +72,10 @@
   (OPENAI_API_KEY, OPENROUTER_API_KEY, ARK_API_KEY, BFL_API_KEY);
   providerOptions keys that carry the request itself (prompt, model, n, input
   image fields, mask, response_format where applicable) are rejected with a
-  TypeError at construction, while size and Seedream watermark are accepted as
-  defaults that the request overrides.
+  TypeError at construction. A request's size overrides a providerOptions size
+  default; Seedream watermark is set on the adapter, with providerOptions
+  watermark overriding the adapter's watermark option. It has no per-request
+  override.
 - An egressPolicy allowlist used with the Black Forest Labs adapter must include
   the poll and download hosts in addition to the API origin.
 - create-oma-app republishes as a patch so its templates pin the new core
