@@ -315,6 +315,94 @@ See [CLI reference](cli.md#configuration-files).
 | `maxDelegationDepth` | Delegation chain | `3` | The delegate call is rejected | `OrchestratorConfig` |
 | `ToolExecutor` `maxConcurrency` | Parallel tool calls | `4` | Extra calls wait for a slot | `ToolExecutor` constructor only; not reachable from `AgentConfig` |
 
+## Cost control on free tiers
+
+Every ceiling above bounds model spend from inside the process. A shared
+datastore quota is a second budget that none of these fields can reach: when it
+runs out, every tool call, adapter call, and durable-approval write that touches
+that store fails at once, however well `maxTokenBudget` and `maxCostBudget` are
+set. On a free tier the quota is small enough to hit by accident — Firestore's
+free plan allows 50,000 document reads per day, reset around midnight Pacific —
+and a polling agent loop is the easiest possible way to exceed it.
+
+The measurements below are counts from one production log of a three-agent
+fleet we run on that free tier, covering 2026-09-14 through 2026-09-26. They
+are reported as log counts rather than estimates, so each is reproducible with
+`grep` against a single file.
+
+### Status-filter every poll
+
+A poll scoped to a worker's identity but not to live statuses reads that
+worker's entire history, and "cheap per call" conceals an unbounded daily
+total. At a 120-second cadence that is 720 polls per day:
+
+| Query | Reads per poll | Polls/day | Reads/day |
+|---|---|---|---|
+| Every card ever assigned to the agent | ~78 | 720 | ~56,160 |
+| Live cards only | 0–1 | 720 | ≤720 |
+
+Adding a status filter to the same query cut the per-poll cost by more than an
+order of magnitude and brought a ~56,160-read projection under the 50,000 cap.
+The log confirms the bound held: on every day after the change the poll never
+returned more than one document.
+
+### Settle multi-reads per section
+
+A consumer that fans out N reads with `Promise.all` inherits the least reliable
+read in the set. One throttled read rejects the entire fan-out, so a single
+`RESOURCE_EXHAUSTED` on one query also takes down the sections whose reads were
+succeeding. `Promise.allSettled` degrades instead: the failed section reports
+itself unavailable and the rest of the response still renders.
+
+Worth doing even when every read is individually bounded, because the two
+failures have different shapes. Bounding controls cost; settling controls blast
+radius.
+
+### Bounding reads is necessary and not sufficient
+
+This is the finding that changed how we think about the problem, and it is the
+reason the section is here. The status filter above is a real fix, and on its
+own it did essentially nothing:
+
+| Window | Successful polls | Failed polls | Failure rate |
+|---|---|---|---|
+| The day before the change (2026-09-14) | 0 | 375 | 100% |
+| Change through end of log (2026-09-15 → 2026-09-26) | 822 | 7,637 | 90.3% |
+
+Across that window the per-day failure rate sat between 87.2% and 94.9% and did
+not improve across the change. The log holds 14,005 `RESOURCE_EXHAUSTED` lines
+in total. A poll that returns zero documents still failed, because the day's
+budget was already spent by something else — a zero-row query is not free, and
+the error surfaced as `8 RESOURCE_EXHAUSTED` on a poll that had nothing to
+return.
+
+The lesson is not "filter harder." It is that a shared quota has to be treated
+as a resource with a known owner. Bounded queries raise the ceiling; they do
+not lower the rate at which some other consumer spends it. Until reads can be
+attributed to the consumer making them, a read fix is a guess. Attribute first:
+Cloud Monitoring's `firestore.googleapis.com/document/read_ops_count` is the
+billing-relevant metric, and a delta between two buckets names the window to
+look at.
+
+### Bound the pass, and keep boot cheap
+
+Two guards that cost little and repay themselves in the first freeze they
+prevent:
+
+- **Let a pass be skipped.** A loop that may run "whenever" will eventually run
+  everywhere. Record `lastRunAt`, require a minimum interval, and treat "not
+  due" as *no read at all* rather than as a cheap pass anyway.
+- **Make boot cheap and boring.** In the same window the worker service started
+  19 times: 14 on a single day, 12 of those inside one hour, and 10 inside 66
+  seconds, every one exiting `status=1/FAILURE`. A `Restart=always` unit
+  combined with an expensive boot path is a read amplifier, because a process
+  that dies during startup pays its whole boot cost again on the next attempt.
+
+For the measurement itself, the useful habit is to make failure countable before
+optimizing anything. Per-consumer read counts, a poll-success counter, and a
+service start count are three log lines that turn "the fleet feels slow" into a
+number that either moves or does not.
+
 ## Related pages
 
 - [Streaming](streaming.md) for the `budget_exceeded` and `loop_detected` events.
