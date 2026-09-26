@@ -11,7 +11,8 @@ The supported runtime is Node.js 20 or newer; Node.js 22 or 24 is recommended.
 Node.js 20 is upstream-EOL and retained only as a migration compatibility
 window. OMA will remove Node.js 20 support in its next major release, no earlier
 than 2026-10-31. Core uses OpenAI SDK v6 for OpenAI and OpenAI-compatible Chat
-Completions endpoints.
+Completions endpoints. See [OpenAI SDK compatibility](openai-sdk-compatibility.md)
+for the tracked v7 decision and migration requirements.
 
 ```typescript
 const agent = {
