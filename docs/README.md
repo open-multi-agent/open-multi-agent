@@ -17,6 +17,7 @@ which question the page answers, so you can pick one without opening five.
 | Page | What it answers |
 |---|---|
 | [Providers](providers.md) | Which providers are built in, what credentials do they need, and how do I point one at a local or OpenAI-compatible endpoint? |
+| [OpenAI SDK compatibility](openai-sdk-compatibility.md) | What is the current OpenAI SDK v7 and Node.js compatibility decision, and what must a next-major migration verify? |
 | [LLM egress policy](egress-policy.md) | Which network requests can OMA restrict before an adapter opens them, and which are outside that boundary? |
 | [Self-hosting and data residency](self-hosting.md) | What does the framework run, reach, and persist when it runs on my own infrastructure? |
 | [Tool configuration](tool-configuration.md) | How are built-in, custom, and delegation tools granted, filtered, and gated per call? |
