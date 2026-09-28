@@ -68,8 +68,9 @@ For each model in `chain`, in order:
    (default 60000), or exhausted retries, move to the next model.
 
 When every model fails, `runImage()` resolves with `status: 'failed'` and the
-last error; it does not throw. It rejects only for invalid options or when the
-caller's `signal` aborts, in which case no further model is tried.
+last error; it does not throw. It rejects for invalid options, when the caller's
+`signal` aborts, or when `validate` throws. No further model is tried after a
+caller abort or validation exception.
 
 Adapters must not resubmit a generation internally. Every billable provider
 call is one attempt, so the attempt records show the real number of calls and

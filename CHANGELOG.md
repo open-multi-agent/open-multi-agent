@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Corrected `runImage()` documentation to state that exceptions thrown by its
+  `validate` callback propagate to the caller; exhausted model failures still
+  resolve as a failed result.
+
 ## 1.21.0 - 2026-09-25
 
 ### Added
