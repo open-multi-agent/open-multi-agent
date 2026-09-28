@@ -103,7 +103,9 @@ async function callWithDeadline(
  *
  * Returns a result rather than throwing when every model fails, so the attempt
  * records are always available. Rejects for invalid options, when `signal`
- * aborts, or when the caller's `validate` callback throws.
+ * aborts, or when the caller's `validate` callback throws a value other than
+ * `ImageModelError`. An `ImageModelError` thrown by `validate` is recorded as
+ * an attempt failure and follows the normal retry and model-fallback rules.
  */
 export async function runImage(options: RunImageOptions): Promise<RunImageResult> {
   const maxRetries = options.maxRetriesPerModel ?? DEFAULT_MAX_RETRIES_PER_MODEL

@@ -69,8 +69,10 @@ For each model in `chain`, in order:
 
 When every model fails, `runImage()` resolves with `status: 'failed'` and the
 last error; it does not throw. It rejects for invalid options, when the caller's
-`signal` aborts, or when `validate` throws. No further model is tried after a
-caller abort or validation exception.
+`signal` aborts, or when `validate` throws a value other than `ImageModelError`.
+A non-`ImageModelError` validation exception stops the chain. An
+`ImageModelError` thrown by `validate` is handled as an attempt failure and
+follows the same retry and model-fallback rules described above.
 
 Adapters must not resubmit a generation internally. Every billable provider
 call is one attempt, so the attempt records show the real number of calls and
@@ -125,7 +127,10 @@ Return `{ ok: true }` to accept, or `{ ok: false, reason }` to refuse. A refusal
 is recorded as a `rejected` attempt with type `invalid_output`, and the refused
 image is kept on the record as `rejectedOutput` so it can be reviewed. Set
 `retryable: false` on the refusal to skip the remaining retries of that model.
-An exception thrown by `validate` propagates out of `runImage()`.
+An exception thrown by `validate` propagates out of `runImage()` unless it is
+an `ImageModelError`. That error is recorded as a `failed` attempt and follows
+the normal retry and model-fallback rules; it does not necessarily reject the
+run.
 
 ## Attempt records
 

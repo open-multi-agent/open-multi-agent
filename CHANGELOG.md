@@ -4,9 +4,10 @@
 
 ### Fixed
 
-- Corrected `runImage()` documentation to state that exceptions thrown by its
-  `validate` callback propagate to the caller; exhausted model failures still
-  resolve as a failed result.
+- Corrected `runImage()` documentation to distinguish validation exceptions:
+  values other than `ImageModelError` propagate to the caller, while
+  `ImageModelError` follows the normal retry and model-fallback rules.
+  Exhausted model failures still resolve as a failed result.
 
 ## 1.21.0 - 2026-09-25
 
