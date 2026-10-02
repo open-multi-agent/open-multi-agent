@@ -231,7 +231,7 @@ Coordinator -> 任务 DAG -> Scheduler -> AgentPool
 
 | 接入方式 | 适用范围 |
 |---|---|
-| 内置 | Anthropic、OpenAI、Azure OpenAI、Copilot、Grok、DeepSeek、Doubao、Hunyuan、MiniMax、MiMo、Qiniu |
+| 内置 | Anthropic、OpenAI、Azure OpenAI、Copilot、Grok、DeepSeek、Doubao、Hunyuan、MiniMax、MiMo、Qiniu、Cheaper Inference |
 | 可选 peer | Gemini（`@google/genai`）和 Bedrock（`@aws-sdk/client-bedrock-runtime`） |
 | OpenAI 兼容 | 设置 `provider: 'openai'` + `baseURL`，接入 Ollama、vLLM、LM Studio、OpenRouter、Groq、Mistral、Kimi、Qwen、Zhipu |
 | AI SDK | 通过 `AISdkAdapter`、`ai` 和所选 `@ai-sdk/*` provider 接入（AI SDK 7 需 Node.js 22+） |

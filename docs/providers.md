@@ -44,6 +44,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M3` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`; `MiniMax-M3` accepts text, image, and video content blocks. |
 | MiMo | `provider: 'mimo'` | `MIMO_API_KEY` (+ optional `MIMO_BASE_URL`) | `mimo-v2.5-pro` | OpenAI-compatible. Defaults to pay-as-you-go endpoint `https://api.xiaomimimo.com/v1`; Token Plan keys (`tp-...`) require the cluster base URL from your subscription page, such as `https://token-plan-cn.xiaomimimo.com/v1`. Supports reasoning/tool-call loops through the built-in MiMo adapter. See [`providers/mimo`](../packages/core/examples/providers/mimo.ts). |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |
+| Cheaper Inference | `provider: 'cheaperinference'` | `CHEAPER_INFERENCE_API_KEY` | `gpt-5.4-mini` | OpenAI-compatible gateway. Endpoint `https://api.cheaperinference.com/v1`; models from several labs, see [Cheaper Inference docs](https://cheaperinference.com/docs). |
 | AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `anthropic.claude-3-5-haiku-20241022-v1:0` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials come from env vars, shared config, or IAM role. Newer Claude models can require a cross-region inference profile prefix such as `us.`. Also supports Llama, Mistral, and Cohere. See [`providers/bedrock`](../packages/core/examples/providers/bedrock.ts). Requires `npm install @aws-sdk/client-bedrock-runtime`. |
 
 ## OpenAI-compatible providers
@@ -154,8 +155,8 @@ targets and are forwarded only where the wire format accepts them.
 | `extraBody` | merged into the request | yes | yes | yes | no | no | yes, into `additionalModelRequestFields` |
 
 "OpenAI and OpenAI-compatible built-ins" is the `openai` adapter and every
-provider that extends it: `deepseek`, `doubao`, `grok`, `hunyuan`, `minimax`,
-`mimo`, and `qiniu`.
+provider that extends it: `cheaperinference`, `deepseek`, `doubao`, `grok`,
+`hunyuan`, `minimax`, `mimo`, and `qiniu`.
 
 Two caveats the table cannot express:
 

@@ -190,6 +190,7 @@ export const PROVIDER_REFERENCE: ReadonlyArray<{
   { id: 'doubao', apiKeyEnv: ['ARK_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible Volcengine Ark endpoint at https://ark.cn-beijing.volces.com/api/v3. Set provider to doubao and choose a model available to your Ark key.' },
   { id: 'hunyuan', apiKeyEnv: ['HUNYUAN_API_KEY', 'HUNYUAN_BASE_URL'], baseUrlSupported: true, notes: 'OpenAI-compatible. Defaults to the current Tencent MaaS / TokenHub endpoint https://tokenhub.tencentmaas.com/v1 (sk-... keys, models like hy3-preview). The legacy Tencent Cloud endpoint https://api.hunyuan.cloud.tencent.com/v1 (models like hunyuan-turbos-latest) is being retired by Tencent (shutdown 2026-09-30); target it via HUNYUAN_BASE_URL until then. Tool calling verified on hy3-preview / hunyuan-turbos / hunyuan-functioncall.' },
   { id: 'qiniu', apiKeyEnv: ['QINIU_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.qnaigc.com/v1. Set provider to qiniu and choose a model available to your key.' },
+  { id: 'cheaperinference', apiKeyEnv: ['CHEAPER_INFERENCE_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.cheaperinference.com/v1. Set provider to cheaperinference and choose a model available to your key.' },
   {
     id: 'copilot',
     apiKeyEnv: ['GITHUB_COPILOT_TOKEN', 'GITHUB_TOKEN'],
@@ -747,6 +748,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   doubao: 'doubao-seed-1-8-251228',
   hunyuan: 'hy3-preview',
   qiniu: 'deepseek-v3',
+  cheaperinference: 'gpt-5.4-mini',
   bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
 }
 

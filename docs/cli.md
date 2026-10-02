@@ -181,7 +181,7 @@ GitHub Actions wiring.
 Read-only helper for wiring JSON configs and env vars.
 
 - **`oma provider`** or **`oma provider list`** — Prints JSON: built-in provider ids, API key environment variable names, whether `baseURL` is supported, and short notes (e.g. OpenAI-compatible servers, Copilot in CI).
-- **`oma provider template <provider>`** — Prints a JSON object with example `orchestrator` and `agent` fields plus placeholder `env` entries. `<provider>` is one of: `anthropic`, `azure-openai`, `openai`, `gemini`, `grok`, `minimax`, `mimo`, `deepseek`, `doubao`, `hunyuan`, `qiniu`, `copilot`, `bedrock`.
+- **`oma provider template <provider>`** — Prints a JSON object with example `orchestrator` and `agent` fields plus placeholder `env` entries. `<provider>` is one of: `anthropic`, `azure-openai`, `openai`, `gemini`, `grok`, `minimax`, `mimo`, `deepseek`, `doubao`, `hunyuan`, `qiniu`, `cheaperinference`, `copilot`, `bedrock`.
 
 For OpenRouter, use the `openai` provider template, set `baseURL` to `https://openrouter.ai/api/v1`, and set `apiKey` from `OPENROUTER_API_KEY` in your JSON config.
 

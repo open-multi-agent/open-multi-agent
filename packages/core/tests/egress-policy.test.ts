@@ -157,6 +157,7 @@ describe('built-in adapter enforcement', () => {
       ['minimax', 'https://api.minimax.io/v1'],
       ['mimo', 'https://api.xiaomimimo.com/v1'],
       ['qiniu', 'https://api.qnaigc.com/v1'],
+      ['cheaperinference', 'https://api.cheaperinference.com/v1'],
     ] as const
 
     for (const [provider, baseURL] of cases) {
@@ -187,6 +188,7 @@ describe('built-in adapter enforcement', () => {
       ['minimax', 'https://api.minimax.io/v1'],
       ['mimo', 'https://api.xiaomimimo.com/v1'],
       ['qiniu', 'https://api.qnaigc.com/v1'],
+      ['cheaperinference', 'https://api.cheaperinference.com/v1'],
     ] as const
 
     for (const [provider, baseURL] of cases) {
