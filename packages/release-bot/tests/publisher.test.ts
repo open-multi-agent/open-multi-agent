@@ -97,6 +97,64 @@ describe('deterministic publisher', () => {
       preflightRuntime: async () => {},
     })).rejects.toThrow(/already exists while npm packages are missing/i)
   })
+
+  it('waits out a registry lag of several minutes with the default window', async () => {
+    const root = await createFixture()
+    const sha = 'c'.repeat(40)
+    const published = new FakeRegistry([
+      { name: '@open-multi-agent/otel', version: '0.1.1' },
+    ])
+    // Thirty empty reads 10 seconds apart is five minutes, the gap v1.21.1 hit.
+    const registry = new LaggingRegistry(published, 30)
+    const runner = new PublishRunner(sha, published)
+    const github = new PublishGitHub()
+    const sleeps: number[] = []
+
+    const result = await publishRelease({
+      repoRoot: root,
+      expectedSha: sha,
+      runner,
+      registry,
+      github,
+      sleep: async milliseconds => { sleeps.push(milliseconds) },
+      preflightRuntime: async () => {},
+    })
+
+    expect(result.packages.map(item => item.action)).toEqual(['published', 'already-published', 'published'])
+    expect(result.tagAction).toBe('created')
+    expect(result.releaseAction).toBe('created')
+    expect(sleeps).toEqual(Array(60).fill(10_000))
+  })
+
+  it('stops before tagging when a published version never resolves', async () => {
+    const root = await createFixture()
+    const sha = 'd'.repeat(40)
+    const published = new FakeRegistry([
+      { name: '@open-multi-agent/otel', version: '0.1.1' },
+    ])
+    const registry = new LaggingRegistry(published, Number.POSITIVE_INFINITY)
+    const runner = new PublishRunner(sha, published)
+    const github = new PublishGitHub()
+    const sleeps: number[] = []
+
+    await expect(publishRelease({
+      repoRoot: root,
+      expectedSha: sha,
+      runner,
+      registry,
+      github,
+      sleep: async milliseconds => { sleeps.push(milliseconds) },
+      preflightRuntime: async () => {},
+    })).rejects.toThrow('@open-multi-agent/core@1.15.0 did not appear in the npm registry after publication.')
+
+    expect(runner.publishedWorkspaces).toEqual(['@open-multi-agent/core'])
+    expect(runner.tagSha).toBeNull()
+    expect(github.createdRelease).toBeUndefined()
+    // Eight minutes per package keeps all three inside the 30-minute job limit.
+    const waited = sleeps.reduce((total, milliseconds) => total + milliseconds, 0)
+    expect(waited).toBe(470_000)
+    expect(waited * 3).toBeLessThan(30 * 60_000)
+  })
 })
 
 class FakeRegistry implements RegistryClient {
@@ -112,6 +170,32 @@ class FakeRegistry implements RegistryClient {
 
   add(name: string, version: string): void {
     this.versions.set(`${name}@${version}`, { name, version })
+  }
+}
+
+/**
+ * Withholds each version that was missing when first asked about for `lag`
+ * further reads after it is published, as npm did after v1.21.1's publish.
+ */
+class LaggingRegistry implements RegistryClient {
+  private readonly readsAfterPublish = new Map<string, number>()
+
+  constructor(
+    private readonly inner: FakeRegistry,
+    private readonly lag: number,
+  ) {}
+
+  async getVersion(packageName: string, version: string): Promise<RegistryVersion | null> {
+    const key = `${packageName}@${version}`
+    const found = await this.inner.getVersion(packageName, version)
+    if (found === null) {
+      this.readsAfterPublish.set(key, 0)
+      return null
+    }
+    const reads = this.readsAfterPublish.get(key)
+    if (reads === undefined || reads >= this.lag) return found
+    this.readsAfterPublish.set(key, reads + 1)
+    return null
   }
 }
 

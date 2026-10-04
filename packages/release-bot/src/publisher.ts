@@ -15,6 +15,19 @@ import { compareVersions } from './semver.js'
  */
 const DEFAULT_EXCLUDED_CONTRIBUTORS: readonly string[] = ['Jack Chen', 'JackChen-me']
 
+/**
+ * How long a freshly published version may take to resolve from the registry.
+ *
+ * npm accepts a publish before the version is readable. The previous window of
+ * 9 polls 10 seconds apart failed core v1.21.0, create-oma-app v0.8.7, and core
+ * v1.21.1: npm's own publish timestamp for each landed 46 seconds to nearly 4
+ * minutes after polling had stopped, so the job exited with npm already holding
+ * the version while the tag and GitHub Release were never created. Eight
+ * minutes per package keeps all three inside the publish job's 30-minute limit.
+ */
+const REGISTRY_POLL_ATTEMPTS = 48
+const REGISTRY_POLL_DELAY_MS = 10_000
+
 interface PackageManifest {
   readonly name?: unknown
   readonly version?: unknown
@@ -378,8 +391,8 @@ async function waitForRegistry(
   options: PublishReleaseOptions,
   target: PublishTarget,
 ): Promise<void> {
-  const attempts = options.pollAttempts ?? 9
-  const delay = options.pollDelayMs ?? 10_000
+  const attempts = options.pollAttempts ?? REGISTRY_POLL_ATTEMPTS
+  const delay = options.pollDelayMs ?? REGISTRY_POLL_DELAY_MS
   const sleep = options.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)))
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (await options.registry.getVersion(target.name, target.version)) return
