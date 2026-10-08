@@ -25,7 +25,7 @@
   <a href="https://open-multi-agent.com/zh/?utm_source=github&utm_medium=package_readme">官网</a> ·
   <a href="https://open-multi-agent.com/zh/getting-started/introduction/?utm_source=github&utm_medium=package_readme">文档</a> ·
   <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
-  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">讨论区</a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/issues">问题反馈</a>
 </p>
 
 <p align="center">

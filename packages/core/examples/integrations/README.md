@@ -50,8 +50,8 @@ integration that ships its own store, toolkit, or app shell lives under
 ## Submitting a reference integration
 
 Open a PR following the conventions in [`examples/README.md`](../README.md).
-For widely used protocols or frameworks, no prior discussion needed. For
-niche ones, open a discussion first so we can confirm the wiring is worth
+For widely used protocols or frameworks, no prior issue is needed. For
+niche ones, open an [issue](https://github.com/open-multi-agent/open-multi-agent/issues/new/choose) first so we can confirm the wiring is worth
 maintaining long-term.
 
 ## Submitting a vendor integration
@@ -62,12 +62,12 @@ is a signal filter for who has actually shipped against OMA.
 
 Flow:
 
-1. Open a [discussion](https://github.com/open-multi-agent/open-multi-agent/discussions)
+1. Open an [issue](https://github.com/open-multi-agent/open-multi-agent/issues/new/choose)
    with the link to OMA in your product's docs and a sketch of the example.
 2. Wait for a maintainer reply confirming the example is in scope.
 3. PR it. Follow the conventions in [`examples/README.md`](../README.md).
 
-If your product doesn't reference OMA yet, open a discussion to get listed
+If your product doesn't reference OMA yet, open an issue to get listed
 in the [Built with OMA](../../../../README.md#built-with-oma) section.
 
 The [Featured Partner program](../../../../docs/featured-partner.md) is separate

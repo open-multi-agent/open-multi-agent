@@ -25,7 +25,7 @@
   <a href="https://open-multi-agent.com/?utm_source=npm&utm_medium=package_readme">Website</a> ·
   <a href="https://open-multi-agent.com/getting-started/introduction/?utm_source=npm&utm_medium=package_readme">Docs</a> ·
   <a href="https://www.npmjs.com/package/@open-multi-agent/core">npm</a> ·
-  <a href="https://github.com/open-multi-agent/open-multi-agent/discussions">Discussions</a>
+  <a href="https://github.com/open-multi-agent/open-multi-agent/issues">Issues</a>
 </p>
 
 <p align="center">
