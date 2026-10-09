@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 1.21.2 - 2026-10-09
+
+### Changed
+
+- Updated the core package README, which ships in the core tarball, to route
+  community feedback to GitHub Issues instead of Discussions.
+
+### Compatibility
+
+- No public API, runtime, provider, template, or published dependency change is
+  present; upgrading requires no caller action.
+- create-oma-app templates will pin the new core patch exactly, keeping
+  scaffolded projects on a consistent core version.
+- Internal release tooling only: release-bot defaults now allow up to 48
+  registry polls at 10s per package instead of 9. Maintainers needing the old
+  fail-fast behavior can still pass pollAttempts and pollDelayMs explicitly;
+  this package is private and never published.
+- If the reported partial publication of the previous release is confirmed,
+  consumer action is still not required; recovery is a maintainer dispatch of
+  publish.yml on the exact merged release commit reachable from main with a
+  successful CI run.
+
 ## 1.21.1 - 2026-10-02
 
 ### Fixed
