@@ -4,57 +4,39 @@
 
 ## 1.21.3 - 2026-10-16
 
-### Changed
-
-- A dangling symlink is now resolved to the target it names, so a link pointing
-  inside the agent's working directory keeps working while one pointing outside
-  it is rejected like any other outside path.
-- Symlink targets are resolved one component at a time, following kernel lookup
-  order, so `..` is applied after any symlink it follows and a trailing
-  separator or `.` still requires a directory.
-
 ### Fixed
 
-- The sandbox check no longer treats an unresolvable symlink as a
-  not-yet-existing file, and it fails when `realpath` reports ELOOP instead of
-  resolving the chain by hand.
-- A symlink target ending in a separator or `.` no longer resolves to the file
-  of that name, preventing an overwrite the kernel itself would refuse to open.
+- Symlink loops and chains longer than the kernel's link limit now fail the
+  sandbox check with a `Too many levels of symbolic links` error. Earlier
+  versions also failed these writes, with the filesystem error instead.
+- A symlink target that ends in a separator or `.` must now name an existing
+  directory, as the kernel requires. On macOS, earlier versions resolved such a
+  link to the file of that name, so `file_write` overwrote it.
 
 ### Security
 
 - `file_write` can no longer create a file outside the agent's working directory
-  through a dangling symlink (GHSA-h42w-g3ch-rjjm, CVE-2026-108600).
-- The sandbox check shared by every built-in filesystem tool now fails on
-  symlink loops and over-long chains instead of reaching the filesystem call.
+  through a dangling symlink (GHSA-h42w-g3ch-rjjm, CVE-2026-108600). Versions
+  1.5.0 through 1.21.2 are affected. The sandbox check now resolves a dangling
+  symlink to the target it names, one path component at a time as the kernel
+  does, so a link pointing outside the root is rejected like any other outside
+  path and a link pointing inside it keeps working. Every built-in filesystem
+  tool shares this check.
 
 ### Compatibility
 
-- No public export is added, removed, or renamed; the sandbox resolver's
-  signature is unchanged and failures keep the existing error `ToolResult` shape
-  with new messages.
-- Writes through symlinks that resolve inside the working directory are
-  unchanged, including a dangling link whose in-root target is created, and
-  middle path segments that are in-root symlinked directories still work.
-- Only links resolving outside the root, symlink loops, kernel-ELOOP chains, and
-  targets the kernel would not open now fail; `file_edit` and the other built-in
-  filesystem tools inherit the same behavior.
-- Migration: callers that wrote through a dangling symlink pointing outside the
-  agent's working directory must stop; the sandbox now returns the "outside the
-  agent's working directory" error (GHSA-h42w-g3ch-rjjm, CVE-2026-108600).
-- Do not depend on sandbox error text: unresolvable candidates now return `Could
-  not resolve path "…": …`, loops and over-long chains return `Too many levels
-  of symbolic links`, and targets needing a directory return `Symlink target …
-  requires … to be an existing directory`.
-- Replace symlink targets that end in a separator or `.` and name a file with a
-  link that names the file directly (or point them at a real directory); the
-  kernel refuses such lookups and the check now refuses them too.
-- No change is needed for links inside the root: in-root file links, symlinked
-  directories, and dangling in-root targets keep working and are covered by the
-  new tests.
-- `@open-multi-agent/otel` is not republished: packages/otel did not change and
-  it depends on core through a semver range, so no otel release is required for
-  this core patch.
+- No public export, signature, or error `ToolResult` shape changed; upgrading
+  needs no code change.
+- Symlinks that resolve inside the working directory work as before, including
+  a dangling link whose in-root target `file_write` creates.
+- Writing through a dangling symlink whose target is outside the working
+  directory now returns the "outside the agent's working directory" error. To
+  write there on purpose, widen `AgentConfig.cwd` or
+  `OrchestratorConfig.defaultCwd` to include that location.
+- Sandbox failures from symlink resolution use new messages that start with
+  `Could not resolve path`; check `isError` rather than matching message text.
+- `@open-multi-agent/otel` is not republished: it did not change and depends on
+  core through a semver range.
 
 ## 1.21.2 - 2026-10-09
 
