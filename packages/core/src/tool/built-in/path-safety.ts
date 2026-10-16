@@ -116,7 +116,13 @@ const TOO_MANY_SYMLINKS = 'Too many levels of symbolic links'
 
 async function realpathTolerant(path: string, state: { hops: number }): Promise<string> {
   try {
-    return await realpath(path)
+    const real = await realpath(path)
+    // Native realpath accepts a symlink whose target ends in a separator even
+    // when that target is a file, which the kernel refuses to open. stat takes
+    // the same lookup as open, so a failure here sends the path through the
+    // manual resolution below.
+    await stat(path)
+    return real
   } catch (err) {
     // The kernel already refused this chain as too long or cyclic. Following
     // it by hand would accept a path that no fs call could open as given.
@@ -158,27 +164,38 @@ async function resolveLinkTarget(
   state: { hops: number },
 ): Promise<string> {
   const targetRoot = parse(target).root
+  const parts = target.slice(targetRoot.length).split(TARGET_SEPARATOR)
   let current = targetRoot === '' ? linkDir : targetRoot
-  for (const part of target.slice(targetRoot.length).split(TARGET_SEPARATOR)) {
+  for (const part of parts) {
     if (part === '' || part === '.') continue
     if (part === '..') {
       // `current` is symlink-free, so its lexical parent is its real parent,
       // provided it exists. The kernel cannot step out of a missing directory.
-      let isDirectory = false
-      try {
-        isDirectory = (await stat(current)).isDirectory()
-      } catch {
-        // Missing: rejected below.
-      }
-      if (!isDirectory) {
-        throw new Error(`Symlink target "${target}" steps out of "${current}", which is not a directory`)
-      }
+      await requireDirectory(current, target)
       current = dirname(current)
       continue
     }
     current = await realpathTolerant(join(current, part), state)
   }
+  // A trailing separator or `.` names a directory, so the kernel refuses to
+  // open a file, or create one, through the link.
+  const last = parts[parts.length - 1]
+  if (last === '' || last === '.') {
+    await requireDirectory(current, target)
+  }
   return current
+}
+
+async function requireDirectory(path: string, target: string): Promise<void> {
+  let isDirectory = false
+  try {
+    isDirectory = (await stat(path)).isDirectory()
+  } catch {
+    // Missing: rejected below.
+  }
+  if (!isDirectory) {
+    throw new Error(`Symlink target "${target}" requires "${path}" to be an existing directory`)
+  }
 }
 
 function outsideRoot(candidate: string, root: string): SafePathResult {

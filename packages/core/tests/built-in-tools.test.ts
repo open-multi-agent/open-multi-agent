@@ -680,8 +680,24 @@ describe.skipIf(!symlinksSupported)('filesystem sandbox symlinks', () => {
     const result = await write(join(root, 'self'))
 
     expect(result.isError).toBe(true)
-    expect(result.data).toContain('which is not a directory')
+    expect(result.data).toContain('to be an existing directory')
     expect(await fileExists(join(root, 'missing-dir'))).toBe(false)
+  })
+
+  it.each([
+    ['a trailing separator', sep],
+    ['a trailing .', `${sep}.`],
+  ])('rejects a symlink target with %s that names a file', async (_label, suffix) => {
+    // The suffix makes the kernel require a directory, so it refuses to open
+    // `victim.txt` through the link.
+    await writeFile(join(root, 'victim.txt'), 'keep')
+    await symlink(`victim.txt${suffix}`, join(root, 'link'))
+
+    const result = await write(join(root, 'link'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('to be an existing directory')
+    expect(await readFile(join(root, 'victim.txt'), 'utf8')).toBe('keep')
   })
 
   it('follows a symlink before applying .. in a dangling symlink target', async () => {
