@@ -107,13 +107,22 @@ function isWithin(candidate: string, root: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-/** Same bound Linux applies (MAXSYMLINKS) before failing with ELOOP. */
+/**
+ * Bound on symlinks followed by hand, matching Linux MAXSYMLINKS. Chains that
+ * realpath walks itself are bounded by the kernel, which reports ELOOP.
+ */
 const MAX_SYMLINK_HOPS = 40
+const TOO_MANY_SYMLINKS = 'Too many levels of symbolic links'
 
 async function realpathTolerant(path: string, state: { hops: number }): Promise<string> {
   try {
     return await realpath(path)
-  } catch {
+  } catch (err) {
+    // The kernel already refused this chain as too long or cyclic. Following
+    // it by hand would accept a path that no fs call could open as given.
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      throw new Error(TOO_MANY_SYMLINKS)
+    }
     const parent = dirname(path)
     if (parent === path) return path
     const realParent = await realpathTolerant(parent, state)
@@ -129,7 +138,7 @@ async function realpathTolerant(path: string, state: { hops: number }): Promise<
       return joined
     }
     if (++state.hops > MAX_SYMLINK_HOPS) {
-      throw new Error('Too many levels of symbolic links')
+      throw new Error(TOO_MANY_SYMLINKS)
     }
     // A relative target is relative to the directory holding the link.
     return realpathTolerant(resolve(realParent, target), state)

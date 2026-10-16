@@ -653,6 +653,36 @@ describe.skipIf(!symlinksSupported)('filesystem sandbox symlinks', () => {
     expect(result.data).toContain('symbolic links')
   })
 
+  it('rejects file_write through a symlink chain longer than the kernel allows', async () => {
+    // 41 links exceeds MAXSYMLINKS on Linux (40) and macOS (32), so the
+    // kernel refuses the chain even though every link resolves inside the root.
+    await writeFile(join(root, 'end.txt'), 'keep')
+    let next = join(root, 'end.txt')
+    for (let i = 0; i < 41; i++) {
+      const link = join(root, `chain-${i}`)
+      await symlink(next, link)
+      next = link
+    }
+
+    const result = await write(next)
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('symbolic links')
+    expect(await readFile(join(root, 'end.txt'), 'utf8')).toBe('keep')
+  })
+
+  it('stops following a dangling symlink whose target resolves back to itself', async () => {
+    // The kernel reports ENOENT here because `ghost` dangles, so only the
+    // resolver's own hop limit ends the walk.
+    await symlink(join(root, 'missing-dir'), join(root, 'ghost'))
+    await symlink(join('ghost', '..', 'self'), join(root, 'self'))
+
+    const result = await write(join(root, 'self'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('symbolic links')
+  })
+
   it('writes through a symlink to a file inside the root', async () => {
     await writeFile(join(root, 'real.txt'), 'old')
     await symlink(join(root, 'real.txt'), join(root, 'alias.txt'))
