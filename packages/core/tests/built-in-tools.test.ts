@@ -562,6 +562,145 @@ describe('filesystem sandbox', () => {
   })
 })
 
+describe.skipIf(!symlinksSupported)('filesystem sandbox symlinks', () => {
+  let root: string
+  let outside: string
+  let ctx: ToolUseContext
+
+  beforeEach(async () => {
+    root = join(tmpDir, 'workspace')
+    outside = join(tmpDir, 'outside')
+    await mkdir(root)
+    await mkdir(outside)
+    ctx = { ...defaultContext, cwd: root }
+  })
+
+  async function write(path: string, content = 'escaped') {
+    return fileWriteTool.execute({ path, content }, ctx)
+  }
+
+  it('rejects file_write through a dangling symlink that points outside the root', async () => {
+    const target = join(outside, 'planted.txt')
+    await symlink(target, join(root, 'dangling.txt'))
+
+    const result = await write(join(root, 'dangling.txt'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(target)).toBe(false)
+  })
+
+  it('rejects file_write through a relative dangling symlink that points outside the root', async () => {
+    await symlink(join('..', 'outside', 'planted.txt'), join(root, 'dangling.txt'))
+
+    const result = await write(join(root, 'dangling.txt'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(join(outside, 'planted.txt'))).toBe(false)
+  })
+
+  it('rejects file_write through a chain of dangling symlinks that ends outside the root', async () => {
+    await symlink(join(root, 'second'), join(root, 'first'))
+    await symlink(join(outside, 'planted.txt'), join(root, 'second'))
+
+    const result = await write(join(root, 'first'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(join(outside, 'planted.txt'))).toBe(false)
+  })
+
+  it('rejects file_write into a symlinked directory outside the root', async () => {
+    await symlink(outside, join(root, 'linked-dir'))
+
+    const result = await write(join(root, 'linked-dir', 'new.txt'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(join(outside, 'new.txt'))).toBe(false)
+  })
+
+  it('rejects file_write when a middle path segment is a symlink outside the root', async () => {
+    await mkdir(join(root, 'a'))
+    await symlink(outside, join(root, 'a', 'b'))
+
+    const result = await write(join(root, 'a', 'b', 'c', 'new.txt'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(join(outside, 'c'))).toBe(false)
+  })
+
+  it('rejects file_write when a middle path segment is a dangling symlink outside the root', async () => {
+    await mkdir(join(root, 'a'))
+    await symlink(join(outside, 'missing-dir'), join(root, 'a', 'b'))
+
+    const result = await write(join(root, 'a', 'b', 'c', 'new.txt'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await fileExists(join(outside, 'missing-dir'))).toBe(false)
+  })
+
+  it('rejects file_write through a symlink loop', async () => {
+    await symlink(join(root, 'loop-b'), join(root, 'loop-a'))
+    await symlink(join(root, 'loop-a'), join(root, 'loop-b'))
+
+    const result = await write(join(root, 'loop-a'))
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('symbolic links')
+  })
+
+  it('writes through a symlink to a file inside the root', async () => {
+    await writeFile(join(root, 'real.txt'), 'old')
+    await symlink(join(root, 'real.txt'), join(root, 'alias.txt'))
+
+    const result = await write(join(root, 'alias.txt'), 'new')
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('Updated')
+    expect(await readFile(join(root, 'real.txt'), 'utf8')).toBe('new')
+  })
+
+  it('writes through a symlinked directory inside the root', async () => {
+    await mkdir(join(root, 'real-dir'))
+    await symlink(join(root, 'real-dir'), join(root, 'dir-alias'))
+
+    const result = await write(join(root, 'dir-alias', 'nested', 'new.txt'), 'inside')
+
+    expect(result.isError).toBe(false)
+    expect(await readFile(join(root, 'real-dir', 'nested', 'new.txt'), 'utf8')).toBe('inside')
+  })
+
+  it('writes through a dangling symlink whose target is inside the root', async () => {
+    await mkdir(join(root, 'sub'))
+    // Relative targets resolve against the directory holding the link.
+    await symlink(join('..', 'later.txt'), join(root, 'sub', 'pending.txt'))
+
+    const result = await write(join(root, 'sub', 'pending.txt'), 'created')
+
+    expect(result.isError).toBe(false)
+    expect(result.data).toContain('Created')
+    expect(await readFile(join(root, 'later.txt'), 'utf8')).toBe('created')
+  })
+
+  it('rejects file_edit through a symlink to a file outside the root', async () => {
+    await writeFile(join(outside, 'secret.txt'), 'keep')
+    await symlink(join(outside, 'secret.txt'), join(root, 'linked.txt'))
+
+    const result = await fileEditTool.execute(
+      { path: join(root, 'linked.txt'), old_string: 'keep', new_string: 'changed' },
+      ctx,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain("outside the agent's working directory")
+    expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('keep')
+  })
+})
+
 // ===========================================================================
 // glob
 // ===========================================================================

@@ -39,7 +39,10 @@ Built-in filesystem tools are sandboxed to a per-agent working directory. Paths
 must be absolute and resolve inside that directory; symlinks are resolved
 before the check so they cannot escape the configured root. The resolved,
 symlink-free path is what reaches the `fs` API, which closes the window where a
-symlink inside the candidate path could be swapped after the check.
+symlink inside the candidate path could be swapped after the check. A dangling
+symlink is resolved to the target it names, since writing through it would
+create that target, so a link pointing outside the root is rejected like any
+other outside path.
 
 A relative path is rejected outright, and a path that resolves outside the root
 returns an error `ToolResult` naming the root and the configuration fields that

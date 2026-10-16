@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Security
+
+- `file_write` no longer writes outside the agent's working directory through a
+  dangling symlink (GHSA-h42w-g3ch-rjjm, CVE-2026-108600). The sandbox check
+  now resolves a dangling symlink to the target it names, so a link pointing
+  outside the root is rejected while one pointing inside it keeps working. The
+  check is shared by every built-in filesystem tool, and a symlink loop now
+  fails the check instead of reaching the filesystem call.
+
 ## 1.21.2 - 2026-10-09
 
 ### Changed

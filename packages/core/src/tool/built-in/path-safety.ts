@@ -1,4 +1,4 @@
-import { mkdir, realpath } from 'fs/promises'
+import { mkdir, readlink, realpath } from 'fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { ToolUseContext } from '../../types.js'
 
@@ -84,7 +84,13 @@ export async function resolvePathWithinCwd(
   // Resolve symlinks all the way through the candidate. For paths that do
   // not yet exist (e.g. `file_write` creating a new file), resolve the
   // longest existing prefix and re-attach the non-existent suffix.
-  const realCandidate = await realpathTolerant(candidate)
+  let realCandidate: string
+  try {
+    realCandidate = await realpathTolerant(candidate, { hops: 0 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return { ok: false, error: `Could not resolve path "${candidate}": ${message}` }
+  }
 
   if (!isWithin(realCandidate, realRoot)) {
     return outsideRoot(candidate, realRoot)
@@ -101,14 +107,32 @@ function isWithin(candidate: string, root: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-async function realpathTolerant(path: string): Promise<string> {
+/** Same bound Linux applies (MAXSYMLINKS) before failing with ELOOP. */
+const MAX_SYMLINK_HOPS = 40
+
+async function realpathTolerant(path: string, state: { hops: number }): Promise<string> {
   try {
     return await realpath(path)
   } catch {
     const parent = dirname(path)
     if (parent === path) return path
-    const realParent = await realpathTolerant(parent)
-    return join(realParent, basename(path))
+    const realParent = await realpathTolerant(parent, state)
+    const joined = join(realParent, basename(path))
+
+    // realpath also fails on a dangling symlink, which exists even though its
+    // target does not. Writing to it creates the target, so follow the link
+    // and resolve the target instead of treating the link as a new file.
+    let target: string
+    try {
+      target = await readlink(joined)
+    } catch {
+      return joined
+    }
+    if (++state.hops > MAX_SYMLINK_HOPS) {
+      throw new Error('Too many levels of symbolic links')
+    }
+    // A relative target is relative to the directory holding the link.
+    return realpathTolerant(resolve(realParent, target), state)
   }
 }
 
