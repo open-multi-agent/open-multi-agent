@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { access, mkdir, mkdtemp, rm, symlink, writeFile, readFile } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, join, sep } from 'path'
 import { tmpdir } from 'os'
 import { detectSymlinkSupport } from './helpers/symlink-support.js'
 import { fileReadTool } from '../src/tool/built-in/file-read.js'
@@ -671,16 +671,31 @@ describe.skipIf(!symlinksSupported)('filesystem sandbox symlinks', () => {
     expect(await readFile(join(root, 'end.txt'), 'utf8')).toBe('keep')
   })
 
-  it('stops following a dangling symlink whose target resolves back to itself', async () => {
-    // The kernel reports ENOENT here because `ghost` dangles, so only the
-    // resolver's own hop limit ends the walk.
+  it('rejects a dangling symlink whose target steps out of a missing directory', async () => {
+    // The kernel cannot resolve `ghost/..` because `ghost` dangles, so the
+    // write must fail rather than collapse the target to `self` lexically.
     await symlink(join(root, 'missing-dir'), join(root, 'ghost'))
-    await symlink(join('ghost', '..', 'self'), join(root, 'self'))
+    await symlink(['ghost', '..', 'self'].join(sep), join(root, 'self'))
 
     const result = await write(join(root, 'self'))
 
     expect(result.isError).toBe(true)
-    expect(result.data).toContain('symbolic links')
+    expect(result.data).toContain('which is not a directory')
+    expect(await fileExists(join(root, 'missing-dir'))).toBe(false)
+  })
+
+  it('follows a symlink before applying .. in a dangling symlink target', async () => {
+    // `pivot/..` is `nested`, not the root, because `pivot` points into it.
+    await mkdir(join(root, 'nested', 'deep'), { recursive: true })
+    await symlink(join('nested', 'deep'), join(root, 'pivot'))
+    await symlink(['pivot', '..', 'created.txt'].join(sep), join(root, 'link'))
+    await writeFile(join(root, 'created.txt'), 'unrelated')
+
+    const result = await write(join(root, 'link'), 'through link')
+
+    expect(result.isError).toBe(false)
+    expect(await readFile(join(root, 'nested', 'created.txt'), 'utf8')).toBe('through link')
+    expect(await readFile(join(root, 'created.txt'), 'utf8')).toBe('unrelated')
   })
 
   it('writes through a symlink to a file inside the root', async () => {

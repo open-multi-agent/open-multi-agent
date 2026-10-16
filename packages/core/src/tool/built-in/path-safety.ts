@@ -1,5 +1,5 @@
-import { mkdir, readlink, realpath } from 'fs/promises'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
+import { mkdir, readlink, realpath, stat } from 'fs/promises'
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'path'
 import type { ToolUseContext } from '../../types.js'
 
 /**
@@ -140,9 +140,45 @@ async function realpathTolerant(path: string, state: { hops: number }): Promise<
     if (++state.hops > MAX_SYMLINK_HOPS) {
       throw new Error(TOO_MANY_SYMLINKS)
     }
-    // A relative target is relative to the directory holding the link.
-    return realpathTolerant(resolve(realParent, target), state)
+    return resolveLinkTarget(realParent, target, state)
   }
+}
+
+const TARGET_SEPARATOR = sep === '\\' ? /[\\/]/ : /\//
+
+/**
+ * Resolve a symlink target the way the kernel does: one component at a time,
+ * starting from the directory holding the link when the target is relative.
+ * `path.resolve` would collapse `a/..` lexically, but when `a` is itself a
+ * symlink the kernel steps out of the directory `a` points to instead.
+ */
+async function resolveLinkTarget(
+  linkDir: string,
+  target: string,
+  state: { hops: number },
+): Promise<string> {
+  const targetRoot = parse(target).root
+  let current = targetRoot === '' ? linkDir : targetRoot
+  for (const part of target.slice(targetRoot.length).split(TARGET_SEPARATOR)) {
+    if (part === '' || part === '.') continue
+    if (part === '..') {
+      // `current` is symlink-free, so its lexical parent is its real parent,
+      // provided it exists. The kernel cannot step out of a missing directory.
+      let isDirectory = false
+      try {
+        isDirectory = (await stat(current)).isDirectory()
+      } catch {
+        // Missing: rejected below.
+      }
+      if (!isDirectory) {
+        throw new Error(`Symlink target "${target}" steps out of "${current}", which is not a directory`)
+      }
+      current = dirname(current)
+      continue
+    }
+    current = await realpathTolerant(join(current, part), state)
+  }
+  return current
 }
 
 function outsideRoot(candidate: string, root: string): SafePathResult {
