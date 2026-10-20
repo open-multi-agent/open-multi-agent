@@ -2,7 +2,7 @@
  * Multi-Agent Team Collaboration with MiniMax
  *
  * Three specialized agents (architect, developer, reviewer) collaborate via `runTeam()`
- * to build a minimal Express.js REST API. Every agent uses MiniMax's flagship model.
+ * to build a minimal Express.js REST API. Every agent uses MiniMax-M3.1-Flash.
  *
  * Run:
  *   npx tsx packages/core/examples/providers/minimax.ts
@@ -26,11 +26,11 @@ import type { AgentConfig, OrchestratorEvent } from '../../src/types.js'
 const OUTPUT_DIR = join(process.cwd(), '.agent-workspace', 'minimax-api')
 
 // ---------------------------------------------------------------------------
-// Agent definitions (all using MiniMax-M3)
+// Agent definitions (all using MiniMax-M3.1-Flash)
 // ---------------------------------------------------------------------------
 const architect: AgentConfig = {
   name: 'architect',
-  model: 'MiniMax-M3',
+  model: 'MiniMax-M3.1-Flash',
   provider: 'minimax',
   systemPrompt: `You are a software architect with deep experience in Node.js and REST API design.
 Your job is to design clear, production-quality API contracts and file/directory structures.
@@ -42,7 +42,7 @@ Output concise plans in markdown — no unnecessary prose.`,
 
 const developer: AgentConfig = {
   name: 'developer',
-  model: 'MiniMax-M3',
+  model: 'MiniMax-M3.1-Flash',
   provider: 'minimax',
   systemPrompt: `You are a TypeScript/Node.js developer. You implement what the architect specifies.
 Write clean, runnable code with proper error handling. Use the tools to write files and run tests.`,
@@ -53,7 +53,7 @@ Write clean, runnable code with proper error handling. Use the tools to write fi
 
 const reviewer: AgentConfig = {
   name: 'reviewer',
-  model: 'MiniMax-M3',
+  model: 'MiniMax-M3.1-Flash',
   provider: 'minimax',
   systemPrompt: `You are a senior code reviewer. Review code for correctness, security, and clarity.
 Provide a structured review with: LGTM items, suggestions, and any blocking issues.
@@ -100,7 +100,7 @@ function handleProgress(event: OrchestratorEvent): void {
 // Orchestrate
 // ---------------------------------------------------------------------------
 const orchestrator = new OpenMultiAgent({
-  defaultModel: 'MiniMax-M3',
+  defaultModel: 'MiniMax-M3.1-Flash',
   defaultProvider: 'minimax',
   maxConcurrency: 1, // sequential for readable output
   onProgress: handleProgress,

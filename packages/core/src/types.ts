@@ -1174,6 +1174,9 @@ export interface AgentConfig {
    *   DeepSeek-specific `max` value is ignored.
    * - DeepSeek: forwards `enabled` as `thinking.type` and `effort` as
    *   `reasoning_effort`; `max` is supported.
+   * - MiniMax-M3.1-Flash: enabled thinking maps to `adaptive`; disabling
+   *   thinking is rejected. Forwards effort, including `max`.
+   *   MiniMax-M3 supports adaptive/disabled thinking and ignores effort.
    * - All other provider-specific fields (Bedrock, local servers, etc.) are
    *   ignored. Use {@link extraBody} for controls not represented here.
    */

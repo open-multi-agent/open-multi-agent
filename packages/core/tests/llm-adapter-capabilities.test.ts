@@ -63,7 +63,7 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     ['deepseek', () => new DeepSeekAdapter('dummy-key'), 'tool-use-only' as const],
     ['grok', () => new GrokAdapter('dummy-key'), 'never' as const],
     ['qiniu', () => new QiniuAdapter('dummy-key'), 'never' as const],
-    ['minimax', () => new MiniMaxAdapter('dummy-key'), 'never' as const],
+    ['minimax', () => new MiniMaxAdapter('dummy-key'), 'tool-use-only' as const],
     ['mimo', () => new MiMoAdapter('dummy-key'), 'tool-use-only' as const],
     ['hunyuan', () => new HunyuanAdapter('dummy-key'), 'tool-use-only' as const],
     ['bedrock', () => new BedrockAdapter('us-east-1'), 'own-issued' as const],
@@ -81,7 +81,6 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     const parent = new OpenAIAdapter('dummy-key').capabilities
     expect(new GrokAdapter('dummy-key').capabilities).toEqual(parent)
     expect(new QiniuAdapter('dummy-key').capabilities).toEqual(parent)
-    expect(new MiniMaxAdapter('dummy-key').capabilities).toEqual(parent)
   })
 
   it('DeepSeek, MiMo and Hunyuan override `capabilities` to `tool-use-only`', () => {
