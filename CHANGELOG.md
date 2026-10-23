@@ -2,16 +2,63 @@
 
 ## Unreleased
 
+## 2.0.0 - 2026-10-23
+
+### Breaking changes
+
+- Team.addTask() now forwards task options into createTask() and validates them;
+  calls that previously succeeded with malformed metadata, including
+  non-homogeneous metadata arrays, or other previously ignored invalid option
+  values can now throw instead of being enqueued.
+- MiniMax-M3.1-Flash with thinking: { enabled: false } now throws before the
+  request; that configuration was previously accepted with thinking ignored. Use
+  MiniMax-M3 when disabled thinking is required, or provide an explicit
+  extraBody.thinking override.
+
+### Added
+
+- MiniMax-M3.1-Flash support, including adaptive thinking, reasoning-effort
+  forwarding, and native reasoning replay on tool-call follow-ups.
+- The MiniMax adapter now reports tool-use-only native reasoning echo support
+  for follow-up requests.
+
+### Changed
+
+- New MiniMax configurations default to MiniMax-M3.1-Flash; saved
+  configurations, explicit MiniMax-M3, legacy IDs, and custom model IDs continue
+  to be forwarded unchanged.
+- For MiniMax-M3, enabled thinking now maps to adaptive and disabled thinking to
+  disabled; reasoning effort remains ignored for M3.
+- The oma provider reference and default-model hint for MiniMax now point to
+  MiniMax-M3.1-Flash, so newly generated provider templates use that default.
+- Team.addTask() options that were previously discarded now take effect, which
+  can change queue ordering, retries, capability gating, memory scope, and
+  consensus verification behavior.
+
 ### Fixed
 
-- `Team.addTask()` now forwards every task option it accepts to the task
-  factory, so retry settings, memory scope, dependency payload, role, priority,
-  metadata, capability requirements, and consensus verification are present on
-  the returned task and in the team's queue instead of only title, description,
-  assignee, and dependencies.
-- Malformed task metadata passed to `Team.addTask()` now fails `createTask()`'s
-  validation before the task enters the queue instead of being silently
-  dropped.
+- Team.addTask() now forwards every accepted task option, including retry
+  settings, memory scope, dependency payload, role, priority, metadata,
+  capability requirements, and consensus verification, instead of dropping them.
+- Malformed task metadata now fails createTask validation before a task enters
+  the queue instead of being silently dropped.
+
+### Compatibility
+
+- MiniMax-M3.1-Flash cannot disable thinking: remove thinking: { enabled: false
+  } before upgrading, use MiniMax-M3, or supply an explicit extraBody.thinking
+  override.
+- Existing explicit MiniMax-M3, legacy, and custom MiniMax model IDs retain
+  pass-through behavior; only newly generated configurations switch to Flash.
+  Generated projects should set model explicitly if they need M3.
+- Audit every Team.addTask() call site: options that previously had no effect
+  now affect retries, priority, capability requirements, memory scope, and
+  consensus verification, and consensus or judge settings can add model calls
+  and cost.
+- Ensure task metadata satisfies TaskMetadata, including homogeneous arrays;
+  malformed metadata that was previously ignored now causes addTask() to throw.
+- No package dependency or engines changes were visible in the reviewed paths,
+  but omitted changed paths should be checked before publication.
 
 ## 1.21.3 - 2026-10-16
 
