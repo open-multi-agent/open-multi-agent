@@ -2,18 +2,25 @@
 
 ## Unreleased
 
-## 2.0.0 - 2026-10-23
+## 1.22.0 - 2026-10-23
 
 ### Breaking changes
 
-- Team.addTask() now forwards task options into createTask() and validates them;
-  calls that previously succeeded with malformed metadata, including
-  non-homogeneous metadata arrays, or other previously ignored invalid option
-  values can now throw instead of being enqueued.
-- MiniMax-M3.1-Flash with thinking: { enabled: false } now throws before the
-  request; that configuration was previously accepted with thinking ignored. Use
-  MiniMax-M3 when disabled thinking is required, or provide an explicit
-  extraBody.thinking override.
+This release ships as a minor version, so a caller on a `^1.x` range receives
+it without an explicit upgrade step. A caller that passes malformed task
+metadata or disables thinking on MiniMax-M3.1-Flash still installs, then fails
+when the code runs. The individual entries are under Changed and Fixed below.
+
+- **`Team.addTask()` now honors every task option it accepts.** Options that
+  were previously discarded — retry settings, memory scope, dependency
+  payload, role, priority, metadata, capability requirements, and consensus
+  verification — now affect queue ordering, retries, capability gating, memory
+  scope, and consensus verification. Malformed metadata that was previously
+  ignored now fails validation before the task is enqueued.
+- **MiniMax-M3.1-Flash cannot disable thinking.** A call with
+  `thinking: { enabled: false }` now throws before the request, where earlier
+  versions forwarded it with thinking ignored. Use MiniMax-M3 when disabled
+  thinking is required, or pass an explicit `extraBody.thinking` override.
 
 ### Added
 
@@ -25,40 +32,39 @@
 ### Changed
 
 - New MiniMax configurations default to MiniMax-M3.1-Flash; saved
-  configurations, explicit MiniMax-M3, legacy IDs, and custom model IDs continue
-  to be forwarded unchanged.
-- For MiniMax-M3, enabled thinking now maps to adaptive and disabled thinking to
-  disabled; reasoning effort remains ignored for M3.
-- The oma provider reference and default-model hint for MiniMax now point to
+  configurations, explicit MiniMax-M3, legacy IDs, and custom model IDs
+  continue to be forwarded unchanged.
+- For MiniMax-M3, enabled thinking now maps to adaptive and disabled thinking
+  to disabled; reasoning effort remains ignored for M3.
+- The `oma` provider reference and default-model hint for MiniMax now name
   MiniMax-M3.1-Flash, so newly generated provider templates use that default.
-- Team.addTask() options that were previously discarded now take effect, which
-  can change queue ordering, retries, capability gating, memory scope, and
-  consensus verification behavior.
+- The core package README, which ships in the core tarball, now summarizes
+  capabilities and quick starts more concisely.
 
 ### Fixed
 
-- Team.addTask() now forwards every accepted task option, including retry
-  settings, memory scope, dependency payload, role, priority, metadata,
-  capability requirements, and consensus verification, instead of dropping them.
-- Malformed task metadata now fails createTask validation before a task enters
-  the queue instead of being silently dropped.
+- `Team.addTask()` now forwards every accepted task option instead of only
+  title, description, assignee, and dependencies.
+- Malformed task metadata now fails `createTask()` validation before a task
+  enters the queue instead of being silently dropped.
 
 ### Compatibility
 
-- MiniMax-M3.1-Flash cannot disable thinking: remove thinking: { enabled: false
-  } before upgrading, use MiniMax-M3, or supply an explicit extraBody.thinking
-  override.
 - Existing explicit MiniMax-M3, legacy, and custom MiniMax model IDs retain
   pass-through behavior; only newly generated configurations switch to Flash.
-  Generated projects should set model explicitly if they need M3.
-- Audit every Team.addTask() call site: options that previously had no effect
+  Generated projects that need M3 should set `model` explicitly.
+- Audit every `Team.addTask()` call site: options that previously had no effect
   now affect retries, priority, capability requirements, memory scope, and
   consensus verification, and consensus or judge settings can add model calls
   and cost.
-- Ensure task metadata satisfies TaskMetadata, including homogeneous arrays;
-  malformed metadata that was previously ignored now causes addTask() to throw.
-- No package dependency or engines changes were visible in the reviewed paths,
-  but omitted changed paths should be checked before publication.
+- Ensure task metadata satisfies `TaskMetadata`, including homogeneous arrays;
+  malformed metadata that was previously ignored now causes `addTask()` to
+  throw.
+- No public export or signature was removed or narrowed, and no `engines` or
+  package-dependency change ships; upgrading needs no code change beyond the
+  two behavior changes above.
+- `@open-multi-agent/otel` is not republished: it did not change, and core
+  1.22.0 stays inside its `^1.11.0` range.
 
 ## 1.21.3 - 2026-10-16
 
