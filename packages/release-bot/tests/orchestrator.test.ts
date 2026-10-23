@@ -11,7 +11,7 @@ import type {
   ThinkingConfig,
 } from '@open-multi-agent/core'
 import type { CommandRunner } from '../src/command.js'
-import { generateReleaseDecision } from '../src/orchestrator.js'
+import { describeRejectedRun, generateReleaseDecision } from '../src/orchestrator.js'
 import type { ReleaseEvidence } from '../src/schema.js'
 
 const evidence: ReleaseEvidence = {
@@ -68,6 +68,11 @@ describe('OMA release orchestration', () => {
     expect(adapter.plannerMessages).toContain('Durable recovery is additive.')
     expect(adapter.reviewerMessages).toContain('Release durable recovery.')
     expect(adapter.reviewerMessages).toContain('\\"createOmaAppBump\\":\\"patch\\"')
+    // The reviewer must be able to tell a policy override from a plan that
+    // contradicts itself: the record travels with the plan and the prompt says
+    // the structured field, not the prose, is the bump class.
+    expect(adapter.reviewerMessages).toContain('policyNormalization')
+    expect(adapter.reviewerSystemPrompt).toContain('Never infer a bump class')
     expect(adapter.reviewerMessages).toContain('currentVersions')
     expect(adapter.toolSets).toHaveLength(4)
     for (const tools of adapter.toolSets.slice(0, 2)) {
@@ -182,6 +187,36 @@ describe('OMA release orchestration', () => {
     expect(run.decision.status).toBe('release')
   })
 
+  it('names the reviewed bump classes and issues when the reviewer rejects', async () => {
+    const adapter = new ReleaseScriptAdapter('reject')
+    const run = await generateReleaseDecision({
+      repoRoot: '/tmp/unused-release-bot-test',
+      runner: neverRunner,
+      evidence,
+      adapter,
+      releaseDate: '2026-08-10',
+      requireEvidenceToolCalls: false,
+    })
+
+    // The scripted planner asks for a minor scaffolder bump; deterministic
+    // policy normalizes it to patch and records why before review.
+    expect(run.proposal.createOmaAppBump).toBe('patch')
+    expect(run.proposal.policyNormalization?.createOmaAppBump).toMatchObject({
+      from: 'minor',
+      to: 'patch',
+    })
+    expect(run.decision.status).toBe('rejected')
+
+    const diagnostics = JSON.parse(describeRejectedRun(run)) as {
+      reviewedBumps: { createOmaApp: string }
+      decisionBumps: { createOmaApp: string }
+      reviewIssues: string[]
+    }
+    expect(diagnostics.reviewedBumps.createOmaApp).toBe('patch')
+    expect(diagnostics.decisionBumps.createOmaApp).toBe('patch')
+    expect(diagnostics.reviewIssues).toEqual(['The plan contradicts its own rationale.'])
+  })
+
   it('aborts the complete DAG at the configured global deadline', async () => {
     await expect(generateReleaseDecision({
       repoRoot: '/tmp/unused-release-bot-test',
@@ -204,7 +239,10 @@ class ReleaseScriptAdapter implements LLMAdapter {
   readonly extraBodyByRole = new Map<string, Record<string, unknown> | undefined>()
   plannerMessages = ''
   reviewerMessages = ''
+  reviewerSystemPrompt = ''
   private sequence = 0
+
+  constructor(private readonly reviewerVerdict: 'approve' | 'reject' = 'approve') {}
 
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const role = identifyRole(options.systemPrompt ?? '')
@@ -215,8 +253,11 @@ class ReleaseScriptAdapter implements LLMAdapter {
     this.extraBodyByRole.set(role, options.extraBody)
     const messageText = JSON.stringify(messages)
     if (role === 'release-planner') this.plannerMessages = messageText
-    if (role === 'release-reviewer') this.reviewerMessages = messageText
-    const output = responseFor(role)
+    if (role === 'release-reviewer') {
+      this.reviewerMessages = messageText
+      this.reviewerSystemPrompt = options.systemPrompt ?? ''
+    }
+    const output = responseFor(role, this.reviewerVerdict)
     this.sequence += 1
     return {
       id: `scripted-${this.sequence}`,
@@ -342,7 +383,7 @@ function identifyRole(systemPrompt: string): string {
   throw new Error(`unknown scripted role: ${systemPrompt.slice(0, 100)}`)
 }
 
-function responseFor(role: string): unknown {
+function responseFor(role: string, reviewerVerdict: 'approve' | 'reject' = 'approve'): unknown {
   switch (role) {
     case 'change-analyst':
       return {
@@ -374,11 +415,17 @@ function responseFor(role: string): unknown {
         rationale: ['Both independent reports support an additive release.'],
       }
     case 'release-reviewer':
-      return {
-        verdict: 'approve',
-        issues: [],
-        rationale: ['Release durable recovery matches the dependency evidence.'],
-      }
+      return reviewerVerdict === 'reject'
+        ? {
+            verdict: 'reject',
+            issues: ['The plan contradicts its own rationale.'],
+            rationale: ['A material inconsistency has to be corrected before materialization.'],
+          }
+        : {
+            verdict: 'approve',
+            issues: [],
+            rationale: ['Release durable recovery matches the dependency evidence.'],
+          }
     default:
       throw new Error(`unsupported role ${role}`)
   }

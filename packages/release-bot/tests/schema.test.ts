@@ -65,6 +65,54 @@ describe('release decision', () => {
     expect(normalizeReleaseProposal(evidence, majorProposal).createOmaAppBump).toBe('minor')
   })
 
+  it('records the scaffolder override and its reason for the reviewer', () => {
+    const normalized = normalizeReleaseProposal(evidence, proposal)
+    expect(normalized.createOmaAppBump).toBe('patch')
+    expect(normalized.policyNormalization).toEqual({
+      createOmaAppBump: {
+        from: 'minor',
+        to: 'patch',
+        reason: expect.stringContaining('did not change'),
+      },
+    })
+  })
+
+  it('records a breaking-core override as a create-oma-app minor', () => {
+    const normalized = normalizeReleaseProposal(evidence, {
+      ...proposal,
+      coreBump: 'major' as const,
+      createOmaAppBump: 'patch' as const,
+      changelog: {
+        ...proposal.changelog,
+        breakingChanges: ['Existing callers must migrate to the new input shape.'],
+      },
+    })
+    expect(normalized.createOmaAppBump).toBe('minor')
+    expect(normalized.policyNormalization?.createOmaAppBump).toMatchObject({
+      from: 'patch',
+      to: 'minor',
+    })
+    expect(normalized.policyNormalization?.createOmaAppBump?.reason).toMatch(/breaking/)
+  })
+
+  it('records no override when the planner selected the normalized class', () => {
+    const normalized = normalizeReleaseProposal(evidence, {
+      ...proposal,
+      createOmaAppBump: 'patch' as const,
+    })
+    expect(normalized.createOmaAppBump).toBe('patch')
+    expect(normalized.policyNormalization).toBeUndefined()
+  })
+
+  it('keeps the planner scaffolder class authoritative when its workspace changed', () => {
+    const normalized = normalizeReleaseProposal({
+      ...evidence,
+      workspaceChanges: { ...evidence.workspaceChanges, createOmaApp: true },
+    }, proposal)
+    expect(normalized.createOmaAppBump).toBe('minor')
+    expect(normalized.policyNormalization).toBeUndefined()
+  })
+
   it('calculates concrete versions only after independent approval', () => {
     const decision = buildReleaseDecision(evidence, proposal, review, '2026-08-10')
     expect(decision.status).toBe('release')

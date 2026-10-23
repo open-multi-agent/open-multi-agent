@@ -13,6 +13,7 @@ import {
   compatibilityAnalysisSchema,
   normalizeReleaseProposal,
   releaseProposalSchema,
+  releaseProposalWithPolicySchema,
   releaseReviewSchema,
   type ChangeAnalysis,
   type CompatibilityAnalysis,
@@ -65,6 +66,36 @@ export interface ReleaseBotRun {
     readonly input_tokens: number
     readonly output_tokens: number
   }
+}
+
+/**
+ * Render the deterministic facts a rejection is judged against.
+ *
+ * The workflow log otherwise carries only the reviewer's issues, not the plan
+ * it read, so a rejection that disputes a bump class cannot be audited after
+ * the fact. `reviewedBumps` is the post-normalization proposal handed to the
+ * reviewer; `decisionBumps` is the proposal the decision would have
+ * materialized. They can differ only when normalization regressed.
+ */
+export function describeRejectedRun(run: ReleaseBotRun): string {
+  const reviewedBumps = {
+    core: run.proposal.coreBump,
+    createOmaApp: run.proposal.createOmaAppBump,
+    otel: run.proposal.otelBump,
+  }
+  const decisionBumps = run.decision.status === 'rejected'
+    ? {
+        core: run.decision.proposal.coreBump,
+        createOmaApp: run.decision.proposal.createOmaAppBump,
+        otel: run.decision.proposal.otelBump,
+      }
+    : null
+  return JSON.stringify({
+    reviewedBumps,
+    policyNormalization: run.proposal.policyNormalization ?? null,
+    decisionBumps,
+    reviewIssues: run.review.issues,
+  })
 }
 
 export async function generateReleaseDecision(
@@ -176,6 +207,7 @@ Reject promotional language and claims not supported by merged code.`,
       systemPrompt: `${COMMON_GUARDRAILS}
 You are the final release reviewer. Review the immutable evidence summary, both independent structured reports, and the proposed plan. You do not need repository tools.
 The evidence summary's currentVersions are the versions currently published at HEAD, not targets. Target versions are computed deterministically from the bump classes, so the plan reports only bump classes (none/patch/minor/major), not concrete target versions. Do not reject for a missing or contradictory target version, and never treat currentVersions as the target.
+The plan's structured bump fields are authoritative release state: deterministic code owns them and has already applied repository policy before this review. A policyNormalization entry, when present, records a class that code overrode in the planner's answer and states why. Never infer a bump class from the planner's summary, rationale, or changelog, and never reject because prose names a different class than a structured field: the prose is commentary, the field is the value.
 Evidence coverage is intentionally bounded: the review bundle covers a risk-ranked subset and omits some diffs by design. An omitted diff is not itself a rejection reason; a human maintainer sees the full diff in the resulting release PR. Reject only for a material inconsistency between the reports and the plan, such as the plan contradicting a confirmed finding, failing to disclose a breaking change an auditor confirmed, or proposing a package or version selection the evidence rules out.
 Approve only when a human maintainer could safely review the resulting release PR. Approval authorizes plan materialization only, never publication.`,
     },
@@ -290,7 +322,7 @@ Approve only when a human maintainer could safely review the resulting release P
 
   const analysis = structuredResult<ChangeAnalysis>(result, 'change-analyst', changeAnalysisSchema)
   const compatibility = structuredResult<CompatibilityAnalysis>(result, 'compatibility-auditor', compatibilityAnalysisSchema)
-  const proposal = structuredResult<ReleaseProposal>(result, 'release-planner', releaseProposalSchema)
+  const proposal = structuredResult<ReleaseProposal>(result, 'release-planner', releaseProposalWithPolicySchema)
   const review = structuredResult<ReleaseReview>(result, 'release-reviewer', releaseReviewSchema)
 
   return {

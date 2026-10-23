@@ -5,7 +5,7 @@ import type { OrchestratorEvent } from '@open-multi-agent/core'
 import { NodeCommandRunner } from './command.js'
 import { collectReleaseEvidence } from './evidence.js'
 import { GitHubApiClient } from './github.js'
-import { generateReleaseDecision } from './orchestrator.js'
+import { describeRejectedRun, generateReleaseDecision } from './orchestrator.js'
 import { prepareReleasePr } from './prepare.js'
 import { publishRelease } from './publisher.js'
 import { NpmRegistryClient } from './registry.js'
@@ -93,6 +93,10 @@ async function preparePr(): Promise<void> {
   await writeSummary(`## OMA release bot: ${result.status}\n\n${escapeMarkdown(result.reason)}\n`)
   console.log(`${result.status}: ${result.reason}`)
   if (result.status === 'rejected') {
+    // The failing step's log carries the reviewer's issues but not the plan
+    // they were judged against, which made the 2026-10-23 rejection
+    // unactionable. Keep the post-normalization classes next to the issues.
+    console.error(`[OMA] rejection diagnostics: ${describeRejectedRun(result.run)}`)
     throw new Error(`Release plan rejected: ${result.reason}`)
   }
 }

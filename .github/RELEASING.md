@@ -43,6 +43,12 @@ patch. The planner's scaffolder bump class is authoritative only when that
 workspace has merged changes of its own; normalization occurs before
 independent review.
 
+When normalization overrides the planner's class, the proposal records the
+override in `policyNormalization` with its reason. That record is written by
+code, never by a model, and the reviewer treats the plan's structured bump
+fields as the authoritative classes rather than reading one out of the
+planner's prose.
+
 The weekly workflow creates a **ready** release PR automatically. A maintainer
 reviews and merges it manually. Merge is the release approval, but it is not a
 model tool approval: publication happens in a separate deterministic workflow
@@ -50,7 +56,10 @@ only after `CI` succeeds on the exact merged release commit.
 
 Repository content is treated as untrusted evidence. Agents never receive
 `bash`, write tools, GitHub credentials, npm credentials, or publish tools. A
-rejected or invalid structured plan fails closed without creating a branch.
+rejected or invalid structured plan fails closed without creating a branch. An
+independent rejection names the reviewed bump classes and the reviewer's issues
+on an `[OMA] rejection diagnostics:` log line, so a rejection can be audited
+without reproducing the model run.
 
 ### One-time activation
 

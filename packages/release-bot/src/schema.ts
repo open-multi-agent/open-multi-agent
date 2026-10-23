@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z, type RefinementCtx } from 'zod'
 import { bumpVersion, type VersionBump } from './semver.js'
 
 const singleLine = z.string().trim().min(3).max(800).refine(
@@ -7,6 +7,26 @@ const singleLine = z.string().trim().min(3).max(800).refine(
 )
 
 const bumpSchema = z.enum(['none', 'patch', 'minor', 'major'])
+
+const policyBumpOverrideSchema = z.object({
+  from: bumpSchema,
+  to: bumpSchema,
+  reason: singleLine,
+})
+
+/**
+ * Deterministic bump-class overrides applied after the planner answered.
+ *
+ * Written by code only: model output never carries this field. It lets the
+ * independent reviewer tell a repository-policy correction apart from a plan
+ * that contradicts itself, and lets the workflow log name the class that was
+ * actually reviewed.
+ */
+export const policyNormalizationSchema = z.object({
+  createOmaAppBump: policyBumpOverrideSchema.optional(),
+})
+
+export type PolicyNormalization = z.infer<typeof policyNormalizationSchema>
 
 export const packageVersionsSchema = z.object({
   core: z.string(),
@@ -95,7 +115,7 @@ export type CompatibilityAnalysis = z.infer<typeof compatibilityAnalysisSchema>
 // twice it did not: the 2026-09-11 planner run emitted `risks` and `rationale`
 // inside `changelog` and then ran out of matching brackets. Last, there is no
 // following root field to confuse it with and the tail is a plain `]}}`.
-export const releaseProposalSchema = z.object({
+const releaseProposalBaseSchema = z.object({
   decision: z.enum(['release', 'none']),
   coreBump: bumpSchema,
   createOmaAppBump: bumpSchema,
@@ -104,7 +124,12 @@ export const releaseProposalSchema = z.object({
   risks: z.array(singleLine).max(12),
   rationale: z.array(singleLine).min(1).max(12),
   changelog: changelogSectionsSchema,
-}).superRefine((proposal, context) => {
+})
+
+function refineReleaseProposal(
+  proposal: z.infer<typeof releaseProposalBaseSchema>,
+  context: RefinementCtx,
+): void {
   if (proposal.decision === 'none') {
     for (const [name, bump] of [
       ['coreBump', proposal.coreBump],
@@ -153,9 +178,25 @@ export const releaseProposalSchema = z.object({
       })
     }
   }
-})
+}
 
-export type ReleaseProposal = z.infer<typeof releaseProposalSchema>
+/** Model-facing schema. Property order is load-bearing; see the comment above. */
+export const releaseProposalSchema = releaseProposalBaseSchema.superRefine(refineReleaseProposal)
+
+/**
+ * Internal proposal shape: the model-facing schema plus the deterministic
+ * policy record.
+ *
+ * Only code parses with this one. The planner's `outputSchema` stays
+ * `releaseProposalSchema`, so `policyNormalization` can never become model
+ * output; `normalizeReleaseProposal` attaches it after the planner answers and
+ * before the independent reviewer reads the plan.
+ */
+export const releaseProposalWithPolicySchema = releaseProposalBaseSchema
+  .extend({ policyNormalization: policyNormalizationSchema.optional() })
+  .superRefine(refineReleaseProposal)
+
+export type ReleaseProposal = z.infer<typeof releaseProposalWithPolicySchema>
 
 export const releaseReviewSchema = z.object({
   verdict: z.enum(['approve', 'reject']),
@@ -203,16 +244,45 @@ function createOmaAppBumpForCoreOnly(coreBump: VersionBump): Exclude<VersionBump
   return coreBump === 'major' ? 'minor' : 'patch'
 }
 
-/** Apply repository-owned bump policy before a proposal reaches review. */
+/** Why deterministic policy overrode the planner's scaffolder class. */
+function createOmaAppOverrideReason(coreBump: VersionBump): string {
+  return coreBump === 'major'
+    ? 'Deterministic policy maps a breaking (major) core release to a create-oma-app minor bump because its 0.x minor position carries the breaking signal.'
+    : 'Deterministic policy maps a non-breaking core release to a create-oma-app patch bump: packages/create-oma-app did not change, so only its core template pins move.'
+}
+
+/**
+ * Apply repository-owned bump policy before a proposal reaches review.
+ *
+ * When the override actually changes the planner's answer, the proposal carries
+ * a `policyNormalization` record. Without it the reviewer sees a structured
+ * class that differs from prose the planner wrote about the same change, and
+ * has rejected the plan as self-contradictory (2026-10-23).
+ */
 export function normalizeReleaseProposal(
   evidence: ReleaseEvidence,
   proposalInput: unknown,
 ): ReleaseProposal {
-  const proposal = releaseProposalSchema.parse(proposalInput)
+  const proposal = releaseProposalWithPolicySchema.parse(proposalInput)
   if (proposal.decision !== 'release' || evidence.workspaceChanges.createOmaApp) {
     return proposal
   }
-  return { ...proposal, createOmaAppBump: createOmaAppBumpForCoreOnly(proposal.coreBump) }
+  const createOmaAppBump = createOmaAppBumpForCoreOnly(proposal.coreBump)
+  if (proposal.createOmaAppBump === createOmaAppBump) {
+    return proposal
+  }
+  return {
+    ...proposal,
+    createOmaAppBump,
+    policyNormalization: {
+      ...proposal.policyNormalization,
+      createOmaAppBump: {
+        from: proposal.createOmaAppBump,
+        to: createOmaAppBump,
+        reason: createOmaAppOverrideReason(proposal.coreBump),
+      },
+    },
+  }
 }
 
 export function buildReleaseDecision(
