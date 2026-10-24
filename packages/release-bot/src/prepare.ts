@@ -3,6 +3,7 @@ import { applyReleasePlan, buildReleasePrBody, buildReleasePrTitle, RELEASE_PLAN
 import type { CommandRunner } from './command.js'
 import { collectReleaseEvidence } from './evidence.js'
 import type { GitHubClient } from './github.js'
+import { assertRepositoryWorkspacesLinked } from './lockfile.js'
 import { generateReleaseDecision, type ReleaseBotRun } from './orchestrator.js'
 import type { ReleaseEvidence } from './schema.js'
 
@@ -111,6 +112,10 @@ export async function prepareReleasePr(
     ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
     { cwd: options.repoRoot },
   )
+  // npm answers a workspace version outside a dependent's range by nesting a
+  // published copy, not by failing, and validation then passes against that
+  // copy. Stop here, before anything is committed or pushed.
+  await assertRepositoryWorkspacesLinked(options.repoRoot)
 
   await assertExpectedChanges(options, changedByPlan)
   await options.runner.run('git', ['diff', '--check'], { cwd: options.repoRoot })

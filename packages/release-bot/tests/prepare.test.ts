@@ -55,6 +55,38 @@ describe('release PR preparation', () => {
     expect(changed).not.toContain('packages/otel/package.json')
   })
 
+  it('stops before committing when the regenerated lockfile nests a published workspace copy', async () => {
+    const { root, remote } = await createRepository()
+    const runner = new FakeValidationRunner(root, lockfile('1.15.0', {
+      'packages/otel/node_modules/@open-multi-agent/core': {
+        version: '1.21.3',
+        resolved: 'https://registry.npmjs.org/@open-multi-agent/core/-/core-1.21.3.tgz',
+      },
+    }))
+    const github = new FakeGitHubClient()
+
+    await expect(prepareReleasePr({
+      repoRoot: root,
+      repository: 'open-multi-agent/open-multi-agent',
+      runner,
+      github,
+      generate: async evidence => scriptedRun(evidence),
+    })).rejects.toThrow(
+      'packages/otel/node_modules/@open-multi-agent/core@1.21.3 from '
+      + 'https://registry.npmjs.org/@open-multi-agent/core/-/core-1.21.3.tgz (workspace packages/core is 1.15.0)',
+    )
+
+    expect(runner.npmCommands).toEqual(['install --package-lock-only --ignore-scripts --no-audit --no-fund'])
+    expect(github.createdPull).toBeUndefined()
+    const branches = (await runner.delegate.run(
+      'git',
+      ['--git-dir', remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/release-bot/'],
+    )).stdout
+    expect(branches).toBe('')
+    const head = (await runner.delegate.run('git', ['log', '-1', '--format=%s'], { cwd: root })).stdout.trim()
+    expect(head).toBe('feat(core): add resumable execution')
+  })
+
   it('does not call the model while another release PR is open', async () => {
     const { root } = await createRepository()
     const runner = new FakeValidationRunner(root)
@@ -102,15 +134,32 @@ class FakeValidationRunner implements CommandRunner {
   readonly delegate = new NodeCommandRunner()
   readonly npmCommands: string[] = []
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly regeneratedLockfile: unknown = lockfile('1.15.0'),
+  ) {}
 
   async run(command: string, args: readonly string[] = [], options?: RunCommandOptions): Promise<CommandResult> {
     if (command !== 'npm') return await this.delegate.run(command, args, options)
     this.npmCommands.push(args.join(' '))
     if (args[0] === 'install') {
-      await writeFile(join(this.root, 'package-lock.json'), '{"lockfileVersion":3,"release":true}\n')
+      await writeJson(this.root, 'package-lock.json', this.regeneratedLockfile)
     }
     return { stdout: '', stderr: '', exitCode: 0 }
+  }
+}
+
+function lockfile(coreVersion: string, extra: Record<string, unknown> = {}): unknown {
+  return {
+    lockfileVersion: 3,
+    packages: {
+      '': { workspaces: ['packages/*'] },
+      'node_modules/@open-multi-agent/core': { resolved: 'packages/core', link: true },
+      'node_modules/@open-multi-agent/otel': { resolved: 'packages/otel', link: true },
+      'packages/core': { name: '@open-multi-agent/core', version: coreVersion },
+      'packages/otel': { name: '@open-multi-agent/otel', version: '0.1.1', dependencies: { '@open-multi-agent/core': '^1.11.0' } },
+      ...extra,
+    },
   }
 }
 
@@ -220,7 +269,7 @@ async function createRepository(): Promise<{ root: string; remote: string }> {
   ]) {
     await writeJson(root, path, { dependencies: { '@open-multi-agent/core': '1.14.0' } })
   }
-  await writeFile(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n')
+  await writeJson(root, 'package-lock.json', lockfile('1.14.0'))
   await writeText(root, 'CHANGELOG.md', '# Changelog\n\n## Unreleased\n\n## 1.14.0 - 2026-08-01\n\n- Previous.\n')
   await runner.run('git', ['add', '.'], { cwd: root })
   await runner.run('git', ['commit', '-m', 'chore: baseline'], { cwd: root })

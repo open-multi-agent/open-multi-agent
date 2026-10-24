@@ -14,8 +14,8 @@ The bot deliberately separates judgment from authority:
    entries.
 3. An independent reviewer approves or rejects that proposal.
 4. Deterministic TypeScript calculates versions, updates the known manifests
-   and template pins, regenerates the lockfile, runs validation, and creates a
-   ready pull request.
+   and template pins, regenerates the lockfile, checks that it still links
+   every workspace package, runs validation, and creates a ready pull request.
 5. A maintainer reviews and merges the PR. Only then can the deterministic
    publish workflow run after `CI` succeeds on the exact merged release commit.
 

@@ -192,7 +192,17 @@ the full set of template traps.
    plans the release,
    updates the known manifests, pins, changelog, and lockfile, runs root lint,
    test, and build validation, pushes a `release-bot/core-vX.Y.Z` branch, and
-   opens a ready PR.
+   opens a ready PR. It stops before committing when the regenerated lockfile
+   installs a published copy of a workspace package instead of linking it.
+   That happens when the new core version leaves a dependent workspace's range,
+   such as a core major against otel's `^1.x`: npm nests the newest matching
+   published core under that workspace rather than failing. Widen the range in
+   a source change first.
+
+   When you change versions on a release branch by hand, regenerate the
+   lockfile from `main`'s copy, not the branch's. npm keeps a nested copy for
+   as long as it still satisfies the range, so moving the version back inside
+   it does not restore the link. Release PR #638 reached `main` that way.
 2. **Review and merge the release commit into `main`.** Branch protection and
    the normal PR CI remain authoritative. Never merge a release proposal merely
    because its model reviewer approved it.
@@ -272,6 +282,9 @@ commit and its own manifests, so no model output reaches them.
 - **`scaffold-e2e`** runs `npm run test:scaffold`: pack, scaffold, install, and
   run, all from local tarballs.
 - **`lint`**, **`test`** across Node 20/22/24, and **`coverage`** cover the rest.
+  `test` includes a release-bot check that the committed `package-lock.json`
+  links every workspace package rather than installing a published copy, so a
+  hand-edited release branch is held to the same rule as the bot.
 
 Running `npm pack --dry-run` inside a package locally mirrors the tarball
 assertion CI performs.
