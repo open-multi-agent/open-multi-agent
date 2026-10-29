@@ -30,6 +30,8 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@green3sf](https://github.com/green3sf) (structured output refresh after an accepted verify revision)
 - [@Zhongghaoming](https://github.com/Zhongghaoming) (evaluation gate minimum-samples guard)
 - [@March-7](https://github.com/March-7) (Team.addTask task-option forwarding)
+- [@shaojian0514](https://github.com/shaojian0514) (non-Error tool throw handling)
+- [@OsamaAnsar](https://github.com/OsamaAnsar) (nullable enum JSON Schema fix, text-tool-extractor unbalanced-quote fix)
 
 ## Provider integrations
 
@@ -43,6 +45,7 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@kidoom](https://github.com/kidoom) (MiMo, Doubao)
 - [@KaitlynFeng](https://github.com/KaitlynFeng) (Hunyuan)
 - [@octo-patch](https://github.com/octo-patch) (MiniMax-M3 model upgrade)
+- [@pcbeingused333](https://github.com/pcbeingused333) (OpenAI streaming fix for unindexed parallel tool calls)
 
 ## Examples & cookbook
 

@@ -2,13 +2,34 @@
 
 ## Unreleased
 
+## 1.23.0 - 2026-10-30
+
+### Breaking changes
+
+This release ships as a minor version, so a caller on a `^1.x` range receives
+it without an explicit upgrade step. A project that pins zod below 3.25, code
+that uses object-only members of `taskProfileSchema` or `gatePolicySchema`, and
+a coordinator plan over the new size caps can stop working after the upgrade.
+The individual entries are under Changed below.
+
+- **`zod` is now a required peer dependency, `^3.25.0 || ^4.6.6`.** A project
+  that depends on zod 3.23 or 3.24 has to upgrade zod first; until it does,
+  npm stops with a peer dependency conflict. With a package manager that does
+  not install peers automatically, add `zod` to your own dependencies.
+- **`taskProfileSchema` and `gatePolicySchema` are typed as `ZodSchema<T>`.**
+  Object-only members such as `.extend()` and `.shape` no longer type-check on
+  them. Define your own schema where you extended them.
+- **Coordinator plans are capped.** A plan with more than 200 tasks, a task with
+  more than 200 `dependsOn` entries, or more than 64 `requires.requiredTools`
+  or `requires.requiredCapabilities` entries now fails validation.
+
 ### Added
 
-- Zod 4 support. Tool `inputSchema` and `outputSchema`, `AgentConfig.outputSchema`,
-  judge `verdictSchema`, and `SharedMemory.write()` schemas accept Zod 4 classic
-  schemas alongside Zod 3, and `zodToJsonSchema()` converts both with the same
-  rules. A Zod 4 schema previously converted to `{}`, so the model saw a tool
-  with no parameters.
+- Zod 4 support. Tool `inputSchema` and `outputSchema`,
+  `AgentConfig.outputSchema`, judge `verdictSchema`, and `SharedMemory.write()`
+  schemas accept Zod 4 classic schemas alongside Zod 3, and `zodToJsonSchema()`
+  converts both with the same rules. A Zod 4 schema previously converted to
+  `{}`, so the model saw a tool with no parameters.
 
 ### Changed
 
@@ -30,12 +51,47 @@
 - Coordinator plans are capped at 200 tasks, `dependsOn` at 200 entries, and
   `requires.requiredTools` and `requires.requiredCapabilities` at 64 entries
   each. A plan over a cap fails validation like any other invalid plan.
+- Projects generated from the `create-oma-app` `pr-review` and `security`
+  templates now depend on `zod` `^4.6.6` instead of `^3.23.0`.
+
+### Fixed
+
+- A tool or `onToolCall` gate that throws a value `JSON.stringify()` cannot
+  serialize, such as a circular object or a bigint, now produces an error
+  `ToolResult` like any other tool failure. `ToolExecutor.execute()` used to
+  reject in that case, which failed the whole `executeBatch()`, and inside an
+  agent the model saw the serializer's error instead of the thrown value.
+- Streaming through the OpenAI adapter, including custom `baseURL` endpoints,
+  now keeps parallel tool calls apart when the server omits the tool-call
+  `index`, as Gemini's OpenAI-compatible endpoint does. Those calls used to
+  collapse into one call with the last id and name and concatenated arguments,
+  so the agent ran one tool call with invalid input instead of several.
+- `zodToJsonSchema()` now converts a nullable string enum such as
+  `z.enum(['a', 'b']).nullable()` to `anyOf` with a `null` branch, for both
+  Zod 3 and Zod 4 schemas. It used to add `null` to `type` while the `enum`
+  list left it out, so a tool or structured-output schema rejected the `null`
+  that the Zod schema accepts.
+- `zodToJsonSchema()` no longer lists the reverse-mapping keys of a numeric
+  TypeScript enum. For `enum N { A = 1, B = 2 }`, Zod 3's `z.nativeEnum(N)` and
+  Zod 4's `z.enum(N)` now convert to `{ enum: [1, 2] }` instead of
+  `{ enum: ['A', 'B', 1, 2] }`, so the model is no longer offered values that
+  validation then rejects.
+- Text tool-call extraction for local models no longer drops every call that
+  follows an unmatched double quote in the prose, such as the inch mark in
+  `12"`. Quotes now delimit strings only inside a JSON object, so a lone `{`
+  inside quoted prose, such as `"{"`, now hides the calls after it the same
+  way an unquoted lone `{` already did.
 
 ### Security
 
 - Applications can now upgrade to zod 4.6.6 or later, the first release that
   fixes GHSA-mrhx-c7xc-m3w5 (memory exhaustion from oversized arrays). Core
   previously required Zod 3, which has no fixed release.
+
+### Compatibility
+
+- `@open-multi-agent/otel` is not republished: it did not change, and core
+  1.23.0 stays inside its `^1.11.0` range.
 
 ## 1.22.0 - 2026-10-23
 
