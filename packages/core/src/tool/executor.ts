@@ -447,11 +447,19 @@ export class ToolExecutor {
   }
 
   private errorMessage(err: unknown): string {
-    return err instanceof Error
-      ? err.message
-      : typeof err === 'string'
-        ? err
-        : JSON.stringify(err)
+    if (err instanceof Error) return err.message
+    if (typeof err === 'string') return err
+    try {
+      const serialized = JSON.stringify(err)
+      if (serialized !== undefined) return serialized
+    } catch {
+      // A tool may throw a circular object or a value with a failing toJSON.
+    }
+    try {
+      return String(err)
+    } catch {
+      return 'Unknown error'
+    }
   }
 
   private approvalContent(

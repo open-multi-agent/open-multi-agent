@@ -223,6 +223,92 @@ describe('ToolExecutor', () => {
     expect(result.data).toContain('intentional failure')
   })
 
+  it.each([
+    {
+      name: 'a circular object',
+      value: () => {
+        const value: Record<string, unknown> = {}
+        value['self'] = value
+        return value
+      },
+      message: '[object Object]',
+    },
+    { name: 'a bigint', value: () => 42n, message: '42' },
+    { name: 'undefined', value: () => undefined, message: 'undefined' },
+    { name: 'a symbol', value: () => Symbol('failure'), message: 'Symbol(failure)' },
+    {
+      name: 'an object with a throwing toJSON',
+      value: () => ({
+        toJSON() { throw new Error('serialization failed') },
+        toString() { return 'original failure' },
+      }),
+      message: 'original failure',
+    },
+    {
+      name: 'an object that cannot be serialized or coerced',
+      value: () => ({
+        toJSON() { throw new Error('serialization failed') },
+        [Symbol.toPrimitive]() { throw new Error('coercion failed') },
+      }),
+      message: 'Unknown error',
+    },
+    { name: 'a JSON object', value: () => ({ reason: 'failure' }), message: '{"reason":"failure"}' },
+    { name: 'a string', value: () => 'failure', message: 'failure' },
+    { name: 'null', value: () => null, message: 'null' },
+  ])('returns an error result when a tool throws $name', async ({ value, message }) => {
+    const { executor } = makeExecutor(defineTool({
+      name: 'throws',
+      description: 'Throws a non-Error value.',
+      inputSchema: z.object({}),
+      execute: async () => { throw value() },
+    }))
+
+    await expect(executor.execute('throws', {}, dummyContext)).resolves.toMatchObject({
+      isError: true,
+      data: `Tool "throws" threw an error: ${message}`,
+    })
+  })
+
+  it('keeps a non-serializable tool failure isolated within a batch', async () => {
+    const failure: Record<string, unknown> = {}
+    failure['self'] = failure
+    const { executor } = makeExecutor(echoTool(), defineTool({
+      name: 'circular',
+      description: 'Throws a circular object.',
+      inputSchema: z.object({}),
+      execute: async () => { throw failure },
+    }))
+
+    const results = await executor.executeBatch([
+      { id: 'failed', name: 'circular', input: {} },
+      { id: 'ok', name: 'echo', input: { message: 'still running' } },
+    ], dummyContext)
+
+    expect(results.size).toBe(2)
+    expect(results.get('failed')).toMatchObject({ isError: true })
+    expect(results.get('ok')).toMatchObject({ data: 'still running', isError: false })
+  })
+
+  it('fails closed when the tool gate throws a non-serializable value', async () => {
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN' }))
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'gated',
+      description: 'Must not run after a gate failure.',
+      inputSchema: z.object({}),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, {
+      onToolCall: async () => { throw 42n },
+    })
+
+    await expect(executor.execute('gated', {}, dummyContext)).resolves.toMatchObject({
+      isError: true,
+      data: 'Tool "gated" onToolCall hook threw an error: 42',
+    })
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('returns an error result when aborted before execution', async () => {
     const { executor } = makeExecutor(echoTool())
     const controller = new AbortController()
