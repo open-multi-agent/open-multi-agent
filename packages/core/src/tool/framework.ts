@@ -334,11 +334,15 @@ function convertZodType(schema: ZodSchema): Record<string, unknown> {
       return withDesc({ type: 'string', enum: enumDef.values })
     }
 
+    // A numeric TypeScript enum also maps each value back to its key. Zod 3
+    // skips those reverse-mapping keys (`getValidEnumValues`), so they are not
+    // listed either.
     case ZodTypeName.ZodNativeEnum: {
-      const nativeEnumDef = def as ZodNativeEnumDef
-      const values = Object.values(nativeEnumDef.values as object).filter(
-        (v) => typeof v === 'string' || typeof v === 'number',
-      )
+      const entries = (def as ZodNativeEnumDef).values as Record<string, unknown>
+      const values = Object.keys(entries)
+        .filter((k) => typeof entries[String(entries[k])] !== 'number')
+        .map((k) => entries[k])
+        .filter((v) => typeof v === 'string' || typeof v === 'number')
       return withDesc({ enum: values })
     }
 
@@ -686,10 +690,15 @@ function convertZod4Type(schema: Zod4Schema): Record<string, unknown> {
     }
 
     // `z.enum()` covers both string tuples and native enum objects in Zod 4.
+    // Like Zod (`getEnumValues`), drop the keys a numeric TypeScript enum maps
+    // back from its values.
     case 'enum': {
-      const values = Object.values(def.entries!).filter(
-        (v) => typeof v === 'string' || typeof v === 'number',
-      )
+      const entries = def.entries!
+      const numericValues = Object.values(entries).filter((v) => typeof v === 'number')
+      const values = Object.entries(entries)
+        .filter(([k]) => numericValues.indexOf(+k) === -1)
+        .map(([, v]) => v)
+        .filter((v) => typeof v === 'string' || typeof v === 'number')
       return withDesc(
         values.every((v) => typeof v === 'string')
           ? { type: 'string', enum: values }

@@ -65,6 +65,19 @@ const parityCases: Array<[string, (zz: AnyZ) => ZodSchema]> = [
   ['wildcards', (zz) => zz.array(zz.union([zz.never(), zz.void()]))],
 ]
 
+enum NumericEnum { Low = 1, High = 2 }
+enum StringEnum { Low = 'low', High = 'high' }
+enum MixedEnum { Low = 'low', High = 2 }
+
+// A numeric member also compiles to a reverse mapping (`NumericEnum[1] === 'Low'`)
+// that Zod rejects. Each case: the enum, then its Zod 3 `nativeEnum()` and Zod 4
+// `enum()` conversions.
+const nativeEnumCases = [
+  ['numeric', NumericEnum, { enum: [1, 2] }, { enum: [1, 2] }],
+  ['string', StringEnum, { enum: ['low', 'high'] }, { type: 'string', enum: ['low', 'high'] }],
+  ['mixed', MixedEnum, { enum: ['low', 2] }, { enum: ['low', 2] }],
+] as const
+
 describe('zodToJsonSchema across Zod majors', () => {
   it.each(parityCases)('converts %s identically', (_name, build) => {
     expect(zodToJsonSchema(build(z))).toEqual(zodToJsonSchema(build(z3)))
@@ -119,6 +132,18 @@ describe('zodToJsonSchema across Zod majors', () => {
       mode: { anyOf: [{ type: 'string', enum: ['r', 'w'] }, { type: 'null' }] },
       note: { type: ['string', 'null'] },
     })
+  })
+
+  it.each(nativeEnumCases)('lists only the values Zod accepts for a %s TypeScript enum', (_name, nativeEnum, zod3Json, zod4Json) => {
+    const conversions: Array<[ZodSchema, object]> = [[z3.nativeEnum(nativeEnum), zod3Json]]
+    if (rootIsZod4) conversions.push([z.enum(nativeEnum), zod4Json])
+    const candidates = [...new Set([...Object.keys(nativeEnum), ...Object.values(nativeEnum)])]
+    for (const [schema, expected] of conversions) {
+      const json = zodToJsonSchema(schema)
+      expect(json).toEqual(expected)
+      expect(new Set(json.enum as unknown[]))
+        .toEqual(new Set(candidates.filter((v) => schema.safeParse(v).success)))
+    }
   })
 
   it.skipIf(!rootIsZod4)('converts Zod 4 multi-value literals and enum objects', () => {
