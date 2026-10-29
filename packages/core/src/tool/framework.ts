@@ -403,7 +403,9 @@ function convertZodType(schema: ZodSchema): Record<string, unknown> {
       const nullableDef = def as ZodNullableDef
       const inner = convertZodType(nullableDef.innerType)
       const type = inner.type
-      if (typeof type === 'string') {
+      // An `enum` keeps its values under `type: [..., 'null']`, so null would
+      // still be rejected; wrap it instead.
+      if (typeof type === 'string' && inner.enum === undefined) {
         return withDesc({ ...inner, type: [type, 'null'] })
       }
       return withDesc({ anyOf: [inner, { type: 'null' }] })
@@ -728,7 +730,9 @@ function convertZod4Type(schema: Zod4Schema): Record<string, unknown> {
     case 'nullable': {
       const inner = convertZod4Type(def.innerType!)
       const type = inner.type
-      if (typeof type === 'string') {
+      // An `enum` keeps its values under `type: [..., 'null']`, so null would
+      // still be rejected; wrap it instead.
+      if (typeof type === 'string' && inner.enum === undefined) {
         return withDesc({ ...inner, type: [type, 'null'] })
       }
       return withDesc({ anyOf: [inner, { type: 'null' }] })

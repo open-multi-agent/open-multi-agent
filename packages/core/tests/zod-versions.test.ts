@@ -111,6 +111,16 @@ describe('zodToJsonSchema across Zod majors', () => {
     }
   })
 
+  it.each([['Zod 4', z], ['Zod 3', z3]] as const)('keeps null valid for a nullable enum with %s', (_name, zz) => {
+    const schema = zz.object({ mode: zz.enum(['r', 'w']).nullable(), note: zz.string().nullable() })
+    expect(schema.safeParse({ mode: null, note: null }).success).toBe(true)
+    expect(zodToJsonSchema(schema).properties).toEqual({
+      // `type: [..., 'null']` beside `enum` would reject null, so the enum is wrapped.
+      mode: { anyOf: [{ type: 'string', enum: ['r', 'w'] }, { type: 'null' }] },
+      note: { type: ['string', 'null'] },
+    })
+  })
+
   it.skipIf(!rootIsZod4)('converts Zod 4 multi-value literals and enum objects', () => {
     expect(zodToJsonSchema(z.literal(['a', 'b']))).toEqual({ enum: ['a', 'b'] })
     expect(zodToJsonSchema(z.enum({ Low: 1, High: 2 }))).toEqual({ enum: [1, 2] })
