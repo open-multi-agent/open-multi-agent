@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  demoFailureGuidance,
   resolvePostScaffoldActions,
   runPostScaffold,
   type CommandRunner,
 } from '../src/post-scaffold.js'
 
 describe('post-scaffold flow', () => {
+  it('suggests a newer Node release only for the reported demo crash version', () => {
+    expect(demoFailureGuidance('v20.0.0')).toContain('Node.js 22 or 24')
+    expect(demoFailureGuidance('v20.1.0')).toBeUndefined()
+    expect(demoFailureGuidance('v22.0.0')).toBeUndefined()
+    expect(demoFailureGuidance('v24.13.0')).toBeUndefined()
+  })
   it('installs and runs only for interactive callers without opt-outs', () => {
     expect(resolvePostScaffoldActions({ interactive: true, noInstall: false, noRun: false }))
       .toEqual({ install: true, runDemo: true })

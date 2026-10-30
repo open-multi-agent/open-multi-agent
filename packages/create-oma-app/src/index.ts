@@ -13,7 +13,7 @@
 import { basename, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { parseArgs, type ProviderId, type TemplateId } from './args.js'
-import { resolvePostScaffoldActions, runPostScaffold } from './post-scaffold.js'
+import { demoFailureGuidance, resolvePostScaffoldActions, runPostScaffold } from './post-scaffold.js'
 import { isNonEmptyDir, scaffold } from './scaffold.js'
 
 // Minimal ANSI styling — no dependency.
@@ -166,6 +166,11 @@ async function main(): Promise<void> {
     console.log()
     console.error(`  ${ESC.red}✗${ESC.reset} ${post.failedStep === 'install' ? 'Dependency installation' : 'Demo run'} failed.`)
     if (post.error) console.error(dim(`  ${post.error.message}`))
+    if (post.failedStep === 'demo') {
+      console.error(dim(`  Node.js: ${process.version}`))
+      const guidance = demoFailureGuidance(process.version)
+      if (guidance) console.error(dim(`  ${guidance}`))
+    }
     console.error(dim('  The generated project was kept; resume with:'))
     printManualSteps(projectName, providerId, post.failedStep === 'install')
     process.exitCode = 1

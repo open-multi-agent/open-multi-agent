@@ -29,6 +29,8 @@ npm create oma-app@latest my-reviewer -- --template pr-review --provider cloud
 
 The interactive command installs and runs `npm run demo` automatically. Re-run it later with `cd my-reviewer && npm run demo`. The generated Markdown, JSON, and HTML clearly identify the scripted model responses as simulated; no provider credential is read.
 
+If the automatic demo fails, the generated project is kept. Check the reported Node.js version and rerun `npm run demo` inside the project. A V8 worker crash has been reported with Node.js 20.0.0 ([#628](https://github.com/open-multi-agent/open-multi-agent/issues/628)); if you use that exact version, try Node.js 22 or 24 before retrying. The cause of that crash has not been confirmed.
+
 Use `--no-install` to scaffold files only, or `--no-run` to install dependencies without running the demo. Installing still downloads packages from the npm registry; the demo run itself makes no model-network request.
 
 ## Real model run

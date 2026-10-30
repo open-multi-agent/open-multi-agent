@@ -22,6 +22,11 @@ export interface PostScaffoldResult {
   readonly error?: Error
 }
 
+export function demoFailureGuidance(nodeVersion: string): string | undefined {
+  if (nodeVersion !== 'v20.0.0') return undefined
+  return 'Node.js 20.0.0 was reported in a demo crash; try Node.js 22 or 24, then rerun npm run demo.'
+}
+
 export function resolvePostScaffoldActions(options: {
   readonly interactive: boolean
   readonly noInstall: boolean
