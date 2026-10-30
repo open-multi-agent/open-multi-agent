@@ -36,6 +36,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`. |
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN` (falls back to `GITHUB_TOKEN`) | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
+| NVIDIA NIM | `provider: 'nvidia'` | `NVIDIA_API_KEY` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | OpenAI-compatible; endpoint is `integrate.api.nvidia.com/v1`. Pass `baseURL` for a self-hosted NIM. Smaller options include `nvidia/nemotron-3.5-lightning-30b-a3b` and `nvidia/nemotron-3.5-bolt-e4b`. See [`providers/nvidia`](../packages/core/examples/providers/nvidia.ts). |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-flash` | OpenAI-compatible Chat Completions. `deepseek-flash` is DeepSeek-V4.1-Flash and `deepseek-v4-pro` is DeepSeek-V4-Pro-0813. `deepseek-flash` carries no version because DeepSeek moves the name to the current Flash generation; the older `deepseek-v4-flash` is still accepted but that model is retired and those requests are served by V4.1-Flash. Both support 1M context, 384K max output, and enable thinking by default (opt out with `thinking: { enabled: false }`). Both endpoints also offer DeepSeek's native Responses API, while OMA's built-in adapter uses Chat Completions. Legacy `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24. |
 | Doubao (Volcengine) | `provider: 'doubao'` | `ARK_API_KEY` | `doubao-seed-1-8-251228` | OpenAI-compatible. ByteDance Volcengine Ark endpoint `https://ark.cn-beijing.volces.com/api/v3`. See [`providers/doubao`](../packages/core/examples/providers/doubao.ts). |
 | Hunyuan (Tencent MaaS / TokenHub) | `provider: 'hunyuan'` | `HUNYUAN_API_KEY` | `hy3-preview` | OpenAI-compatible. Default endpoint `https://tokenhub.tencentmaas.com/v1` (Tencent's current platform; `sk-...` keys, Hunyuan 3 models). Tool calling verified on `hy3-preview`. See [`providers/hunyuan`](../packages/core/examples/providers/hunyuan.ts). |
@@ -174,8 +175,8 @@ targets and are forwarded only where the wire format accepts them.
 | `extraBody` | merged into the request | yes | yes | yes | no | no | yes, into `additionalModelRequestFields` |
 
 "OpenAI and OpenAI-compatible built-ins" is the `openai` adapter and every
-provider that extends it: `deepseek`, `doubao`, `grok`, `hunyuan`, `minimax`,
-`mimo`, and `qiniu`.
+provider that extends it: `deepseek`, `doubao`, `grok`, `nvidia`, `hunyuan`,
+`minimax`, `mimo`, and `qiniu`.
 
 Two caveats the table cannot express:
 

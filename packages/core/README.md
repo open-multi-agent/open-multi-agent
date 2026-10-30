@@ -194,7 +194,7 @@ Change `provider`, `model`, and credentials; the agent shape stays the same.
 
 | Route | Use |
 |---|---|
-| Built in | Anthropic, OpenAI, Azure OpenAI, Copilot, Grok, DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, Qiniu |
+| Built in | Anthropic, OpenAI, Azure OpenAI, Copilot, Grok, NVIDIA, DeepSeek, Doubao, Hunyuan, MiniMax, MiMo, Qiniu |
 | Optional peers | Gemini (`@google/genai`) and Bedrock (`@aws-sdk/client-bedrock-runtime`) |
 | OpenAI-compatible | Set `provider: 'openai'` + `baseURL` for Ollama, vLLM, LM Studio, OpenRouter, Groq, Mistral, Kimi, Qwen, or Zhipu |
 | AI SDK | Use `AISdkAdapter` with `ai` and your selected `@ai-sdk/*` provider (AI SDK 7 needs Node.js 22+) |

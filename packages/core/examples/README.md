@@ -126,6 +126,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/azure-openai`](providers/azure-openai.ts) | Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (+ optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`) |
 | [`providers/bedrock`](providers/bedrock.ts) | AWS Bedrock (Claude via Converse API) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
 | [`providers/grok`](providers/grok.ts) | xAI Grok | `XAI_API_KEY` |
+| [`providers/nvidia`](providers/nvidia.ts) | NVIDIA NIM (Nemotron) | `NVIDIA_API_KEY` |
 | [`providers/gemini`](providers/gemini.ts) | Google Gemini | `GEMINI_API_KEY` |
 | [`providers/minimax`](providers/minimax.ts) | MiniMax M3.1 Flash | `MINIMAX_API_KEY` |
 | [`providers/mimo`](providers/mimo.ts) | MiMo V2.5 Pro | `MIMO_API_KEY` |
