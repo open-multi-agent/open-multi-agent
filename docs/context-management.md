@@ -21,6 +21,10 @@ const agent: AgentConfig = {
 | `compact` | Rule-based: truncate large assistant text blocks and tool results, keep recent turns intact. No extra LLM call. |
 | `custom` | Supply your own `compress(messages, estimatedTokens)` function. |
 
+The sliding window keeps a tool call and its adjacent results together when
+trimming caller-owned history, including results supplied in separate messages.
+An ordinary user message starts a new turn.
+
 ## Auditing what a strategy replaced
 
 Every strategy above rewrites the conversation destructively: the messages it
