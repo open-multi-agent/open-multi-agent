@@ -35,6 +35,11 @@ describe('createAdapter', () => {
     expect(adapter.name).toBe('grok')
   })
 
+  it('creates an nvidia adapter', async () => {
+    const adapter = await createAdapter('nvidia', 'test-key')
+    expect(adapter.name).toBe('nvidia')
+  })
+
   it('creates a gemini adapter', async () => {
     const adapter = await createAdapter('gemini', 'test-key')
     expect(adapter.name).toBe('gemini')
