@@ -61,6 +61,7 @@ import {
   getOpenAIReasoningText,
   repairToolArgs,
   toOpenAISdkReasoningEffort,
+  createToolCallSlotResolver,
 } from './openai-common.js'
 import { assertValidMessages } from './validate.js'
 import type { ReasoningOutboundOptions } from './reasoning-fallback.js'
@@ -266,11 +267,7 @@ export class OpenAIAdapter implements LLMAdapter {
       number,
       { id: string; name: string; argsJson: string }
     >()
-    // Some OpenAI-compatible servers (e.g. Gemini's OpenAI endpoint) send tool calls
-    // without `index`: a call with a new id then opens a slot, a fragment without an id
-    // continues the latest one.
-    const toolCallSlotById = new Map<string, number>()
-    let lastToolCallSlot = -1
+    const resolveToolCallSlot = createToolCallSlotResolver()
 
     // Full text accumulator for the `done` response.
     let fullReasoning = ''
@@ -309,16 +306,7 @@ export class OpenAIAdapter implements LLMAdapter {
 
         // --- tool call delta ---
         for (const toolCallDelta of delta.tool_calls ?? []) {
-          let idx: number
-          if (typeof toolCallDelta.index === 'number') {
-            idx = toolCallDelta.index
-          } else if (toolCallDelta.id) {
-            idx = toolCallSlotById.get(toolCallDelta.id) ?? toolCallBuffers.size
-          } else {
-            idx = Math.max(lastToolCallSlot, 0)
-          }
-          if (toolCallDelta.id) toolCallSlotById.set(toolCallDelta.id, idx)
-          lastToolCallSlot = idx
+          const idx = resolveToolCallSlot(toolCallDelta, toolCallBuffers.size)
 
           if (!toolCallBuffers.has(idx)) {
             toolCallBuffers.set(idx, {

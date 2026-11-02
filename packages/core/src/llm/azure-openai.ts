@@ -62,6 +62,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
   toOpenAISdkReasoningEffort,
+  createToolCallSlotResolver,
 } from './openai-common.js'
 import { assertValidMessages } from './validate.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
@@ -231,6 +232,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       number,
       { id: string; name: string; argsJson: string }
     >()
+    const resolveToolCallSlot = createToolCallSlotResolver()
 
     // Full text accumulator for the `done` response.
     let fullText = ''
@@ -260,7 +262,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
 
         // --- tool call delta ---
         for (const toolCallDelta of delta.tool_calls ?? []) {
-          const idx = toolCallDelta.index
+          const idx = resolveToolCallSlot(toolCallDelta, toolCallBuffers.size)
 
           if (!toolCallBuffers.has(idx)) {
             toolCallBuffers.set(idx, {
