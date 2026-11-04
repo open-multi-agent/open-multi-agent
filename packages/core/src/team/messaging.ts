@@ -191,17 +191,26 @@ export class MessageBus {
 
   /**
    * Mark a set of messages as read for `agentName`.
-   * Passing IDs that were already marked, or do not exist, is a no-op.
+   * Passing IDs that were already marked, do not exist, or are not addressed
+   * to the agent is a no-op.
    */
   markRead(agentName: string, messageIds: string[]): void {
     if (messageIds.length === 0) return
+    const requested = new Set(messageIds)
+    const visibleIds = new Set(
+      this.messages
+        .filter((message) => requested.has(message.id) && isAddressedTo(message, agentName))
+        .map((message) => message.id),
+    )
+    if (visibleIds.size === 0) return
+
     let read = this.readState.get(agentName)
     if (!read) {
       read = new Set<string>()
       this.readState.set(agentName, read)
     }
     for (const id of messageIds) {
-      read.add(id)
+      if (visibleIds.has(id)) read.add(id)
     }
   }
 
