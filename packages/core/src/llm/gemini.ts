@@ -413,7 +413,8 @@ function fromGeminiResponse(
     stop_reason,
     usage: {
       input_tokens: usage?.promptTokenCount ?? 0,
-      output_tokens: usage?.candidatesTokenCount ?? 0,
+      // Thinking tokens are billed as output but reported apart from candidates.
+      output_tokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
     },
   }
 }
@@ -508,6 +509,7 @@ export class GeminiAdapter implements LLMAdapter {
       const accumulatedContent: ContentBlock[] = []
       let inputTokens = 0
       let outputTokens = 0
+      let thoughtsTokens = 0
       let lastFinishReason: string | undefined
 
       for await (const chunk of streamResponse) {
@@ -517,6 +519,7 @@ export class GeminiAdapter implements LLMAdapter {
         if (chunk.usageMetadata) {
           inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens
           outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
+          thoughtsTokens = chunk.usageMetadata.thoughtsTokenCount ?? thoughtsTokens
         }
         if (candidate?.finishReason) {
           lastFinishReason = candidate.finishReason as string
@@ -558,7 +561,7 @@ export class GeminiAdapter implements LLMAdapter {
         content: accumulatedContent,
         model: options.model,
         stop_reason,
-        usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+        usage: { input_tokens: inputTokens, output_tokens: outputTokens + thoughtsTokens },
       }
 
       yield { type: 'done', data: finalResponse } satisfies StreamEvent

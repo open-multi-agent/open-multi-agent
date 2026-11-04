@@ -677,6 +677,16 @@
       "level": "beginner"
     },
     {
+      "id": "nvidia",
+      "path": "providers/nvidia.ts",
+      "title": "NVIDIA NIM",
+      "description": "Run the standard three-agent team with NVIDIA NIM Nemotron models.",
+      "section": "models-providers",
+      "capabilities": ["provider-adapter"],
+      "format": "script",
+      "level": "beginner"
+    },
+    {
       "id": "ollama",
       "path": "providers/ollama.ts",
       "title": "Ollama",

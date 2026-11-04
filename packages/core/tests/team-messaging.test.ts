@@ -59,6 +59,26 @@ describe('MessageBus', () => {
       bus.markRead('bob', [])
       expect(bus.getUnread('bob')).toHaveLength(0)
     })
+
+    it('marks only existing messages addressed to the agent as read', () => {
+      const bus = new MessageBus()
+      const direct = bus.send('alice', 'bob', 'for bob')
+      const other = bus.send('alice', 'carol', 'for carol')
+      const broadcast = bus.broadcast('alice', 'for everyone else')
+
+      bus.markRead('bob', [direct.id, other.id, 'missing', broadcast.id, direct.id])
+      bus.markRead('alice', [broadcast.id])
+
+      expect(bus.snapshot().readState).toEqual([{
+        agentName: 'bob',
+        messageIds: [direct.id, broadcast.id],
+      }])
+      expect(bus.getUnread('bob')).toEqual([])
+      expect(bus.getUnread('carol').map(message => message.id)).toEqual([
+        other.id,
+        broadcast.id,
+      ])
+    })
   })
 
   describe('broadcast', () => {

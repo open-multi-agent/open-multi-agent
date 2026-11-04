@@ -396,6 +396,34 @@ function toOpenAIAssistantMessage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Pick the buffer slot for a streamed tool-call delta. Servers that send `index`
+ * (OpenAI) are followed as is. Some OpenAI-compatible servers (e.g. Gemini's
+ * OpenAI endpoint) omit it: a delta with a new `id` then opens a new slot, a delta
+ * with a known `id` continues that slot, and a fragment without an id continues
+ * the latest one.
+ */
+export function createToolCallSlotResolver(): (
+  delta: { index?: number | null; id?: string | null },
+  openSlots: number,
+) => number {
+  const slotById = new Map<string, number>()
+  let lastSlot = -1
+  return (delta, openSlots) => {
+    let slot: number
+    if (typeof delta.index === 'number') {
+      slot = delta.index
+    } else if (delta.id) {
+      slot = slotById.get(delta.id) ?? openSlots
+    } else {
+      slot = Math.max(lastSlot, 0)
+    }
+    if (delta.id) slotById.set(delta.id, slot)
+    lastSlot = slot
+    return slot
+  }
+}
+
+/**
  * Repair malformed single-string tool-call arguments after `JSON.parse` fails.
  * Local models frequently break single-parameter tools with unescaped quotes or
  * Python-style triple quotes (`"""`/`'''`). Returns the repaired argument object,
