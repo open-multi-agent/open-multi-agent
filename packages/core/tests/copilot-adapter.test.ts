@@ -439,6 +439,52 @@ describe('CopilotAdapter', () => {
       expect((toolEvents[0].data as ToolUseBlock).name).toBe('search')
     })
 
+    it('keeps parallel tool calls apart when the server omits index', async () => {
+      const unindexed = (id: string, name: string, args: string, finish_reason: string | null = null) => ({
+        id: 'c1',
+        model: 'gemini-3.5-flash',
+        choices: [{
+          index: 0,
+          delta: {
+            role: 'assistant',
+            tool_calls: [{ id, type: 'function', function: { name, arguments: args } }],
+          },
+          finish_reason,
+        }],
+        usage: null,
+      })
+      mockCreate.mockResolvedValue(makeChunks([
+        unindexed('call_1', 'get_weather', '{"city":"Paris"}'),
+        unindexed('call_2', 'get_weather', '{"city":"Tokyo"}', 'stop'),
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const blocks = events.filter(e => e.type === 'tool_use').map(e => e.data as ToolUseBlock)
+      expect(blocks).toEqual([
+        { type: 'tool_use', id: 'call_1', name: 'get_weather', input: { city: 'Paris' } },
+        { type: 'tool_use', id: 'call_2', name: 'get_weather', input: { city: 'Tokyo' } },
+      ])
+    })
+
+    it('continues the latest tool call with fragments that have neither index nor id', async () => {
+      const fragment = (tool_call: Record<string, unknown>) => ({
+        id: 'c1',
+        model: 'gpt-4o',
+        choices: [{ index: 0, delta: { tool_calls: [tool_call] }, finish_reason: null }],
+        usage: null,
+      })
+      mockCreate.mockResolvedValue(makeChunks([
+        fragment({ id: 'call_1', function: { name: 'search', arguments: '{"q":' } }),
+        fragment({ function: { arguments: '"test"}' } }),
+      ]))
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const blocks = events.filter(e => e.type === 'tool_use').map(e => e.data as ToolUseBlock)
+      expect(blocks).toEqual([{ type: 'tool_use', id: 'call_1', name: 'search', input: { q: 'test' } }])
+    })
+
     it('yields error event on failure', async () => {
       mockCreate.mockResolvedValue(
         (async function* () { throw new Error('Copilot down') })(),
