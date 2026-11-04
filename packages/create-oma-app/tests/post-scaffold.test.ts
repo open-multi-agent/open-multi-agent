@@ -99,3 +99,93 @@ describe('successful CLI output', () => {
     }
   })
 })
+
+describe('failed CLI output', () => {
+  interface FailedPostScaffold {
+    readonly failedStep: 'install' | 'demo'
+    readonly error?: Error
+  }
+
+  async function runFailedCli(
+    version: string,
+    post: FailedPostScaffold,
+  ): Promise<{ readonly output: string; readonly exitCode: number | undefined }> {
+    const originalArgv = process.argv
+    const originalExitCode = process.exitCode
+    const versionDescriptor = Object.getOwnPropertyDescriptor(process, 'version')
+    const stdinTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+    const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    const output: string[] = []
+    const log = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      output.push(args.map(String).join(' '))
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      output.push(args.map(String).join(' '))
+    })
+    try {
+      process.argv = ['node', 'create-oma-app', 'my project', '--template', 'demo', '--provider', 'cloud']
+      Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true })
+      Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true })
+      Object.defineProperty(process, 'version', { configurable: true, value: version })
+      vi.doMock('../src/scaffold.js', () => ({
+        isNonEmptyDir: () => false,
+        scaffold: vi.fn(),
+      }))
+      vi.doMock('../src/post-scaffold.js', async () => ({
+        ...await vi.importActual<typeof import('../src/post-scaffold.js')>('../src/post-scaffold.js'),
+        runPostScaffold: () => ({ ok: false, ...post }),
+      }))
+      vi.resetModules()
+      await import('../src/index.js')
+      return {
+        output: output.join('\n').replace(/\x1b\[[0-9;]*m/g, ''),
+        exitCode: process.exitCode,
+      }
+    } finally {
+      process.argv = originalArgv
+      process.exitCode = originalExitCode
+      if (stdinTTY) Object.defineProperty(process.stdin, 'isTTY', stdinTTY)
+      else Reflect.deleteProperty(process.stdin, 'isTTY')
+      if (stdoutTTY) Object.defineProperty(process.stdout, 'isTTY', stdoutTTY)
+      else Reflect.deleteProperty(process.stdout, 'isTTY')
+      if (versionDescriptor) Object.defineProperty(process, 'version', versionDescriptor)
+      log.mockRestore()
+      error.mockRestore()
+      vi.doUnmock('../src/scaffold.js')
+      vi.doUnmock('../src/post-scaffold.js')
+      vi.resetModules()
+    }
+  }
+
+  it('prints the Node.js version and the v20.0.0 guidance when the demo step fails', async () => {
+    const failure = new Error('demo exited with signal SIGABRT')
+    const guidance = demoFailureGuidance('v20.0.0')
+    expect(guidance).toBeDefined()
+    const { output, exitCode } = await runFailedCli('v20.0.0', { failedStep: 'demo', error: failure })
+    expect(exitCode).toBe(1)
+    expect(output).toContain('Demo run failed.')
+    expect(output).toContain(failure.message)
+    expect(output).toContain('Node.js: v20.0.0')
+    expect(output).toContain(guidance!)
+    expect(output).toMatch(/Demo run failed\.[\s\S]*Node\.js: v20\.0\.0[\s\S]*Node\.js 22 or 24/)
+    expect(output).toContain('The generated project was kept; resume with:')
+  })
+
+  it('prints the Node.js version without guidance when the demo step fails on another version', async () => {
+    const { output, exitCode } = await runFailedCli('v22.0.0', { failedStep: 'demo' })
+    expect(exitCode).toBe(1)
+    expect(output).toContain('Demo run failed.')
+    expect(output).toContain('Node.js: v22.0.0')
+    expect(output).not.toContain('Node.js 22 or 24')
+  })
+
+  it('prints neither the Node.js version nor the guidance when installation fails', async () => {
+    const failure = new Error('npm install failed')
+    const { output, exitCode } = await runFailedCli('v20.0.0', { failedStep: 'install', error: failure })
+    expect(exitCode).toBe(1)
+    expect(output).toContain('Dependency installation failed.')
+    expect(output).toContain(failure.message)
+    expect(output).not.toContain('Node.js:')
+    expect(output).not.toContain('Node.js 22 or 24')
+  })
+})
