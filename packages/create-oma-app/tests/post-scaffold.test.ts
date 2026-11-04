@@ -49,3 +49,53 @@ describe('post-scaffold flow', () => {
     expect(runner).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('successful CLI output', () => {
+  it('shows how to rerun the demo from a project path with spaces', async () => {
+    const originalArgv = process.argv
+    const stdinTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+    const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    const output: string[] = []
+    const log = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      output.push(args.map(String).join(' '))
+    })
+    try {
+      process.argv = ['node', 'create-oma-app', 'my project', '--template', 'demo', '--provider', 'cloud']
+      Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true })
+      Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true })
+      vi.doMock('../src/scaffold.js', () => ({
+        isNonEmptyDir: () => false,
+        scaffold: vi.fn(),
+      }))
+      vi.doMock('../src/post-scaffold.js', async () => ({
+        ...await vi.importActual<typeof import('../src/post-scaffold.js')>('../src/post-scaffold.js'),
+        runPostScaffold: () => ({ ok: true }),
+      }))
+      vi.resetModules()
+      await import('../src/index.js')
+
+      const text = output.join('\n').replace(/\x1b\[[0-9;]*m/g, '')
+      expect(text).toContain('No-key demo complete.')
+      expect(text).toMatch(/cd "my project"\s*\n\s*npm run demo/)
+      expect(text).not.toContain('npm install --no-audit --no-fund')
+
+      output.length = 0
+      process.argv = ['node', 'create-oma-app', 'my project', '--template', 'demo', '--provider', 'cloud', '--no-run']
+      vi.resetModules()
+      await import('../src/index.js')
+      const noRunText = output.join('\n').replace(/\x1b\[[0-9;]*m/g, '')
+      expect(noRunText).toContain('Dependencies installed.')
+      expect(noRunText).toMatch(/cd "my project"\s*\n\s*npm run demo/)
+    } finally {
+      process.argv = originalArgv
+      if (stdinTTY) Object.defineProperty(process.stdin, 'isTTY', stdinTTY)
+      else Reflect.deleteProperty(process.stdin, 'isTTY')
+      if (stdoutTTY) Object.defineProperty(process.stdout, 'isTTY', stdoutTTY)
+      else Reflect.deleteProperty(process.stdout, 'isTTY')
+      log.mockRestore()
+      vi.doUnmock('../src/scaffold.js')
+      vi.doUnmock('../src/post-scaffold.js')
+      vi.resetModules()
+    }
+  })
+})

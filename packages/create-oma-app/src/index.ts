@@ -180,11 +180,7 @@ async function main(): Promise<void> {
   console.log()
   console.log(`  ${green('✓')} ${actions.runDemo ? 'No-key demo complete.' : 'Dependencies installed.'}`)
   console.log(dim('  npm run demo uses scripted model responses; OMA orchestration runs locally for real.'))
-  if (providerId === 'cloud') {
-    console.log(dim(`  For a real model run: cd ${shellPath(projectName)}, copy .env.example to .env, then npm run dev.`))
-  } else {
-    console.log(dim(`  For a real Ollama run: start Ollama, then cd ${shellPath(projectName)} and run npm run dev.`))
-  }
+  printManualSteps(projectName, providerId, false)
   console.log()
 }
 
