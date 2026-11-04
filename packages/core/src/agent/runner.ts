@@ -355,8 +355,9 @@ interface Turn {
  * A turn is one of:
  *   - a single user / assistant text message, or
  *   - an assistant message containing one or more `tool_use` blocks plus the
- *     immediately following user message containing the matching `tool_result`
- *     blocks (kept together so neither half can be dropped on its own).
+ *     immediately following user messages that contain only the matching
+ *     `tool_result` blocks (kept together so the call and its results can
+ *     never be dropped apart).
  *
  * Splitting on turn boundaries — instead of slicing by raw message count —
  * prevents orphaned `tool_use_id` references that the Anthropic and OpenAI
@@ -512,10 +513,19 @@ function lineageOf(
 }
 
 /**
- * Prepends synthetic framing text to the first user message so we never emit
- * consecutive `user` turns (Bedrock) and summaries do not concatenate onto
- * the original user prompt (direct API). If there is no user message yet,
- * inserts a single assistant text preamble.
+ * Merges synthetic framing text (a truncation notice or conversation summary)
+ * into the first user message so we never emit consecutive `user` turns
+ * (Bedrock) and summaries do not concatenate onto the original user prompt
+ * (direct API). If there is no user message yet, inserts a single assistant
+ * text preamble.
+ *
+ * When the first user message carries `tool_result` blocks — the retained
+ * slice begins at a tool round — the text is appended after the last of the
+ * adjacent result messages instead of before the results. A text block placed
+ * before a `tool_result` block, or a user message inserted between an
+ * assistant's parallel results, makes the request invalid: Anthropic requires
+ * `tool_result` blocks first in their message, and OpenAI requires tool-role
+ * messages before any later user message.
  *
  * `derived` collects the one block this creates, which the journal records as
  * the model-visible product of the rewrite that called in here.
@@ -536,6 +546,26 @@ function prependSyntheticPrefixToFirstUser(
   if (derived) {
     derived.block = prefixBlock
     derived.mergedInto = target
+  }
+  if (target.content.some(block => block.type === 'tool_result')) {
+    // Keep the tool round contiguous: extend the last adjacent result message
+    // so every `tool_result` block still leads its own message.
+    let resultEnd = userIdx
+    for (let i = userIdx + 1; i < messages.length; i++) {
+      const next = messages[i]!
+      if (
+        next.role !== 'user'
+        || !next.content.some(block => block.type === 'tool_result')
+      ) break
+      resultEnd = i
+    }
+    const results = messages[resultEnd]!
+    if (derived) derived.mergedInto = results
+    const merged: LLMMessage = {
+      role: 'user',
+      content: [...results.content, prefixBlock],
+    }
+    return [...messages.slice(0, resultEnd), merged, ...messages.slice(resultEnd + 1)]
   }
   const merged: LLMMessage = {
     role: 'user',
@@ -629,9 +659,10 @@ export class AgentRunner implements AgentBackend {
     // Walk turns from the tail, accumulating message count until we have at
     // least `maxTurns * 2` messages — preserving the historical "message-pair
     // count" semantics of `maxTurns` for plain conversations while never
-    // splitting a tool_use/tool_result pair (see `groupIntoTurns`). The kept
-    // slice may exceed the target by one message when the boundary lands
-    // inside an atomic tool turn — that's the smallest safe slice.
+    // splitting a tool_use/tool_result pair (see `groupIntoTurns`). A fused
+    // turn is indivisible, so the kept slice can exceed the target by that
+    // turn's size (an assistant turn plus its k result messages) — that is the
+    // smallest safe slice.
     const target = maxTurns * 2
     if (afterFirst.length <= target) {
       return messages
@@ -845,9 +876,21 @@ export class AgentRunner implements AgentBackend {
       return { messages, usage: ZERO_USAGE }
     }
 
-    // Split on an even boundary so we never separate a tool_use assistant turn
-    // from its tool_result user message (rest is user/assistant pairs).
-    const splitAt = Math.max(2, Math.floor(rest.length / 4) * 2)
+    // Split on a turn boundary so an assistant `tool_use` turn is never
+    // separated from the user messages carrying its results (see
+    // `groupIntoTurns`). Keep the historical proportion (~1/4 old, ~3/4
+    // recent) by snapping the old slice's message target forward to the next
+    // turn start; if no turn starts at or after the target, keep the trailing
+    // turn whole in the recent portion.
+    const splitTarget = Math.max(2, Math.floor(rest.length / 4) * 2)
+    const restTurns = groupIntoTurns(rest)
+    if (restTurns.length < 2) {
+      // One atomic turn cannot be split without separating a tool round, and
+      // summarizing all of it would discard the recent context entirely.
+      return { messages, usage: ZERO_USAGE }
+    }
+    const splitAt = (restTurns.find(turn => turn.startIndex >= splitTarget)
+      ?? restTurns[restTurns.length - 1]!).startIndex
     const oldPortion = rest.slice(0, splitAt)
     const recentPortion = rest.slice(splitAt)
 
