@@ -543,13 +543,13 @@ function prependSyntheticPrefixToFirstUser(
   }
   const target = messages[userIdx]!
   const prefixBlock: TextBlock = { type: 'text', text: prefix }
-  if (derived) {
-    derived.block = prefixBlock
-    derived.mergedInto = target
-  }
+  if (derived) derived.block = prefixBlock
   if (target.content.some(block => block.type === 'tool_result')) {
     // Keep the tool round contiguous: extend the last adjacent result message
-    // so every `tool_result` block still leads its own message.
+    // so every `tool_result` block still leads its own message. This scan uses
+    // `some` rather than the stricter all-results predicate in `groupIntoTurns`
+    // on purpose: appending after the last adjacent result message keeps the
+    // OpenAI wire valid even when that message also carries text.
     let resultEnd = userIdx
     for (let i = userIdx + 1; i < messages.length; i++) {
       const next = messages[i]!
@@ -567,6 +567,7 @@ function prependSyntheticPrefixToFirstUser(
     }
     return [...messages.slice(0, resultEnd), merged, ...messages.slice(resultEnd + 1)]
   }
+  if (derived) derived.mergedInto = target
   const merged: LLMMessage = {
     role: 'user',
     content: [prefixBlock, ...target.content],
@@ -878,10 +879,10 @@ export class AgentRunner implements AgentBackend {
 
     // Split on a turn boundary so an assistant `tool_use` turn is never
     // separated from the user messages carrying its results (see
-    // `groupIntoTurns`). Keep the historical proportion (~1/4 old, ~3/4
-    // recent) by snapping the old slice's message target forward to the next
-    // turn start; if no turn starts at or after the target, keep the trailing
-    // turn whole in the recent portion.
+    // `groupIntoTurns`). Start from the historical split target
+    // `max(2, 2 * floor(rest.length / 4))` messages and snap it forward to the
+    // next turn start; if no turn starts at or after the target, keep the
+    // trailing turn whole in the recent portion.
     const splitTarget = Math.max(2, Math.floor(rest.length / 4) * 2)
     const restTurns = groupIntoTurns(rest)
     if (restTurns.length < 2) {

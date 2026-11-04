@@ -30,7 +30,8 @@ an ordinary user message starts a new turn. A fused turn is never split, so
 messages). When the kept window starts at a tool call, the truncation notice is
 appended after that turn's results so the `tool_result` blocks stay first in
 their message. The summarize strategy also splits on these turn boundaries, so
-a tool call and its results are summarized or retained together.
+a tool call and its result-only messages are summarized or retained together;
+results delivered in a message that also carries other blocks are not fused.
 
 ## Auditing what a strategy replaced
 
