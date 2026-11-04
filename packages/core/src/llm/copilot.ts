@@ -49,6 +49,7 @@ import {
   normalizeFinishReason,
   buildOpenAIMessageList,
   toOpenAISdkReasoningEffort,
+  createToolCallSlotResolver,
 } from './openai-common.js'
 import { assertValidMessages } from './validate.js'
 import { assertEgressAllowed, createEgressFetch, normalizeEgressPolicy } from './egress.js'
@@ -401,6 +402,7 @@ export class CopilotAdapter implements LLMAdapter {
       number,
       { id: string; name: string; argsJson: string }
     >()
+    const resolveToolCallSlot = createToolCallSlotResolver()
     let fullText = ''
 
     try {
@@ -425,7 +427,7 @@ export class CopilotAdapter implements LLMAdapter {
         }
 
         for (const toolCallDelta of delta.tool_calls ?? []) {
-          const idx = toolCallDelta.index
+          const idx = resolveToolCallSlot(toolCallDelta, toolCallBuffers.size)
 
           if (!toolCallBuffers.has(idx)) {
             toolCallBuffers.set(idx, {
