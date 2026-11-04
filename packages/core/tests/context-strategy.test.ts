@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { AgentRunner } from '../src/agent/runner.js'
+import { toOpenAIMessages } from '../src/llm/openai-common.js'
 import { ToolRegistry, defineTool } from '../src/tool/framework.js'
 import { ToolExecutor } from '../src/tool/executor.js'
 import type { LLMAdapter, LLMChatOptions, LLMMessage, LLMResponse, TraceEvent } from '../src/types.js'
@@ -187,6 +188,10 @@ describe('AgentRunner contextStrategy', () => {
     })
     const history: LLMMessage[] = [
       { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      // One older pair past the target so the window actually trims: without
+      // it the fused 3-message tool turn alone satisfies `maxTurns * 2`.
+      { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+      { role: 'user', content: [{ type: 'text', text: 'earlier follow up' }] },
       { role: 'assistant', content: [
         { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'one' } },
         { type: 'tool_use', id: 'tu-2', name: 'echo', input: { message: 'two' } },
@@ -201,12 +206,83 @@ describe('AgentRunner contextStrategy', () => {
     await runner.run(history)
 
     const sent = calls[0]!
+    const notice = sent.flatMap(m => m.content)
+      .some(b => b.type === 'text' && b.text.includes('Earlier conversation history truncated'))
+    expect(notice).toBe(true)
     const toolUseIds = new Set(sent.flatMap(m => m.content)
       .filter(b => b.type === 'tool_use').map(b => b.id))
     const toolResultIds = sent.flatMap(m => m.content)
       .filter(b => b.type === 'tool_result').map(b => b.tool_use_id)
     expect(toolResultIds).toEqual(['tu-1', 'tu-2'])
     for (const id of toolResultIds) expect(toolUseIds.has(id)).toBe(true)
+  })
+
+  it('sliding-window keeps a trimmed tool round provider-valid', async () => {
+    // When the kept window starts at the assistant `tool_use` turn, the
+    // truncation notice must not be placed before the `tool_result` blocks or
+    // between the results: Anthropic requires `tool_result` blocks first in
+    // their message, and OpenAI requires every tool-role message to answer the
+    // assistant before any later user message (see commit 2a6dddf, #178).
+    const calls: LLMMessage[][] = []
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        return textResponse('ack')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      contextStrategy: { type: 'sliding-window', maxTurns: 2 },
+    })
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+      { role: 'user', content: [{ type: 'text', text: 'earlier follow up' }] },
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'one' } },
+        { type: 'tool_use', id: 'tu-2', name: 'echo', input: { message: 'two' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'one' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-2', content: 'two' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
+      { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+    ]
+
+    await runner.run(history)
+
+    const sent = calls[0]!
+    const notice = sent.flatMap(m => m.content)
+      .some(b => b.type === 'text' && b.text.includes('Earlier conversation history truncated'))
+    expect(notice).toBe(true)
+
+    // A message carrying tool results must lead with those blocks; the notice
+    // is appended after them on the last result message of the round.
+    for (const message of sent) {
+      if (!message.content.some(b => b.type === 'tool_result')) continue
+      expect(message.content.findIndex(b => b.type === 'tool_result')).toBe(0)
+    }
+
+    // On the OpenAI wire every tool-role message must directly follow the
+    // assistant turn that requested it, before any later user message.
+    const wire = toOpenAIMessages(sent)
+    const assistantCallIdx = wire.findIndex(
+      (message) => message.role === 'assistant' && 'tool_calls' in message
+        && Array.isArray(message.tool_calls) && message.tool_calls.length > 0,
+    )
+    expect(assistantCallIdx).toBeGreaterThanOrEqual(0)
+    const afterCall = wire.slice(assistantCallIdx + 1)
+    const toolMessageIndexes = afterCall
+      .map((message, index) => message.role === 'tool' ? index : -1)
+      .filter((index) => index >= 0)
+    expect(toolMessageIndexes).toEqual([0, 1])
   })
 
   it('sliding-window preserves message-pair count for plain conversations', async () => {
@@ -456,6 +532,119 @@ describe('AgentRunner contextStrategy', () => {
     expect(promptText.includes(FAKE_VIDEO_DATA)).toBe(false)
     expect(promptText.length).toBeLessThan(10_000)
     expect(promptText).toContain('[video: video/mp4]')
+  })
+
+  it('summarize splits on a turn boundary so tool results stay with their call', async () => {
+    // A summarize split by raw message index can start the retained portion
+    // with a tool_result whose tool_use was summarized away — an orphan that
+    // Anthropic and OpenAI reject. The split must land on a turn boundary.
+    const calls: LLMMessage[][] = []
+    let callCount = 0
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        callCount++
+        return callCount === 1 ? textResponse('condensed history') : textResponse('done')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      contextStrategy: { type: 'summarize', maxTokens: 1 },
+    })
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'one' } },
+        { type: 'tool_use', id: 'tu-2', name: 'echo', input: { message: 'two' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'one' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-2', content: 'two' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
+      { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+    ]
+
+    await runner.run(history)
+
+    // Summary call first, then the turn request that carries the rewrite.
+    expect(calls).toHaveLength(2)
+    const summaryText = calls[0]!.flatMap(m => m.content)
+      .filter((b): b is import('../src/types.js').TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+    // The whole tool round lands in the summarized portion, not split across
+    // the boundary.
+    expect(summaryText).toContain('tu-1')
+    expect(summaryText).toContain('tu-2')
+
+    const turnRequest = calls[1]!
+    const toolUseIds = new Set(turnRequest.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_use').map(b => b.id))
+    const toolResultIds = turnRequest.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_result').map(b => b.tool_use_id)
+    for (const id of toolResultIds) expect(toolUseIds.has(id)).toBe(true)
+  })
+
+  it('summarize appends its summary after a retained tool round', async () => {
+    const calls: LLMMessage[][] = []
+    let callCount = 0
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        callCount++
+        return callCount === 1 ? textResponse('condensed history') : textResponse('done')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      contextStrategy: { type: 'summarize', maxTokens: 1 },
+    })
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+      { role: 'user', content: [{ type: 'text', text: 'earlier follow up' }] },
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'one' } },
+        { type: 'tool_use', id: 'tu-2', name: 'echo', input: { message: 'two' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'one' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-2', content: 'two' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
+    ]
+
+    await runner.run(history)
+
+    expect(calls).toHaveLength(2)
+    const sent = calls[1]!
+    const summaryUser = sent.find(
+      m => m.role === 'user'
+        && m.content.some(b => b.type === 'text' && b.text.includes('[Conversation summary]')),
+    )
+    expect(summaryUser).toBeDefined()
+    // The summary rides on the last result message, after its tool_result
+    // blocks, so tool results stay contiguous and first in their message.
+    expect(summaryUser!.content.findIndex(b => b.type === 'tool_result')).toBe(0)
+    expect(summaryUser!.content.at(-1)).toMatchObject({ type: 'text' })
+    const toolUseIds = new Set(sent.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_use').map(b => b.id))
+    const toolResultIds = sent.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_result').map(b => b.tool_use_id)
+    expect(toolResultIds).toEqual(['tu-1', 'tu-2'])
+    for (const id of toolResultIds) expect(toolUseIds.has(id)).toBe(true)
   })
 
   it('does not drop turns when context strategy shrinks array size', async () => {
