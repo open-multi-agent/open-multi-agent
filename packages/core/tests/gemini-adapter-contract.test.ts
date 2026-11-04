@@ -326,6 +326,17 @@ describe('GeminiAdapter (contract)', () => {
       expect(result.stop_reason).toBe('tool_use')
     })
 
+    it('counts thinking tokens as output tokens', async () => {
+      mockGenerateContent.mockResolvedValue({
+        ...makeGeminiResponse([{ text: 'Hello' }]),
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 40 },
+      })
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.usage).toEqual({ input_tokens: 10, output_tokens: 45 })
+    })
+
     it('handles missing usageMetadata (defaults to 0)', async () => {
       mockGenerateContent.mockResolvedValue({
         candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
@@ -405,6 +416,20 @@ describe('GeminiAdapter (contract)', () => {
       const done = events.find(e => e.type === 'done')
       const response = done!.data as LLMResponse
       expect(response.usage).toEqual({ input_tokens: 10, output_tokens: 5 })
+    })
+
+    it('counts thinking tokens from usageMetadata as output tokens', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([
+          { candidates: [{ content: { parts: [{ text: 'Hi' }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, thoughtsTokenCount: 30 } },
+          { candidates: [{ content: { parts: [{ text: '!' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 40 } },
+        ]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const response = events.find(e => e.type === 'done')!.data as LLMResponse
+      expect(response.usage).toEqual({ input_tokens: 10, output_tokens: 45 })
     })
 
     it('yields done event with correct stop_reason', async () => {
