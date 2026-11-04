@@ -166,6 +166,49 @@ describe('AgentRunner contextStrategy', () => {
     }
   })
 
+  it('sliding-window keeps separately delivered results with their tool calls', async () => {
+    const calls: LLMMessage[][] = []
+    const adapter: LLMAdapter = {
+      name: 'mock',
+      async chat(messages) {
+        calls.push(messages.map(m => ({ role: m.role, content: m.content })))
+        return textResponse('ack')
+      },
+      async *stream() {
+        /* unused */
+      },
+    }
+    const { registry, executor } = buildRegistryAndExecutor()
+    const runner = new AgentRunner(adapter, registry, executor, {
+      model: 'mock-model',
+      allowedTools: ['echo'],
+      maxTurns: 4,
+      contextStrategy: { type: 'sliding-window', maxTurns: 2 },
+    })
+    const history: LLMMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'original prompt' }] },
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'tu-1', name: 'echo', input: { message: 'one' } },
+        { type: 'tool_use', id: 'tu-2', name: 'echo', input: { message: 'two' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'one' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-2', content: 'two' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
+      { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+    ]
+
+    await runner.run(history)
+
+    const sent = calls[0]!
+    const toolUseIds = new Set(sent.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_use').map(b => b.id))
+    const toolResultIds = sent.flatMap(m => m.content)
+      .filter(b => b.type === 'tool_result').map(b => b.tool_use_id)
+    expect(toolResultIds).toEqual(['tu-1', 'tu-2'])
+    for (const id of toolResultIds) expect(toolUseIds.has(id)).toBe(true)
+  })
+
   it('sliding-window preserves message-pair count for plain conversations', async () => {
     // The bug fix above changes how we slice (turn boundaries instead of raw
     // message count), but `maxTurns` must still mean "message pair count" for

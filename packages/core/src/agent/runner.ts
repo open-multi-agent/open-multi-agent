@@ -371,6 +371,9 @@ function groupIntoTurns(messages: LLMMessage[]): Turn[] {
       msg.role === 'assistant' && msg.content.some(b => b.type === 'tool_use')
     if (hasToolUse) {
       const start = i
+      const toolUseIds = new Set(msg.content
+        .filter(b => b.type === 'tool_use')
+        .map(b => b.id))
       i++
       // Absorb the matching tool_result user message, when present.
       if (
@@ -379,6 +382,18 @@ function groupIntoTurns(messages: LLMMessage[]): Turn[] {
         && messages[i]!.content.some(b => b.type === 'tool_result')
       ) {
         i++
+        // Caller-owned histories may deliver results for one assistant turn
+        // in separate user messages. Keep the remaining matching results
+        // atomic with that turn, but stop before ordinary user input.
+        while (
+          i < messages.length
+          && messages[i]!.role === 'user'
+          && messages[i]!.content.length > 0
+          && messages[i]!.content.every(b =>
+            b.type === 'tool_result' && toolUseIds.has(b.tool_use_id))
+        ) {
+          i++
+        }
       }
       turns.push({ startIndex: start, endIndex: i })
     } else {
