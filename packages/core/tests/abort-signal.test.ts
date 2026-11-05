@@ -1,6 +1,40 @@
 import { describe, it, expect, vi } from 'vitest'
+import { getEventListeners } from 'node:events'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { Team } from '../src/team/team.js'
+import { mergeAbortSignals } from '../src/utils/abort.js'
+
+describe('mergeAbortSignals', () => {
+  it.each([
+    ['first', 0],
+    ['second', 1],
+  ] as const)('cleans up both source listeners when the %s signal aborts', (_, index) => {
+    const controllers = [new AbortController(), new AbortController()] as const
+    const [first, second] = controllers
+    const merged = mergeAbortSignals(first.signal, second.signal)
+
+    expect(getEventListeners(first.signal, 'abort')).toHaveLength(1)
+    expect(getEventListeners(second.signal, 'abort')).toHaveLength(1)
+
+    controllers[index].abort()
+
+    expect(merged.aborted).toBe(true)
+    expect(getEventListeners(first.signal, 'abort')).toHaveLength(0)
+    expect(getEventListeners(second.signal, 'abort')).toHaveLength(0)
+  })
+
+  it('does not add a listener when a source is already aborted', () => {
+    const aborted = new AbortController()
+    const active = new AbortController()
+    aborted.abort()
+
+    const merged = mergeAbortSignals(aborted.signal, active.signal)
+
+    expect(merged.aborted).toBe(true)
+    expect(getEventListeners(aborted.signal, 'abort')).toHaveLength(0)
+    expect(getEventListeners(active.signal, 'abort')).toHaveLength(0)
+  })
+})
 
 describe('AbortSignal support for runTeam and runTasks', () => {
   it('runTeam should accept an abortSignal option', async () => {
