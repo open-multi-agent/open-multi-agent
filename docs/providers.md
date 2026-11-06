@@ -188,6 +188,10 @@ Two caveats the table cannot express:
   field simply leaves it out of the request, so one config is safe to reuse
   across a mixed-provider team.
 
+Anthropic omits `temperature`, `topP`, and `topK` for Claude Opus 4.7,
+Sonnet 5, and later models that reject these sampling parameters. Explicit
+provider-native values in `extraBody` are still forwarded.
+
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not
 transport-level fields (`model`, `messages`, `tools`, `stream`, and Anthropic's

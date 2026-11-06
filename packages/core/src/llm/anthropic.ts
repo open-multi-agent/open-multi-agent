@@ -62,7 +62,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
-import { requiresBudgetThinking } from './anthropic-models.js'
+import { acceptsSamplingParams, requiresBudgetThinking } from './anthropic-models.js'
 import { assertValidMessages } from './validate.js'
 import { createEgressFetch } from './egress.js'
 import { UnsupportedContentBlockError, UnsupportedToolResultContentError } from '../errors.js'
@@ -435,9 +435,11 @@ export class AnthropicAdapter implements LLMAdapter {
         // fields (model/messages/system/tools/thinking) come after extraBody
         // so users cannot accidentally clobber them via extraBody.
         max_tokens: effectiveMaxTokens,
-        temperature: options.temperature,
-        top_p: options.topP,
-        top_k: options.topK,
+        ...(acceptsSamplingParams(options.model) ? {
+          temperature: options.temperature,
+          top_p: options.topP,
+          top_k: options.topK,
+        } : {}),
         ...options.extraBody,
         model: options.model,
         messages: anthropicMessages,
@@ -494,9 +496,11 @@ export class AnthropicAdapter implements LLMAdapter {
       {
         // See chat() above for the rationale behind this field ordering.
         max_tokens: effectiveMaxTokens,
-        temperature: options.temperature,
-        top_p: options.topP,
-        top_k: options.topK,
+        ...(acceptsSamplingParams(options.model) ? {
+          temperature: options.temperature,
+          top_p: options.topP,
+          top_k: options.topK,
+        } : {}),
         ...options.extraBody,
         model: options.model,
         messages: anthropicMessages,

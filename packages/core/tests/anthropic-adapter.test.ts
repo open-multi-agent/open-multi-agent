@@ -72,6 +72,42 @@ describe('AnthropicAdapter', () => {
     })
   })
 
+  describe.each(['chat', 'stream'] as const)('%s sampling parameters', (method) => {
+    async function send(model: string, extraBody?: Record<string, unknown>) {
+      mockCreate.mockResolvedValue(makeAnthropicResponse())
+      mockStream.mockReturnValue(makeStreamMock([], makeAnthropicResponse()))
+      const options = chatOpts({ model, temperature: 0.5, topP: 0.8, topK: 20, extraBody })
+      if (method === 'chat') {
+        await adapter.chat([textMsg('user', 'Hi')], options)
+        return mockCreate.mock.calls[0][0]
+      }
+      await collectEvents(adapter.stream([textMsg('user', 'Hi')], options))
+      return mockStream.mock.calls[0][0]
+    }
+
+    it.each(['claude-opus-4-7', 'claude-sonnet-5', 'claude-opus-4-7-20261001'])(
+      'omits unsupported sampling parameters for %s', async (model) => {
+        const request = await send(model)
+        for (const key of ['temperature', 'top_p', 'top_k']) {
+          expect(request).not.toHaveProperty(key)
+        }
+      },
+    )
+
+    it.each(['claude-3-7-sonnet-latest', 'claude-sonnet-4-6', 'claude-haiku-4-5'])(
+      'preserves sampling parameters for %s', async (model) => {
+        expect(await send(model)).toMatchObject({ temperature: 0.5, top_p: 0.8, top_k: 20 })
+      },
+    )
+
+    it.each(['claude-sonnet-4-6', 'claude-opus-4-7'])(
+      'preserves explicit extraBody overrides for %s', async (model) => {
+        const overrides = { temperature: 0.9, top_p: 0.7, top_k: 10 }
+        expect(await send(model, overrides)).toMatchObject(overrides)
+      },
+    )
+  })
+
   // =========================================================================
   // chat()
   // =========================================================================
@@ -281,7 +317,7 @@ describe('AnthropicAdapter', () => {
 
       await adapter.chat(
         [textMsg('user', 'Hi')],
-        chatOpts({ temperature: 0.5 }),
+        chatOpts({ model: 'claude-sonnet-4-6', temperature: 0.5 }),
       )
 
       expect(mockCreate.mock.calls[0][0].temperature).toBe(0.5)
