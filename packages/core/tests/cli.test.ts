@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   DashboardCliError,
+  DEFAULT_MODEL_HINT,
   DashboardTraceCaptureSink,
   EXIT,
   PROVIDER_REFERENCE,
@@ -357,5 +358,24 @@ describe('PROVIDER_REFERENCE', () => {
         baseUrlSupported: true,
       }),
     )
+  })
+})
+
+describe('DEFAULT_MODEL_HINT', () => {
+  it('has a hint for every provider in PROVIDER_REFERENCE', () => {
+    for (const row of PROVIDER_REFERENCE) {
+      expect(DEFAULT_MODEL_HINT[row.id]).toBeTruthy()
+    }
+  })
+
+  it('does not suggest retired models in provider templates', () => {
+    // gpt-4 (retired 2026-10-23) and Claude 3.5 Haiku (retired 2026-02-19).
+    expect(DEFAULT_MODEL_HINT['azure-openai']).not.toBe('gpt-4')
+    // Azure takes a deployment name, not a model id; a placeholder avoids
+    // suggesting a model the adapter's max_tokens parameter cannot drive.
+    expect(DEFAULT_MODEL_HINT['azure-openai']).not.toMatch(/^gpt-/)
+    expect(DEFAULT_MODEL_HINT.bedrock).not.toContain('claude-3-5-haiku')
+    // gemini-2.0-flash was shut down on the Gemini API on 2026-06-01.
+    expect(DEFAULT_MODEL_HINT.gemini).not.toContain('gemini-2.0')
   })
 })
