@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+## 1.24.0 - 2026-11-06
+
+### Added
+
+- Added NVIDIA NIM provider support via `provider: 'nvidia'`, `NVIDIA_API_KEY`
+  fallback, and optional self-hosted `baseURL`; existing provider IDs remain
+  available.
+
+### Changed
+
+- `create-oma-app` success output now shows the project directory before
+  rerunning the demo.
+- `create-oma-app` demo failures now report the active Node.js version and
+  include retry guidance for Node 20.0.0.
+- Gemini `usage.output_tokens` now includes thinking tokens, increasing reported
+  output usage for thinking models in both streaming and non-streaming paths.
+- `MessageBus.markRead()` now records only IDs of retained messages addressed to
+  the agent; unknown IDs and the sender's own broadcast are not persisted.
+- Context-window trimming and summarization can retain or summarize a different
+  message split when a fused tool turn sits on the boundary.
+- The release commit updates create-oma-app template core pins to the new core
+  release.
+
+### Fixed
+
+- Fixed Gemini usage accounting to include thinking tokens in output token
+  totals.
+- Fixed Azure OpenAI and Copilot streamed parallel tool calls so calls remain
+  separate when provider deltas omit indexes.
+- Fixed context trimming and rewriting to keep split tool results with their
+  matching tool calls and preserve valid provider message ordering.
+- Fixed team message read state to ignore unknown or unaddressed message IDs.
+
+### Compatibility
+
+- No public exports were removed or renamed, and no Node.js engine floor or
+  direct dependency major changed in this range.
+- The exported `SupportedProvider` union widens with `nvidia`; consumers with
+  exhaustive switches or `never` checks must add an `nvidia` case. This is a
+  compile-time widening, not a runtime break for existing provider IDs.
+- Gemini token budgets, cost estimates, evaluation totals, and assertions on
+  exact usage values may need recalibration because thinking tokens now count
+  toward output usage.
+- Callers that pre-mark unknown or unaddressed IDs, or mark their own broadcast,
+  will see different `isRead`/`getUnread` results and read-state snapshots; the
+  schema and `restore()` are unchanged, so existing snapshots still load.
+- Consumers relying on exact context retention or summary boundaries should
+  recheck expectations: sliding-window trimming can retain more than `maxTurns *
+  2` messages at a fused-tool-turn boundary, and summarization may return the
+  input unchanged when post-first-user history is one atomic turn.
+- `create-oma-app` generated project structure and install/demo execution are
+  unchanged; the released templates receive the deterministic core version pin
+  update.
+- `@open-multi-agent/otel` is unchanged and receives no release bump.
+- The release commit must bump core and create-oma-app and rewrite every
+  create-oma-app template core pin; otherwise the template-pin assertion will
+  fail.
+
 ## 1.23.0 - 2026-10-30
 
 ### Breaking changes
