@@ -304,19 +304,6 @@ function buildConfig(
  * fabricate them when absent to satisfy the framework's {@link ToolUseBlock}
  * contract.
  */
-/**
- * Gemini finish reasons that mean the response was withheld by a safety or
- * content policy. Mapped to `content_filter`, matching the OpenAI-family adapters.
- */
-const GEMINI_CONTENT_FILTER_REASONS = new Set([
-  'SAFETY',
-  'RECITATION',
-  'BLOCKLIST',
-  'PROHIBITED_CONTENT',
-  'SPII',
-  'IMAGE_SAFETY',
-])
-
 function generateId(): string {
   return `gemini-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
@@ -390,6 +377,19 @@ function fromGeminiPart(part: Part): ContentBlock | null {
   // inlineData echoes and other part types are silently ignored.
   return null
 }
+
+/**
+ * Gemini finish reasons that mean the response was withheld by a safety or
+ * content policy. Mapped to `content_filter`, matching the OpenAI-family adapters.
+ */
+const GEMINI_CONTENT_FILTER_REASONS = new Set([
+  'SAFETY',
+  'RECITATION',
+  'BLOCKLIST',
+  'PROHIBITED_CONTENT',
+  'SPII',
+  'IMAGE_SAFETY',
+])
 
 /**
  * Convert a Gemini {@link GenerateContentResponse} into a framework
