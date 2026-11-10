@@ -37,7 +37,9 @@ if (result.status === 'succeeded') {
 
 `runImage()` is a standalone function. It does not run inside an agent and does
 not register a tool; call it from application code, from a custom tool, or from
-a task's own code. Images do not flow between tasks as task output.
+a task's own code. To let a model decide when to generate, wrap it with
+[`createImageTool()`](#letting-the-model-generate). Images do not flow between
+tasks as task output.
 
 ## Request
 
@@ -205,6 +207,75 @@ the adapter. An adapter that waits internally should not wait longer than
 `options.maxRetryAfterMs`, which `runImage()` sets to its own cap. Attach
 `params` to an `ImageModelError` when the provider already accepted billable
 work, so the failed attempt still shows it.
+
+## Letting the model generate
+
+`createImageTool()` returns a tool definition that wraps `runImage()` with a
+fixed chain and options, for an agent that decides on its own when to draw or
+redraw. Register it like any custom tool:
+
+```ts
+import { createImageTool, OpenAIImageAdapter } from '@open-multi-agent/core'
+
+const images = new Map<string, { data: Uint8Array; mediaType: string }>()
+
+const imageTool = createImageTool({
+  chain: [new OpenAIImageAdapter({ model: 'gpt-image-1' })],
+  sizes: ['1024x1024', '1536x1024'],
+  // Full-size bytes go to the application, never through tool input or data.
+  onImage: async image => {
+    const ref = `img-${images.size + 1}`
+    images.set(ref, { data: image.data, mediaType: image.mediaType })
+    return ref
+  },
+  // Enables edits: the model passes back references it was given.
+  resolveImage: ref => images.get(ref),
+  onAttempt: record => attemptLog.push(record),
+})
+
+const agent = {
+  name: 'illustrator',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  tools: ['generate_image'],
+  customTools: [imageTool],
+}
+```
+
+The model sends:
+
+| Field | Meaning |
+|---|---|
+| `prompt` | What to generate, or how to change the input images. |
+| `size` | Optional. One of `sizes` when that list is set; otherwise any string, passed to the adapters unchanged. |
+| `images` | Only when `resolveImage` is set. References to input images, at most `maxInputImages` (default 4). The first is the image to edit and the rest are references. |
+
+Raw image bytes never pass through tool input. Each reference goes to
+`resolveImage(ref, context)`, which returns the bytes or `undefined`. An
+unknown reference fails the call before any model is called. Without
+`resolveImage` the tool only generates. References are whatever the
+application chooses; the simplest scheme is the string `onImage` returns.
+
+On success the model receives a short text summary and the image as a rich
+tool result (see [rich tool results](tool-configuration.md#rich-image-and-file-results)).
+`ToolResult.data` holds the provider, model, format, dimensions, byte length,
+attempt count, and reference, never the bytes, so it is safe to trace.
+
+| Option | Meaning |
+|---|---|
+| `onImage(image, info)` | Receives the full-size image, the request without bytes, the provider and model, the attempt records, and the tool context. It is awaited. A returned string becomes the image's reference and is told to the model. |
+| `modelImage(image)` | Chooses what the model sees. Return a smaller copy to save context, or `null` to send only the summary. By default the model sees the image unchanged. OMA does not resize images itself. |
+| `name`, `description` | Default `generate_image` and a description matching the schema. |
+| `consequential` | Marks the tool as having side effects; see [tool configuration](tool-configuration.md). |
+| `maxRetriesPerModel`, `backoffBaseMs`, `maxRetryAfterMs`, `attemptTimeoutMs`, `validate`, `onAttempt` | Passed to `runImage()` unchanged. |
+
+A chain that fails returns an error `ToolResult` with the error type and
+message, so the model can react, and the attempt records still reach
+`onAttempt`. A throw from `resolveImage`, `onImage`, or `modelImage` becomes an
+error result through the tool executor, like any other tool. Cancelling the
+agent's run aborts the image call through the tool's abort signal. Tool grants
+and `onToolCall` gates apply as for any custom tool, so an application can
+require approval before a billable generation.
 
 ## What is not covered
 

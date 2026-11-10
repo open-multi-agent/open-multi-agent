@@ -282,6 +282,13 @@ export type {
 // ---------------------------------------------------------------------------
 
 export { runImage } from './image/run-image.js'
+export { createImageTool } from './image/tool.js'
+export type {
+  ImageToolData,
+  ImageToolInput,
+  ImageToolOptions,
+  ImageToolOutputInfo,
+} from './image/tool.js'
 export { OpenAIImageAdapter } from './image/openai.js'
 export type { OpenAIImageAdapterOptions } from './image/openai.js'
 export { BlackForestLabsImageAdapter } from './image/black-forest-labs.js'
