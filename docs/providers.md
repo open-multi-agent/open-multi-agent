@@ -189,8 +189,10 @@ Two caveats the table cannot express:
   across a mixed-provider team.
 
 Anthropic omits `temperature`, `topP`, and `topK` for Claude Opus 4.7,
-Sonnet 5, and later models that reject these sampling parameters. Explicit
-provider-native values in `extraBody` are still forwarded.
+Sonnet 5, and later models that reject these sampling parameters. Model IDs
+that do not start with `claude-`, such as a non-Claude model behind an
+Anthropic-compatible `baseURL`, keep them. Explicit provider-native values in
+`extraBody` are still forwarded.
 
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not
