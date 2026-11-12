@@ -23,7 +23,9 @@ export function requiresBudgetThinking(model: string): boolean {
 /**
  * True when the model accepts a non-default `temperature`, `top_p`, or
  * `top_k`. Claude Opus 4.7, Sonnet 5, and later reject them with HTTP 400.
+ * A non-Claude model ID (an Anthropic-compatible endpoint behind `baseURL`)
+ * is left alone, since the Claude generation rule says nothing about it.
  */
 export function acceptsSamplingParams(model: string): boolean {
-  return SAMPLING_MODEL.test(model)
+  return !model.startsWith('claude-') || SAMPLING_MODEL.test(model)
 }
