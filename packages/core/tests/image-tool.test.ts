@@ -120,12 +120,23 @@ describe('createImageTool', () => {
     const { adapter, calls } = scripted('m1', [png()])
     const { executor } = executorFor(createImageTool({ chain: [adapter] }))
 
-    // The generate-only schema has no images field; a stray one is stripped
-    // by validation and never reaches the adapter as bytes.
+    // A model that believes it is editing gets an error, not a fresh image.
     const result = await executor.execute('generate_image', { prompt: 'x', images: ['a'] }, context)
 
-    expect(result.isError).toBeFalsy()
-    expect(calls).toEqual([{ prompt: 'x' }])
+    expect(result.isError).toBe(true)
+    expect(String(result.data)).toContain('does not accept input images')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('keeps the reference from the model when it cannot pass it back', async () => {
+    const { adapter } = scripted('m1', [png()])
+    const { executor } = executorFor(createImageTool({ chain: [adapter], onImage: async () => 'img-1' }))
+
+    const result = await executor.execute('generate_image', { prompt: 'x' }, context)
+
+    expect(result.data).toMatchObject({ ref: 'img-1' })
+    const parts = result.modelOutput as Array<{ type: string; text?: string }>
+    expect(parts[0]!.text).not.toContain('img-1')
   })
 
   it('resolves image references into the edit request', async () => {

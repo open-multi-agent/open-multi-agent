@@ -8,6 +8,9 @@
  * through tool input. The generated image goes back to the model as a rich
  * tool result, and the full-size bytes go to the application through
  * `onImage`, never through `ToolResult.data`.
+ *
+ * Experimental: the options and result shape may change in a minor release
+ * as real usage shows what the tool needs.
  */
 
 import { z } from 'zod'
@@ -142,7 +145,19 @@ function buildInputSchema(options: ImageToolOptions, maxInputImages: number) {
     prompt: z.string().min(1).describe('What to generate, or how to change the input images.'),
     size: size.optional(),
   }
-  if (options.resolveImage === undefined) return z.object(base)
+  if (options.resolveImage === undefined) {
+    // Reject `images` instead of stripping it, so a model that believes it is
+    // editing learns the tool generates only rather than getting a fresh image.
+    return z.object(base).passthrough().superRefine((value, ctx) => {
+      if ('images' in value) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['images'],
+          message: 'This tool does not accept input images; it generates from the prompt only.',
+        })
+      }
+    })
+  }
   return z.object({
     ...base,
     images: z.array(z.string().min(1)).min(1).max(maxInputImages)
@@ -162,6 +177,8 @@ function errorResult(message: string) {
 /**
  * Create a tool that lets a model generate, and optionally edit, images
  * through {@link runImage}.
+ *
+ * @experimental The options and result shape may change in a minor release.
  *
  * Register it like any custom tool, for example in `AgentConfig.customTools`.
  * A failed generation or an unknown image reference returns an error
@@ -258,7 +275,8 @@ export function createImageTool(
 
       let summary = `Generated a ${output.width}x${output.height} ${output.mediaType} image `
         + `with ${result.provider}/${result.model}.`
-      if (ref !== undefined) summary += ` Its reference is "${ref}".`
+      // A reference is only useful to the model when it can pass it back.
+      if (ref !== undefined && edits) summary += ` Its reference is "${ref}".`
       if (shown === null) summary += ' The image itself is not included in this result.'
 
       const modelOutput: ToolResultContentPart[] = [{ type: 'text', text: summary }]
