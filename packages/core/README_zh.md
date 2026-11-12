@@ -194,7 +194,7 @@ Coordinator -> 任务 DAG -> Scheduler -> AgentPool
 
 可选集成只在使用时加载：core 直接安装的只有 `@anthropic-ai/sdk` 和 `openai`；`zod` 是必需的 peer，支持 Zod 3.25 及以上或 Zod 4.6.6 及以上；其余 SDK 都是按需懒加载的可选 peer，OpenTelemetry 完全归属 `@open-multi-agent/otel`。依赖变更按实际价值与安全、体积、维护、兼容成本权衡，不设固定数量上限。
 
-图像生成与编辑使用独立的接口：`runImage()` 按顺序尝试一组图像模型，支持单模型重试、降级、出图校验，并为每次服务商调用留存记录；内置 OpenAI Images API、OpenRouter、火山方舟 Seedream 与 Black Forest Labs 的原生 adapter；`createImageTool()` 可将其封装为工具，由模型自行决定何时生成或编辑图像。详见[图像生成](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/image-generation.md)。
+图像生成与编辑使用独立的接口：`runImage()` 按顺序尝试一组图像模型，支持单模型重试、降级、出图校验，并为每次服务商调用留存记录；内置 OpenAI Images API、OpenRouter、火山方舟 Seedream 与 Black Forest Labs 的原生 adapter；`createImageTool()`（实验性）可将其封装为工具，由模型自行决定何时生成或编辑图像。详见[图像生成](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/image-generation.md)。
 
 凭证、模型、AI SDK 桥接、推理设置、MCP、本地端点配置、自托管部署，以及出网管控的确切生效边界，见 [Provider](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/providers.md)、[框架级 LLM 出网策略](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/egress-policy.md)、[自托管与数据驻留](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/self-hosting.md)和[工具配置](https://github.com/open-multi-agent/open-multi-agent/blob/main/docs/tool-configuration.md)。
 
