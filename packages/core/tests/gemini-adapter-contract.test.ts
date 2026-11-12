@@ -315,6 +315,17 @@ describe('GeminiAdapter (contract)', () => {
       expect(result.stop_reason).toBe('max_tokens')
     })
 
+    it.each(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'])(
+      'maps %s finishReason to content_filter',
+      async (finishReason) => {
+        mockGenerateContent.mockResolvedValue(makeGeminiResponse([], { finishReason }))
+
+        const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+        expect(result.stop_reason).toBe('content_filter')
+      },
+    )
+
     it('maps to tool_use when response contains functionCall (even with STOP)', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse(
         [{ functionCall: { id: 'c1', name: 'search', args: {} } }],
@@ -441,6 +452,17 @@ describe('GeminiAdapter (contract)', () => {
 
       const done = events.find(e => e.type === 'done')
       expect((done!.data as LLMResponse).stop_reason).toBe('max_tokens')
+    })
+
+    it('yields done event with content_filter when the stream is blocked', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([makeGeminiResponse([], { finishReason: 'SAFETY' })]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
     })
 
     it('yields error event when stream throws', async () => {
