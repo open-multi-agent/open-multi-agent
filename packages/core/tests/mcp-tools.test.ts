@@ -142,6 +142,7 @@ describe('connectMCPTools', () => {
             tools: [
               { name: 'b', description: 'B', inputSchema: { type: 'object' } },
             ],
+            nextCursor: '',
           }
         }
         return {
@@ -165,6 +166,54 @@ describe('connectMCPTools', () => {
     expect(listToolsMock.mock.calls[1][0]).toEqual({ cursor: 'c1' })
     expect(connected.tools).toHaveLength(2)
     expect(connected.tools.map((t) => t.name)).toEqual(['a', 'b'])
+  })
+
+  it('rejects a repeated pagination cursor and cleans up MCP resources', async () => {
+    listToolsMock
+      .mockResolvedValueOnce({
+        tools: [{ name: 'a', description: 'A' }],
+        nextCursor: 'loop',
+      })
+      .mockResolvedValueOnce({
+        tools: [{ name: 'b', description: 'B' }],
+        nextCursor: 'loop',
+      })
+      .mockRejectedValue(new Error('unexpected third tools/list request'))
+
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+
+    await expect(connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })).rejects.toThrow('MCP tools/list pagination returned a repeated cursor.')
+
+    expect(listToolsMock).toHaveBeenCalledTimes(2)
+    expect(clientCloseMock).toHaveBeenCalledTimes(1)
+    expect(transportCloseMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a pagination cursor cycle before requesting a visited page again', async () => {
+    listToolsMock
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'c1' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'c2' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'c1' })
+      .mockRejectedValue(new Error('unexpected repeated tools/list request'))
+
+    const { connectMCPTools } = await import('../src/tool/mcp.js')
+
+    await expect(connectMCPTools({
+      command: 'npx',
+      args: ['-y', 'mock-mcp-server'],
+    })).rejects.toThrow('MCP tools/list pagination returned a repeated cursor.')
+
+    expect(listToolsMock).toHaveBeenCalledTimes(3)
+    expect(listToolsMock.mock.calls.map((call) => call[0])).toEqual([
+      {},
+      { cursor: 'c1' },
+      { cursor: 'c2' },
+    ])
+    expect(clientCloseMock).toHaveBeenCalledTimes(1)
+    expect(transportCloseMock).toHaveBeenCalledTimes(1)
   })
 
   it('serializes non-text MCP content blocks', async () => {

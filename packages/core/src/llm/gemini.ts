@@ -379,6 +379,19 @@ function fromGeminiPart(part: Part): ContentBlock | null {
 }
 
 /**
+ * Gemini finish reasons that mean the response was withheld by a safety or
+ * content policy. Mapped to `content_filter`, matching the OpenAI-family adapters.
+ */
+const GEMINI_CONTENT_FILTER_REASONS = new Set([
+  'SAFETY',
+  'RECITATION',
+  'BLOCKLIST',
+  'PROHIBITED_CONTENT',
+  'SPII',
+  'IMAGE_SAFETY',
+])
+
+/**
  * Convert a Gemini {@link GenerateContentResponse} into a framework
  * {@link LLMResponse}.
  */
@@ -400,6 +413,8 @@ function fromGeminiResponse(
   let stop_reason: LLMResponse['stop_reason'] = 'end_turn'
   if (finishReason === 'MAX_TOKENS') {
     stop_reason = 'max_tokens'
+  } else if (finishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(finishReason)) {
+    stop_reason = 'content_filter'
   } else if (content.some((b) => b.type === 'tool_use')) {
     // Gemini may report STOP even when it returned function calls.
     stop_reason = 'tool_use'
@@ -552,6 +567,8 @@ export class GeminiAdapter implements LLMAdapter {
       let stop_reason: LLMResponse['stop_reason'] = 'end_turn'
       if (lastFinishReason === 'MAX_TOKENS') {
         stop_reason = 'max_tokens'
+      } else if (lastFinishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(lastFinishReason)) {
+        stop_reason = 'content_filter'
       } else if (hasToolUse) {
         stop_reason = 'tool_use'
       }
