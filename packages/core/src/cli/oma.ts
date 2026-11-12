@@ -735,11 +735,11 @@ function help(): string {
   ].join('\n')
 }
 
-const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
+export const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   anthropic: 'claude-opus-4-6',
-  'azure-openai': 'gpt-4',
+  'azure-openai': 'my-azure-deployment',
   openai: 'gpt-4o',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.8-flash',
   grok: 'grok-2-latest',
   nvidia: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
   copilot: 'gpt-4o',
@@ -749,7 +749,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   doubao: 'doubao-seed-1-8-251228',
   hunyuan: 'hy3-preview',
   qiniu: 'deepseek-v3',
-  bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
+  bedrock: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
 }
 
 async function cmdProvider(sub: string | undefined, arg: string | undefined, pretty: boolean): Promise<number> {
