@@ -94,7 +94,7 @@ describe('AnthropicAdapter', () => {
       },
     )
 
-    it.each(['claude-3-7-sonnet-latest', 'claude-sonnet-4-6', 'claude-haiku-4-5'])(
+    it.each(['claude-3-7-sonnet-latest', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'MiniMax-M2', 'glm-4.6'])(
       'preserves sampling parameters for %s', async (model) => {
         expect(await send(model)).toMatchObject({ temperature: 0.5, top_p: 0.8, top_k: 20 })
       },
