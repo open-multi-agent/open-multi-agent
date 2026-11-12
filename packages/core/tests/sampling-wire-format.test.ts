@@ -162,7 +162,7 @@ describe('Anthropic adapter wire format', () => {
 
     const adapter = new AnthropicAdapter('test-key')
     await adapter.chat([userMessage], {
-      model: 'claude-test',
+      model: 'claude-sonnet-4-5',
       maxTokens: 200,
       temperature: 0.6,
       topP: 0.85,
@@ -177,7 +177,27 @@ describe('Anthropic adapter wire format', () => {
     expect(body['temperature']).toBe(0.6)
     expect(body['max_tokens']).toBe(200)
     expect(body['metadata']).toEqual({ user_id: 'u1' })
-    expect(body['model']).toBe('claude-test')
+    expect(body['model']).toBe('claude-sonnet-4-5')
+  })
+
+  it('omits unsupported sampling parameters from the messages payload', async () => {
+    mockAnthropicCreate.mockResolvedValueOnce(okAnthropicResponse)
+
+    const adapter = new AnthropicAdapter('test-key')
+    await adapter.chat([userMessage], {
+      model: 'claude-opus-4-7',
+      maxTokens: 200,
+      temperature: 0.6,
+      topP: 0.85,
+      topK: 25,
+    })
+
+    const body = mockAnthropicCreate.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(body).not.toHaveProperty('temperature')
+    expect(body).not.toHaveProperty('top_p')
+    expect(body).not.toHaveProperty('top_k')
+    expect(body['max_tokens']).toBe(200)
+    expect(body['model']).toBe('claude-opus-4-7')
   })
 
   it('refuses to let extraBody override transport-level fields (model)', async () => {
