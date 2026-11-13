@@ -319,6 +319,22 @@ function buildInferenceConfig(options: LLMChatOptions): InferenceConfiguration |
   return Object.keys(cfg).length > 0 ? cfg : undefined
 }
 
+/**
+ * Bedrock Converse stop reasons that mean a guardrail or content filter
+ * withheld the response. Mapped to `content_filter`, matching the
+ * OpenAI-family and Gemini adapters. Other reasons pass through;
+ * `end_turn`, `tool_use`, and `max_tokens` already match.
+ */
+const BEDROCK_CONTENT_FILTER_REASONS = new Set([
+  'guardrail_intervened',
+  'content_filtered',
+])
+
+function mapBedrockStopReason(reason: string | undefined): string {
+  const raw = reason ?? 'end_turn'
+  return BEDROCK_CONTENT_FILTER_REASONS.has(raw) ? 'content_filter' : raw
+}
+
 // ---------------------------------------------------------------------------
 // Adapter implementation
 // ---------------------------------------------------------------------------
@@ -379,7 +395,7 @@ export class BedrockAdapter implements LLMAdapter {
       id: response.$metadata.requestId ?? '',
       content,
       model: options.model,
-      stop_reason: (response.stopReason as string) ?? 'end_turn',
+      stop_reason: mapBedrockStopReason(response.stopReason),
       usage: {
         input_tokens: response.usage?.inputTokens ?? 0,
         output_tokens: response.usage?.outputTokens ?? 0,
@@ -509,7 +525,7 @@ export class BedrockAdapter implements LLMAdapter {
         }
 
         if (event.messageStop) {
-          stopReason = (event.messageStop.stopReason as string) ?? 'end_turn'
+          stopReason = mapBedrockStopReason(event.messageStop.stopReason)
         }
 
         if (event.metadata?.usage) {
