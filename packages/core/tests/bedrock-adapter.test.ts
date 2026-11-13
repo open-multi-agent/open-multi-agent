@@ -188,6 +188,23 @@ describe('BedrockAdapter', () => {
       expect(result.stop_reason).toBe('max_tokens')
     })
 
+    it.each(['guardrail_intervened', 'content_filtered'])(
+      'maps %s stopReason to content_filter',
+      async (stopReason) => {
+        mockSend.mockResolvedValue(makeConverseResponse({ stopReason }))
+
+        const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+        expect(result.stop_reason).toBe('content_filter')
+      },
+    )
+
+    it('leaves stop_sequence unchanged', async () => {
+      mockSend.mockResolvedValue(makeConverseResponse({ stopReason: 'stop_sequence' }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+      expect(result.stop_reason).toBe('stop_sequence')
+    })
+
     it('maps inputTokens/outputTokens to usage', async () => {
       mockSend.mockResolvedValue(makeConverseResponse({
         usage: { inputTokens: 42, outputTokens: 17 },
@@ -479,6 +496,20 @@ describe('BedrockAdapter', () => {
       expect(response.stop_reason).toBe('end_turn')
       expect(response.usage).toEqual({ input_tokens: 10, output_tokens: 5 })
     })
+
+    it.each(['guardrail_intervened', 'content_filtered'])(
+      'maps %s messageStop to content_filter on done',
+      async (stopReason) => {
+        mockSend.mockResolvedValue(makeStreamResponse([
+          { messageStop: { stopReason } },
+          { metadata: { usage: { inputTokens: 3, outputTokens: 0 } } },
+        ]))
+
+        const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+        const done = events.find(e => e.type === 'done')
+        expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
+      },
+    )
 
     it('emits error event when stream throws', async () => {
       mockSend.mockRejectedValue(new Error('Stream failed'))
