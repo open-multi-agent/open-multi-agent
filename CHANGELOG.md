@@ -2,6 +2,100 @@
 
 ## Unreleased
 
+## 1.24.0 - 2026-11-13
+
+### Added
+
+- Added an experimental createImageTool so a model can call runImage to generate
+  or edit images from a tool call.
+- Added the nvidia provider for NVIDIA NIM models, defaulting to the hosted NIM
+  endpoint and falling back to the NVIDIA API key environment variable, with
+  base URL support for self-hosted deployments.
+
+### Changed
+
+- Claude Opus and Sonnet generation models now omit unsupported sampling
+  parameters temperature, top_p, and top_k, including Bedrock foundation-model
+  ids, inference profiles, and ARNs; non-Claude Anthropic-compatible models keep
+  their sampling values.
+- The provider template now suggests current models instead of retired ones: an
+  Azure deployment-name placeholder, a current Haiku for Bedrock, and a current
+  Gemini flash model.
+- The experimental image tool without a resolver now rejects image input as a
+  tool error, and its result advertises an image reference only when a resolver
+  is set.
+- create-oma-app now prints the project-directory change-directory instruction
+  immediately before the demo command, quoting paths that contain spaces.
+- create-oma-app now reports the active Node.js version when the no-key demo
+  fails and suggests Node 22 or 24 on Node 20.0.0.
+- Provider safety and guardrail finish reasons now map to content_filter:
+  Bedrock guardrail-intervened and content-filtered, and Gemini safety,
+  recitation, blocklist, prohibited-content, SPII, and image-safety finishes.
+
+### Fixed
+
+- Tool results remain contiguous when sliding-window and summarize strategies
+  rewrite history, and split results stay with their call when trimming context.
+- Gemini thinking tokens are counted in output usage for streaming and
+  non-streaming responses.
+- Parallel streamed tool calls that omit an index no longer collapse into one
+  call in the OpenAI, Azure OpenAI, and Copilot adapters.
+- Aborting a run now cancels a pending tool approval gate instead of waiting for
+  the decision.
+- Journal draining continues after an append failure so events queued during the
+  failed batch are not stranded.
+- The built-in file edit tool inserts the replacement string literally instead
+  of expanding dollar-sign replacement patterns.
+- MCP tool listing rejects repeated pagination cursors instead of looping.
+- A failing message subscriber no longer prevents delivery to the remaining
+  subscribers.
+- Message read state ignores unknown, other-agent, or invisible-broadcast ids
+  while existing snapshots still load.
+- create-oma-app clarifies demo failures on Node 20.0.0 and shows the project
+  directory before rerunning the demo.
+
+### Security
+
+- Outputs withheld by Bedrock guardrails or by Gemini safety, recitation,
+  blocklist, prohibited-content, SPII, and image-safety finishes are now
+  reported as content_filter rather than a normal stop, making blocked output
+  detectable to callers.
+
+### Compatibility
+
+- Core changes are additive: existing exports and signatures remain, and prior
+  provider behavior is otherwise preserved. Adding nvidia to the exported
+  supported provider union can require a new branch in exhaustive TypeScript
+  switches over provider ids.
+- The image tool is experimental; pin an exact core version if depending on its
+  options or result shape. Without a resolver an images input is rejected, and
+  with one an unknown reference fails before any model call.
+- Callers branching on stop reason must fold the old provider-specific strings
+  into content_filter, and should re-check logic that assumed a tool-use turn
+  cannot report content_filter.
+- Callers relying on sampling parameters being forwarded to affected Claude
+  models must pass them through the extra body option. Bedrock ids must
+  normalize to an Anthropic Claude foundation model, profile, or ARN for the
+  suppression rule to apply; non-Claude Bedrock models keep their parameters.
+- Recalibrate token budgets, cost-estimate assertions, and eval totals for
+  Gemini thinking models because output usage now includes thinking tokens.
+- Gate and approval code must expect the gate not to be invoked when the abort
+  signal is already aborted, an abort error tool result instead of a decision
+  when the signal fires mid-wait, and no approval record for aborted calls.
+  Journal error handlers must tolerate more than one callback per run.
+- Consumers of message read state should expect ids that do not resolve to
+  retained, addressed messages to be ignored; snapshots written by earlier
+  versions still restore.
+- Refresh snapshots and assertions for CLI and create-oma-app terminal text,
+  including provider-template suggestions, the change-directory instruction
+  placement, and Node-version demo-failure guidance.
+- otel changed only through non-shipping agent-guidance files, so no
+  consumer-visible otel behavior changed; its core range remains compatible with
+  a core minor.
+- Release mechanics require repinning core in all create-oma-app template
+  manifests and authoring the changelog section; those edits are not present in
+  the reviewed range.
+
 ## 1.23.0 - 2026-10-30
 
 ### Breaking changes
