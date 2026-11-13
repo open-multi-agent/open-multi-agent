@@ -194,6 +194,17 @@ that do not start with `claude-`, such as a non-Claude model behind an
 Anthropic-compatible `baseURL`, keep them. Explicit provider-native values in
 `extraBody` are still forwarded.
 
+Bedrock uses that same Claude generation rule. It recognises a foundation-model
+id (`anthropic.claude-…`), a geo inference profile (`us.anthropic.claude-…`,
+`global.anthropic.claude-…`, and the other regional prefixes), and an ARN whose
+resource id is one of those. The Bedrock `-vN` / `-vN:M` suffix is ignored when
+deciding. Opus 4.7, Opus 4.8, Sonnet 5, and later Claude ids drop `temperature`,
+`topP`, and `topK`; older Claude ids and non-Claude models (Llama, Nova, and
+the rest) keep them. `extraBody` is still copied into
+`additionalModelRequestFields`. An application inference profile ARN that does
+not contain the model id is left unchanged, because the id alone does not say
+which model it routes to.
+
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not
 transport-level fields (`model`, `messages`, `tools`, `stream`, and Anthropic's

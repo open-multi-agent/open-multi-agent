@@ -333,6 +333,75 @@ describe('BedrockAdapter', () => {
   })
 
   // =========================================================================
+  // Sampling parameters (Claude Opus 4.7+ / Sonnet 5 reject them with HTTP 400)
+  // =========================================================================
+
+  describe.each(['chat', 'stream'] as const)('%s sampling parameters', (method) => {
+    async function send(overrides: Parameters<typeof chatOpts>[0] = {}) {
+      mockSend.mockResolvedValue(
+        method === 'chat' ? makeConverseResponse() : makeStreamResponse([]),
+      )
+      const options = chatOpts({
+        maxTokens: 512,
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        ...overrides,
+      })
+      if (method === 'chat') {
+        await adapter.chat([textMsg('user', 'Hi')], options)
+      } else {
+        await collectEvents(adapter.stream([textMsg('user', 'Hi')], options))
+      }
+      return mockSend.mock.calls[0][0].input as {
+        inferenceConfig?: Record<string, unknown>
+        additionalModelRequestFields?: Record<string, unknown>
+      }
+    }
+
+    it.each([
+      'anthropic.claude-opus-4-7',
+      'us.anthropic.claude-opus-4-7',
+      'global.anthropic.claude-opus-4-8',
+      'eu.anthropic.claude-sonnet-5',
+      'arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-opus-4-7',
+    ])('omits temperature, topP, and top_k for %s', async (model) => {
+      const input = await send({ model })
+      expect(input.inferenceConfig).toMatchObject({ maxTokens: 512 })
+      expect(input.inferenceConfig).not.toHaveProperty('temperature')
+      expect(input.inferenceConfig).not.toHaveProperty('topP')
+      expect(input.additionalModelRequestFields).toBeUndefined()
+    })
+
+    it.each([
+      'anthropic.claude-3-5-haiku-20241022-v1:0',
+      'us.anthropic.claude-sonnet-4-6-20250514-v1:0',
+      'anthropic.claude-sonnet-4-20250514-v1:0',
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'amazon.nova-pro-v1:0',
+      'meta.llama4-maverick-17b-instruct-v1:0',
+    ])('keeps sampling parameters for %s', async (model) => {
+      const input = await send({ model })
+      expect(input.inferenceConfig).toMatchObject({
+        maxTokens: 512,
+        temperature: 0.7,
+        topP: 0.9,
+      })
+      expect(input.additionalModelRequestFields).toMatchObject({ top_k: 40 })
+    })
+
+    it('still forwards extraBody when sampling parameters are omitted', async () => {
+      const input = await send({
+        model: 'us.anthropic.claude-opus-4-7',
+        extraBody: { thinking: { type: 'adaptive' } },
+      })
+      expect(input.inferenceConfig).not.toHaveProperty('temperature')
+      expect(input.inferenceConfig).not.toHaveProperty('topP')
+      expect(input.additionalModelRequestFields).toEqual({ thinking: { type: 'adaptive' } })
+    })
+  })
+
+  // =========================================================================
   // stream()
   // =========================================================================
 
