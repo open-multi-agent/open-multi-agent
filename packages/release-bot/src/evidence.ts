@@ -10,6 +10,81 @@ import {
 
 interface PackageManifest {
   readonly version?: unknown
+  readonly files?: unknown
+}
+
+interface PublishedManifest {
+  readonly version: string
+  /** Whether a repository-relative path reaches this package's npm tarball. */
+  readonly ships: (repoPath: string) => boolean
+}
+
+const PUBLISHED_WORKSPACES = {
+  core: 'packages/core',
+  otel: 'packages/otel',
+  createOmaApp: 'packages/create-oma-app',
+} as const
+
+type PublishedWorkspace = keyof typeof PUBLISHED_WORKSPACES
+
+/**
+ * Build output named in a manifest's `files` field, mapped to the
+ * package-relative inputs that produce it. Every published workspace runs
+ * `tsc` with its `tsconfig.json` (rootDir `src`, outDir `dist`) before
+ * publishing. A leading slash anchors an input to the package root.
+ */
+const BUILD_OUTPUT_INPUTS: Readonly<Record<string, readonly string[]>> = {
+  dist: ['/src', '/tsconfig.json'],
+}
+
+/** npm packs these from the package root even when `files` omits them. */
+const ALWAYS_SHIPPED_ROOT_FILE = /^(?:package\.json|(?:readme|license|licence|copying)(?:\..+)?)$/i
+
+interface FilesEntry {
+  readonly body: string
+  readonly anchored: boolean
+}
+
+/**
+ * Return a predicate over package-relative paths that is true when a path
+ * ships in the npm tarball or compiles into something that does. Entries
+ * follow the gitignore-style rules npm applies to `files`: an entry with a
+ * leading or inner slash is anchored to the package root, and a bare name
+ * matches in the root and in every directory npm walks to reach an anchored
+ * entry (which is how `README.md` also ships `template/README.md`). Without a
+ * `files` field npm ships the whole package, so every path counts.
+ */
+export function shippedPathMatcher(files: readonly string[] | undefined): (path: string) => boolean {
+  if (files === undefined) return () => true
+  const entries = files
+    .flatMap(entry => BUILD_OUTPUT_INPUTS[normalizeFilesEntry(entry)] ?? [entry])
+    .map(parseFilesEntry)
+  const walkedDirectories = new Set([''])
+  for (const { body, anchored } of entries) {
+    if (!anchored) continue
+    const segments = body.split('/')
+    for (let end = 1; end < segments.length; end++) walkedDirectories.add(segments.slice(0, end).join('/'))
+  }
+  return path => ALWAYS_SHIPPED_ROOT_FILE.test(path) || entries.some(({ body, anchored }) => anchored
+    ? path === body || path.startsWith(`${body}/`)
+    : path.split('/').some((segment, index, segments) =>
+        segment === body && walkedDirectories.has(segments.slice(0, index).join('/'))))
+}
+
+function parseFilesEntry(entry: string): FilesEntry {
+  if (entry.startsWith('!') || /[*?[\]{}]/.test(entry)) {
+    throw new Error(`Unsupported "files" entry "${entry}": globs and negations need explicit support in shippedPathMatcher.`)
+  }
+  const trimmed = entry.replace(/^\.\//, '').replace(/\/+$/, '')
+  const body = normalizeFilesEntry(entry)
+  if (body === '' || body === '.') {
+    throw new Error(`Unsupported "files" entry "${entry}": it does not name a file or directory.`)
+  }
+  return { body, anchored: trimmed.includes('/') }
+}
+
+function normalizeFilesEntry(entry: string): string {
+  return entry.replace(/^\.\//, '').replace(/^\/+/, '').replace(/\/+$/, '')
 }
 
 export type ReleaseReviewRisk = 'critical' | 'high' | 'medium' | 'low'
@@ -174,10 +249,10 @@ export async function collectReleaseEvidence(
   runner: CommandRunner,
   generatedAt = new Date().toISOString(),
 ): Promise<ReleaseEvidence> {
-  const [baseTagResult, headResult, versions] = await Promise.all([
+  const [baseTagResult, headResult, manifests] = await Promise.all([
     runner.run('git', ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'], { cwd: repoRoot }),
     runner.run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot }),
-    readVersions(repoRoot),
+    readPublishedManifests(repoRoot),
   ])
 
   const baseTag = baseTagResult.stdout.trim()
@@ -189,10 +264,12 @@ export async function collectReleaseEvidence(
   const headSha = headResult.stdout.trim()
   const range = `${baseSha}..${headSha}`
 
+  // --no-renames lists a moved file under both its old and new path, so moving
+  // a file out of a shipped directory still counts as a change to that package.
   const [logResult, namesResult, statsResult, changelog] = await Promise.all([
     runner.run('git', ['log', '--format=%H%x1f%s%x1f%b%x1e', range], { cwd: repoRoot }),
-    runner.run('git', ['diff', '--name-only', '-z', range], { cwd: repoRoot }),
-    runner.run('git', ['diff', '--numstat', '-z', range], { cwd: repoRoot }),
+    runner.run('git', ['diff', '--no-renames', '--name-only', '-z', range], { cwd: repoRoot }),
+    runner.run('git', ['diff', '--no-renames', '--numstat', '-z', range], { cwd: repoRoot }),
     readFile(join(repoRoot, 'CHANGELOG.md'), 'utf8'),
   ])
 
@@ -210,35 +287,55 @@ export async function collectReleaseEvidence(
     baseTag,
     baseSha,
     headSha,
-    versions,
+    versions: {
+      core: manifests.core.version,
+      otel: manifests.otel.version,
+      createOmaApp: manifests.createOmaApp.version,
+    },
     commits: parseLog(logResult.stdout),
     changedFiles,
     changelogUnreleased: extractUnreleased(changelog),
+    // A published workspace counts as changed only when a path that reaches its
+    // npm tarball changed. Tests, examples, and agent guidance files do not.
     workspaceChanges: {
-      core: paths.some(path => path.startsWith('packages/core/')),
-      otel: paths.some(path => path.startsWith('packages/otel/')),
-      createOmaApp: paths.some(path => path.startsWith('packages/create-oma-app/')),
+      core: paths.some(manifests.core.ships),
+      otel: paths.some(manifests.otel.ships),
+      createOmaApp: paths.some(manifests.createOmaApp.ships),
       docs: paths.some(path => path === 'README.md' || path.startsWith('docs/')),
       workflows: paths.some(path => path.startsWith('.github/workflows/')),
     },
   })
 }
 
-async function readVersions(repoRoot: string): Promise<ReleaseEvidence['versions']> {
+/** Read the HEAD manifest of every published workspace. */
+export async function readPublishedManifests(
+  repoRoot: string,
+): Promise<Record<PublishedWorkspace, PublishedManifest>> {
   const [core, otel, createOmaApp] = await Promise.all([
-    readManifestVersion(join(repoRoot, 'packages/core/package.json')),
-    readManifestVersion(join(repoRoot, 'packages/otel/package.json')),
-    readManifestVersion(join(repoRoot, 'packages/create-oma-app/package.json')),
+    readPublishedManifest(repoRoot, PUBLISHED_WORKSPACES.core),
+    readPublishedManifest(repoRoot, PUBLISHED_WORKSPACES.otel),
+    readPublishedManifest(repoRoot, PUBLISHED_WORKSPACES.createOmaApp),
   ])
   return { core, otel, createOmaApp }
 }
 
-async function readManifestVersion(path: string): Promise<string> {
+async function readPublishedManifest(repoRoot: string, workspace: string): Promise<PublishedManifest> {
+  const path = join(repoRoot, workspace, 'package.json')
   const manifest = JSON.parse(await readFile(path, 'utf8')) as PackageManifest
   if (typeof manifest.version !== 'string') {
     throw new Error(`Manifest has no string version: ${path}`)
   }
-  return manifest.version
+  const { files } = manifest
+  const isFileList = Array.isArray(files) && files.every((entry): entry is string => typeof entry === 'string')
+  if (files !== undefined && !isFileList) {
+    throw new Error(`Manifest "files" is not a list of strings: ${path}`)
+  }
+  const shipsWithinPackage = shippedPathMatcher(isFileList ? files : undefined)
+  const prefix = `${workspace}/`
+  return {
+    version: manifest.version,
+    ships: repoPath => repoPath.startsWith(prefix) && shipsWithinPackage(repoPath.slice(prefix.length)),
+  }
 }
 
 function parseLog(output: string): ReleaseCommit[] {

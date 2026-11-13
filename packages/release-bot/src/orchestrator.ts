@@ -167,7 +167,7 @@ You are the change analyst for the OMA monorepo. Call each of the three evidence
 Inspect the deterministic risk-ranked review bundle for public API, runtime, provider, template, dependency, and workflow changes that affect classification.
 The bundle selection limit is intentional; use full evidence metadata for unselected paths, and report truncated critical or high-risk diffs as uncertainty.
 Recommend stable semantic-version bumps. create-oma-app must increment whenever core releases because templates pin core exactly. When its own workspace did not change, its bump is patch-only; deterministic code enforces that policy.
-OTel increments only when packages/otel changed. Write concise, user-facing, single-line changelog bullets.`,
+OTel increments exactly when workspaceChanges.otel is true. A workspace counts as changed only when a file that ships in its npm tarball changed; tests, examples, and agent guidance files do not count. Write concise, user-facing, single-line changelog bullets.`,
     },
     {
       name: 'compatibility-auditor',
@@ -194,7 +194,7 @@ Breaking means an unchanged caller can stop working after upgrading. Report unce
       },
       systemPrompt: `${COMMON_GUARDRAILS}
 You are the release planner. Use the immutable evidence summary and the two structured dependency reports. You do not need repository tools.
-Choose release or none. A release requires a core bump and a create-oma-app bump. OTel bumps exactly when its workspace changed.
+Choose release or none. A release requires a core bump and a create-oma-app bump. OTel bumps exactly when workspaceChanges.otel is true.
 When create-oma-app itself did not change, select patch because its only release change will be the deterministic core template pin. Otherwise classify its own changes.
 Do not invent concrete version numbers: return only bump classes. Preserve meaningful compatibility and migration information in the changelog.
 Reject promotional language and claims not supported by merged code.`,
