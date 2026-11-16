@@ -46,7 +46,7 @@ import {
  * directly and bypassing this factory, or via {@link AISdkAdapter} from
  * `@open-multi-agent/core/ai-sdk` (optional peer `ai`).
  */
-export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'nvidia' | 'hunyuan' | 'minimax' | 'mimo' | 'openai' | 'gemini' | 'qiniu'
+export type SupportedProvider = 'anthropic' | 'azure-openai' | 'bedrock' | 'copilot' | 'deepseek' | 'doubao' | 'grok' | 'nvidia' | 'venice' | 'hunyuan' | 'minimax' | 'mimo' | 'openai' | 'gemini' | 'qiniu'
 
 const PROVIDER_DEFAULT_BASE_URLS: Partial<Record<SupportedProvider, string>> = {
   anthropic: 'https://api.anthropic.com',
@@ -54,6 +54,7 @@ const PROVIDER_DEFAULT_BASE_URLS: Partial<Record<SupportedProvider, string>> = {
   doubao: 'https://ark.cn-beijing.volces.com/api/v3',
   grok: 'https://api.x.ai/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
+  venice: 'https://api.venice.ai/api/v1',
   hunyuan: 'https://tokenhub.tencentmaas.com/v1',
   minimax: 'https://api.minimax.io/v1',
   mimo: 'https://api.xiaomimimo.com/v1',
@@ -140,6 +141,7 @@ function prepareProviderBaseURL(
  * - `gemini`       → `GEMINI_API_KEY` / `GOOGLE_API_KEY`
  * - `grok`         → `XAI_API_KEY`
  * - `nvidia`       → `NVIDIA_API_KEY`
+ * - `venice`       → `VENICE_API_KEY`
  * - `minimax`      → `MINIMAX_API_KEY`
  * - `mimo`         → `MIMO_API_KEY`, optional `MIMO_BASE_URL`
  * - `deepseek`     → `DEEPSEEK_API_KEY`
@@ -199,6 +201,10 @@ export async function createAdapter(
     case 'nvidia': {
       const { NvidiaAdapter } = await import('./nvidia.js')
       return new NvidiaAdapter(apiKey, policyBaseURL, policy)
+    }
+    case 'venice': {
+      const { VeniceAdapter } = await import('./venice.js')
+      return new VeniceAdapter(apiKey, policyBaseURL, policy)
     }
     case 'minimax': {
       const { MiniMaxAdapter } = await import('./minimax.js')
