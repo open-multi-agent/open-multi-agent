@@ -13,7 +13,11 @@ export function mergeAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
     controller.abort()
     return controller.signal
   }
-  const abort = () => controller.abort()
+  const abort = () => {
+    a.removeEventListener('abort', abort)
+    b.removeEventListener('abort', abort)
+    controller.abort()
+  }
   a.addEventListener('abort', abort, { once: true })
   b.addEventListener('abort', abort, { once: true })
   return controller.signal
