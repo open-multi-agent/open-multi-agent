@@ -99,7 +99,7 @@ console.log(result.totalTokenUsage)
 ## 在你自己的环境里跑
 
 - **不上报遥测，没有托管控制面。** 它是一个库，没有 OMA 后端和账号，也没有这样的计划；不发统计、许可证、更新或任何回连请求。[自托管与数据驻留](docs/self-hosting.md)
-- **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
+- **你的密钥、你的模型。** 内置 Anthropic、OpenAI、Azure OpenAI、Bedrock、Gemini、Grok、NVIDIA、Venice、Copilot 适配器，以及 DeepSeek、豆包、混元、MiniMax、MiMo、七牛；Ollama、vLLM、llama-server 通过 `baseURL` 接入；另支持任意 OpenAI 兼容端点与 Vercel AI SDK provider。[Provider 文档](docs/providers.md)
 - **出网策略。** `offline` 或 `allowlist`，在内置适配器建立连接前生效；下级策略只能收紧上级，无法完整约束的传输层直接失败关闭，process 与 ACP backend 不在覆盖范围内。[LLM 出网策略](docs/egress-policy.md)
 
 ## 基于 OMA 构建
