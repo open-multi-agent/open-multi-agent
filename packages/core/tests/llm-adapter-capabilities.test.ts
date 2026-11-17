@@ -47,6 +47,7 @@ import { CopilotAdapter } from '../src/llm/copilot.js'
 import { DeepSeekAdapter } from '../src/llm/deepseek.js'
 import { GrokAdapter } from '../src/llm/grok.js'
 import { NvidiaAdapter } from '../src/llm/nvidia.js'
+import { VeniceAdapter } from '../src/llm/venice.js'
 import { QiniuAdapter } from '../src/llm/qiniu.js'
 import { MiniMaxAdapter } from '../src/llm/minimax.js'
 import { MiMoAdapter } from '../src/llm/mimo.js'
@@ -64,6 +65,7 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     ['deepseek', () => new DeepSeekAdapter('dummy-key'), 'tool-use-only' as const],
     ['grok', () => new GrokAdapter('dummy-key'), 'never' as const],
     ['nvidia', () => new NvidiaAdapter('dummy-key'), 'never' as const],
+    ['venice', () => new VeniceAdapter('dummy-key'), 'never' as const],
     ['qiniu', () => new QiniuAdapter('dummy-key'), 'never' as const],
     ['minimax', () => new MiniMaxAdapter('dummy-key'), 'tool-use-only' as const],
     ['mimo', () => new MiMoAdapter('dummy-key'), 'tool-use-only' as const],
@@ -83,6 +85,7 @@ describe('LLMAdapter Phase 1 capability contract', () => {
     const parent = new OpenAIAdapter('dummy-key').capabilities
     expect(new GrokAdapter('dummy-key').capabilities).toEqual(parent)
     expect(new NvidiaAdapter('dummy-key').capabilities).toEqual(parent)
+    expect(new VeniceAdapter('dummy-key').capabilities).toEqual(parent)
     expect(new QiniuAdapter('dummy-key').capabilities).toEqual(parent)
   })
 
