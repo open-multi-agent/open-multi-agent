@@ -376,6 +376,7 @@ async function listAllMcpTools(
   requestOpts: { timeout: number },
 ): Promise<MCPToolDescriptor[]> {
   const acc: MCPToolDescriptor[] = []
+  const seenCursors = new Set<string>()
   let cursor: string | undefined
   do {
     const page = await client.listTools(
@@ -383,10 +384,19 @@ async function listAllMcpTools(
       requestOpts,
     )
     acc.push(...(page.tools ?? []))
-    cursor =
+    const nextCursor =
       typeof page.nextCursor === 'string' && page.nextCursor !== ''
         ? page.nextCursor
         : undefined
+    if (nextCursor !== undefined) {
+      if (seenCursors.has(nextCursor)) {
+        throw new Error(
+          'MCP tools/list pagination returned a repeated cursor.',
+        )
+      }
+      seenCursors.add(nextCursor)
+    }
+    cursor = nextCursor
   } while (cursor !== undefined)
   return acc
 }

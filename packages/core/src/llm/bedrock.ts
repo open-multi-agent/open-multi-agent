@@ -60,6 +60,7 @@ import {
   resolveReasoningOutboundMaxChars,
   type ReasoningOutboundOptions,
 } from './reasoning-fallback.js'
+import { acceptsSamplingParams } from './anthropic-models.js'
 import { assertValidMessages } from './validate.js'
 import { UnsupportedContentBlockError, UnsupportedToolResultContentError } from '../errors.js'
 import { toolResultContentParts } from '../tool/result.js'
@@ -311,12 +312,57 @@ function fromBedrockContentBlock(block: BedrockContentBlock): ContentBlock | nul
   return null
 }
 
+/**
+ * Bedrock Claude ids are not Anthropic ids. `acceptsSamplingParams` only
+ * recognises a string that starts with `claude-`. Pull that id out of a
+ * foundation-model id (`anthropic.claude-…`), a geo inference profile
+ * (`us.anthropic.claude-…`, `global.anthropic.claude-…`), or an ARN whose
+ * resource is one of those, and drop the Bedrock `-vN` / `-vN:M` suffix.
+ * An id that does not name a Claude model returns undefined.
+ */
+function claudeIdFromBedrock(modelId: string): string | undefined {
+  const marker = 'anthropic.claude-'
+  const at = modelId.lastIndexOf(marker)
+  if (at < 0) return undefined
+  const claudeId = modelId.slice(at + 'anthropic.'.length).replace(/-v\d+(?::\d+)?$/, '')
+  return claudeId.startsWith('claude-') ? claudeId : undefined
+}
+
+/** Same rule as the Anthropic adapter, after normalising a Bedrock model id. */
+function bedrockAcceptsSampling(model: string): boolean {
+  if (model.startsWith('claude-')) return acceptsSamplingParams(model)
+  const claudeId = claudeIdFromBedrock(model)
+  return claudeId === undefined || acceptsSamplingParams(claudeId)
+}
+
 function buildInferenceConfig(options: LLMChatOptions): InferenceConfiguration | undefined {
   const cfg: InferenceConfiguration = {}
   if (options.maxTokens !== undefined) cfg.maxTokens = options.maxTokens ?? 4096
-  if (options.temperature !== undefined) cfg.temperature = options.temperature
-  if (options.topP !== undefined) cfg.topP = options.topP
+  if (bedrockAcceptsSampling(options.model)) {
+    if (options.temperature !== undefined) cfg.temperature = options.temperature
+    if (options.topP !== undefined) cfg.topP = options.topP
+  }
   return Object.keys(cfg).length > 0 ? cfg : undefined
+}
+
+function samplingTopK(options: LLMChatOptions): number | undefined {
+  return bedrockAcceptsSampling(options.model) ? options.topK : undefined
+}
+
+/**
+ * Bedrock Converse stop reasons that mean a guardrail or content filter
+ * withheld the response. Mapped to `content_filter`, matching the
+ * OpenAI-family and Gemini adapters. Other reasons pass through;
+ * `end_turn`, `tool_use`, and `max_tokens` already match.
+ */
+const BEDROCK_CONTENT_FILTER_REASONS = new Set([
+  'guardrail_intervened',
+  'content_filtered',
+])
+
+function mapBedrockStopReason(reason: string | undefined): string {
+  const raw = reason ?? 'end_turn'
+  return BEDROCK_CONTENT_FILTER_REASONS.has(raw) ? 'content_filter' : raw
 }
 
 // ---------------------------------------------------------------------------
@@ -359,9 +405,10 @@ export class BedrockAdapter implements LLMAdapter {
       inferenceConfig: buildInferenceConfig(options) ?? { maxTokens: 4096 },
     }
 
-    if (options.topK !== undefined || options.extraBody) {
+    const topK = samplingTopK(options)
+    if (topK !== undefined || options.extraBody) {
       input.additionalModelRequestFields = {
-        ...(options.topK !== undefined ? { top_k: options.topK } : {}),
+        ...(topK !== undefined ? { top_k: topK } : {}),
         ...(options.extraBody as Record<string, unknown> | undefined),
       }
     }
@@ -379,7 +426,7 @@ export class BedrockAdapter implements LLMAdapter {
       id: response.$metadata.requestId ?? '',
       content,
       model: options.model,
-      stop_reason: (response.stopReason as string) ?? 'end_turn',
+      stop_reason: mapBedrockStopReason(response.stopReason),
       usage: {
         input_tokens: response.usage?.inputTokens ?? 0,
         output_tokens: response.usage?.outputTokens ?? 0,
@@ -404,9 +451,10 @@ export class BedrockAdapter implements LLMAdapter {
       inferenceConfig: buildInferenceConfig(options) ?? { maxTokens: 4096 },
     }
 
-    if (options.topK !== undefined || options.extraBody) {
+    const topK = samplingTopK(options)
+    if (topK !== undefined || options.extraBody) {
       input.additionalModelRequestFields = {
-        ...(options.topK !== undefined ? { top_k: options.topK } : {}),
+        ...(topK !== undefined ? { top_k: topK } : {}),
         ...(options.extraBody as Record<string, unknown> | undefined),
       }
     }
@@ -509,7 +557,7 @@ export class BedrockAdapter implements LLMAdapter {
         }
 
         if (event.messageStop) {
-          stopReason = (event.messageStop.stopReason as string) ?? 'end_turn'
+          stopReason = mapBedrockStopReason(event.messageStop.stopReason)
         }
 
         if (event.metadata?.usage) {

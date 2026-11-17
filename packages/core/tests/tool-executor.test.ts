@@ -41,8 +41,24 @@ function makeExecutor(...tools: ReturnType<typeof defineTool>[]) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((r) => { resolve = r })
-  return { promise, resolve }
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((r, j) => {
+    resolve = r
+    reject = j
+  })
+  return { promise, resolve, reject }
+}
+
+async function within<T>(promise: Promise<T>, ms = 250): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`Promise did not settle within ${ms}ms`)), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function jsonPayloadStringSchema() {
@@ -184,13 +200,80 @@ describe('ToolExecutor', () => {
     )
     await gateStarted.promise
     controller.abort()
-    gateDecision.resolve({ action: 'allow' })
 
-    const result = await resultPromise
+    const result = await within(resultPromise)
 
     expect(execute).not.toHaveBeenCalled()
     expect(result.isError).toBe(true)
     expect(result.data).toContain('aborted')
+
+    gateDecision.resolve({ action: 'allow' })
+    await gateDecision.promise
+  })
+
+  it('observes a late onToolCall rejection after aborting the wait', async () => {
+    const execute = vi.fn(async () => ({ data: 'SHOULD_NOT_RUN', isError: false }))
+    const gateStarted = deferred<void>()
+    const gateDecision = deferred<{ action: 'allow' }>()
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'rejecting_gate',
+      description: 'Rejects after the caller stops waiting.',
+      inputSchema: z.object({}),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, {
+      onToolCall: vi.fn(() => {
+        gateStarted.resolve()
+        return gateDecision.promise
+      }),
+    })
+    const controller = new AbortController()
+
+    const resultPromise = executor.execute(
+      'rejecting_gate',
+      {},
+      { ...dummyContext, abortSignal: controller.signal },
+    )
+    await gateStarted.promise
+    controller.abort()
+
+    const result = await within(resultPromise)
+    gateDecision.reject(new Error('late gate failure'))
+    await new Promise<void>(resolve => { setTimeout(resolve, 0) })
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.isError).toBe(true)
+    expect(result.data).toContain('aborted')
+  })
+
+  it('removes the abort listener when onToolCall finishes first', async () => {
+    const execute = vi.fn(async () => ({ data: 'ran', isError: false }))
+    const registry = new ToolRegistry()
+    registry.register(defineTool({
+      name: 'allowed_gate',
+      description: 'Runs after approval.',
+      inputSchema: z.object({}),
+      execute,
+    }))
+    const executor = new ToolExecutor(registry, {
+      onToolCall: vi.fn(async () => ({ action: 'allow' })),
+    })
+    const controller = new AbortController()
+    const addEventListener = vi.spyOn(controller.signal, 'addEventListener')
+    const removeEventListener = vi.spyOn(controller.signal, 'removeEventListener')
+
+    const result = await executor.execute(
+      'allowed_gate',
+      {},
+      { ...dummyContext, abortSignal: controller.signal },
+    )
+
+    const abortListener = addEventListener.mock.calls.find(([event]) => event === 'abort')?.[1]
+    expect(abortListener).toBeTypeOf('function')
+    expect(removeEventListener).toHaveBeenCalledWith('abort', abortListener)
+    expect(execute).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({ data: 'ran', isError: false })
   })
 
   it.each([

@@ -278,10 +278,7 @@ export class JournalRecorder {
         : {}),
     } as RunEvent
     this.pending.push(event)
-    if (!this.draining) {
-      this.draining = true
-      this.chain = this.chain.then(() => this.drain())
-    }
+    this.scheduleDrain()
     return seq
   }
 
@@ -364,6 +361,12 @@ export class JournalRecorder {
   // Internals
   // -------------------------------------------------------------------------
 
+  private scheduleDrain(): void {
+    if (this.draining || this.pending.length === 0) return
+    this.draining = true
+    this.chain = this.chain.then(() => this.drain())
+  }
+
   private async drain(): Promise<void> {
     try {
       while (this.pending.length > 0) {
@@ -375,6 +378,10 @@ export class JournalRecorder {
       this.onError?.(error)
     } finally {
       this.draining = false
+      // The failed batch remains best-effort and is not retried. Events that
+      // arrived while append was in flight form a new batch and must not be
+      // stranded until another emit happens.
+      this.scheduleDrain()
     }
   }
 }

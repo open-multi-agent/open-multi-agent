@@ -57,7 +57,7 @@ export async function prepareReleasePr(
     return { status: 'no-op', reason: `HEAD matches ${evidence.baseTag}; there are no merged changes to release.` }
   }
   if (!evidence.workspaceChanges.core) {
-    return { status: 'no-op', reason: `No packages/core changes exist after ${evidence.baseTag}; a core release is not needed.` }
+    return { status: 'no-op', reason: `No file that ships in @open-multi-agent/core changed after ${evidence.baseTag}; a core release is not needed.` }
   }
 
   const run = options.generate

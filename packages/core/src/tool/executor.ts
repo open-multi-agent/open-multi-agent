@@ -14,6 +14,7 @@ import type {
   ApprovalDecisionRecord,
   ApprovalRequest,
   ToolCallApprovalContent,
+  ToolCallDecision,
   ToolCallGate,
   ToolCallGateMetadata,
   ToolResult,
@@ -30,6 +31,10 @@ import {
   hashApprovalRequest,
 } from '../approval/durable.js'
 import { copyToolResultContent } from './result.js'
+
+type ToolGateWaitResult =
+  | { readonly status: 'decision'; readonly decision: unknown }
+  | { readonly status: 'aborted' }
 
 // ---------------------------------------------------------------------------
 // ToolExecutor
@@ -250,16 +255,30 @@ export class ToolExecutor {
     } else if (gate) {
       let decision: unknown
       try {
-        decision = await gate({
-          toolName: tool.name,
-          input: inputParseResult.data as Record<string, unknown>,
-          agentName: context.agent.name,
-          ...(tool.consequential === true ? { consequential: true } : {}),
-          ...(context.runId !== undefined ? { runId: context.runId } : {}),
-          ...(context.taskId !== undefined ? { taskId: context.taskId } : {}),
-          ...(context.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
-        })
+        const gateResult = await this.waitForGateDecision(
+          gate({
+            toolName: tool.name,
+            input: inputParseResult.data as Record<string, unknown>,
+            agentName: context.agent.name,
+            ...(tool.consequential === true ? { consequential: true } : {}),
+            ...(context.runId !== undefined ? { runId: context.runId } : {}),
+            ...(context.taskId !== undefined ? { taskId: context.taskId } : {}),
+            ...(context.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
+          }),
+          context.abortSignal,
+        )
+        if (gateResult.status === 'aborted') {
+          return this.errorResult(
+            `Tool "${tool.name}" was aborted before execution began.`,
+          )
+        }
+        decision = gateResult.decision
       } catch (err) {
+        if (this.isAbortSignalAborted(context.abortSignal)) {
+          return this.errorResult(
+            `Tool "${tool.name}" was aborted before execution began.`,
+          )
+        }
         return this.errorResult(`Tool "${tool.name}" onToolCall hook threw an error: ${this.errorMessage(err)}`)
       }
       gateMetadata = this.gateMetadataFromDecision(decision)
@@ -444,6 +463,31 @@ export class ToolExecutor {
 
   private isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
     return signal?.aborted === true
+  }
+
+  private async waitForGateDecision(
+    pendingDecision: ToolCallDecision | Promise<ToolCallDecision>,
+    signal: AbortSignal | undefined,
+  ): Promise<ToolGateWaitResult> {
+    if (!signal) {
+      return { status: 'decision', decision: await pendingDecision }
+    }
+    if (signal.aborted) return { status: 'aborted' }
+
+    let onAbort: (() => void) | undefined
+    const aborted = new Promise<ToolGateWaitResult>((resolve) => {
+      onAbort = () => resolve({ status: 'aborted' })
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    const decided = Promise.resolve(pendingDecision).then<ToolGateWaitResult>(
+      decision => ({ status: 'decision', decision }),
+    )
+
+    try {
+      return await Promise.race([decided, aborted])
+    } finally {
+      if (onAbort) signal.removeEventListener('abort', onAbort)
+    }
   }
 
   private errorMessage(err: unknown): string {

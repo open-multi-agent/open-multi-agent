@@ -145,6 +145,52 @@ describe('MessageBus', () => {
 
       expect(received).toEqual(['first'])
     })
+
+    it('isolates subscriber failures and persists a direct message once', () => {
+      const bus = new MessageBus()
+      const calls: string[] = []
+      const first = vi.fn(() => {
+        calls.push('first')
+        throw new Error('first subscriber failed')
+      })
+      const second = vi.fn(() => {
+        calls.push('second')
+        throw new Error('second subscriber failed')
+      })
+      const healthy = vi.fn(() => { calls.push('healthy') })
+      bus.subscribe('bob', first)
+      bus.subscribe('bob', second)
+      bus.subscribe('bob', healthy)
+
+      const message = bus.send('alice', 'bob', 'important update')
+
+      expect(calls).toEqual(['first', 'second', 'healthy'])
+      expect(first).toHaveBeenCalledWith(message)
+      expect(second).toHaveBeenCalledWith(message)
+      expect(healthy).toHaveBeenCalledWith(message)
+      expect(bus.getAll('bob')).toEqual([message])
+      expect(bus.getUnread('bob')).toEqual([message])
+      expect(bus.snapshot().messages).toHaveLength(1)
+    })
+
+    it('continues broadcast delivery after a subscriber fails', () => {
+      const bus = new MessageBus()
+      const calls: string[] = []
+      bus.subscribe('alice', () => { calls.push('sender') })
+      bus.subscribe('bob', () => {
+        calls.push('bob-failing')
+        throw new Error('bob subscriber failed')
+      })
+      bus.subscribe('bob', () => { calls.push('bob-healthy') })
+      bus.subscribe('carol', () => { calls.push('carol-healthy') })
+
+      const message = bus.broadcast('alice', 'all hands')
+
+      expect(calls).toEqual(['bob-failing', 'bob-healthy', 'carol-healthy'])
+      expect(bus.getAll('alice')).toEqual([])
+      expect(bus.getAll('bob')).toEqual([message])
+      expect(bus.getAll('carol')).toEqual([message])
+    })
   })
 
   describe('getConversation', () => {

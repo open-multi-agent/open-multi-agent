@@ -185,6 +185,7 @@ export const PROVIDER_REFERENCE: ReadonlyArray<{
   { id: 'gemini', apiKeyEnv: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], baseUrlSupported: false },
   { id: 'grok', apiKeyEnv: ['XAI_API_KEY'], baseUrlSupported: true },
   { id: 'nvidia', apiKeyEnv: ['NVIDIA_API_KEY'], baseUrlSupported: true },
+  { id: 'venice', apiKeyEnv: ['VENICE_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.venice.ai/api/v1. Model IDs are listed at GET /models.' },
   { id: 'minimax', apiKeyEnv: ['MINIMAX_API_KEY'], baseUrlSupported: true, notes: 'Models: MiniMax-M3.1-Flash (default), MiniMax-M3. Global endpoint: https://api.minimax.io/v1 (default). China endpoint: https://api.minimaxi.com/v1. Set MINIMAX_BASE_URL to choose, or pass baseURL in agent config.' },
   { id: 'mimo', apiKeyEnv: ['MIMO_API_KEY', 'MIMO_BASE_URL'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.xiaomimimo.com/v1 by default. Token Plan keys (tp-...) require the cluster base URL from your subscription page; set MIMO_BASE_URL or pass baseURL in agent config.' },
   { id: 'deepseek', apiKeyEnv: ['DEEPSEEK_API_KEY'], baseUrlSupported: true, notes: 'OpenAI-compatible endpoint at https://api.deepseek.com/v1. Models: deepseek-flash (DeepSeek-V4.1-Flash, default), deepseek-v4-pro (DeepSeek-V4-Pro-0813); both support 1M context and enable thinking by default. The retired deepseek-v4-flash name is still accepted and served by V4.1-Flash. Legacy deepseek-chat/deepseek-reasoner were retired on 2026-07-24.' },
@@ -735,13 +736,14 @@ function help(): string {
   ].join('\n')
 }
 
-const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
+export const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   anthropic: 'claude-opus-4-6',
-  'azure-openai': 'gpt-4',
+  'azure-openai': 'my-azure-deployment',
   openai: 'gpt-4o',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.8-flash',
   grok: 'grok-2-latest',
   nvidia: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  venice: 'z-ai-glm-5-3-flash',
   copilot: 'gpt-4o',
   minimax: 'MiniMax-M3.1-Flash',
   mimo: 'mimo-v2.5-pro',
@@ -749,7 +751,7 @@ const DEFAULT_MODEL_HINT: Record<SupportedProvider, string> = {
   doubao: 'doubao-seed-1-8-251228',
   hunyuan: 'hy3-preview',
   qiniu: 'deepseek-v3',
-  bedrock: 'anthropic.claude-3-5-haiku-20241022-v1:0',
+  bedrock: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
 }
 
 async function cmdProvider(sub: string | undefined, arg: string | undefined, pretty: boolean): Promise<number> {

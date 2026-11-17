@@ -298,13 +298,13 @@ export function buildReleaseDecision(
   if (proposal.decision === 'none') return { status: 'none', proposal, review }
 
   if (!evidence.workspaceChanges.core) {
-    throw new Error('The planner requested a core release, but no packages/core files changed since the last tag.')
+    throw new Error('The planner requested a core release, but no file that ships in @open-multi-agent/core changed since the last tag.')
   }
   if (evidence.workspaceChanges.otel && proposal.otelBump === 'none') {
-    throw new Error('The OTel workspace changed, so the release plan must increment @open-multi-agent/otel.')
+    throw new Error('A file that ships in @open-multi-agent/otel changed, so the release plan must increment it.')
   }
   if (!evidence.workspaceChanges.otel && proposal.otelBump !== 'none') {
-    throw new Error('The OTel workspace did not change, so the release plan must not increment it.')
+    throw new Error('No file that ships in @open-multi-agent/otel changed, so the release plan must not increment it.')
   }
 
   const coreBump = requireBump(proposal.coreBump, 'core')

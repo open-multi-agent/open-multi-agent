@@ -274,6 +274,20 @@ describe('file_edit', () => {
     expect(content).toBe('baz bar baz\n')
   })
 
+  it('inserts new_string literally when it holds $ replacement patterns', async () => {
+    const filePath = join(tmpDir, 'edit.txt')
+    const newString = "$$ $& $` $' $1"
+    await writeFile(filePath, 'before TARGET after\n')
+
+    const result = await fileEditTool.execute(
+      { path: filePath, old_string: 'TARGET', new_string: newString },
+      defaultContext,
+    )
+
+    expect(result.isError).toBe(false)
+    expect(await readFile(filePath, 'utf8')).toBe(`before ${newString} after\n`)
+  })
+
   it('errors on non-existent file', async () => {
     const result = await fileEditTool.execute(
       { path: join(tmpDir, 'nope.txt'), old_string: 'x', new_string: 'y' },

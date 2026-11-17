@@ -95,9 +95,9 @@ export const fileEditTool = defineTool({
     }
 
     // Perform the replacement.
-    const updated = replaceAll
-      ? replaceAllOccurrences(original, input.old_string, input.new_string)
-      : original.replace(input.old_string, input.new_string)
+    // Splice rather than String.prototype.replace, which would expand $&, $$,
+    // $` and $' in new_string. With one match this replaces just that one.
+    const updated = replaceAllOccurrences(original, input.old_string, input.new_string)
 
     // Persist the result.
     try {

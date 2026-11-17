@@ -727,6 +727,16 @@
       "level": "beginner"
     },
     {
+      "id": "venice",
+      "path": "providers/venice.ts",
+      "title": "Venice",
+      "description": "Run the standard three-agent team with GLM 5.3 Flash on Venice.",
+      "section": "models-providers",
+      "capabilities": ["provider-adapter"],
+      "format": "script",
+      "level": "beginner"
+    },
+    {
       "id": "zhipu",
       "path": "providers/zhipu.ts",
       "title": "Zhipu GLM",

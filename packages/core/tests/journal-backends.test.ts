@@ -278,6 +278,51 @@ describe('JournalRecorder', () => {
     expect(errors).toHaveLength(1)
   })
 
+  it('continues draining events queued while an append failure is in flight', async () => {
+    const attempts: number[][] = []
+    const persisted: number[][] = []
+    const errors: unknown[] = []
+    let rejectFirst: (reason?: unknown) => void = () => {}
+    let releaseSecond: () => void = () => {}
+    const firstGate = new Promise<void>((_resolve, reject) => { rejectFirst = reject })
+    const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve })
+    const journal: RunJournal = {
+      async append(events) {
+        const seqs = events.map((event) => event.seq)
+        attempts.push(seqs)
+        if (attempts.length === 1) await firstGate
+        if (attempts.length === 2) await secondGate
+        persisted.push(seqs)
+      },
+      async readFrom() { return [] },
+      async close() {},
+    }
+    const recorder = await JournalRecorder.open({
+      journal,
+      runId: 'run-1',
+      attempt: 1,
+      onError: (error) => errors.push(error),
+    })
+
+    recorder.emit({ type: 'turn/start', turn: 1 })
+    await Promise.resolve()
+    recorder.emit({ type: 'turn/end', turn: 1, outcome: 'completed' })
+
+    let flushSettled = false
+    const flushed = recorder.flush().then(() => { flushSettled = true })
+    rejectFirst(new Error('disk full'))
+
+    await vi.waitFor(() => expect(attempts).toEqual([[1], [2]]))
+    expect(flushSettled).toBe(false)
+    expect(errors).toHaveLength(1)
+
+    releaseSecond()
+    await flushed
+
+    expect(persisted).toEqual([[2]])
+    expect(errors).toHaveLength(1)
+  })
+
   it('reports an unreadable tail and still records from a fresh sequence', async () => {
     const errors: unknown[] = []
     const journal: RunJournal = {

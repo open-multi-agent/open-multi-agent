@@ -33,10 +33,11 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | Anthropic (Claude) | `provider: 'anthropic'` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | Native Anthropic SDK. |
 | Gemini | `provider: 'gemini'` | `GEMINI_API_KEY`, falling back to `GOOGLE_API_KEY` | `gemini-2.5-pro` | Native Google GenAI SDK. Requires `npm install @google/genai`. |
 | OpenAI (GPT) | `provider: 'openai'` | `OPENAI_API_KEY` | `gpt-4o` | |
-| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `gpt-4` | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`. |
+| Azure OpenAI | `provider: 'azure-openai'` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `my-azure-deployment` (placeholder: your Azure deployment name) | Optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`. |
 | GitHub Copilot | `provider: 'copilot'` | `GITHUB_COPILOT_TOKEN` (falls back to `GITHUB_TOKEN`) | `gpt-4o` | Custom token-exchange flow on top of OpenAI protocol. |
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
 | NVIDIA NIM | `provider: 'nvidia'` | `NVIDIA_API_KEY` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | OpenAI-compatible; endpoint is `integrate.api.nvidia.com/v1`. Pass `baseURL` for a self-hosted NIM. Smaller options include `nvidia/nemotron-3.5-lightning-30b-a3b` and `nvidia/nemotron-3.5-bolt-e4b`. See [`providers/nvidia`](../packages/core/examples/providers/nvidia.ts). |
+| Venice | `provider: 'venice'` | `VENICE_API_KEY` | `z-ai-glm-5-3-flash` | OpenAI-compatible; endpoint is `api.venice.ai/api/v1`. Model IDs are listed at `GET /models`; pass Venice options such as `venice_parameters` through `extraBody`. See [`providers/venice`](../packages/core/examples/providers/venice.ts). |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-flash` | OpenAI-compatible Chat Completions. `deepseek-flash` is DeepSeek-V4.1-Flash and `deepseek-v4-pro` is DeepSeek-V4-Pro-0813. `deepseek-flash` carries no version because DeepSeek moves the name to the current Flash generation; the older `deepseek-v4-flash` is still accepted but that model is retired and those requests are served by V4.1-Flash. Both support 1M context, 384K max output, and enable thinking by default (opt out with `thinking: { enabled: false }`). Both endpoints also offer DeepSeek's native Responses API, while OMA's built-in adapter uses Chat Completions. Legacy `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24. |
 | Doubao (Volcengine) | `provider: 'doubao'` | `ARK_API_KEY` | `doubao-seed-1-8-251228` | OpenAI-compatible. ByteDance Volcengine Ark endpoint `https://ark.cn-beijing.volces.com/api/v3`. See [`providers/doubao`](../packages/core/examples/providers/doubao.ts). |
 | Hunyuan (Tencent MaaS / TokenHub) | `provider: 'hunyuan'` | `HUNYUAN_API_KEY` | `hy3-preview` | OpenAI-compatible. Default endpoint `https://tokenhub.tencentmaas.com/v1` (Tencent's current platform; `sk-...` keys, Hunyuan 3 models). Tool calling verified on `hy3-preview`. See [`providers/hunyuan`](../packages/core/examples/providers/hunyuan.ts). |
@@ -45,7 +46,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | MiniMax (China) | `provider: 'minimax'` + `MINIMAX_BASE_URL` | `MINIMAX_API_KEY` | `MiniMax-M3.1-Flash`, `MiniMax-M3` | Set `MINIMAX_BASE_URL=https://api.minimaxi.com/v1`; `MiniMax-M3` accepts text, image, and video content blocks. |
 | MiMo | `provider: 'mimo'` | `MIMO_API_KEY` (+ optional `MIMO_BASE_URL`) | `mimo-v2.5-pro` | OpenAI-compatible. Defaults to pay-as-you-go endpoint `https://api.xiaomimimo.com/v1`; Token Plan keys (`tp-...`) require the cluster base URL from your subscription page, such as `https://token-plan-cn.xiaomimimo.com/v1`. Supports reasoning/tool-call loops through the built-in MiMo adapter. See [`providers/mimo`](../packages/core/examples/providers/mimo.ts). |
 | Qiniu | `provider: 'qiniu'` | `QINIU_API_KEY` | `deepseek-v3` | OpenAI-compatible. Endpoint `https://api.qnaigc.com/v1`; multiple model families, see [Qiniu AI docs](https://developer.qiniu.com/aitokenapi/12882/ai-inference-api). |
-| AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `anthropic.claude-3-5-haiku-20241022-v1:0` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials come from env vars, shared config, or IAM role. Newer Claude models can require a cross-region inference profile prefix such as `us.`. Also supports Llama, Mistral, and Cohere. See [`providers/bedrock`](../packages/core/examples/providers/bedrock.ts). Requires `npm install @aws-sdk/client-bedrock-runtime`. |
+| AWS Bedrock | `provider: 'bedrock'` | none (AWS SDK credential chain) | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | No API key. Set `AWS_REGION` or pass `region` as the 4th arg to `createAdapter`. Credentials come from env vars, shared config, or IAM role. Newer Claude models can require a cross-region inference profile prefix such as `us.`. Also supports Llama, Mistral, and Cohere. See [`providers/bedrock`](../packages/core/examples/providers/bedrock.ts). Requires `npm install @aws-sdk/client-bedrock-runtime`. |
 
 ### MiniMax text defaults and thinking
 
@@ -175,8 +176,8 @@ targets and are forwarded only where the wire format accepts them.
 | `extraBody` | merged into the request | yes | yes | yes | no | no | yes, into `additionalModelRequestFields` |
 
 "OpenAI and OpenAI-compatible built-ins" is the `openai` adapter and every
-provider that extends it: `deepseek`, `doubao`, `grok`, `nvidia`, `hunyuan`,
-`minimax`, `mimo`, and `qiniu`.
+provider that extends it: `deepseek`, `doubao`, `grok`, `nvidia`, `venice`,
+`hunyuan`, `minimax`, `mimo`, and `qiniu`.
 
 Two caveats the table cannot express:
 
@@ -187,6 +188,23 @@ Two caveats the table cannot express:
 - **Unsupported fields are dropped, not errors.** An adapter that does not map a
   field simply leaves it out of the request, so one config is safe to reuse
   across a mixed-provider team.
+
+Anthropic omits `temperature`, `topP`, and `topK` for Claude Opus 4.7,
+Sonnet 5, and later models that reject these sampling parameters. Model IDs
+that do not start with `claude-`, such as a non-Claude model behind an
+Anthropic-compatible `baseURL`, keep them. Explicit provider-native values in
+`extraBody` are still forwarded.
+
+Bedrock uses that same Claude generation rule. It recognises a foundation-model
+id (`anthropic.claude-…`), a geo inference profile (`us.anthropic.claude-…`,
+`global.anthropic.claude-…`, and the other regional prefixes), and an ARN whose
+resource id is one of those. The Bedrock `-vN` / `-vN:M` suffix is ignored when
+deciding. Opus 4.7, Opus 4.8, Sonnet 5, and later Claude ids drop `temperature`,
+`topP`, and `topK`; older Claude ids and non-Claude models (Llama, Nova, and
+the rest) keep them. `extraBody` is still copied into
+`additionalModelRequestFields`. An application inference profile ARN that does
+not contain the model id is left unchanged, because the id alone does not say
+which model it routes to.
 
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not

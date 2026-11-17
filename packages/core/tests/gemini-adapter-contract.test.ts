@@ -247,6 +247,20 @@ describe('GeminiAdapter (contract)', () => {
       expect(config.maxOutputTokens).toBe(2048)
     })
 
+    it('forwards topP to the request config for chat() and stream()', async () => {
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts({ topP: 0.85 }))
+      expect(mockGenerateContent.mock.calls[0][0].config.topP).toBe(0.85)
+
+      mockGenerateContentStream.mockResolvedValue(
+        (async function* () {
+          yield makeGeminiResponse([{ text: 'ok' }])
+        })(),
+      )
+      await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts({ topP: 0.85 })))
+      expect(mockGenerateContentStream.mock.calls[0][0].config.topP).toBe(0.85)
+    })
+
     it('omits tools/toolConfig when no tools provided', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
 
@@ -314,6 +328,17 @@ describe('GeminiAdapter (contract)', () => {
 
       expect(result.stop_reason).toBe('max_tokens')
     })
+
+    it.each(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'])(
+      'maps %s finishReason to content_filter',
+      async (finishReason) => {
+        mockGenerateContent.mockResolvedValue(makeGeminiResponse([], { finishReason }))
+
+        const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+        expect(result.stop_reason).toBe('content_filter')
+      },
+    )
 
     it('maps to tool_use when response contains functionCall (even with STOP)', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse(
@@ -441,6 +466,17 @@ describe('GeminiAdapter (contract)', () => {
 
       const done = events.find(e => e.type === 'done')
       expect((done!.data as LLMResponse).stop_reason).toBe('max_tokens')
+    })
+
+    it('yields done event with content_filter when the stream is blocked', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([makeGeminiResponse([], { finishReason: 'SAFETY' })]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
     })
 
     it('yields error event when stream throws', async () => {

@@ -50,7 +50,8 @@ function isAddressedTo(message: Message, agentName: string): boolean {
  *
  * Agents can send point-to-point messages or broadcasts. Subscribers are
  * notified synchronously (within the same microtask) when a new message
- * arrives addressed to them.
+ * arrives addressed to them. Subscriber failures are isolated so one broken
+ * callback cannot prevent the remaining recipients from being notified.
  *
  * @example
  * ```ts
@@ -143,6 +144,9 @@ export class MessageBus {
   /**
    * Send a message from `from` to `to`.
    *
+   * The message is persisted before subscribers are notified. Subscriber
+   * failures do not roll back the message or cause this method to throw.
+   *
    * @returns The persisted {@link Message} including its generated ID and timestamp.
    */
   send(from: string, to: string, content: string): Message {
@@ -234,7 +238,8 @@ export class MessageBus {
    * Subscribe to new messages addressed to `agentName`.
    *
    * The `callback` is invoked synchronously after each matching message is
-   * persisted. Returns an unsubscribe function; calling it is idempotent.
+   * persisted. Callback failures are isolated from the sender and other
+   * subscribers. Returns an unsubscribe function; calling it is idempotent.
    *
    * @example
    * ```ts
@@ -287,7 +292,12 @@ export class MessageBus {
     const subs = this.subscribers.get(agentName)
     if (!subs) return
     for (const callback of subs.values()) {
-      callback(message)
+      try {
+        callback(message)
+      } catch {
+        // Delivery notifications are best-effort. The message is already
+        // persisted, and one broken subscriber must not block the others.
+      }
     }
   }
 }
