@@ -387,6 +387,14 @@ describe('AnthropicAdapter', () => {
       expect(result.stop_reason).toBe('end_turn')
     })
 
+    it('maps refusal stop_reason to content_filter', async () => {
+      mockCreate.mockResolvedValue(makeAnthropicResponse({ stop_reason: 'refusal' }))
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.stop_reason).toBe('content_filter')
+    })
+
     it('propagates SDK errors', async () => {
       mockCreate.mockRejectedValue(new Error('Rate limited'))
 
@@ -533,6 +541,17 @@ describe('AnthropicAdapter', () => {
       expect(response.id).toBe('msg_test123')
       expect(response.content).toEqual([{ type: 'text', text: 'Done' }])
       expect(response.usage).toEqual({ input_tokens: 10, output_tokens: 5 })
+    })
+
+    it('maps refusal stop_reason to content_filter on done', async () => {
+      mockStream.mockReturnValue(
+        makeStreamMock([], makeAnthropicResponse({ stop_reason: 'refusal' })),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+      const done = events.find((e) => e.type === 'done')
+
+      expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
     })
 
     it('yields error event when stream throws', async () => {
