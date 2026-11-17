@@ -26,11 +26,12 @@ export class Semaphore {
   private readonly queue: Array<() => void> = []
 
   /**
-   * @param max - Maximum number of concurrent holders. Must be >= 1.
+   * @param max - Maximum number of concurrent holders. Must be a positive integer.
+   * @throws {RangeError} If `max` is not a positive integer.
    */
   constructor(private readonly max: number) {
-    if (max < 1) {
-      throw new RangeError(`Semaphore max must be at least 1, got ${max}`)
+    if (!Number.isInteger(max) || max < 1) {
+      throw new RangeError(`Semaphore max must be a positive integer, got ${max}`)
     }
   }
 
@@ -57,8 +58,13 @@ export class Semaphore {
   /**
    * Release a previously acquired slot.
    * If callers are queued, the next one is unblocked synchronously.
+   * @throws {Error} If no slot is currently held.
    */
   release(): void {
+    if (this.current === 0) {
+      throw new Error('Semaphore release called without a matching acquire')
+    }
+
     const next = this.queue.shift()
     if (next !== undefined) {
       // A queued caller is waiting — hand the slot directly to it.
