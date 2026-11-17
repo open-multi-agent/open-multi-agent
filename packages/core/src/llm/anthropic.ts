@@ -384,6 +384,17 @@ function toAnthropicThinkingParam(
   }
 }
 
+/**
+ * Map an Anthropic `stop_reason` to the framework vocabulary. `refusal` means
+ * the model declined for safety reasons, so it maps to `content_filter`,
+ * matching the OpenAI-family, Gemini, and Bedrock adapters. Other reasons
+ * pass through unchanged.
+ */
+function mapAnthropicStopReason(reason: string | null | undefined): string {
+  if (reason === 'refusal') return 'content_filter'
+  return reason ?? 'end_turn'
+}
+
 // ---------------------------------------------------------------------------
 // Adapter implementation
 // ---------------------------------------------------------------------------
@@ -459,7 +470,7 @@ export class AnthropicAdapter implements LLMAdapter {
       id: response.id,
       content,
       model: response.model,
-      stop_reason: response.stop_reason ?? 'end_turn',
+      stop_reason: mapAnthropicStopReason(response.stop_reason),
       usage: {
         input_tokens: response.usage.input_tokens,
         output_tokens: response.usage.output_tokens,
@@ -606,7 +617,7 @@ export class AnthropicAdapter implements LLMAdapter {
         id: finalMessage.id,
         content,
         model: finalMessage.model,
-        stop_reason: finalMessage.stop_reason ?? 'end_turn',
+        stop_reason: mapAnthropicStopReason(finalMessage.stop_reason),
         usage: {
           input_tokens: finalMessage.usage.input_tokens,
           output_tokens: finalMessage.usage.output_tokens,
