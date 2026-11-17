@@ -456,8 +456,8 @@ function resolveRunBudgets(
  * An unusable cap falls back to the orchestrator value and reports through
  * `onInvalid` rather than throwing, so a config that this release started
  * reading cannot fail a run that earlier releases accepted. The check cannot be
- * left to `Semaphore`, which rejects only values below 1 — `NaN` would reach a
- * pool that never grants a slot.
+ * left to `Semaphore`, which throws on values below 1 and on `NaN` instead of
+ * falling back.
  */
 function resolveTeamPoolConcurrency(
   orchestratorMax: number,

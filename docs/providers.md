@@ -167,7 +167,7 @@ targets and are forwarded only where the wire format accepts them.
 | `AgentConfig` field | Wire field | Anthropic | OpenAI and OpenAI-compatible built-ins | Azure OpenAI | Copilot | Gemini | Bedrock |
 |---|---|---|---|---|---|---|---|
 | `temperature` | `temperature` | yes | yes | yes | yes | yes | yes |
-| `topP` | `top_p` | yes | yes | yes | no | no | yes (`topP`) |
+| `topP` | `top_p` | yes | yes | yes | no | yes (`topP`) | yes (`topP`) |
 | `topK` | `top_k` | yes | yes | no | no | no | yes, via `additionalModelRequestFields` |
 | `minP` | `min_p` | no | yes | no | no | no | no |
 | `frequencyPenalty` | `frequency_penalty` | no | yes | yes | no | no | no |

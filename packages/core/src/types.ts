@@ -1137,8 +1137,8 @@ export interface AgentConfig {
    */
   readonly presencePenalty?: number
   /**
-   * Nucleus sampling cutoff. Forwarded to all adapters (OpenAI cloud,
-   * OpenAI-compatible local, Anthropic).
+   * Nucleus sampling cutoff. Forwarded by every built-in adapter except
+   * Copilot; Anthropic and Bedrock omit it for Claude models that reject it.
    */
   readonly topP?: number
   /**
