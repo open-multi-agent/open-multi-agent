@@ -2,13 +2,29 @@ import { describe, it, expect } from 'vitest'
 import { Semaphore } from '../src/utils/semaphore.js'
 
 describe('Semaphore', () => {
-  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5])(
-    'throws when max is not a positive integer: %s',
+  it.each([0, -1, 0.5, Number.NaN, Number.NEGATIVE_INFINITY])(
+    'throws when max is below 1 or NaN: %s',
     (max) => {
       expect(() => new Semaphore(max)).toThrow(RangeError)
-      expect(() => new Semaphore(max)).toThrow('Semaphore max must be a positive integer')
+      expect(() => new Semaphore(max)).toThrow('Semaphore max must be at least 1')
     },
   )
+
+  it('treats Infinity as unbounded', async () => {
+    const sem = new Semaphore(Number.POSITIVE_INFINITY)
+    await Promise.all(Array.from({ length: 50 }, () => sem.acquire()))
+
+    expect(sem.active).toBe(50)
+    expect(sem.pending).toBe(0)
+  })
+
+  it('accepts a fractional max', async () => {
+    const sem = new Semaphore(1.5)
+    await sem.acquire()
+
+    expect(sem.limit).toBe(1.5)
+    expect(sem.active).toBe(1)
+  })
 
   it('throws when releasing without a matching acquire', () => {
     const sem = new Semaphore(1)

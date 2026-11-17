@@ -144,6 +144,23 @@ describe('TeamConfig.maxConcurrency', () => {
     expect(await peakConcurrency({ orchestrator: 3 })).toBe(3)
   })
 
+  it('runs with an unbounded or fractional orchestrator cap', async () => {
+    expect(await peakConcurrency({ orchestrator: Number.POSITIVE_INFINITY })).toBe(TASK_COUNT)
+    tracker.reset()
+    expect(await peakConcurrency({ orchestrator: 1.5 })).toBeGreaterThan(0)
+  })
+
+  it('rejects a NaN orchestrator cap instead of hanging', async () => {
+    const oma = new OpenMultiAgent({
+      defaultModel: 'mock-model',
+      defaultProvider: 'openai',
+      maxConcurrency: Number.NaN,
+    })
+    const team = oma.createTeam('probe', { name: 'probe', agents: agents(), sharedMemory: false })
+
+    await expect(oma.runTasks(team, tasks())).rejects.toThrow(RangeError)
+  })
+
   it('applies to runTeam as well as runTasks', async () => {
     const oma = new OpenMultiAgent({ defaultModel: 'mock-model', defaultProvider: 'openai' })
     const team = oma.createTeam('probe', {
@@ -168,9 +185,8 @@ describe('TeamConfig.maxConcurrency', () => {
   describe('an unusable cap warns and falls back instead of failing the run', () => {
     // Falling back to the orchestrator value is exactly what these configs did
     // before the field was read at all, so enforcement cannot break a run that
-    // an earlier release accepted. Throwing would. The check still cannot be
-    // left to Semaphore, which rejects only values below 1 — NaN slips past and
-    // produces a pool that never grants a slot.
+    // an earlier release accepted. Throwing would, and Semaphore throws on
+    // values below 1 and on NaN, so the check cannot be left to it.
     it.each([
       ['zero', 0],
       ['negative', -1],

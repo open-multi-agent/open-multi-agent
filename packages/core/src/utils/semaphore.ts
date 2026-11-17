@@ -26,12 +26,15 @@ export class Semaphore {
   private readonly queue: Array<() => void> = []
 
   /**
-   * @param max - Maximum number of concurrent holders. Must be a positive integer.
-   * @throws {RangeError} If `max` is not a positive integer.
+   * @param max - Maximum number of concurrent holders. Must be at least 1;
+   *              `Infinity` leaves concurrency unbounded.
+   * @throws {RangeError} If `max` is below 1 or `NaN`.
    */
   constructor(private readonly max: number) {
-    if (!Number.isInteger(max) || max < 1) {
-      throw new RangeError(`Semaphore max must be a positive integer, got ${max}`)
+    // Negated so NaN fails too: it would build a semaphore that never grants a
+    // slot. Infinity and fractional values stay accepted, as before.
+    if (!(max >= 1)) {
+      throw new RangeError(`Semaphore max must be at least 1, got ${max}`)
     }
   }
 
