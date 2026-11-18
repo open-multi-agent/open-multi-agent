@@ -393,6 +393,15 @@ const GEMINI_CONTENT_FILTER_REASONS = new Set([
 ])
 
 /**
+ * True when Gemini rejected the prompt itself (`promptFeedback.blockReason`).
+ * Such responses carry no candidates, so there is no `finishReason` to inspect.
+ */
+function isPromptBlocked(response: GenerateContentResponse): boolean {
+  const reason = response.promptFeedback?.blockReason as string | undefined
+  return reason !== undefined && reason !== 'BLOCK_REASON_UNSPECIFIED'
+}
+
+/**
  * Convert a Gemini {@link GenerateContentResponse} into a framework
  * {@link LLMResponse}.
  */
@@ -414,7 +423,10 @@ function fromGeminiResponse(
   let stop_reason: LLMResponse['stop_reason'] = 'end_turn'
   if (finishReason === 'MAX_TOKENS') {
     stop_reason = 'max_tokens'
-  } else if (finishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(finishReason)) {
+  } else if (
+    (finishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(finishReason)) ||
+    isPromptBlocked(response)
+  ) {
     stop_reason = 'content_filter'
   } else if (content.some((b) => b.type === 'tool_use')) {
     // Gemini may report STOP even when it returned function calls.
@@ -527,6 +539,7 @@ export class GeminiAdapter implements LLMAdapter {
       let outputTokens = 0
       let thoughtsTokens = 0
       let lastFinishReason: string | undefined
+      let promptBlocked = false
 
       for await (const chunk of streamResponse) {
         const candidate = chunk.candidates?.[0]
@@ -537,6 +550,7 @@ export class GeminiAdapter implements LLMAdapter {
           outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
           thoughtsTokens = chunk.usageMetadata.thoughtsTokenCount ?? thoughtsTokens
         }
+        if (isPromptBlocked(chunk)) promptBlocked = true
         if (candidate?.finishReason) {
           lastFinishReason = candidate.finishReason as string
         }
@@ -568,7 +582,10 @@ export class GeminiAdapter implements LLMAdapter {
       let stop_reason: LLMResponse['stop_reason'] = 'end_turn'
       if (lastFinishReason === 'MAX_TOKENS') {
         stop_reason = 'max_tokens'
-      } else if (lastFinishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(lastFinishReason)) {
+      } else if (
+        (lastFinishReason !== undefined && GEMINI_CONTENT_FILTER_REASONS.has(lastFinishReason)) ||
+        promptBlocked
+      ) {
         stop_reason = 'content_filter'
       } else if (hasToolUse) {
         stop_reason = 'tool_use'
