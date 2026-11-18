@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toOpenAIMessages } from '../src/llm/openai-common.js'
+import { fromOpenAICompletion, toOpenAIMessages } from '../src/llm/openai-common.js'
 import type { LLMMessage } from '../src/types.js'
 
 type OutboundOpts = {
@@ -182,5 +182,37 @@ describe('toOpenAIMessages reasoning fallback', () => {
       expect(extractThinkingContent(content).length).toBe(1)
       expect(content!.endsWith('Done.')).toBe(true)
     }
+  })
+})
+
+describe('fromOpenAICompletion refusal', () => {
+  const base = { id: 'c1', object: 'chat.completion', created: 0, model: 'gpt-4o' } as const
+
+  it('surfaces an explicit model refusal as text', () => {
+    const res = fromOpenAICompletion({
+      ...base,
+      choices: [{
+        index: 0,
+        finish_reason: 'stop',
+        logprobs: null,
+        message: { role: 'assistant', content: null, refusal: "I can't help with that." },
+      }],
+    } as never)
+    expect(res.content).toEqual([{ type: 'text', text: "I can't help with that." }])
+    expect(res.stop_reason).toBe('content_filter')
+  })
+
+  it('keeps normal content untouched', () => {
+    const res = fromOpenAICompletion({
+      ...base,
+      choices: [{
+        index: 0,
+        finish_reason: 'stop',
+        logprobs: null,
+        message: { role: 'assistant', content: 'hi', refusal: null },
+      }],
+    } as never)
+    expect(res.content).toEqual([{ type: 'text', text: 'hi' }])
+    expect(res.stop_reason).toBe('end_turn')
   })
 })
