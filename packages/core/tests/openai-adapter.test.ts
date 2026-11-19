@@ -524,6 +524,44 @@ describe('OpenAIAdapter', () => {
   // reasoning_effort forwarding (RFC #200 follow-up)
   // =========================================================================
 
+  describe('output token cap parameter', () => {
+    it.each(['gpt-5.4', 'o3-mini', 'o1'])('chat() sends max_completion_tokens for %s on api.openai.com', async (model) => {
+      mockCreate.mockResolvedValue(makeCompletion())
+      await new OpenAIAdapter('k').chat([textMsg('user', 'Hi')], chatOpts({ model, maxTokens: 256 }))
+      const args = mockCreate.mock.calls[0][0]
+      expect(args.max_completion_tokens).toBe(256)
+      expect('max_tokens' in args).toBe(false)
+    })
+
+    it('stream() sends max_completion_tokens for gpt-5 models', async () => {
+      mockCreate.mockResolvedValue(makeChunks([
+        { choices: [{ delta: { content: 'x' }, finish_reason: 'stop' }] },
+      ]))
+      await collectEvents(
+        new OpenAIAdapter('k', 'https://api.openai.com/v1').stream(
+          [textMsg('user', 'Hi')], chatOpts({ model: 'gpt-5-mini', maxTokens: 64 }),
+        ),
+      )
+      const args = mockCreate.mock.calls[0][0]
+      expect(args.max_completion_tokens).toBe(64)
+      expect('max_tokens' in args).toBe(false)
+    })
+
+    it('keeps max_tokens for gpt-4o and for custom base URLs', async () => {
+      mockCreate.mockResolvedValue(makeCompletion())
+      await new OpenAIAdapter('k').chat([textMsg('user', 'Hi')], chatOpts({ model: 'gpt-4o', maxTokens: 10 }))
+      expect(mockCreate.mock.calls[0][0].max_tokens).toBe(10)
+
+      mockCreate.mockResolvedValue(makeCompletion())
+      await new OpenAIAdapter('k', 'http://localhost:8000/v1').chat(
+        [textMsg('user', 'Hi')], chatOpts({ model: 'gpt-5-local', maxTokens: 10 }),
+      )
+      const args = mockCreate.mock.calls[1][0]
+      expect(args.max_tokens).toBe(10)
+      expect('max_completion_tokens' in args).toBe(false)
+    })
+  })
+
   describe('reasoning_effort forwarding', () => {
     it('forwards thinking.effort as reasoning_effort on chat()', async () => {
       mockCreate.mockResolvedValue(makeCompletion())
