@@ -454,9 +454,10 @@ export class GeminiAdapter implements LLMAdapter {
 
   readonly #client: GoogleGenAI
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseURL?: string) {
     this.#client = new GoogleGenAI({
       apiKey: apiKey ?? process.env['GEMINI_API_KEY'] ?? process.env['GOOGLE_API_KEY'],
+      ...(baseURL ? { httpOptions: { baseUrl: baseURL } } : {}),
     })
   }
 
