@@ -210,6 +210,12 @@ rejection, or timeout produces a `scorer_error` record. A rejected store append
 drops that sample's record batch. Queue overflow, exhausted budgets, callbacks,
 and all evaluation failures are isolated from the original run result.
 
+`onResult` and `onDiagnostic` may return `void` or `Promise<void>`. Both are
+fire-and-forget notifications: synchronous throws and rejected promises are
+counted in `failed`, but returned promises are not awaited and do not extend
+the business response, `forceFlush()`, or `shutdown()` lifecycle. A rejection
+that settles after a flush is reflected by a later `getStats()` call.
+
 Online defaults are deliberately conservative: evaluation is off when the
 configuration is omitted or `sample` is `0`; `maxConcurrent` is `1`,
 `maxQueueLength` is `100`, payload persistence is `none`, diagnostics warn at
