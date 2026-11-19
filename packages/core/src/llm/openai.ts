@@ -68,6 +68,20 @@ import type { ReasoningOutboundOptions } from './reasoning-fallback.js'
 import { extractToolCallsFromText } from '../tool/text-tool-extractor.js'
 import { createEgressFetch } from './egress.js'
 
+function isNativeOpenAIBaseURL(baseURL: string | undefined): boolean {
+  if (baseURL === undefined || baseURL === '') return true
+  try {
+    return new URL(baseURL).hostname === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
+
+/** GPT-5 family and o-series reasoning models only accept `max_completion_tokens`. */
+function requiresMaxCompletionTokens(model: string): boolean {
+  return /^(gpt-5|o\d)/i.test(model)
+}
+
 // ---------------------------------------------------------------------------
 // Adapter implementation
 // ---------------------------------------------------------------------------
@@ -98,12 +112,17 @@ export class OpenAIAdapter implements LLMAdapter {
 
   readonly #client: OpenAI
 
+  /** True when talking to api.openai.com itself (not a compatible third-party server). */
+  readonly #nativeOpenAI: boolean
+
   constructor(
     apiKey?: string,
     baseURL?: string,
     egressPolicy?: EgressPolicy,
     egressProvider = 'openai',
   ) {
+    this.#nativeOpenAI = egressProvider === 'openai'
+      && isNativeOpenAIBaseURL(baseURL ?? process.env['OPENAI_BASE_URL'])
     this.#client = new OpenAI({
       apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
       baseURL,
@@ -155,6 +174,19 @@ export class OpenAIAdapter implements LLMAdapter {
   }
 
   /**
+   * Output-token cap field. api.openai.com rejects `max_tokens` for GPT-5 and
+   * o-series models ("Unsupported parameter: 'max_tokens' ... use
+   * 'max_completion_tokens'"), so those get the newer name. Every other
+   * model/endpoint (including OpenAI-compatible servers) keeps `max_tokens`.
+   */
+  protected buildMaxTokens(options: LLMChatOptions): Record<string, number | undefined> {
+    if (this.#nativeOpenAI && requiresMaxCompletionTokens(options.model)) {
+      return { max_completion_tokens: options.maxTokens }
+    }
+    return { max_tokens: options.maxTokens }
+  }
+
+  /**
    * Build the SDK-typed reasoning effort. DeepSeek overrides this to opt into
    * its additional `max` value.
    */
@@ -182,7 +214,7 @@ export class OpenAIAdapter implements LLMAdapter {
         // Sampling params first so extraBody can override them. Structural
         // fields (model/messages/tools/stream) come after extraBody so users
         // cannot accidentally clobber them via extraBody.
-        max_tokens: options.maxTokens,
+        ...this.buildMaxTokens(options),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
@@ -234,7 +266,7 @@ export class OpenAIAdapter implements LLMAdapter {
     const streamResponse = await this.#client.chat.completions.create(
       {
         // See chat() above for the rationale behind this field ordering.
-        max_tokens: options.maxTokens,
+        ...this.buildMaxTokens(options),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
