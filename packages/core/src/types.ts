@@ -2509,8 +2509,12 @@ export interface OrchestratorConfig {
    * Invoked for every agent dispatched through the task queue, which covers
    * `runTeam()` and `runTasks()` (and a run resumed from either). Not called
    * for `runAgent()`, which never enters the queue.
+   * Returned promises are observed for rejection but are not awaited.
    */
-  readonly onAgentStream?: (agentName: string, event: StreamEvent) => void
+  readonly onAgentStream?: (
+    agentName: string,
+    event: StreamEvent,
+  ) => void | Promise<void>
 }
 
 // ---------------------------------------------------------------------------

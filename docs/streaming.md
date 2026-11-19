@@ -16,7 +16,7 @@ happen. Token-by-token deltas exist one layer down, on the adapter itself.
 | Surface | Shape | Granularity | `done` payload |
 |---|---|---|---|
 | `Agent.stream(input, runOptions?)` | `AsyncGenerator<StreamEvent>` | Per turn and per tool call | `AgentRunResult` |
-| `OrchestratorConfig.onAgentStream` | `(agentName, event) => void` | Same events, pushed | `AgentRunResult` |
+| `OrchestratorConfig.onAgentStream` | `(agentName, event) => void \| Promise<void>` | Same events, pushed | `AgentRunResult` |
 | `AgentBackend.stream(messages, options?)` | `AsyncIterable<StreamEvent>` | Backend-defined | `RunResult` |
 | `LLMAdapter.stream(messages, options)` | `AsyncIterable<StreamEvent>` | Provider deltas | `LLMResponse` |
 
@@ -152,17 +152,18 @@ through the same task-execution path. It is **not** invoked for:
 
 Three behaviors matter when wiring a live UI to it:
 
-- **A throwing callback cannot break the run.** `AgentPool` swallows callback
-  exceptions, mirroring the observability contract, so a broken renderer does
-  not burn a retry attempt.
+- **A failing callback cannot break the run.** `AgentPool` swallows synchronous
+  exceptions and rejected promises, mirroring the observability contract, so
+  a broken renderer does not burn a retry attempt or produce an unhandled
+  rejection.
 - **An `error` event still fails the task.** The pool forwards the event first,
   then throws it, so your handler sees the error before task retry or model
   fallback decides what to do with it. The event's `errorInfo` is what that
   decision reads, which is why a retryable provider error can fail over to the
   next route with streaming enabled.
-- **The callback is synchronous.** It returns `void`; there is no
-  backpressure. Buffer or drop in your own handler if the consumer is slower
-  than the run.
+- **The callback is fire-and-forget.** It may return `void` or `Promise<void>`,
+  but returned promises are not awaited, so there is no backpressure. Buffer
+  or drop in your own handler if the consumer is slower than the run.
 
 ## Provider-level streaming
 

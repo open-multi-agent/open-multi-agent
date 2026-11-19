@@ -1414,7 +1414,7 @@ export async function executeQueue(
               } else if (legacyEvent) {
                 emitTrace(config.onTrace, legacyEvent)
               }
-              config.onAgentStream!(assignee, event)
+              return config.onAgentStream!(assignee, event)
             }
           : undefined
 
