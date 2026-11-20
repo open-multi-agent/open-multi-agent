@@ -9,6 +9,7 @@
  */
 
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { StringDecoder } from 'node:string_decoder'
 import type { LLMMessage, StreamEvent } from '../types.js'
 import { killProcessTree, killProcessTreeAndWait } from '../utils/process-tree.js'
 import type { AgentBackend, RunOptions, RunResult } from './runner.js'
@@ -17,6 +18,7 @@ import {
   buildPrompt,
   cancelledResult,
   processExitError,
+  processOutputLimitError,
   spawnProcess,
   toError,
   waitForExit,
@@ -30,7 +32,13 @@ export function createProcessBackend(options: ProcessBackendOptions): AgentBacke
 }
 
 export class ProcessBackend implements AgentBackend {
-  constructor(private readonly options: ProcessBackendOptions) {}
+  constructor(private readonly options: ProcessBackendOptions) {
+    const { maxOutputBytes } = options
+    if (maxOutputBytes !== undefined
+      && (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1)) {
+      throw new RangeError('ProcessBackendOptions.maxOutputBytes must be a positive integer.')
+    }
+  }
 
   async run(messages: LLMMessage[], options: RunOptions = {}): Promise<RunResult> {
     let result: RunResult = {
@@ -79,21 +87,55 @@ export class ProcessBackend implements AgentBackend {
     let stdout = ''
     let stderr = ''
     const chunks: string[] = []
+    const stdoutDecoder = new StringDecoder('utf8')
+    const stderrDecoder = new StringDecoder('utf8')
+    let outputBytes = 0
+    let outputLimitError: Error | undefined
     let wake: (() => void) | undefined
     const wakeReader = () => {
       wake?.()
       wake = undefined
     }
 
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk
-      chunks.push(chunk)
+    let notifyOutputLimit: (error: Error) => void = () => {}
+    const outputLimit = new Promise<{ kind: 'limit'; error: Error }>(resolve => {
+      notifyOutputLimit = error => resolve({ kind: 'limit', error })
+    })
+    const acceptOutput = (chunk: Buffer, channel: 'stdout' | 'stderr') => {
+      if (outputLimitError) return
+      outputBytes += chunk.byteLength
+      const maxOutputBytes = this.options.maxOutputBytes
+      if (maxOutputBytes !== undefined && outputBytes > maxOutputBytes) {
+        outputLimitError = processOutputLimitError(label, maxOutputBytes)
+        killProcessTree(child)
+        notifyOutputLimit(outputLimitError)
+        return
+      }
+      if (channel === 'stdout') {
+        const text = stdoutDecoder.write(chunk)
+        stdout += text
+        if (text) chunks.push(text)
+      } else {
+        stderr += stderrDecoder.write(chunk)
+      }
+    }
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      acceptOutput(chunk, 'stdout')
       wakeReader()
     })
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk
+    child.stderr.on('data', (chunk: Buffer) => {
+      acceptOutput(chunk, 'stderr')
+    })
+    child.stdout.on('end', () => {
+      if (outputLimitError) return
+      const text = stdoutDecoder.end()
+      stdout += text
+      if (text) chunks.push(text)
+      wakeReader()
+    })
+    child.stderr.on('end', () => {
+      if (!outputLimitError) stderr += stderrDecoder.end()
     })
 
     const exit = waitForExit(child)
@@ -107,10 +149,23 @@ export class ProcessBackend implements AgentBackend {
 
         const outcome = await Promise.race([
           exit.then(result => ({ kind: 'exit' as const, result })),
+          outputLimit,
           new Promise<{ kind: 'chunk' }>(resolve => { wake = () => resolve({ kind: 'chunk' }) }),
         ])
 
         if (outcome.kind === 'chunk') continue
+
+        if (outcome.kind === 'limit') {
+          await killProcessTreeAndWait(child, exit)
+          yield { type: 'error', data: outcome.error }
+          return
+        }
+
+        if (outputLimitError) {
+          await killProcessTreeAndWait(child, exit)
+          yield { type: 'error', data: outputLimitError }
+          return
+        }
 
         while (chunks.length > 0) {
           yield { type: 'text', data: chunks.shift()! }
