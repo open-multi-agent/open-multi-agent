@@ -293,6 +293,7 @@ export class Agent {
           env: backend.env,
           cwd: backend.cwd,
           input: backend.input,
+          maxOutputBytes: backend.maxOutputBytes,
           systemPrompt: this.config.systemPrompt,
           agentName: this.name,
         })
