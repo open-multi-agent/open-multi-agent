@@ -340,6 +340,32 @@ describe('GeminiAdapter (contract)', () => {
       },
     )
 
+    it.each(['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY', 'OTHER'])(
+      'maps a prompt blocked with promptFeedback.blockReason %s to content_filter',
+      async (blockReason) => {
+        mockGenerateContent.mockResolvedValue({
+          promptFeedback: { blockReason },
+          usageMetadata: { promptTokenCount: 10 },
+        })
+
+        const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+        expect(result.content).toEqual([])
+        expect(result.stop_reason).toBe('content_filter')
+      },
+    )
+
+    it('ignores an unspecified promptFeedback.blockReason', async () => {
+      mockGenerateContent.mockResolvedValue({
+        ...makeGeminiResponse([{ text: 'ok' }]),
+        promptFeedback: { blockReason: 'BLOCK_REASON_UNSPECIFIED' },
+      })
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.stop_reason).toBe('end_turn')
+    })
+
     it('maps to tool_use when response contains functionCall (even with STOP)', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse(
         [{ functionCall: { id: 'c1', name: 'search', args: {} } }],
@@ -471,6 +497,17 @@ describe('GeminiAdapter (contract)', () => {
     it('yields done event with content_filter when the stream is blocked', async () => {
       mockGenerateContentStream.mockResolvedValue(
         asyncGen([makeGeminiResponse([], { finishReason: 'SAFETY' })]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
+    })
+
+    it('yields done event with content_filter when the prompt is blocked', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([{ promptFeedback: { blockReason: 'SAFETY' }, usageMetadata: { promptTokenCount: 10 } }]),
       )
 
       const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
