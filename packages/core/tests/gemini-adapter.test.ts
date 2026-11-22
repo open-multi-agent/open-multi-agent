@@ -27,6 +27,21 @@ describe('GeminiAdapter', () => {
     expect(adapter.name).toBe('gemini')
   })
 
+  it('passes baseURL to GoogleGenAI as httpOptions.baseUrl', async () => {
+    await createAdapter('gemini', 'test-key', 'https://proxy.example.com')
+    expect(GoogleGenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-key',
+        httpOptions: { baseUrl: 'https://proxy.example.com' },
+      }),
+    )
+  })
+
+  it('does not set httpOptions when baseURL is omitted', () => {
+    new GeminiAdapter('test-key')
+    expect(GoogleGenAIMock.mock.calls[0]![0]).not.toHaveProperty('httpOptions')
+  })
+
   it('uses GEMINI_API_KEY by default', () => {
     const originalGemini = process.env['GEMINI_API_KEY']
     const originalGoogle = process.env['GOOGLE_API_KEY']
