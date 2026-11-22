@@ -61,6 +61,7 @@ import {
   fromOpenAICompletion,
   normalizeFinishReason,
   buildOpenAIMessageList,
+  openAIMaxTokensParam,
   toOpenAISdkReasoningEffort,
   createToolCallSlotResolver,
 } from './openai-common.js'
@@ -153,7 +154,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         // cannot accidentally clobber them via extraBody.
         // `top_k` / `min_p` deliberately omitted — vLLM-only, not accepted
         // by Azure OpenAI's hosted endpoint.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
@@ -201,7 +202,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       {
         // See chat() above for the field-ordering rationale and the
         // `top_k` / `min_p` exclusion.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
