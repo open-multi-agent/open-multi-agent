@@ -25,9 +25,10 @@
 - Map Gemini blocked prompts, Anthropic `refusal`, and OpenAI chat refusals to
   `content_filter`; OpenAI refusal text is surfaced instead of an empty
   response.
-- Fail fast on a `NaN` or below-1 `Semaphore` limit with a `RangeError`, and
-  throw on `release()` without a matching `acquire()` instead of corrupting the
-  active count.
+- `Semaphore` now rejects a `NaN` limit with a `RangeError` instead of building
+  a pool that never grants a slot, and throws on `release()` without a matching
+  `acquire()` instead of corrupting the active count. Limits below 1 already
+  threw.
 - Remove merged abort listeners from source signals so long-lived signals no
   longer accumulate stale handlers from short-lived timeout signals.
 
@@ -41,9 +42,9 @@
   or gateway settings.
 - Consumers should handle `content_filter` for Anthropic refusals, Gemini prompt
   blocks, and OpenAI refusals, including OpenAI refusal text blocks.
-- `Semaphore` constructors can now throw `RangeError` for `NaN` or below-1
-  limits, and an unmatched `release()` throws; ordinary limits, `Infinity`, and
-  fractional limits remain accepted.
+- `Semaphore` constructors now throw `RangeError` for a `NaN` limit, and an
+  unmatched `release()` throws; limits below 1 already threw, and ordinary
+  limits, `Infinity`, and fractional limits remain accepted.
 - create-oma-app receives a patch release that deterministically repins its core
   template; OTel is not bumped and remains compatible with the new core range.
 

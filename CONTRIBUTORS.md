@@ -46,6 +46,7 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@KaitlynFeng](https://github.com/KaitlynFeng) (Hunyuan)
 - [@octo-patch](https://github.com/octo-patch) (MiniMax-M3 model upgrade)
 - [@pcbeingused333](https://github.com/pcbeingused333) (OpenAI streaming fix for unindexed parallel tool calls)
+- [@joshua-mo-143](https://github.com/joshua-mo-143) (Venice)
 
 ## Examples & cookbook
 
