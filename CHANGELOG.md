@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 1.25.0 - 2026-11-22
+
+### Added
+
+- Add a built-in `venice` provider that defaults to
+  `https://api.venice.ai/api/v1`, falls back to `VENICE_API_KEY`, and accepts a
+  `baseURL` override.
+
+### Changed
+
+- OpenAI and Azure OpenAI send `max_completion_tokens` for GPT-5 and o-series
+  models while other models keep `max_tokens`.
+- Gemini `chat()` and `stream()` forward `topP` instead of silently dropping it.
+- Shipped documentation and JSDoc describe the Venice provider and the `topP`
+  option; the `AgentConfig.topP` edit is documentation only.
+
+### Fixed
+
+- Honor `AgentConfig.baseURL` for the Gemini provider, including proxy and
+  gateway endpoints.
+- Map Gemini blocked prompts, Anthropic `refusal`, and OpenAI chat refusals to
+  `content_filter`; OpenAI refusal text is surfaced instead of an empty
+  response.
+- Fail fast on a `NaN` or below-1 `Semaphore` limit with a `RangeError`, and
+  throw on `release()` without a matching `acquire()` instead of corrupting the
+  active count.
+- Remove merged abort listeners from source signals so long-lived signals no
+  longer accumulate stale handlers from short-lived timeout signals.
+
+### Compatibility
+
+- The changed file set does not include published package manifests, so there is
+  no engines-floor increase and no published direct dependency major crossing.
+- The `SupportedProvider` union gained `venice`; exhaustive switches must add a
+  branch, but this is a widening, not a narrowing.
+- Gemini now dials the configured `baseURL`; verify egress allowlists and proxy
+  or gateway settings.
+- Consumers should handle `content_filter` for Anthropic refusals, Gemini prompt
+  blocks, and OpenAI refusals, including OpenAI refusal text blocks.
+- `Semaphore` constructors can now throw `RangeError` for `NaN` or below-1
+  limits, and an unmatched `release()` throws; ordinary limits, `Infinity`, and
+  fractional limits remain accepted.
+- create-oma-app receives a patch release that deterministically repins its core
+  template; OTel is not bumped and remains compatible with the new core range.
+
 ## 1.24.0 - 2026-11-13
 
 ### Added
