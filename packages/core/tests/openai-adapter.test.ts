@@ -521,6 +521,42 @@ describe('OpenAIAdapter', () => {
   })
 
   // =========================================================================
+  // output token limit parameter
+  // =========================================================================
+
+  describe('output token limit parameter', () => {
+    it.each(['gpt-5', 'gpt-5.4-mini', 'o1', 'o3-mini', 'o4-mini'])(
+      'sends max_completion_tokens instead of max_tokens for %s (chat and stream)',
+      async (model) => {
+        mockCreate.mockResolvedValue(makeCompletion())
+        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, maxTokens: 321 }))
+        const chatArgs = mockCreate.mock.calls[0][0]
+        expect(chatArgs.max_completion_tokens).toBe(321)
+        expect(chatArgs).not.toHaveProperty('max_tokens')
+
+        mockCreate.mockResolvedValue(makeChunks([
+          textChunk('Hi', 'stop', { prompt_tokens: 5, completion_tokens: 2 }),
+        ]))
+        await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts({ model, maxTokens: 321 })))
+        const streamArgs = mockCreate.mock.calls[1][0]
+        expect(streamArgs.max_completion_tokens).toBe(321)
+        expect(streamArgs).not.toHaveProperty('max_tokens')
+      },
+    )
+
+    it.each(['gpt-4o', 'gpt-4.1', 'llama-3-70b', 'my-o1-finetune'])(
+      'keeps max_tokens for %s',
+      async (model) => {
+        mockCreate.mockResolvedValue(makeCompletion())
+        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, maxTokens: 321 }))
+        const args = mockCreate.mock.calls[0][0]
+        expect(args.max_tokens).toBe(321)
+        expect(args).not.toHaveProperty('max_completion_tokens')
+      },
+    )
+  })
+
+  // =========================================================================
   // reasoning_effort forwarding (RFC #200 follow-up)
   // =========================================================================
 
