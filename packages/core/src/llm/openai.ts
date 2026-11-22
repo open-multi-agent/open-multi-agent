@@ -60,6 +60,7 @@ import {
   buildOpenAIMessageList,
   getOpenAIReasoningText,
   repairToolArgs,
+  openAIMaxTokensParam,
   toOpenAISdkReasoningEffort,
   createToolCallSlotResolver,
 } from './openai-common.js'
@@ -182,7 +183,7 @@ export class OpenAIAdapter implements LLMAdapter {
         // Sampling params first so extraBody can override them. Structural
         // fields (model/messages/tools/stream) come after extraBody so users
         // cannot accidentally clobber them via extraBody.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
@@ -234,7 +235,7 @@ export class OpenAIAdapter implements LLMAdapter {
     const streamResponse = await this.#client.chat.completions.create(
       {
         // See chat() above for the rationale behind this field ordering.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
