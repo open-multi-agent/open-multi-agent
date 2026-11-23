@@ -288,6 +288,9 @@ function buildConfig(
     maxOutputTokens: options.maxTokens ?? 4096,
     temperature: options.temperature,
     topP: options.topP,
+    topK: options.topK,
+    frequencyPenalty: options.frequencyPenalty,
+    presencePenalty: options.presencePenalty,
     systemInstruction: options.systemPrompt,
     tools: options.tools ? toGeminiTools(options.tools) : undefined,
     toolConfig: options.tools

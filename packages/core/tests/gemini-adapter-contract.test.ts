@@ -261,6 +261,21 @@ describe('GeminiAdapter (contract)', () => {
       expect(mockGenerateContentStream.mock.calls[0][0].config.topP).toBe(0.85)
     })
 
+    it('forwards topK, frequencyPenalty and presencePenalty for chat() and stream()', async () => {
+      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts(sampling))
+      expect(mockGenerateContent.mock.calls[0][0].config).toMatchObject(sampling)
+
+      mockGenerateContentStream.mockResolvedValue(
+        (async function* () {
+          yield makeGeminiResponse([{ text: 'ok' }])
+        })(),
+      )
+      await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts(sampling)))
+      expect(mockGenerateContentStream.mock.calls[0][0].config).toMatchObject(sampling)
+    })
+
     it('omits tools/toolConfig when no tools provided', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
 

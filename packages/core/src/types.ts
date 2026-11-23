@@ -1126,14 +1126,14 @@ export interface AgentConfig {
   readonly temperature?: number
   /**
    * OpenAI-track sampling penalty for token frequency. Forwarded to OpenAI
-   * cloud and OpenAI-compatible local servers (vLLM, llama-server). The
-   * Anthropic adapter ignores this field.
+   * cloud, OpenAI-compatible local servers (vLLM, llama-server) and Gemini.
+   * The Anthropic adapter ignores this field.
    */
   readonly frequencyPenalty?: number
   /**
    * OpenAI-track sampling penalty for token presence. Forwarded to OpenAI
-   * cloud and OpenAI-compatible local servers. The Anthropic adapter
-   * ignores this field.
+   * cloud, OpenAI-compatible local servers and Gemini. The Anthropic
+   * adapter ignores this field.
    */
   readonly presencePenalty?: number
   /**
@@ -1142,7 +1142,7 @@ export interface AgentConfig {
    */
   readonly topP?: number
   /**
-   * Top-k sampling cutoff. Forwarded to Anthropic and OpenAI-compatible
+   * Top-k sampling cutoff. Forwarded to Anthropic, Gemini and OpenAI-compatible
    * local servers. Cloud OpenAI rejects this parameter.
    */
   readonly topK?: number
