@@ -567,7 +567,13 @@ export class FileEvalStore implements EvalStore {
   private async syncTarget(operation: string): Promise<void> {
     let handle: FileHandle | undefined
     try {
-      handle = await FILE_EVAL_STORE_IO.open(this.filePath, 'r')
+      // Windows FlushFileBuffers needs write access, so a read-only handle fails with EPERM.
+      // Fall back to a read-only handle when the file itself is read-only.
+      handle = await FILE_EVAL_STORE_IO.open(this.filePath, 'r+').catch((error: unknown) => {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code
+        if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return FILE_EVAL_STORE_IO.open(this.filePath, 'r')
+        throw error
+      })
       await FILE_EVAL_STORE_IO.sync(handle)
       await FILE_EVAL_STORE_IO.close(handle)
       handle = undefined
