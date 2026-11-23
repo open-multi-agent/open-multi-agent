@@ -276,6 +276,57 @@ describe('GeminiAdapter (contract)', () => {
       expect(mockGenerateContentStream.mock.calls[0][0].config).toMatchObject(sampling)
     })
 
+    it('keeps those sampling fields on Gemini generations before 3.6', async () => {
+      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
+      for (const model of [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-3-flash',
+        'gemini-3.5-flash',
+        'models/gemini-2.5-pro',
+        'gemini-flash-latest',
+      ]) {
+        mockGenerateContent.mockReset()
+        mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, ...sampling }))
+        expect(mockGenerateContent.mock.calls[0][0].config).toMatchObject(sampling)
+      }
+    })
+
+    it('omits frequencyPenalty and presencePenalty on Gemini 3.6 and later, and still forwards topK', async () => {
+      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
+      for (const model of [
+        'gemini-3.6-flash',
+        'Gemini-3.6-Flash',
+        'gemini-3.8-flash',
+        'models/gemini-3.6-flash-lite',
+        'gemini-4-flash',
+      ]) {
+        mockGenerateContent.mockReset()
+        mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, ...sampling }))
+        const config = mockGenerateContent.mock.calls[0][0].config
+        expect(config.topK).toBe(40)
+        expect(config).not.toHaveProperty('frequencyPenalty')
+        expect(config).not.toHaveProperty('presencePenalty')
+      }
+
+      mockGenerateContentStream.mockReset()
+      mockGenerateContentStream.mockResolvedValue(
+        (async function* () {
+          yield makeGeminiResponse([{ text: 'ok' }])
+        })(),
+      )
+      await collectEvents(adapter.stream(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'gemini-3.6-flash', ...sampling }),
+      ))
+      const streamed = mockGenerateContentStream.mock.calls[0][0].config
+      expect(streamed.topK).toBe(40)
+      expect(streamed).not.toHaveProperty('frequencyPenalty')
+      expect(streamed).not.toHaveProperty('presencePenalty')
+    })
+
     it('omits tools/toolConfig when no tools provided', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
 

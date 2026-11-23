@@ -168,10 +168,10 @@ targets and are forwarded only where the wire format accepts them.
 |---|---|---|---|---|---|---|---|
 | `temperature` | `temperature` | yes | yes | yes | yes | yes | yes |
 | `topP` | `top_p` | yes | yes | yes | no | yes (`topP`) | yes (`topP`) |
-| `topK` | `top_k` | yes | yes | no | no | no | yes, via `additionalModelRequestFields` |
+| `topK` | `top_k` | yes | yes | no | no | yes (`topK`) | yes, via `additionalModelRequestFields` |
 | `minP` | `min_p` | no | yes | no | no | no | no |
-| `frequencyPenalty` | `frequency_penalty` | no | yes | yes | no | no | no |
-| `presencePenalty` | `presence_penalty` | no | yes | yes | no | no | no |
+| `frequencyPenalty` | `frequency_penalty` | no | yes | yes | no | yes, except 3.6+ | no |
+| `presencePenalty` | `presence_penalty` | no | yes | yes | no | yes, except 3.6+ | no |
 | `parallelToolCalls` | `parallel_tool_calls` | no | yes | yes | no | no | no |
 | `extraBody` | merged into the request | yes | yes | yes | no | no | yes, into `additionalModelRequestFields` |
 
@@ -205,6 +205,15 @@ the rest) keep them. `extraBody` is still copied into
 `additionalModelRequestFields`. An application inference profile ARN that does
 not contain the model id is left unchanged, because the id alone does not say
 which model it routes to.
+
+Gemini forwards `topK`, `frequencyPenalty`, and `presencePenalty` on
+`GenerateContentConfig`. Gemini 3.6 Flash and later models ignore a custom
+`topK` and return an error when `frequencyPenalty` or `presencePenalty` is
+set, so the adapter drops those two penalties when the model id's generation
+is 3.6 or newer (`gemini-3.6-flash`, `gemini-3.8-flash`,
+`models/gemini-3.6-flash`). Earlier generations, including `gemini-2.5-pro`,
+keep all three. An id with no numeric generation keeps the penalties, because
+the id does not say which generation it is.
 
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not

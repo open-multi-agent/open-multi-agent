@@ -279,18 +279,34 @@ function toGeminiThinkingConfig(
 }
 
 /**
+ * Gemini 3.6 Flash and later reject a custom `frequencyPenalty` or
+ * `presencePenalty` (the request errors). `topK` is ignored on those
+ * models, so it is still forwarded. An id with no numeric generation is
+ * left alone: this rule does not say which generation it is.
+ *
+ * Matches `gemini-3.6-flash`, `models/gemini-3.6-flash-lite`, `gemini-4-flash`.
+ */
+const GEMINI_GENERATION = /(?:^|\/)gemini-(\d+)(?:\.(\d+))?/i
+
+function geminiRejectsPenalties(model: string): boolean {
+  const match = GEMINI_GENERATION.exec(model)
+  if (match === null) return false
+  const major = Number(match[1])
+  const minor = match[2] === undefined ? 0 : Number(match[2])
+  return major > 3 || (major === 3 && minor >= 6)
+}
+
+/**
  * Build the {@link GenerateContentConfig} shared by chat() and stream().
  */
 function buildConfig(
   options: LLMChatOptions | LLMStreamOptions,
 ): GenerateContentConfig {
-  return {
+  const config: GenerateContentConfig = {
     maxOutputTokens: options.maxTokens ?? 4096,
     temperature: options.temperature,
     topP: options.topP,
     topK: options.topK,
-    frequencyPenalty: options.frequencyPenalty,
-    presencePenalty: options.presencePenalty,
     systemInstruction: options.systemPrompt,
     tools: options.tools ? toGeminiTools(options.tools) : undefined,
     toolConfig: options.tools
@@ -299,6 +315,11 @@ function buildConfig(
     thinkingConfig: toGeminiThinkingConfig(options.thinking),
     abortSignal: options.abortSignal,
   }
+  if (!geminiRejectsPenalties(options.model)) {
+    config.frequencyPenalty = options.frequencyPenalty
+    config.presencePenalty = options.presencePenalty
+  }
+  return config
 }
 
 /**
