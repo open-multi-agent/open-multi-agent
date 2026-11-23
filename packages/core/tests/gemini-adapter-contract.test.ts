@@ -261,11 +261,14 @@ describe('GeminiAdapter (contract)', () => {
       expect(mockGenerateContentStream.mock.calls[0][0].config.topP).toBe(0.85)
     })
 
-    it('forwards topK, frequencyPenalty and presencePenalty for chat() and stream()', async () => {
+    it('forwards topK and omits frequencyPenalty and presencePenalty for chat() and stream()', async () => {
       const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
       await adapter.chat([textMsg('user', 'Hi')], chatOpts(sampling))
-      expect(mockGenerateContent.mock.calls[0][0].config).toMatchObject(sampling)
+      const config = mockGenerateContent.mock.calls[0][0].config
+      expect(config.topK).toBe(40)
+      expect(config).not.toHaveProperty('frequencyPenalty')
+      expect(config).not.toHaveProperty('presencePenalty')
 
       mockGenerateContentStream.mockResolvedValue(
         (async function* () {
@@ -273,34 +276,26 @@ describe('GeminiAdapter (contract)', () => {
         })(),
       )
       await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts(sampling)))
-      expect(mockGenerateContentStream.mock.calls[0][0].config).toMatchObject(sampling)
+      const streamed = mockGenerateContentStream.mock.calls[0][0].config
+      expect(streamed.topK).toBe(40)
+      expect(streamed).not.toHaveProperty('frequencyPenalty')
+      expect(streamed).not.toHaveProperty('presencePenalty')
     })
 
-    it('keeps those sampling fields on Gemini generations before 3.6', async () => {
+    it('forwards topK and omits penalties for every Gemini model id', async () => {
       const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
       for (const model of [
         'gemini-2.5-flash',
         'gemini-2.5-pro',
+        'models/gemini-2.5-flash',
         'gemini-3-flash',
         'gemini-3.5-flash',
-        'models/gemini-2.5-pro',
-        'gemini-flash-latest',
-      ]) {
-        mockGenerateContent.mockReset()
-        mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
-        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, ...sampling }))
-        expect(mockGenerateContent.mock.calls[0][0].config).toMatchObject(sampling)
-      }
-    })
-
-    it('omits frequencyPenalty and presencePenalty on Gemini 3.6 and later, and still forwards topK', async () => {
-      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
-      for (const model of [
         'gemini-3.6-flash',
         'Gemini-3.6-Flash',
-        'gemini-3.8-flash',
         'models/gemini-3.6-flash-lite',
+        'gemini-3.8-flash',
         'gemini-4-flash',
+        'gemini-flash-latest',
       ]) {
         mockGenerateContent.mockReset()
         mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
@@ -319,7 +314,7 @@ describe('GeminiAdapter (contract)', () => {
       )
       await collectEvents(adapter.stream(
         [textMsg('user', 'Hi')],
-        chatOpts({ model: 'gemini-3.6-flash', ...sampling }),
+        chatOpts({ model: 'gemini-2.5-pro', ...sampling }),
       ))
       const streamed = mockGenerateContentStream.mock.calls[0][0].config
       expect(streamed.topK).toBe(40)

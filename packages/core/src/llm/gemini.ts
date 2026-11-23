@@ -279,30 +279,19 @@ function toGeminiThinkingConfig(
 }
 
 /**
- * Gemini 3.6 Flash and later reject a custom `frequencyPenalty` or
- * `presencePenalty` (the request errors). `topK` is ignored on those
- * models, so it is still forwarded. An id with no numeric generation is
- * left alone: this rule does not say which generation it is.
- *
- * Matches `gemini-3.6-flash`, `models/gemini-3.6-flash-lite`, `gemini-4-flash`.
- */
-const GEMINI_GENERATION = /(?:^|\/)gemini-(\d+)(?:\.(\d+))?/i
-
-function geminiRejectsPenalties(model: string): boolean {
-  const match = GEMINI_GENERATION.exec(model)
-  if (match === null) return false
-  const major = Number(match[1])
-  const minor = match[2] === undefined ? 0 : Number(match[2])
-  return major > 3 || (major === 3 && minor >= 6)
-}
-
-/**
  * Build the {@link GenerateContentConfig} shared by chat() and stream().
+ *
+ * `topK` is forwarded. Earlier Gemini models accept it. Gemini 3.6 and
+ * later ignore a custom value rather than rejecting the request.
+ * `frequencyPenalty` and `presencePenalty` stay off the request: the
+ * Gemini API returns 400 ("Penalty is not enabled") for those fields on
+ * Gemini 2.5 and on Gemini 3.x Flash, so a shared agent config must not
+ * start failing here.
  */
 function buildConfig(
   options: LLMChatOptions | LLMStreamOptions,
 ): GenerateContentConfig {
-  const config: GenerateContentConfig = {
+  return {
     maxOutputTokens: options.maxTokens ?? 4096,
     temperature: options.temperature,
     topP: options.topP,
@@ -315,11 +304,6 @@ function buildConfig(
     thinkingConfig: toGeminiThinkingConfig(options.thinking),
     abortSignal: options.abortSignal,
   }
-  if (!geminiRejectsPenalties(options.model)) {
-    config.frequencyPenalty = options.frequencyPenalty
-    config.presencePenalty = options.presencePenalty
-  }
-  return config
 }
 
 /**

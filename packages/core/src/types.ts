@@ -1126,16 +1126,16 @@ export interface AgentConfig {
   readonly temperature?: number
   /**
    * OpenAI-track sampling penalty for token frequency. Forwarded to OpenAI
-   * cloud, OpenAI-compatible local servers (vLLM, llama-server) and Gemini.
-   * Gemini omits it for model ids at generation 3.6 or later, which reject
-   * the field. The Anthropic adapter ignores this field.
+   * cloud and OpenAI-compatible local servers (vLLM, llama-server). The
+   * Gemini adapter does not send this field: the API returns 400 when it
+   * is set on Gemini 2.5 and Gemini 3.x Flash. The Anthropic adapter
+   * ignores this field.
    */
   readonly frequencyPenalty?: number
   /**
    * OpenAI-track sampling penalty for token presence. Forwarded to OpenAI
-   * cloud, OpenAI-compatible local servers and Gemini. Gemini omits it for
-   * model ids at generation 3.6 or later, which reject the field. The
-   * Anthropic adapter ignores this field.
+   * cloud and OpenAI-compatible local servers. The Gemini adapter does not
+   * send this field. The Anthropic adapter ignores this field.
    */
   readonly presencePenalty?: number
   /**
@@ -1144,9 +1144,10 @@ export interface AgentConfig {
    */
   readonly topP?: number
   /**
-   * Top-k sampling cutoff. Forwarded to Anthropic, Gemini and OpenAI-compatible
-   * local servers. Cloud OpenAI rejects this parameter. Gemini 3.6 and later
-   * ignore a custom value; earlier Gemini models accept it.
+   * Top-k sampling cutoff. Forwarded to Anthropic, Gemini, and
+   * OpenAI-compatible local servers. Cloud OpenAI rejects this parameter.
+   * Gemini 3.6 and later ignore a custom value; earlier Gemini models
+   * accept it.
    */
   readonly topK?: number
   /**
