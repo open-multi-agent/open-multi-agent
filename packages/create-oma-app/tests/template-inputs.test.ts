@@ -87,6 +87,47 @@ describe('security input helpers', () => {
     expect(redacted).toContain('[REDACTED')
   })
 
+  it('redacts the body of a private key, not only its header', () => {
+    const body = ['MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7', 'ifJWBIbnIhPYYLgEqu63vOzafsyXNsf3qq9XEf0oF0UrQbI8aiO4', 'Zm9vYmFyYmF6cXV4']
+    for (const label of ['RSA PRIVATE KEY', 'EC PRIVATE KEY', 'OPENSSH PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'PRIVATE KEY', 'PGP PRIVATE KEY BLOCK']) {
+      for (const newline of ['\n', '\r\n', '\\n', "\\n' +\n  '"]) {
+        const pem = [`-----BEGIN ${label}-----`, ...body, `-----END ${label}-----`].join(newline)
+        expect(redactSecrets(`before('${pem}')\nafter`)).toBe("before('[REDACTED private-key]')\nafter")
+      }
+    }
+    const cutOff = ['-----BEGIN PRIVATE KEY-----', ...body.slice(0, 2)].join('\n')
+    expect(redactSecrets(`${cutOff}\n\nafter()`)).toBe('[REDACTED private-key]\n\nafter()')
+  })
+
+  it('keeps code between two PEM markers', () => {
+    const text = "if (!pem.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error('bad key')\nreturn pem.endsWith('-----END PRIVATE KEY-----')"
+    expect(redactSecrets(text)).toContain("throw new Error('bad key')")
+  })
+
+  it.each([
+    ['JSON keys', '{"password": "supersecretvalue"}'],
+    ['prefixed names', 'DB_PASSWORD = "supersecretvalue"'],
+    ['unquoted prefixed names', 'export STRIPE_API_KEY=supersecretvalue'],
+    ['suffixed names', "AWS_SECRET_ACCESS_KEY: 'supersecretvalue'"],
+    ['camelCase names', 'const clientSecret = "supersecretvalue"'],
+    ['values with spaces and punctuation', 'password: "hunter2! supersecretvalue"'],
+    ['values with an escaped quote', 'password: "hunter22\\" supersecretvalue"'],
+  ])('redacts secrets in %s', (_name, text) => {
+    const redacted = redactSecrets(text)
+    expect(redacted).not.toContain('supersecretvalue')
+    expect(redacted).not.toContain('hunter2')
+    expect(redacted).toContain('[REDACTED generic-secret]')
+  })
+
+  it.each(['ghp', 'gho', 'ghu', 'ghs', 'ghr', 'github_pat'])('redacts %s GitHub tokens', (prefix) => {
+    expect(redactSecrets(`git clone https://x:${prefix}_abcdefghijklmnopqrstuvwxyz@github.com/o/r`)).toBe('git clone https://x:[REDACTED github-token]@github.com/o/r')
+  })
+
+  it('keeps ordinary code that only looks like a secret', () => {
+    const text = 'const secretary = "Jane Example Doe"\nif (password === expectedPassword) next()\nfunction f(password: string, apiKey?: string) {}\nconst passwordHash = await bcrypt.hash(password, 10)'
+    expect(redactSecrets(text)).toBe(text)
+  })
+
   it('collects bounded evidence, excludes dependencies, and never includes secret values', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'oma-security-input-'))
     tempDirs.push(repo)
