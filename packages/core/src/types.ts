@@ -973,6 +973,11 @@ export interface ProcessAgentBackendConfig {
    * - `'none'`: do not send the prompt; useful for fixed command adapters.
    */
   readonly input?: ProcessBackendInputMode
+  /**
+   * Maximum combined raw stdout and stderr bytes captured for one run.
+   * Must be a positive integer when set. Omit to preserve unlimited output.
+   */
+  readonly maxOutputBytes?: number
 }
 
 /** External backend configuration keyed by `kind`. */

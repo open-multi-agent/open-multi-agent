@@ -6,11 +6,12 @@ import { Agent } from '../src/agent/agent.js'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { ToolExecutor } from '../src/tool/executor.js'
 import { ToolRegistry } from '../src/tool/framework.js'
+import { createProcessBackend } from '../src/agent/process-backend.js'
 import type { AgentConfig } from '../src/types.js'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 
-function makeAgent(script: string): Agent {
+function makeAgent(script: string, maxOutputBytes?: number): Agent {
   const registry = new ToolRegistry()
   return new Agent(
     {
@@ -20,6 +21,7 @@ function makeAgent(script: string): Agent {
         kind: 'process',
         command: process.execPath,
         args: ['-e', script],
+        ...(maxOutputBytes === undefined ? {} : { maxOutputBytes }),
       },
     },
     registry,
@@ -94,6 +96,70 @@ describe('process backend', () => {
     expect(result.output).toContain('api_key=[redacted]')
     expect(result.output).not.toContain('super-secret-value')
   })
+
+  it('allows output that exactly matches the configured UTF-8 byte limit', async () => {
+    const agent = makeAgent(`process.stdout.write('🙂')`, 4)
+
+    const result = await agent.run('emit unicode')
+
+    expect(result.success).toBe(true)
+    expect(result.output).toBe('🙂')
+  })
+
+  it('fails with a diagnostic error when stdout exceeds the output limit', async () => {
+    const agent = makeAgent(`process.stdout.write('12345')`, 4)
+
+    const result = await agent.run('emit too much')
+
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('exceeded the maxOutputBytes limit of 4 bytes')
+    expect(result.output).not.toContain('12345')
+  })
+
+  it('applies one combined output limit to stdout and stderr', async () => {
+    const agent = makeAgent(`
+      process.stderr.write('123')
+      process.stdout.write('45')
+    `, 4)
+
+    const result = await agent.run('emit combined output')
+
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('exceeded the maxOutputBytes limit of 4 bytes')
+  })
+
+  it('bounds queued stream output and reports the limit error', async () => {
+    const backend = createProcessBackend({
+      command: process.execPath,
+      args: ['-e', `
+        process.stdout.write('1234')
+        setTimeout(() => process.stdout.write('5'), 20)
+      `],
+      input: 'none',
+      maxOutputBytes: 4,
+    })
+    const events = []
+
+    for await (const event of backend.stream([])) events.push(event)
+
+    expect(events.filter(event => event.type === 'text').map(event => event.data).join('')).toBe('1234')
+    expect(events.at(-1)).toMatchObject({
+      type: 'error',
+      data: expect.objectContaining({
+        message: 'Process backend "process" exceeded the maxOutputBytes limit of 4 bytes.',
+      }),
+    })
+  })
+
+  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY])(
+    'rejects invalid maxOutputBytes values (%s)',
+    maxOutputBytes => {
+      expect(() => createProcessBackend({
+        command: process.execPath,
+        maxOutputBytes,
+      })).toThrow('ProcessBackendOptions.maxOutputBytes must be a positive integer.')
+    },
+  )
 
   it('participates in runTasks dependency handoff through shared memory', async () => {
     const oma = new OpenMultiAgent({ defaultModel: 'mock-model' })

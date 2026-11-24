@@ -18,6 +18,11 @@ export interface ProcessBackendOptions {
   readonly env?: Readonly<Record<string, string>>
   readonly cwd?: string
   readonly input?: ProcessBackendInputMode
+  /**
+   * Maximum combined raw stdout and stderr bytes captured for one run.
+   * Must be a positive integer when set. Omit to preserve unlimited output.
+   */
+  readonly maxOutputBytes?: number
   readonly systemPrompt?: string
   readonly agentName?: string
 }
@@ -82,6 +87,12 @@ export function processExitError(
   const redactedStderr = redactSensitiveText(stderr.trim())
   const suffix = redactedStderr ? `: ${redactedStderr}` : ''
   return new Error(`Process backend "${label}" exited with ${detail}${suffix}`)
+}
+
+export function processOutputLimitError(label: string, maxOutputBytes: number): Error {
+  return new Error(
+    `Process backend "${label}" exceeded the maxOutputBytes limit of ${maxOutputBytes} bytes.`,
+  )
 }
 
 export function toError(err: unknown): Error {

@@ -92,6 +92,7 @@ default and needs only one key (`ANTHROPIC_API_KEY`) for the whole team.
 | `env` | `Record<string,string>` | — | Extra env vars, merged over `process.env`. |
 | `cwd` | `string` | `process.cwd()` | Working directory for the subprocess. |
 | `input` | `'stdin' \| 'argument' \| 'none'` | `'stdin'` | `process` only: how to pass the prompt to the command. |
+| `maxOutputBytes` | `number` | unlimited | `process` only: positive integer limiting combined raw stdout and stderr bytes per run. |
 | `permission` | `'auto-approve' \| 'reject' \| fn` | `'auto-approve'` | `acp` only: how to answer permission prompts (below). |
 
 When `backend` is set, the LLM-specific fields (`model`, `provider`, `adapter`,
@@ -113,7 +114,23 @@ session; it restores messages only for LLM-backed `prompt()` conversations. See
 For `process`, OMA starts a fresh subprocess per run. Use `input: 'stdin'` for
 commands that read a prompt from stdin, `input: 'argument'` when the command
 expects the prompt as the final argument, and `input: 'none'` for fixed adapters
-that derive their work from files or environment.
+that derive their work from files or environment. Set `maxOutputBytes` when an
+untrusted or noisy command needs a hard output boundary:
+
+```typescript
+backend: {
+  kind: 'process',
+  command: 'node',
+  args: ['scripts/code-agent.js'],
+  maxOutputBytes: 1_048_576, // 1 MiB across stdout and stderr
+}
+```
+
+The limit counts raw bytes before UTF-8 decoding and applies to stdout, stderr,
+and stdout waiting to be forwarded by `stream()`. Output that exactly matches
+the limit is allowed. The next byte terminates the process tree and fails the run
+with an error naming `maxOutputBytes`; partial output is not returned as a
+successful result. Omitting the option preserves the existing unlimited behavior.
 
 ### ACP permissions
 
@@ -164,6 +181,7 @@ maps process outcomes as follows:
 | stdout + exit `0` | success; stdout becomes `result.output` |
 | stderr + exit `0` | success; stderr is ignored unless the process writes it into stdout |
 | exit code / signal | task failure; stderr is redacted and included in the error output |
+| combined stdout/stderr exceeds `maxOutputBytes` | task failure; the process tree is killed |
 | caller abort | cancellation; the child process is killed |
 | no token signal | `tokenUsage` is `{0, 0}` |
 

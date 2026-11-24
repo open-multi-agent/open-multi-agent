@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, it, expect } from 'vitest'
 import { Agent } from '../src/agent/agent.js'
+import { createProcessBackend } from '../src/agent/process-backend.js'
 import { ToolExecutor } from '../src/tool/executor.js'
 import { ToolRegistry } from '../src/tool/framework.js'
 
-function makeAgent(script: string): Agent {
+function makeAgent(script: string, maxOutputBytes?: number): Agent {
   const registry = new ToolRegistry()
   return new Agent(
     {
@@ -17,6 +18,7 @@ function makeAgent(script: string): Agent {
         kind: 'process',
         command: process.execPath,
         args: ['-e', script],
+        ...(maxOutputBytes === undefined ? {} : { maxOutputBytes }),
       },
     },
     registry,
@@ -131,6 +133,46 @@ describe('process backend lifecycle cleanup', () => {
 
     expect(existsSync(marker)).toBe(false)
   })
+
+  it('kills the process when output exceeds the configured limit', async () => {
+    const backend = createProcessBackend({
+      command: process.execPath,
+      args: ['-e', `
+        process.stdout.write(String(process.pid) + '\\n')
+        setTimeout(() => process.stdout.write('x'.repeat(100)), 20)
+        setTimeout(() => {}, 10_000)
+      `],
+      input: 'none',
+      maxOutputBytes: 32,
+    })
+    let childPid: number | undefined
+    let errorMessage = ''
+
+    for await (const event of backend.stream([])) {
+      if (event.type === 'text') childPid = Number(event.data.trim())
+      if (event.type === 'error') errorMessage = event.data.message
+    }
+
+    expect(childPid).toBeTypeOf('number')
+    expect(errorMessage).toContain('exceeded the maxOutputBytes limit of 32 bytes')
+    await waitForProcessExit(childPid!, 2_000)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'kills descendant processes when output exceeds the configured limit',
+    async () => {
+      const marker = join(tmpdir(), `oma-process-output-limit-${process.pid}-${Date.now()}`)
+      await rm(marker, { force: true })
+      const agent = makeAgent(descendantMarkerScript(marker, { writeReady: true }), 1)
+
+      const result = await agent.run('emit too much')
+      await delay(700)
+
+      expect(result.success).toBe(false)
+      expect(result.output).toContain('exceeded the maxOutputBytes limit of 1 bytes')
+      expect(existsSync(marker)).toBe(false)
+    },
+  )
 
   it.skipIf(process.platform === 'win32')(
     'kills descendants after the direct child exits before stream closure',

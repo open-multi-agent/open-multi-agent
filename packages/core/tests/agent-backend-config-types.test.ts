@@ -20,6 +20,7 @@ describe('agent backend config types', () => {
     const processBackend: ExternalAgentBackendConfig = {
       kind: 'process',
       command: process.execPath,
+      maxOutputBytes: 1_048_576,
     }
     const agent: AgentConfig = {
       name: 'process-agent',
@@ -28,5 +29,6 @@ describe('agent backend config types', () => {
 
     expect(acp.permission).toBe('reject')
     expect(agent.backend?.kind).toBe('process')
+    expect(processBackend.maxOutputBytes).toBe(1_048_576)
   })
 })
