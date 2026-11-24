@@ -489,6 +489,25 @@ describe('AzureOpenAIAdapter', () => {
       expect(createCompletionMock.mock.calls[0][0].reasoning_effort).toBe('low')
     })
 
+    it('surfaces streamed refusal deltas and maps them to content_filter', async () => {
+      createCompletionMock.mockResolvedValue(makeChunks([
+        { id: 'c1', model: 'gpt-4o', choices: [{ index: 0, delta: { content: null, refusal: "I'm sorry, " }, finish_reason: null }], usage: null },
+        { id: 'c1', model: 'gpt-4o', choices: [{ index: 0, delta: { content: null, refusal: "I can't help with that." }, finish_reason: 'stop' }], usage: null },
+      ]))
+      const adapter = new AzureOpenAIAdapter('k', 'https://test.openai.azure.com')
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      expect(events.filter(e => e.type === 'text')).toEqual([
+        { type: 'text', data: "I'm sorry, " },
+        { type: 'text', data: "I can't help with that." },
+      ])
+      const done = events.find(e => e.type === 'done')
+      const response = done!.data as LLMResponse
+      expect(response.content).toEqual([{ type: 'text', text: "I'm sorry, I can't help with that." }])
+      expect(response.stop_reason).toBe('content_filter')
+    })
+
     it('forwards thinking.effort as reasoning_effort on stream()', async () => {
       createCompletionMock.mockResolvedValue(makeChunks([
         textChunk('ok', 'stop'),
