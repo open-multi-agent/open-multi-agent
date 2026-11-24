@@ -280,6 +280,13 @@ function toGeminiThinkingConfig(
 
 /**
  * Build the {@link GenerateContentConfig} shared by chat() and stream().
+ *
+ * `topK` is forwarded. Earlier Gemini models accept it. Gemini 3.6 and
+ * later ignore a custom value rather than rejecting the request.
+ * `frequencyPenalty` and `presencePenalty` stay off the request: the
+ * Gemini API returns 400 ("Penalty is not enabled") for those fields on
+ * Gemini 2.5 and on Gemini 3.x Flash, so a shared agent config must not
+ * start failing here.
  */
 function buildConfig(
   options: LLMChatOptions | LLMStreamOptions,
@@ -288,6 +295,7 @@ function buildConfig(
     maxOutputTokens: options.maxTokens ?? 4096,
     temperature: options.temperature,
     topP: options.topP,
+    topK: options.topK,
     systemInstruction: options.systemPrompt,
     tools: options.tools ? toGeminiTools(options.tools) : undefined,
     toolConfig: options.tools
