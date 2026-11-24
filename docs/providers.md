@@ -168,7 +168,7 @@ targets and are forwarded only where the wire format accepts them.
 |---|---|---|---|---|---|---|---|
 | `temperature` | `temperature` | yes | yes | yes | yes | yes | yes |
 | `topP` | `top_p` | yes | yes | yes | no | yes (`topP`) | yes (`topP`) |
-| `topK` | `top_k` | yes | yes | no | no | no | yes, via `additionalModelRequestFields` |
+| `topK` | `top_k` | yes | yes | no | no | yes (`topK`) | yes, via `additionalModelRequestFields` |
 | `minP` | `min_p` | no | yes | no | no | no | no |
 | `frequencyPenalty` | `frequency_penalty` | no | yes | yes | no | no | no |
 | `presencePenalty` | `presence_penalty` | no | yes | yes | no | no | no |
@@ -205,6 +205,12 @@ the rest) keep them. `extraBody` is still copied into
 `additionalModelRequestFields`. An application inference profile ARN that does
 not contain the model id is left unchanged, because the id alone does not say
 which model it routes to.
+
+Gemini forwards `topK` on `GenerateContentConfig`. Gemini 3.6 and later
+ignore a custom value; earlier models accept it. The adapter does not send
+`frequencyPenalty` or `presencePenalty`. The Gemini API returns 400
+("Penalty is not enabled") for those fields on Gemini 2.5 and on Gemini
+3.x Flash, so a shared agent config that sets them stays safe.
 
 `extraBody` is spread between the sampling parameters and the structural fields.
 It can therefore override `temperature`, `topP`, and the rest, but not

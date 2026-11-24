@@ -188,7 +188,7 @@ export async function createAdapter(
     }
     case 'gemini': {
       const { GeminiAdapter } = await import('./gemini.js')
-      return new GeminiAdapter(apiKey)
+      return new GeminiAdapter(apiKey, policyBaseURL)
     }
     case 'openai': {
       const { OpenAIAdapter } = await import('./openai.js')
