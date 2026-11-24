@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AgentPool } from '../src/agent/pool.js'
 import type { Agent } from '../src/agent/agent.js'
-import type { AgentRunResult, AgentState } from '../src/types.js'
+import type { AgentRunResult, AgentState, StreamEvent } from '../src/types.js'
 
 // ---------------------------------------------------------------------------
 // Mock Agent factory
@@ -32,6 +32,29 @@ function createMockAgent(
     getState: vi.fn().mockReturnValue(state),
     reset: vi.fn(),
   } as unknown as Agent
+}
+
+function createStreamingAgent(name: string): Agent {
+  return {
+    ...createMockAgent(name),
+    stream: vi.fn(async function* () {
+      yield { type: 'text', data: 'chunk' } satisfies StreamEvent
+      yield { type: 'done', data: SUCCESS_RESULT } satisfies StreamEvent
+    }),
+  } as unknown as Agent
+}
+
+async function runWithStreamCallback(
+  entry: 'run' | 'runEphemeral',
+  callback: (event: StreamEvent) => void | Promise<void>,
+): Promise<AgentRunResult> {
+  const pool = new AgentPool()
+  const agent = createStreamingAgent('alice')
+  if (entry === 'run') {
+    pool.add(agent)
+    return pool.run('alice', 'hello', undefined, callback)
+  }
+  return pool.runEphemeral(agent, 'hello', undefined, callback)
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +113,47 @@ describe('AgentPool', () => {
       const pool = new AgentPool()
       await expect(pool.run('unknown', 'hello')).rejects.toThrow('not registered')
     })
+
+    it.each(['run', 'runEphemeral'] as const)(
+      'isolates synchronous %s stream callback errors',
+      async (entry) => {
+        const result = await runWithStreamCallback(entry, () => {
+          throw new Error('renderer failed')
+        })
+
+        expect(result).toEqual(SUCCESS_RESULT)
+      },
+    )
+
+    it.each(['run', 'runEphemeral'] as const)(
+      'handles rejected promises from %s stream callbacks',
+      async (entry) => {
+        const unhandled = vi.fn()
+        process.on('unhandledRejection', unhandled)
+        try {
+          const result = await runWithStreamCallback(entry, async () => {
+            throw new Error('async renderer failed')
+          })
+          await new Promise(resolve => setTimeout(resolve, 0))
+
+          expect(result).toEqual(SUCCESS_RESULT)
+          expect(unhandled).not.toHaveBeenCalled()
+        } finally {
+          process.off('unhandledRejection', unhandled)
+        }
+      },
+    )
+
+    it.each(['run', 'runEphemeral'] as const)(
+      'does not await pending promises from %s stream callbacks',
+      async (entry) => {
+        const neverSettles = new Promise<void>(() => {})
+
+        const result = await runWithStreamCallback(entry, () => neverSettles)
+
+        expect(result).toEqual(SUCCESS_RESULT)
+      },
+    )
   })
 
   describe('runParallel', () => {

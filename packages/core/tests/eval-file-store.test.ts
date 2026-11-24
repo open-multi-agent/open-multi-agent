@@ -264,6 +264,18 @@ describe('FileEvalStore lifecycle and filesystem failures', () => {
     await store.close()
   })
 
+  it('opens the data file writable for fsync so Windows FlushFileBuffers does not fail with EPERM', async () => {
+    const path = await temporaryPath()
+    const store = await FileEvalStore.open(path)
+    await store.append([evalRecord({ recordId: 'sync-flags' })])
+    const open = vi.spyOn(FILE_EVAL_STORE_IO, 'open')
+    await store.flush()
+    await store.close()
+    const syncOpens = open.mock.calls.filter(([target]) => target === path)
+    expect(syncOpens.length).toBeGreaterThan(0)
+    for (const [, flags] of syncOpens) expect(flags).not.toBe('r')
+  })
+
   it('keeps the original authoritative when compaction temp fsync fails', async () => {
     const path = await temporaryPath()
     const store = await FileEvalStore.open(path)

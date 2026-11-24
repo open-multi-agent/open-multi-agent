@@ -49,6 +49,23 @@ export function toOpenAISdkReasoningEffort(
 }
 
 /**
+ * Build the output-token-limit field for a Chat Completions request.
+ *
+ * OpenAI's GPT-5 and o-series reasoning models reject `max_tokens` and require
+ * `max_completion_tokens`. Every other model keeps `max_tokens`, which is what
+ * OpenAI-compatible servers (vLLM, llama-server, ...) expect.
+ */
+export function openAIMaxTokensParam(
+  model: string,
+  maxTokens: number | undefined,
+): { max_tokens?: number; max_completion_tokens?: number } {
+  const usesCompletionTokens = /^(gpt-5|o[134])(?![a-z0-9])/i.test(model.trim())
+  return usesCompletionTokens
+    ? { max_completion_tokens: maxTokens }
+    : { max_tokens: maxTokens }
+}
+
+/**
  * Convert a framework {@link LLMToolDef} to an OpenAI {@link ChatCompletionTool}.
  */
 export function toOpenAITool(tool: LLMToolDef): ChatCompletionTool {
@@ -476,6 +493,7 @@ export function fromOpenAICompletion(
 
   const content: ContentBlock[] = []
   const message = choice.message
+  let refused = false
 
   const reasoningText = getOpenAIReasoningText(message)
   if (reasoningText.length > 0) {
@@ -488,6 +506,11 @@ export function fromOpenAICompletion(
   if (message.content !== null && message.content !== undefined) {
     const textBlock: TextBlock = { type: 'text', text: message.content }
     content.push(textBlock)
+  } else if (typeof message.refusal === 'string' && message.refusal.length > 0) {
+    // Structured-output refusals arrive in `refusal` with `content: null`;
+    // surface them instead of returning an empty response.
+    refused = true
+    content.push({ type: 'text', text: message.refusal })
   }
 
   for (const toolCall of message.tool_calls ?? []) {
@@ -541,9 +564,12 @@ export function fromOpenAICompletion(
   const rawStopReason = choice.finish_reason ?? 'stop'
   // If we extracted tool calls from text but the finish_reason was 'stop',
   // correct it to 'tool_use' so the agent runner continues the loop.
+  // An explicit refusal is a safety stop, normalized like other providers'.
   const stopReason = hasToolUseBlocks && rawStopReason === 'stop'
     ? 'tool_use'
-    : normalizeFinishReason(rawStopReason)
+    : refused && !hasToolUseBlocks && rawStopReason === 'stop'
+      ? 'content_filter'
+      : normalizeFinishReason(rawStopReason)
 
   return {
     id: completion.id,

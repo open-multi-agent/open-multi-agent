@@ -365,6 +365,70 @@ describe('OnlineEvaluator failure isolation and lifecycle', () => {
     expect(resultEvaluator.getStats()).toMatchObject({ completed: 1, failed: 1 })
   })
 
+  it('isolates rejected result and diagnostic callback promises', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const resultEvaluator = new OnlineEvaluator({
+        scorers: [passScorer],
+        sample: 1,
+        async onResult() { throw new Error('async result callback') },
+        diagnostics: 'silent',
+      })
+      resultEvaluator.enqueue(sample('async-result-callback'))
+
+      const diagnosticEvaluator = new OnlineEvaluator({
+        scorers: [passScorer],
+        sample: 1,
+        maxQueueLength: 1,
+        async onDiagnostic() { throw new Error('async diagnostic callback') },
+      })
+      diagnosticEvaluator.enqueue(sample('diagnostic-queued'))
+      expect(diagnosticEvaluator.enqueue(sample('diagnostic-dropped'))).toBe(false)
+
+      await Promise.all([
+        resultEvaluator.forceFlush(),
+        diagnosticEvaluator.forceFlush(),
+      ])
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(resultEvaluator.getStats()).toMatchObject({ completed: 1, failed: 1 })
+      expect(diagnosticEvaluator.getStats()).toMatchObject({ completed: 1, dropped: 1, failed: 1 })
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('does not await pending result or diagnostic callback promises', async () => {
+    const neverSettles = new Promise<void>(() => {})
+    const resultEvaluator = new OnlineEvaluator({
+      scorers: [passScorer],
+      sample: 1,
+      onResult: () => neverSettles,
+      diagnostics: 'silent',
+    })
+    resultEvaluator.enqueue(sample('pending-result-callback'))
+
+    const diagnosticEvaluator = new OnlineEvaluator({
+      scorers: [passScorer],
+      sample: 1,
+      maxQueueLength: 1,
+      onDiagnostic: () => neverSettles,
+    })
+    diagnosticEvaluator.enqueue(sample('pending-diagnostic-queued'))
+    expect(diagnosticEvaluator.enqueue(sample('pending-diagnostic-dropped'))).toBe(false)
+
+    await expect(resultEvaluator.forceFlush({ timeoutMs: 1_000 })).resolves.toMatchObject({
+      status: 'ok',
+    })
+    await expect(diagnosticEvaluator.forceFlush({ timeoutMs: 1_000 })).resolves.toMatchObject({
+      status: 'partial',
+    })
+    expect(resultEvaluator.getStats()).toMatchObject({ completed: 1, failed: 0 })
+    expect(diagnosticEvaluator.getStats()).toMatchObject({ completed: 1, dropped: 1, failed: 0 })
+  })
+
   it('times out flush, makes shutdown idempotent, and rejects post-shutdown enqueue', async () => {
     const diagnostics: EvalDiagnostic[] = []
     const never: Scorer = { name: 'never', async score() { await new Promise(() => {}) } }

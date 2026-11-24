@@ -74,6 +74,11 @@ describe('OMA release orchestration', () => {
     expect(adapter.reviewerMessages).toContain('policyNormalization')
     expect(adapter.reviewerSystemPrompt).toContain('Never infer a bump class')
     expect(adapter.reviewerMessages).toContain('currentVersions')
+    // The auditor, planner, and reviewer share one breaking-change definition,
+    // which treats rejecting never-working input as a fix (2026-11-20 run).
+    for (const role of ['compatibility-auditor', 'release-planner', 'release-reviewer']) {
+      expect(adapter.systemPrompts.get(role)).toContain('Rejecting input that never produced a working result is a fix')
+    }
     expect(adapter.toolSets).toHaveLength(4)
     for (const tools of adapter.toolSets.slice(0, 2)) {
       expect(tools).toEqual([
@@ -238,6 +243,7 @@ class ReleaseScriptAdapter implements LLMAdapter {
   readonly thinkingByRole = new Map<string, ThinkingConfig | undefined>()
   readonly extraBodyByRole = new Map<string, Record<string, unknown> | undefined>()
   plannerMessages = ''
+  readonly systemPrompts = new Map<string, string>()
   reviewerMessages = ''
   reviewerSystemPrompt = ''
   private sequence = 0
@@ -247,6 +253,7 @@ class ReleaseScriptAdapter implements LLMAdapter {
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMResponse> {
     const role = identifyRole(options.systemPrompt ?? '')
     this.roles.push(role)
+    this.systemPrompts.set(role, options.systemPrompt ?? '')
     this.toolSets.push((options.tools ?? []).map(tool => tool.name))
     this.maxTokensByRole.set(role, options.maxTokens)
     this.thinkingByRole.set(role, options.thinking)

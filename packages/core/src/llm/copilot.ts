@@ -404,6 +404,7 @@ export class CopilotAdapter implements LLMAdapter {
     >()
     const resolveToolCallSlot = createToolCallSlotResolver()
     let fullText = ''
+    let fullRefusal = ''
 
     try {
       for await (const chunk of streamResponse) {
@@ -424,6 +425,14 @@ export class CopilotAdapter implements LLMAdapter {
           fullText += delta.content
           const textEvent: StreamEvent = { type: 'text', data: delta.content }
           yield textEvent
+        }
+
+        // --- refusal delta (structured-output / safety refusals; `content` stays null) ---
+        const refusalDelta = (delta as { refusal?: string | null }).refusal
+        if (typeof refusalDelta === 'string' && refusalDelta.length > 0) {
+          fullRefusal += refusalDelta
+          const refusalEvent: StreamEvent = { type: 'text', data: refusalDelta }
+          yield refusalEvent
         }
 
         for (const toolCallDelta of delta.tool_calls ?? []) {
@@ -480,13 +489,20 @@ export class CopilotAdapter implements LLMAdapter {
         const textBlock: TextBlock = { type: 'text', text: fullText }
         doneContent.push(textBlock)
       }
+      // Mirror the non-streaming path: surface a refusal when there is no content.
+      const refused = fullText.length === 0 && fullRefusal.length > 0
+      if (refused) {
+        doneContent.push({ type: 'text', text: fullRefusal })
+      }
       doneContent.push(...finalToolUseBlocks)
 
       const finalResponse: LLMResponse = {
         id: completionId,
         content: doneContent,
         model: completionModel,
-        stop_reason: normalizeFinishReason(finalFinishReason),
+        stop_reason: refused && finalToolUseBlocks.length === 0 && finalFinishReason === 'stop'
+          ? 'content_filter'
+          : normalizeFinishReason(finalFinishReason),
         usage: { input_tokens: inputTokens, output_tokens: outputTokens },
       }
 

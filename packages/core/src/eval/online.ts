@@ -65,7 +65,9 @@ export interface OnlineEvaluationConfig {
   }
   readonly store?: EvalStore
   readonly storePayloads?: 'none' | 'redacted' | 'full'
+  /** Async callbacks are supported; returned promises are observed but not awaited. */
   readonly onResult?: (record: EvalRecord) => void
+  /** Async callbacks are supported; returned promises are observed but not awaited. */
   readonly onDiagnostic?: (diagnostic: EvalDiagnostic) => void
   readonly diagnostics?: 'warn' | 'silent'
 }
@@ -616,11 +618,10 @@ export class OnlineEvaluator implements OnlineEvaluationLifecycle {
       }
     }
 
-    for (const record of records) {
-      try {
-        this.onResult?.(record)
-      } catch {
-        this.mutable.failed++
+    const onResult = this.onResult
+    if (onResult !== undefined) {
+      for (const record of records) {
+        this.notify(() => onResult(record))
       }
     }
   }
@@ -714,10 +715,19 @@ export class OnlineEvaluator implements OnlineEvaluationLifecycle {
       ...(scorerName !== undefined ? { scorerName } : {}),
       message,
     }
+    const onDiagnostic = this.onDiagnostic
+    if (onDiagnostic !== undefined) {
+      this.notify(() => onDiagnostic(diagnostic))
+    } else if (this.diagnosticMode !== 'silent') {
+      console.warn(`[open-multi-agent evaluation] ${code}: ${message}`)
+    }
+  }
+
+  private notify(callback: () => void): void {
     try {
-      if (this.onDiagnostic !== undefined) this.onDiagnostic(diagnostic)
-      else if (this.diagnosticMode !== 'silent') {
-        console.warn(`[open-multi-agent evaluation] ${code}: ${message}`)
+      const pending = callback() as unknown
+      if (pending && typeof (pending as Promise<unknown>).catch === 'function') {
+        void (pending as Promise<unknown>).catch(() => { this.mutable.failed++ })
       }
     } catch {
       this.mutable.failed++

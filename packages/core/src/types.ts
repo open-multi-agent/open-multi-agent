@@ -1132,13 +1132,15 @@ export interface AgentConfig {
   /**
    * OpenAI-track sampling penalty for token frequency. Forwarded to OpenAI
    * cloud and OpenAI-compatible local servers (vLLM, llama-server). The
-   * Anthropic adapter ignores this field.
+   * Gemini adapter does not send this field: the API returns 400 when it
+   * is set on Gemini 2.5 and Gemini 3.x Flash. The Anthropic adapter
+   * ignores this field.
    */
   readonly frequencyPenalty?: number
   /**
    * OpenAI-track sampling penalty for token presence. Forwarded to OpenAI
-   * cloud and OpenAI-compatible local servers. The Anthropic adapter
-   * ignores this field.
+   * cloud and OpenAI-compatible local servers. The Gemini adapter does not
+   * send this field. The Anthropic adapter ignores this field.
    */
   readonly presencePenalty?: number
   /**
@@ -1147,8 +1149,10 @@ export interface AgentConfig {
    */
   readonly topP?: number
   /**
-   * Top-k sampling cutoff. Forwarded to Anthropic and OpenAI-compatible
-   * local servers. Cloud OpenAI rejects this parameter.
+   * Top-k sampling cutoff. Forwarded to Anthropic, Gemini, and
+   * OpenAI-compatible local servers. Cloud OpenAI rejects this parameter.
+   * Gemini 3.6 and later ignore a custom value; earlier Gemini models
+   * accept it.
    */
   readonly topK?: number
   /**
@@ -2514,8 +2518,12 @@ export interface OrchestratorConfig {
    * Invoked for every agent dispatched through the task queue, which covers
    * `runTeam()` and `runTasks()` (and a run resumed from either). Not called
    * for `runAgent()`, which never enters the queue.
+   * Returned promises are observed for rejection but are not awaited.
    */
-  readonly onAgentStream?: (agentName: string, event: StreamEvent) => void
+  readonly onAgentStream?: (
+    agentName: string,
+    event: StreamEvent,
+  ) => void | Promise<void>
 }
 
 // ---------------------------------------------------------------------------

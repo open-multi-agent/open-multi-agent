@@ -139,8 +139,16 @@ caller who did nothing but upgrade:
 
 - the `engines` floor rises
 - a published direct dependency crosses a major version
-- input that an earlier release accepted is now rejected
+- input that an earlier release accepted and handled correctly is now rejected
 - a public export is removed, renamed, or has its signature narrowed
+
+Rejecting input that never produced a working result is a fix, not a breaking
+change: a value that hung, deadlocked, or corrupted internal state, or a call
+that only ever reached an invariant violation. #660 made `Semaphore` reject
+`NaN`, which built a pool that never granted a slot, and throw on a `release()`
+with no matching `acquire()`, which silently corrupted the count. That is a
+minor or patch change with the new error named in the changelog. The release
+bot's prompts carry the same definition, so change both together.
 
 A conventional-commits `!` marker on a merged commit signals that one landed,
 but it is not a substitute for the steps below, because nothing carries it

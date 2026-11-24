@@ -2339,6 +2339,31 @@ describe('OpenMultiAgent', () => {
       expect(streamed.some((e) => e.type === 'done')).toBe(true)
     })
 
+    it('isolates rejected promises from onAgentStream', async () => {
+      mockAdapterResponses = ['worker output']
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      try {
+        const oma = new OpenMultiAgent({
+          defaultModel: 'mock-model',
+          onAgentStream: async () => {
+            throw new Error('async renderer failed')
+          },
+        })
+        const team = oma.createTeam('t', teamCfg([agentConfig('worker')]))
+
+        const result = await oma.runTasks(team, [
+          { title: 'Task A', description: 'Do A', assignee: 'worker' },
+        ])
+        await new Promise(resolve => setTimeout(resolve, 0))
+
+        expect(result.success).toBe(true)
+        expect(unhandled).not.toHaveBeenCalled()
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
+    })
+
     it('does not invoke onAgentStream for runAgent, which never enters the queue', async () => {
       mockAdapterResponses = ['solo output']
       const streamed: string[] = []

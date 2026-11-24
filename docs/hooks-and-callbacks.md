@@ -172,10 +172,10 @@ The legacy span callback. Every emission goes through `emitTrace()` (`packages/c
 ### `onAgentStream`
 
 ```ts
-(agentName: string, event: StreamEvent) => void
+(agentName: string, event: StreamEvent) => void | Promise<void>
 ```
 
-Forwards each `StreamEvent` from a task worker. Its presence is what switches workers from `agent.run()` to `agent.stream()`, so wiring it changes the execution path, not just observation. It is wired inside `executeQueue`, the shared task executor, so both `runTeam()` and `runTasks()` reach it; `runAgent()` never streams. Errors thrown by the callback are swallowed by `AgentPool` on purpose: a throwing observer would otherwise be caught by `executeWithRetry` and burn another LLM call on every retry.
+Forwards each `StreamEvent` from a task worker. Its presence is what switches workers from `agent.run()` to `agent.stream()`, so wiring it changes the execution path, not just observation. It is wired inside `executeQueue`, the shared task executor, so both `runTeam()` and `runTasks()` reach it; `runAgent()` never streams. Synchronous errors and rejected promises from the callback are swallowed by `AgentPool` on purpose: a failing observer would otherwise be caught by `executeWithRetry` and burn another LLM call on every retry. Returned promises are observed for rejection but are not awaited, so async callbacks do not add backpressure.
 
 `StreamEvent.type` is `text`, `reasoning`, `tool_use`, `tool_result`, `loop_detected`, `budget_exceeded`, `done`, or `error`, and an `error` event may carry `errorInfo` so a consumer can tell a provider failure from a callback or framework failure without parsing the message. See [streaming](streaming.md).
 
