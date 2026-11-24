@@ -30,8 +30,9 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@green3sf](https://github.com/green3sf) (structured output refresh after an accepted verify revision)
 - [@Zhongghaoming](https://github.com/Zhongghaoming) (evaluation gate minimum-samples guard)
 - [@March-7](https://github.com/March-7) (Team.addTask task-option forwarding)
-- [@shaojian0514](https://github.com/shaojian0514) (non-Error tool throw handling)
+- [@shaojian0514](https://github.com/shaojian0514) (non-Error tool throw handling, async callback and message subscriber failure isolation, process backend output limit, semaphore invariants, abortable tool call gates, journal draining after append failures, repeated MCP pagination cursor guard, tool-result grouping in context trimming, MessageBus read-state validation, create-oma-app demo guidance)
 - [@OsamaAnsar](https://github.com/OsamaAnsar) (nullable enum JSON Schema fix, text-tool-extractor unbalanced-quote fix)
+- [@goranai](https://github.com/goranai) (literal `file_edit` replacement text, Windows fsync for file-backed trace and eval stores)
 
 ## Provider integrations
 
@@ -45,7 +46,7 @@ Opening your first PR gets you added here. See the [contribution guide](.github/
 - [@kidoom](https://github.com/kidoom) (MiMo, Doubao)
 - [@KaitlynFeng](https://github.com/KaitlynFeng) (Hunyuan)
 - [@octo-patch](https://github.com/octo-patch) (MiniMax-M3 model upgrade)
-- [@pcbeingused333](https://github.com/pcbeingused333) (OpenAI streaming fix for unindexed parallel tool calls)
+- [@pcbeingused333](https://github.com/pcbeingused333) (OpenAI streaming fix for unindexed parallel tool calls, refusal and safety-stop mapping to `content_filter` across providers, provider-specific sampling parameter handling, GPT-5 and o-series `max_completion_tokens`, Gemini `baseURL` and thinking-token usage, current default models in `oma provider template`)
 - [@joshua-mo-143](https://github.com/joshua-mo-143) (Venice)
 
 ## Examples & cookbook
