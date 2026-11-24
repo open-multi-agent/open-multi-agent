@@ -285,6 +285,18 @@ describe('FileTraceStore lifecycle and filesystem failures', () => {
     await reopened.close()
   })
 
+  it('opens the data file writable for fsync so Windows FlushFileBuffers does not fail with EPERM', async () => {
+    const path = await temporaryPath()
+    const store = await FileTraceStore.open(path)
+    await store.append(attemptRecords({ runId: 'sync-flags' }))
+    const open = vi.spyOn(FILE_TRACE_STORE_IO, 'open')
+    await store.flush()
+    await store.close()
+    const syncOpens = open.mock.calls.filter(([target]) => target === path)
+    expect(syncOpens.length).toBeGreaterThan(0)
+    for (const [, flags] of syncOpens) expect(flags).not.toBe('r')
+  })
+
   it('reports fsync failure instead of claiming flush success', async () => {
     const path = await temporaryPath()
     const store = await FileTraceStore.open(path)

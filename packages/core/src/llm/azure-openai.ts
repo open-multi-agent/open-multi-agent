@@ -61,6 +61,7 @@ import {
   fromOpenAICompletion,
   normalizeFinishReason,
   buildOpenAIMessageList,
+  openAIMaxTokensParam,
   toOpenAISdkReasoningEffort,
   createToolCallSlotResolver,
 } from './openai-common.js'
@@ -153,7 +154,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         // cannot accidentally clobber them via extraBody.
         // `top_k` / `min_p` deliberately omitted — vLLM-only, not accepted
         // by Azure OpenAI's hosted endpoint.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
@@ -201,7 +202,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       {
         // See chat() above for the field-ordering rationale and the
         // `top_k` / `min_p` exclusion.
-        max_tokens: options.maxTokens,
+        ...openAIMaxTokensParam(options.model, options.maxTokens),
         temperature: options.temperature,
         frequency_penalty: options.frequencyPenalty,
         presence_penalty: options.presencePenalty,
@@ -236,6 +237,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
 
     // Full text accumulator for the `done` response.
     let fullText = ''
+    let fullRefusal = ''
 
     try {
       for await (const chunk of streamResponse) {
@@ -258,6 +260,14 @@ export class AzureOpenAIAdapter implements LLMAdapter {
           fullText += delta.content
           const textEvent: StreamEvent = { type: 'text', data: delta.content }
           yield textEvent
+        }
+
+        // --- refusal delta (structured-output / safety refusals; `content` stays null) ---
+        const refusalDelta = (delta as { refusal?: string | null }).refusal
+        if (typeof refusalDelta === 'string' && refusalDelta.length > 0) {
+          fullRefusal += refusalDelta
+          const refusalEvent: StreamEvent = { type: 'text', data: refusalDelta }
+          yield refusalEvent
         }
 
         // --- tool call delta ---
@@ -318,6 +328,11 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         const textBlock: TextBlock = { type: 'text', text: fullText }
         doneContent.push(textBlock)
       }
+      // Mirror the non-streaming path: surface a refusal when there is no content.
+      const refused = fullText.length === 0 && fullRefusal.length > 0
+      if (refused) {
+        doneContent.push({ type: 'text', text: fullRefusal })
+      }
       doneContent.push(...finalToolUseBlocks)
 
       // Fallback: extract tool calls from text when streaming produced no
@@ -336,7 +351,9 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       const hasToolUseBlocks = doneContent.some(b => b.type === 'tool_use')
       const resolvedStopReason = hasToolUseBlocks && finalFinishReason === 'stop'
         ? 'tool_use'
-        : normalizeFinishReason(finalFinishReason)
+        : refused && !hasToolUseBlocks && finalFinishReason === 'stop'
+          ? 'content_filter'
+          : normalizeFinishReason(finalFinishReason)
 
       const finalResponse: LLMResponse = {
         id: completionId,

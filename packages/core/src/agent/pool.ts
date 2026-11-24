@@ -44,6 +44,18 @@ export interface PoolStatus {
   readonly error: number
 }
 
+type StreamCallback = (event: StreamEvent) => void | Promise<void>
+
+function notifyStreamCallback(callback: StreamCallback, event: StreamEvent): void {
+  try {
+    const pending = callback(event)
+    if (pending) void pending.catch(() => {})
+  } catch {
+    // Stream observers are best-effort. A callback failure must not become an
+    // agent failure or trigger another provider attempt.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // AgentPool
 // ---------------------------------------------------------------------------
@@ -153,7 +165,7 @@ export class AgentPool {
     agentName: string,
     prompt: string,
     runOptions?: Partial<RunOptions>,
-    streamCallback?: (event: StreamEvent) => void,
+    streamCallback?: StreamCallback,
   ): Promise<AgentRunResult> {
     const agent = this.requireAgent(agentName)
     const agentLock = this.agentLocks.get(agentName)!
@@ -167,14 +179,7 @@ export class AgentPool {
         if (streamCallback) {
           let result: AgentRunResult | null = null
           for await (const event of agent.stream(prompt, runOptions)) {
-            try {
-              streamCallback(event)
-            } catch {
-              // Streaming callback must not affect execution; mirrors the
-              // observability contract of `emitTrace`. A throwing callback
-              // here would otherwise be caught by `executeWithRetry` and
-              // burn another LLM call on every retry until exhausted.
-            }
+            notifyStreamCallback(streamCallback, event)
             if (event.type === 'done') result = event.data as AgentRunResult
             if (event.type === 'error') throw event.data as Error
           }
@@ -212,18 +217,14 @@ export class AgentPool {
     agent: Agent,
     prompt: string,
     runOptions?: Partial<RunOptions>,
-    streamCallback?: (event: StreamEvent) => void,
+    streamCallback?: StreamCallback,
   ): Promise<AgentRunResult> {
     await this.semaphore.acquire()
     try {
       if (streamCallback) {
         let result: AgentRunResult | null = null
         for await (const event of agent.stream(prompt, runOptions)) {
-          try {
-            streamCallback(event)
-          } catch {
-            // Streaming callback must not affect execution; mirrors run().
-          }
+          notifyStreamCallback(streamCallback, event)
           if (event.type === 'done') result = event.data as AgentRunResult
           if (event.type === 'error') throw event.data as Error
         }

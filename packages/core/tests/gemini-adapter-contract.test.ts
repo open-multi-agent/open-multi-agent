@@ -261,6 +261,67 @@ describe('GeminiAdapter (contract)', () => {
       expect(mockGenerateContentStream.mock.calls[0][0].config.topP).toBe(0.85)
     })
 
+    it('forwards topK and omits frequencyPenalty and presencePenalty for chat() and stream()', async () => {
+      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
+      mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+      await adapter.chat([textMsg('user', 'Hi')], chatOpts(sampling))
+      const config = mockGenerateContent.mock.calls[0][0].config
+      expect(config.topK).toBe(40)
+      expect(config).not.toHaveProperty('frequencyPenalty')
+      expect(config).not.toHaveProperty('presencePenalty')
+
+      mockGenerateContentStream.mockResolvedValue(
+        (async function* () {
+          yield makeGeminiResponse([{ text: 'ok' }])
+        })(),
+      )
+      await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts(sampling)))
+      const streamed = mockGenerateContentStream.mock.calls[0][0].config
+      expect(streamed.topK).toBe(40)
+      expect(streamed).not.toHaveProperty('frequencyPenalty')
+      expect(streamed).not.toHaveProperty('presencePenalty')
+    })
+
+    it('forwards topK and omits penalties for every Gemini model id', async () => {
+      const sampling = { topK: 40, frequencyPenalty: 0.3, presencePenalty: 0.6 }
+      for (const model of [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'models/gemini-2.5-flash',
+        'gemini-3-flash',
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'Gemini-3.6-Flash',
+        'models/gemini-3.6-flash-lite',
+        'gemini-3.8-flash',
+        'gemini-4-flash',
+        'gemini-flash-latest',
+      ]) {
+        mockGenerateContent.mockReset()
+        mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
+        await adapter.chat([textMsg('user', 'Hi')], chatOpts({ model, ...sampling }))
+        const config = mockGenerateContent.mock.calls[0][0].config
+        expect(config.topK).toBe(40)
+        expect(config).not.toHaveProperty('frequencyPenalty')
+        expect(config).not.toHaveProperty('presencePenalty')
+      }
+
+      mockGenerateContentStream.mockReset()
+      mockGenerateContentStream.mockResolvedValue(
+        (async function* () {
+          yield makeGeminiResponse([{ text: 'ok' }])
+        })(),
+      )
+      await collectEvents(adapter.stream(
+        [textMsg('user', 'Hi')],
+        chatOpts({ model: 'gemini-2.5-pro', ...sampling }),
+      ))
+      const streamed = mockGenerateContentStream.mock.calls[0][0].config
+      expect(streamed.topK).toBe(40)
+      expect(streamed).not.toHaveProperty('frequencyPenalty')
+      expect(streamed).not.toHaveProperty('presencePenalty')
+    })
+
     it('omits tools/toolConfig when no tools provided', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse([{ text: 'ok' }]))
 
@@ -339,6 +400,32 @@ describe('GeminiAdapter (contract)', () => {
         expect(result.stop_reason).toBe('content_filter')
       },
     )
+
+    it.each(['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY', 'OTHER'])(
+      'maps a prompt blocked with promptFeedback.blockReason %s to content_filter',
+      async (blockReason) => {
+        mockGenerateContent.mockResolvedValue({
+          promptFeedback: { blockReason },
+          usageMetadata: { promptTokenCount: 10 },
+        })
+
+        const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+        expect(result.content).toEqual([])
+        expect(result.stop_reason).toBe('content_filter')
+      },
+    )
+
+    it('ignores an unspecified promptFeedback.blockReason', async () => {
+      mockGenerateContent.mockResolvedValue({
+        ...makeGeminiResponse([{ text: 'ok' }]),
+        promptFeedback: { blockReason: 'BLOCK_REASON_UNSPECIFIED' },
+      })
+
+      const result = await adapter.chat([textMsg('user', 'Hi')], chatOpts())
+
+      expect(result.stop_reason).toBe('end_turn')
+    })
 
     it('maps to tool_use when response contains functionCall (even with STOP)', async () => {
       mockGenerateContent.mockResolvedValue(makeGeminiResponse(
@@ -471,6 +558,17 @@ describe('GeminiAdapter (contract)', () => {
     it('yields done event with content_filter when the stream is blocked', async () => {
       mockGenerateContentStream.mockResolvedValue(
         asyncGen([makeGeminiResponse([], { finishReason: 'SAFETY' })]),
+      )
+
+      const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
+
+      const done = events.find(e => e.type === 'done')
+      expect((done!.data as LLMResponse).stop_reason).toBe('content_filter')
+    })
+
+    it('yields done event with content_filter when the prompt is blocked', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        asyncGen([{ promptFeedback: { blockReason: 'SAFETY' }, usageMetadata: { promptTokenCount: 10 } }]),
       )
 
       const events = await collectEvents(adapter.stream([textMsg('user', 'Hi')], chatOpts()))
