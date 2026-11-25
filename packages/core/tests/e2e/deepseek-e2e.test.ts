@@ -46,13 +46,19 @@ describeE2E('DeepSeekAdapter E2E', () => {
     expect(result.usage.output_tokens).toBeGreaterThan(0)
   }, 60_000)
 
-  it('stream() yields text, reasoning, and one done event', async () => {
+  // Since the 2026-10-17 deepseek-flash update the model sometimes answers a
+  // trivial prompt with no reasoning_content even with thinking enabled, which
+  // made this assertion flake in the daily canary. Ask for a small computation
+  // so the model has something to reason about, leave room for that reasoning
+  // in maxTokens, and retry so one empty-reasoning reply cannot fail the
+  // canary. A real parsing regression still fails every attempt.
+  it('stream() yields text, reasoning, and one done event', { retry: 2, timeout: 60_000 }, async () => {
     const events: StreamEvent[] = []
     for await (const event of adapter.stream(
-      [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly STREAM_OK.' }] }],
+      [{ role: 'user', content: [{ type: 'text', text: 'What is 17 * 24? Reply with exactly STREAM_OK followed by the number.' }] }],
       {
         model,
-        maxTokens: 256,
+        maxTokens: 2048,
         thinking: { enabled: true, effort: 'max' },
       },
     )) {
@@ -70,7 +76,7 @@ describeE2E('DeepSeekAdapter E2E', () => {
     expect(reasoningEvents.length).toBeGreaterThan(0)
     expect(doneEvents).toHaveLength(1)
     expect((doneEvents[0].data as LLMResponse).usage.input_tokens).toBeGreaterThan(0)
-  }, 60_000)
+  })
 
   it('runAgent completes a thinking-mode tool loop', async () => {
     let executions = 0
