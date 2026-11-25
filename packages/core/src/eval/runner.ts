@@ -75,7 +75,12 @@ function createId(prefix: string): string {
 
 function emitProgress(options: RunEvalOptions, event: EvalProgressEvent): void {
   try {
-    options.onProgress?.(event)
+    const result = options.onProgress?.(event)
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(() => {
+        // Progress observation is best-effort and must not change evaluation results.
+      })
+    }
   } catch {
     // Progress observation is best-effort and must not change evaluation results.
   }

@@ -176,6 +176,26 @@ describe('runEvalSet', () => {
     ]))
   })
 
+  it('isolates rejected progress callbacks from evaluation results and the process', async () => {
+    const set = defineEvalSet({
+      name: 'progress', version: '1', cases: [{ id: 'a', input: 'a', expected: 'a' }],
+    })
+    const progress: EvalProgressEvent[] = []
+    const onProgress = async (event: EvalProgressEvent) => {
+      if (event.type === 'case_start') throw new Error('progress observer failed')
+      progress.push(event)
+    }
+
+    const report = await runEvalSet(set, async (input) => ({ output: input }), {
+      scorers: [exact], onProgress,
+    })
+
+    expect(report.records).toEqual([expect.objectContaining({ status: 'scored', score: 1 })])
+    expect(progress).toContainEqual(expect.objectContaining({ type: 'case_done' }))
+    // Give Node a turn to report any unhandled rejection to Vitest.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  })
+
   it('turns scorer timeouts into scorer_error and continues to later scorers', async () => {
     const slow = defineScorer({
       name: 'slow', timeoutMs: 5,
