@@ -14,7 +14,9 @@ const WORD_SEGMENTER = new Intl.Segmenter('und', { granularity: 'word' })
 // Splits on anything that is not a letter, combining mark, digit or underscore
 // in any script. `\W` is ASCII-only and would erase Cyrillic, Arabic, Greek,
 // Devanagari or Thai words and cut accented Latin words at the accent.
-const NON_WORD_SEQUENCE = /[^\p{L}\p{M}\p{N}_]+/u
+// ZWNJ (U+200C) and ZWJ (U+200D) sit inside words in Persian and Indic text,
+// so they are part of the word too.
+const NON_WORD_SEQUENCE = /[^\p{L}\p{M}\p{N}_‌‍]+/u
 const CJK_CHARACTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
 
 /**

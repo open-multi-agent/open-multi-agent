@@ -108,6 +108,17 @@ describe('utils/keywords', () => {
       expect(extractKeywords('विक्रय रिपोर्ट लिखें')).toEqual(['विक्रय', 'रिपोर्ट', 'लिखें'])
     })
 
+    it('keeps Persian words that contain a zero-width non-joiner whole', () => {
+      expect(extractKeywords('می‌خواهم گزارش فروش بنویسم')).toEqual([
+        'می‌خواهم',
+        'گزارش',
+        'فروش',
+        'بنویسم',
+      ])
+      expect(extractKeywords('نمی‌توانم')).toEqual(['نمی‌توانم'])
+      expect(keywordScore('می‌توانم', extractKeywords('نمی‌توانم'))).toBe(0)
+    })
+
     it('keeps accented Latin words whole', () => {
       expect(extractKeywords('Überprüfe die Datenbank Größe')).toEqual([
         'überprüfe',
