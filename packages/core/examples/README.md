@@ -128,6 +128,7 @@ One example per supported provider. All follow the same three-agent (architect /
 | [`providers/grok`](providers/grok.ts) | xAI Grok | `XAI_API_KEY` |
 | [`providers/nvidia`](providers/nvidia.ts) | NVIDIA NIM (Nemotron) | `NVIDIA_API_KEY` |
 | [`providers/venice`](providers/venice.ts) | Venice (GLM 5.3 Flash) | `VENICE_API_KEY` |
+| [`providers/trustedrouter`](providers/trustedrouter.ts) | TrustedRouter (600+ models, ZDR/TEE) | `TRUSTEDROUTER_API_KEY` |
 | [`providers/gemini`](providers/gemini.ts) | Google Gemini | `GEMINI_API_KEY` |
 | [`providers/minimax`](providers/minimax.ts) | MiniMax M3.1 Flash | `MINIMAX_API_KEY` |
 | [`providers/mimo`](providers/mimo.ts) | MiMo V2.5 Pro | `MIMO_API_KEY` |
