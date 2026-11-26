@@ -225,6 +225,31 @@ describe('reference structure scorers', () => {
     })
   })
 
+  it.each([
+    { dependencies: ['missing-1', 'missing-2'], missingLinks: 2 },
+    { dependencies: ['failed-task', 'missing-1'], missingLinks: 1 },
+  ])('counts $missingLinks missing dependency links for $dependencies', async ({ dependencies, missingLinks }) => {
+    const trace = storedRun([
+      span('failed-task', 'task', { status: 'error' }),
+      span('dependent-task', 'task', {
+        links: dependencies.map((spanId) => ({
+          traceId: '1'.repeat(32),
+          spanId,
+          relation: 'depends_on',
+        })),
+      }),
+    ])
+
+    expect(await dependencyUtilizationScorer().score(context({ trace }))).toMatchObject({
+      score: 0,
+      details: {
+        dependency_tasks: 1,
+        complete_dependency_tasks: 0,
+        missing_dependency_links: missingLinks,
+      },
+    })
+  })
+
   it('penalizes duplicate task outputs from a traced Team run', async () => {
     const trace = storedRun([
       span('task-1', 'task', { attributes: { 'oma.task.id': 't1', 'oma.agent.name': 'a' } }),

@@ -51,15 +51,17 @@ export function dependencyUtilizationScorer(): Scorer {
 
       let missingLinks = 0
       const complete = dependentTasks.filter(({ span, links }) => {
-        const dependenciesComplete = links.every((link) => {
+        let taskComplete = span.status === 'ok'
+        for (const link of links) {
           const dependency = bySpanId.get(link.spanId)
           if (dependency === undefined) {
             missingLinks++
-            return false
           }
-          return dependency.status === 'ok'
-        })
-        return span.status === 'ok' && dependenciesComplete
+          if (dependency?.status !== 'ok') {
+            taskComplete = false
+          }
+        }
+        return taskComplete
       }).length
       const score = complete / dependentTasks.length
 
