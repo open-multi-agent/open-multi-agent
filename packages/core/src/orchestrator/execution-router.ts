@@ -131,9 +131,10 @@ async function decideWithTimeout(
 ): Promise<RoutingDecision> {
   if (timeoutMs === undefined || timeoutMs <= 0) return router.decide(context)
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  const abortSignal = context.abortSignal
+  const merged = context.abortSignal
     ? mergeAbortSignals(context.abortSignal, timeoutSignal)
-    : timeoutSignal
+    : undefined
+  const abortSignal = merged?.signal ?? timeoutSignal
   const timeout = new Promise<never>((_, reject) => {
     timeoutSignal.addEventListener(
       'abort',
@@ -144,7 +145,7 @@ async function decideWithTimeout(
   return Promise.race([
     Promise.resolve(router.decide({ ...context, abortSignal })),
     timeout,
-  ])
+  ]).finally(() => merged?.dispose())
 }
 
 function isValidDecision(

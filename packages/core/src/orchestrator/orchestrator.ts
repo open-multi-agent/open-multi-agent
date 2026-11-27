@@ -92,7 +92,7 @@ import {
   rejectUnsupportedEgress,
 } from '../llm/egress.js'
 import { emitTrace, generateSpanId } from '../utils/trace.js'
-import { mergeAbortSignals } from '../utils/abort.js'
+import { mergeAbortSignals, type MergedAbortSignal } from '../utils/abort.js'
 import { defaultWorkspaceDir } from '../tool/built-in/path-safety.js'
 import { Team } from '../team/team.js'
 import { TaskQueue } from '../task/queue.js'
@@ -744,11 +744,15 @@ export class OpenMultiAgent {
       const timeoutMs = routingConfig.timeoutMs
       let abortSignal = context.abortSignal
       let timeoutSignal: AbortSignal | undefined
+      let mergedAbort: MergedAbortSignal | undefined
       if (timeoutMs !== undefined && timeoutMs > 0) {
         timeoutSignal = AbortSignal.timeout(timeoutMs)
-        abortSignal = abortSignal
-          ? mergeAbortSignals(abortSignal, timeoutSignal)
-          : timeoutSignal
+        if (abortSignal) {
+          mergedAbort = mergeAbortSignals(abortSignal, timeoutSignal)
+          abortSignal = mergedAbort.signal
+        } else {
+          abortSignal = timeoutSignal
+        }
       }
       const profilePromise = Promise.resolve(profiler.profile({
         goal: context.goal,
@@ -767,7 +771,7 @@ export class OpenMultiAgent {
                 { once: true },
               )
             }),
-          ])
+          ]).finally(() => mergedAbort?.dispose())
       const result = validateTaskProfilerResult(rawResult)
       const policy = evaluateSemanticRoutingPolicy(result.profile, {
         confidenceThreshold: routingConfig.confidenceThreshold,

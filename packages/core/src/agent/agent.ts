@@ -57,7 +57,7 @@ import type {
   TraceErrorKind,
 } from '../types.js'
 import { emitTrace, generateSpanId } from '../utils/trace.js'
-import { mergeAbortSignals } from '../utils/abort.js'
+import { mergeAbortSignals, type MergedAbortSignal } from '../utils/abort.js'
 import { createRunIdentity } from '../observability/identity.js'
 import { classifyRunFailure, statusOnly } from '../observability/status.js'
 import { DurableApprovalError } from '../approval/durable.js'
@@ -450,6 +450,7 @@ export class Agent {
     })
     let timeoutSignal: AbortSignal | undefined
     let callerAbort: AbortSignal | undefined
+    let mergedAbort: MergedAbortSignal | undefined
     let failureKind: TraceErrorKind | undefined
 
     try {
@@ -478,9 +479,10 @@ export class Agent {
       // Merge caller-provided abortSignal with the timeout signal so that
       // either cancellation source is respected.
       callerAbort = callerOptions?.abortSignal
-      const effectiveAbort = timeoutSignal && callerAbort
+      mergedAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
-        : timeoutSignal ?? callerAbort
+        : undefined
+      const effectiveAbort = mergedAbort?.signal ?? timeoutSignal ?? callerAbort
       const runOptions: RunOptions = {
         ...callerOptions,
         identity,
@@ -649,6 +651,8 @@ export class Agent {
       }
       this.emitAgentTrace(effectiveTraceOptions, agentStartMs, errorResult)
       return errorResult
+    } finally {
+      mergedAbort?.dispose()
     }
   }
 
@@ -846,6 +850,7 @@ export class Agent {
     let effectiveTraceOptions: Partial<RunOptions> | undefined = callerOptions
     let timeoutSignal: AbortSignal | undefined
     let callerAbort: AbortSignal | undefined
+    let mergedAbort: MergedAbortSignal | undefined
     let failureKind: TraceErrorKind | undefined
 
     try {
@@ -862,9 +867,10 @@ export class Agent {
         ? AbortSignal.timeout(this.config.timeoutMs)
         : undefined
       callerAbort = callerOptions?.abortSignal
-      const effectiveAbort = timeoutSignal && callerAbort
+      mergedAbort = timeoutSignal && callerAbort
         ? mergeAbortSignals(timeoutSignal, callerAbort)
-        : timeoutSignal ?? callerAbort
+        : undefined
+      const effectiveAbort = mergedAbort?.signal ?? timeoutSignal ?? callerAbort
       const effectiveRunId = identity.runId
       const effectiveSpanId = callerOptions?.onTrace
         ? callerOptions.traceSpanId || generateSpanId()
@@ -967,6 +973,8 @@ export class Agent {
         })
       }
       yield { type: 'error', data: error, errorInfo: classified.errorInfo } satisfies StreamEvent
+    } finally {
+      mergedAbort?.dispose()
     }
   }
 

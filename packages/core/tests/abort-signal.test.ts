@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { getEventListeners } from 'node:events'
 import { OpenMultiAgent } from '../src/orchestrator/orchestrator.js'
 import { Team } from '../src/team/team.js'
+import { Agent } from '../src/agent/agent.js'
+import { AgentRunner } from '../src/agent/runner.js'
+import { ToolRegistry } from '../src/tool/framework.js'
+import { ToolExecutor } from '../src/tool/executor.js'
 import { mergeAbortSignals } from '../src/utils/abort.js'
+import type { LLMAdapter, LLMMessage, LLMResponse } from '../src/types.js'
 
 describe('mergeAbortSignals', () => {
   it.each([
@@ -18,9 +23,10 @@ describe('mergeAbortSignals', () => {
 
     controllers[index].abort()
 
-    expect(merged.aborted).toBe(true)
+    expect(merged.signal.aborted).toBe(true)
     expect(getEventListeners(first.signal, 'abort')).toHaveLength(0)
     expect(getEventListeners(second.signal, 'abort')).toHaveLength(0)
+    merged.dispose()
   })
 
   it('does not add a listener when a source is already aborted', () => {
@@ -30,9 +36,29 @@ describe('mergeAbortSignals', () => {
 
     const merged = mergeAbortSignals(aborted.signal, active.signal)
 
-    expect(merged.aborted).toBe(true)
+    expect(merged.signal.aborted).toBe(true)
     expect(getEventListeners(aborted.signal, 'abort')).toHaveLength(0)
     expect(getEventListeners(active.signal, 'abort')).toHaveLength(0)
+  })
+
+  it('dispose releases both source listeners without aborting the merged signal', () => {
+    const first = new AbortController()
+    const second = new AbortController()
+    const merged = mergeAbortSignals(first.signal, second.signal)
+
+    expect(getEventListeners(first.signal, 'abort')).toHaveLength(1)
+    expect(getEventListeners(second.signal, 'abort')).toHaveLength(1)
+
+    merged.dispose()
+
+    expect(merged.signal.aborted).toBe(false)
+    expect(getEventListeners(first.signal, 'abort')).toHaveLength(0)
+    expect(getEventListeners(second.signal, 'abort')).toHaveLength(0)
+
+    // Idempotent, and detached: a later source abort no longer propagates.
+    merged.dispose()
+    first.abort()
+    expect(merged.signal.aborted).toBe(false)
   })
 })
 
@@ -137,5 +163,55 @@ describe('AbortSignal support for runTeam and runTasks', () => {
     // Both return promises (won't resolve without real LLM, but API is correct)
     expect(promise1).toBeInstanceOf(Promise)
     expect(promise2).toBeInstanceOf(Promise)
+  })
+})
+
+/**
+ * A merged signal that never aborts must still release the listeners it added
+ * to its sources. A caller-owned signal can outlive any number of runs, and
+ * with `callTimeoutMs` the runner mints one merge per LLM call, so a leaked
+ * pair per call accumulates on the run signal until Node warns.
+ */
+function textAdapter(): LLMAdapter {
+  const response: LLMResponse = {
+    id: '1',
+    content: [{ type: 'text', text: 'done' }],
+    model: 'mock',
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 0, output_tokens: 0 },
+  }
+  return { name: 'mock', chat: async () => response, async *stream() {} }
+}
+
+const USER_HI: LLMMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]
+
+describe('mergeAbortSignals listener hygiene', () => {
+  it('releases the caller listener after a per-call timeout run', async () => {
+    const caller = new AbortController()
+    const registry = new ToolRegistry()
+    const runner = new AgentRunner(textAdapter(), registry, new ToolExecutor(registry), {
+      model: 'mock',
+      callTimeoutMs: 10_000,
+    })
+
+    const result = await runner.run(USER_HI, { abortSignal: caller.signal })
+
+    expect(result.output).toBe('done')
+    expect(getEventListeners(caller.signal, 'abort')).toHaveLength(0)
+  })
+
+  it('releases the caller listener after a whole-run timeout', async () => {
+    const caller = new AbortController()
+    const registry = new ToolRegistry()
+    const agent = new Agent(
+      { name: 'a', model: 'mock', adapter: textAdapter(), timeoutMs: 10_000 },
+      registry,
+      new ToolExecutor(registry),
+    )
+
+    const result = await agent.run('hi', { abortSignal: caller.signal })
+
+    expect(result.success).toBe(true)
+    expect(getEventListeners(caller.signal, 'abort')).toHaveLength(0)
   })
 })
