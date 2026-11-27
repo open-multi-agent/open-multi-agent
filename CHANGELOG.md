@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+## 1.26.0 - 2026-11-27
+
+### Added
+
+- Process backends accept an optional `maxOutputBytes` limit on combined stdout
+  and stderr. Omitting it keeps output unlimited.
+- `OrchestratorConfig.onAgentStream` and pool stream callbacks may return `void`
+  or `Promise<void>`. Returned promises are observed without being awaited.
+
+### Changed
+
+- Gemini `chat()` and `stream()` now forward `topK`; `frequencyPenalty` and
+  `presencePenalty` remain off the request because several Gemini models reject
+  them.
+- Streamed refusals from the OpenAI, Azure OpenAI, and Copilot adapters are
+  emitted as text and mapped to `content_filter`, matching the non-streaming
+  path.
+
+### Fixed
+
+- `FileTraceStore` and `FileEvalStore` no longer fail flush and close with
+  `SYNC_FAILED` (EPERM) on Windows, and `oma dashboard --trace-store` no longer
+  exits 3.
+- Rejected promises from async `onResult` and `onDiagnostic` evaluation
+  callbacks are observed and counted instead of becoming unhandled rejections.
+- Rejected promises from async stream callbacks no longer surface as unhandled
+  rejections or fail a task.
+- The process backend kills the process tree and fails the run with a diagnostic
+  error when output crosses `maxOutputBytes`, instead of reporting partial
+  output as success.
+
+### Security
+
+- `maxOutputBytes` gives process-backed agents a hard byte boundary for
+  untrusted or noisy commands, counting raw stdout and stderr before UTF-8
+  decoding.
+
+### Compatibility
+
+- No breaking changes: existing `void`-returning stream callbacks remain valid,
+  and omitting `maxOutputBytes` preserves unlimited output.
+- Streaming OpenAI, Azure OpenAI, and Copilot refusal cases now produce text
+  events and a `content_filter` stop reason instead of empty content with
+  `end_turn`; handlers that assumed the previous empty result should align with
+  the non-streaming refusal shape.
+- `maxOutputBytes` counts raw stdout and stderr bytes, including stdout queued
+  for `stream()`. Output exactly at the limit is allowed; the next byte
+  terminates the process tree and fails the run. Non-positive-integer values
+  throw `RangeError` at construction.
+- Async stream callbacks are observed for rejection but not awaited, so they add
+  no backpressure and a rejected callback cannot fail or retry the task.
+- Callers that set Gemini `topK` will now see it applied; callers that relied on
+  it being silently dropped should recheck provider behavior and model support.
+- create-oma-app receives a patch release repinning its templates to the new
+  core version. OTel is not bumped or republished and remains compatible with
+  the new core within its existing range.
+
 ## 1.25.0 - 2026-11-22
 
 ### Added
