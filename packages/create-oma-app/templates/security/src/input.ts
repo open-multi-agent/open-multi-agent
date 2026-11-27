@@ -8,10 +8,13 @@ const MAX_EVIDENCE_CHARS = 60_000
 const EXCLUDED = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage', 'vendor', '.cache'])
 const TEXT_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.toml', '.env', '.md', '.py', '.go', '.rs', '.java', '.rb', '.php', '.sh'])
 
+// A complete key runs to its END line (the body has no code punctuation); a cut-off key runs to its last base64 line.
+const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:(?:(?!-----BEGIN)[^(){};])*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|(?:(?:\s|\\[rn]|["',])*[A-Za-z0-9+/=]{20,})*)/g
+
 const SECRET_PATTERNS = [
-  { type: 'private-key', regex: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g },
-  { type: 'github-token', regex: /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/g },
-  { type: 'generic-secret', regex: /\b(?:api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*["']?[A-Za-z0-9_./+\-=]{8,}/gi },
+  { type: 'private-key', regex: PRIVATE_KEY },
+  { type: 'github-token', regex: /\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}\b/g },
+  { type: 'generic-secret', regex: /(?<![\w-])[\w-]*(?:api[_-]?key|secret|password|access[_-]?token)(?:[_-]?(?:access[_-]?)?key)?["']?\s*[:=]\s*(?:"(?:[^"\\\n]|\\.){8,}"|'(?:[^'\\\n]|\\.){8,}'|["']?[A-Za-z0-9_./+\-=]{8,})/gi },
 ] as const
 
 export interface SecretSignal {
