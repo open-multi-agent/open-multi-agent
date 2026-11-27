@@ -740,7 +740,8 @@ export class AgentRunner implements AgentBackend {
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const base = options.abortSignal
-    const abortSignal = base ? mergeAbortSignals(base, timeoutSignal) : timeoutSignal
+    const merged = base ? mergeAbortSignals(base, timeoutSignal) : undefined
+    const abortSignal = merged?.signal ?? timeoutSignal
     try {
       return await this.adapter.chat(messages, { ...options, abortSignal })
     } catch (err) {
@@ -750,6 +751,10 @@ export class AgentRunner implements AgentBackend {
         throw new LLMCallTimeoutError(timeoutMs, this.options.agentName)
       }
       throw err
+    } finally {
+      // The merge is per call: leaving its listeners on the run-level signal
+      // would accumulate one per turn for the whole agentic loop.
+      merged?.dispose()
     }
   }
 
