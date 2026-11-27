@@ -6,7 +6,7 @@ export function structuredOutputComplianceScorer(schema?: ZodSchema): Scorer {
   return defineScorer({
     name: 'structured_output_compliance',
     version: '1',
-    score(context) {
+    async score(context) {
       const structured = context.result !== undefined && 'structured' in context.result
         ? context.result.structured
         : undefined
@@ -19,7 +19,7 @@ export function structuredOutputComplianceScorer(schema?: ZodSchema): Scorer {
         }
       }
 
-      const valid = schema === undefined || schema.safeParse(structured).success
+      const valid = schema === undefined || (await schema.safeParseAsync(structured)).success
       return {
         score: valid ? 1 : 0,
         pass: valid,

@@ -159,6 +159,16 @@ describe('reference rule scorers', () => {
     })))).resolves.toMatchObject({ score: 1, pass: true })
   })
 
+  it.each([
+    { answer: 42, score: 1, pass: true },
+    { answer: 41, score: 0, pass: false },
+  ])('scores structured output with an async refinement (answer: $answer)', async ({ answer, score, pass }) => {
+    const schema = z.object({ answer: z.number() }).refine(async (value) => value.answer === 42)
+    const scorer = structuredOutputComplianceScorer(schema)
+    const result = agentResult('ok', { structured: { answer } })
+    expect(await scorer.score(context({ result }))).toMatchObject({ score, pass })
+  })
+
   it('applies hard token and cost ceilings and exposes unavailable data', async () => {
     const scorer = costBudgetScorer({ maxTokens: 7, maxCostAmount: 0.5 })
     await expect(Promise.resolve(scorer.score(context({
