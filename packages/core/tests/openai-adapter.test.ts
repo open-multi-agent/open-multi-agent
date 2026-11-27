@@ -543,7 +543,7 @@ describe('OpenAIAdapter', () => {
   // =========================================================================
 
   describe('output token limit parameter', () => {
-    it.each(['gpt-5', 'gpt-5.4-mini', 'o1', 'o3-mini', 'o4-mini'])(
+    it.each(['gpt-5', 'gpt-5.4-mini', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6.2-sol', 'o1', 'o3-mini', 'o4-mini'])(
       'sends max_completion_tokens instead of max_tokens for %s (chat and stream)',
       async (model) => {
         mockCreate.mockResolvedValue(makeCompletion())

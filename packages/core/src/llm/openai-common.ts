@@ -51,15 +51,15 @@ export function toOpenAISdkReasoningEffort(
 /**
  * Build the output-token-limit field for a Chat Completions request.
  *
- * OpenAI's GPT-5 and o-series reasoning models reject `max_tokens` and require
- * `max_completion_tokens`. Every other model keeps `max_tokens`, which is what
+ * OpenAI's GPT-5, GPT-6 and o-series reasoning models reject `max_tokens` and
+ * require `max_completion_tokens`. Every other model keeps `max_tokens`, which is what
  * OpenAI-compatible servers (vLLM, llama-server, ...) expect.
  */
 export function openAIMaxTokensParam(
   model: string,
   maxTokens: number | undefined,
 ): { max_tokens?: number; max_completion_tokens?: number } {
-  const usesCompletionTokens = /^(gpt-5|o[134])(?![a-z0-9])/i.test(model.trim())
+  const usesCompletionTokens = /^(gpt-[56]|o[134])(?![a-z0-9])/i.test(model.trim())
   return usesCompletionTokens
     ? { max_completion_tokens: maxTokens }
     : { max_tokens: maxTokens }
