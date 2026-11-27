@@ -36,6 +36,7 @@ export interface RunEvalOptions {
   readonly concurrency?: number
   readonly filterTags?: readonly string[]
   readonly metadata?: Readonly<Record<string, TraceAttributeValue>>
+  /** Optional trace lookup. A read failure is reported as a warning. */
   readonly traceStore?: TraceStore
   /** Optional persistence. Failures are reported as warnings and never fail the run. */
   readonly store?: EvalStore
@@ -50,6 +51,7 @@ interface SampleResult {
   readonly tokens?: TokenUsage
   readonly costs: readonly RunCostSummary[]
   readonly targetError: boolean
+  readonly traceWarning?: string
 }
 
 class ScorerTimeoutError extends Error {
@@ -273,9 +275,15 @@ async function runSample(
     targetOutput.output,
     evalCase.expected,
   )
-  const trace: StoredRun | undefined = options.traceStore !== undefined && result?.identity !== undefined
-    ? (await options.traceStore.getRun(result.identity.runId)) ?? undefined
-    : undefined
+  let trace: StoredRun | undefined
+  let traceWarning: string | undefined
+  if (options.traceStore !== undefined && result?.identity !== undefined) {
+    try {
+      trace = (await options.traceStore.getRun(result.identity.runId)) ?? undefined
+    } catch {
+      traceWarning = `Trace for case "${evalCase.id}" repeat ${repeat} could not be loaded.`
+    }
+  }
   const records: EvalRecord[] = []
 
   for (const scorer of options.scorers) {
@@ -341,7 +349,13 @@ async function runSample(
   }
 
   emitProgress(options, { type: 'case_done', caseId: evalCase.id, repeat })
-  return { records, ...(tokens !== undefined ? { tokens } : {}), costs, targetError: false }
+  return {
+    records,
+    ...(tokens !== undefined ? { tokens } : {}),
+    costs,
+    targetError: false,
+    ...(traceWarning !== undefined ? { traceWarning } : {}),
+  }
 }
 
 function sumTokens(samples: readonly SampleResult[]): TokenUsage | undefined {
@@ -427,7 +441,8 @@ export async function runEvalSet(
   const tagsByCase = new Map(cases.map((evalCase) => [evalCase.id, evalCase.tags ?? []]))
   const tokens = sumTokens(completed)
   const costs = sumCosts(completed)
-  const warnings = storeWarnings.filter((warning): warning is string => warning !== undefined)
+  const warnings = samples.flatMap((sample, index) =>
+    [sample?.traceWarning, storeWarnings[index]].filter((warning): warning is string => warning !== undefined))
 
   return {
     schemaVersion: 1,

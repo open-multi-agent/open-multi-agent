@@ -287,6 +287,36 @@ describe('runEvalSet', () => {
     expect(report.records[0]?.runRef).toEqual(runIdentity)
   })
 
+  it.each([
+    { lookup: 'missing', error: undefined, warnings: undefined },
+    {
+      lookup: 'failed',
+      error: new Error('trace store unavailable'),
+      warnings: ['Trace for case "a" repeat 1 could not be loaded.'],
+    },
+  ])('keeps scores when the trace lookup is $lookup', async ({ error, warnings }) => {
+    const getRun = vi.fn(async () => {
+      if (error !== undefined) throw error
+      return undefined
+    })
+    const traceStore = { getRun } as unknown as TraceStore
+    const set = defineEvalSet({
+      name: 'trace-lookup',
+      version: '1',
+      cases: [{ id: 'a', input: 'a', expected: 'a' }],
+    })
+
+    const report = await runEvalSet(set, async (input) => ({
+      output: input, result: agentResult(),
+    }), { scorers: [exact], traceStore })
+
+    expect(getRun).toHaveBeenCalledWith('run-1')
+    expect(report.records).toHaveLength(1)
+    expect(report.records[0]).toMatchObject({ status: 'scored', score: 1 })
+    expect(report.aggregates[0]).toMatchObject({ scoredCount: 1, avg: 1 })
+    expect(report.warnings).toEqual(warnings)
+  })
+
   it('leaves trace undefined without a TraceStore', async () => {
     let received: StoredRun | undefined
     const scorer = defineScorer({ name: 'no-trace', score(context) {

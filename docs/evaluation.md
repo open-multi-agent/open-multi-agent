@@ -420,6 +420,8 @@ void planTarget
 ```
 
 Agent and team targets convert non-string input with `String(input)` and use it as the prompt or goal. Plan targets replay the supplied `PlanArtifact`; the plan fixes the tasks and goal. These wrappers return the OMA result alongside the primary output, inject `eval_case` and one-based `eval_repeat` run metadata, and add available model/provider fingerprints. The runner uses the result identity for `runRef` and the result usage for report totals. When `traceStore` is provided, it also loads the matching `StoredRun` into `ScorerContext.trace`.
+If the read fails, scoring continues with `trace` absent and the report
+records a warning for the affected case and repeat.
 
 Record metadata merges in this order, with later values winning: case metadata, `runEvalSet()` metadata, then metadata echoed by a convenience target (including its configuration fingerprint).
 
