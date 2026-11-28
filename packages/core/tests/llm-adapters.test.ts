@@ -45,6 +45,11 @@ describe('createAdapter', () => {
     expect(adapter.name).toBe('venice')
   })
 
+  it('creates a trustedrouter adapter', async () => {
+    const adapter = await createAdapter('trustedrouter', 'test-key')
+    expect(adapter.name).toBe('trustedrouter')
+  })
+
   it('creates a gemini adapter', async () => {
     const adapter = await createAdapter('gemini', 'test-key')
     expect(adapter.name).toBe('gemini')

@@ -359,6 +359,16 @@ describe('PROVIDER_REFERENCE', () => {
       }),
     )
   })
+
+  it('includes the TrustedRouter shortcut for provider list/template commands', () => {
+    expect(PROVIDER_REFERENCE).toContainEqual(
+      expect.objectContaining({
+        id: 'trustedrouter',
+        apiKeyEnv: ['TRUSTEDROUTER_API_KEY'],
+        baseUrlSupported: true,
+      }),
+    )
+  })
 })
 
 describe('DEFAULT_MODEL_HINT', () => {

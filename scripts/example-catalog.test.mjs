@@ -27,7 +27,7 @@ function copyCatalog() {
 }
 
 test('the checked-in catalog covers every discovered example unit', () => {
-  assert.equal(catalog.examples.length, 66)
+  assert.equal(catalog.examples.length, 67)
   assert.deepEqual(validateExampleCatalog(catalog, examplesRoot), [])
 })
 
@@ -44,7 +44,7 @@ test('the public schema and runtime validator use the same controlled vocabulary
 
 test('discovery uses standalone scripts and immediate example directories as units', () => {
   const discovered = discoverExampleUnits(examplesRoot)
-  assert.equal(discovered.length, 66)
+  assert.equal(discovered.length, 67)
   assert.ok(discovered.includes('basics/single-agent.ts'))
   assert.ok(discovered.includes('cookbook/commission-reconciliation-recovery.ts'))
   assert.ok(discovered.includes('cookbook/market-data-integrity-verify-loop.ts'))

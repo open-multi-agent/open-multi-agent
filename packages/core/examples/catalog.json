@@ -727,6 +727,16 @@
       "level": "beginner"
     },
     {
+      "id": "trustedrouter",
+      "path": "providers/trustedrouter.ts",
+      "title": "TrustedRouter",
+      "description": "Run the standard three-agent team through TrustedRouter's built-in provider.",
+      "section": "models-providers",
+      "capabilities": ["provider-adapter"],
+      "format": "script",
+      "level": "beginner"
+    },
+    {
       "id": "venice",
       "path": "providers/venice.ts",
       "title": "Venice",

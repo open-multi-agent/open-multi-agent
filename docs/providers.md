@@ -38,6 +38,7 @@ The framework ships a wired-in provider name for each of these. Set `provider` a
 | Grok (xAI) | `provider: 'grok'` | `XAI_API_KEY` | `grok-4` | OpenAI-compatible; endpoint is `api.x.ai/v1`. |
 | NVIDIA NIM | `provider: 'nvidia'` | `NVIDIA_API_KEY` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | OpenAI-compatible; endpoint is `integrate.api.nvidia.com/v1`. Pass `baseURL` for a self-hosted NIM. Smaller options include `nvidia/nemotron-3.5-lightning-30b-a3b` and `nvidia/nemotron-3.5-bolt-e4b`. See [`providers/nvidia`](../packages/core/examples/providers/nvidia.ts). |
 | Venice | `provider: 'venice'` | `VENICE_API_KEY` | `z-ai-glm-5-3-flash` | OpenAI-compatible; endpoint is `api.venice.ai/api/v1`. Model IDs are listed at `GET /models`; pass Venice options such as `venice_parameters` through `extraBody`. See [`providers/venice`](../packages/core/examples/providers/venice.ts). |
+| TrustedRouter | `provider: 'trustedrouter'` | `TRUSTEDROUTER_API_KEY` | `trustedrouter/zdr` | OpenAI-compatible; endpoint is `api.trustedrouter.com/v1`. Accesses 600+ `vendor/model` IDs (listed at `GET /v1/models`) plus routing presets (`trustedrouter/auto`, `trustedrouter/zdr`, `trustedrouter/e2e`, `nyte/auto`) with verifiable Confidential Space TEE inference and ZDR/E2E egress guarantees. See [`providers/trustedrouter`](../packages/core/examples/providers/trustedrouter.ts). |
 | DeepSeek | `provider: 'deepseek'` | `DEEPSEEK_API_KEY` | `deepseek-flash` | OpenAI-compatible Chat Completions. `deepseek-flash` is DeepSeek-V4.1-Flash and `deepseek-v4-pro` is DeepSeek-V4-Pro-0813. `deepseek-flash` carries no version because DeepSeek moves the name to the current Flash generation; the older `deepseek-v4-flash` is still accepted but that model is retired and those requests are served by V4.1-Flash. Both support 1M context, 384K max output, and enable thinking by default (opt out with `thinking: { enabled: false }`). Both endpoints also offer DeepSeek's native Responses API, while OMA's built-in adapter uses Chat Completions. Legacy `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24. |
 | Doubao (Volcengine) | `provider: 'doubao'` | `ARK_API_KEY` | `doubao-seed-1-8-251228` | OpenAI-compatible. ByteDance Volcengine Ark endpoint `https://ark.cn-beijing.volces.com/api/v3`. See [`providers/doubao`](../packages/core/examples/providers/doubao.ts). |
 | Hunyuan (Tencent MaaS / TokenHub) | `provider: 'hunyuan'` | `HUNYUAN_API_KEY` | `hy3-preview` | OpenAI-compatible. Default endpoint `https://tokenhub.tencentmaas.com/v1` (Tencent's current platform; `sk-...` keys, Hunyuan 3 models). Tool calling verified on `hy3-preview`. See [`providers/hunyuan`](../packages/core/examples/providers/hunyuan.ts). |
@@ -177,7 +178,7 @@ targets and are forwarded only where the wire format accepts them.
 
 "OpenAI and OpenAI-compatible built-ins" is the `openai` adapter and every
 provider that extends it: `deepseek`, `doubao`, `grok`, `nvidia`, `venice`,
-`hunyuan`, `minimax`, `mimo`, and `qiniu`.
+`trustedrouter`, `hunyuan`, `minimax`, `mimo`, and `qiniu`.
 
 Two caveats the table cannot express:
 
