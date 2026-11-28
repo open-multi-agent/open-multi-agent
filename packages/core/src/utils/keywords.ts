@@ -11,6 +11,12 @@ export const STOP_WORDS: ReadonlySet<string> = new Set([
 ])
 
 const WORD_SEGMENTER = new Intl.Segmenter('und', { granularity: 'word' })
+// Splits on anything that is not a letter, combining mark, digit or underscore
+// in any script. `\W` is ASCII-only and would erase Cyrillic, Arabic, Greek,
+// Devanagari or Thai words and cut accented Latin words at the accent.
+// ZWNJ (U+200C) and ZWJ (U+200D) sit inside words in Persian and Indic text,
+// so they are part of the word too.
+const NON_WORD_SEQUENCE = /[^\p{L}\p{M}\p{N}_‌‍]+/u
 const CJK_CHARACTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
 
 /**
@@ -24,9 +30,10 @@ export function extractKeywords(text: string): string[] {
   for (const { segment, isWordLike } of WORD_SEGMENTER.segment(text.toLowerCase())) {
     if (!isWordLike) continue
 
-    // Preserve the previous \W+ splitting semantics for Latin-script words
-    // while allowing Intl.Segmenter to surface CJK words instead of dropping them.
-    const words = CJK_CHARACTER.test(segment) ? [segment] : segment.split(/\W+/)
+    // Keep the \W+ splitting semantics for ASCII words (apostrophes and
+    // punctuation split, underscores stay) while allowing Intl.Segmenter to
+    // surface CJK words and keeping words in other scripts whole.
+    const words = CJK_CHARACTER.test(segment) ? [segment] : segment.split(NON_WORD_SEQUENCE)
     for (const word of words) {
       const meetsLengthThreshold = CJK_CHARACTER.test(word)
         ? [...word].length >= 2

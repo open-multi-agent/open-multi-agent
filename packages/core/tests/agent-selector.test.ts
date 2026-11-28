@@ -138,6 +138,21 @@ describe('AgentSelector', () => {
     expect(result.score).toBeGreaterThan(0)
   })
 
+  it('ranks agents by keyword affinity for Russian text', () => {
+    const agents: AgentConfig[] = [
+      { name: 'a-reviewer', model: 'test', systemPrompt: 'Проверка исходного кода и безопасности' },
+      { name: 'b-analyst', model: 'test', systemPrompt: 'Отчёты по продажам и анализ квартальных данных' },
+    ]
+    const result = new AgentSelector().select({
+      title: 'Напишите отчёт по продажам',
+      description: 'Анализ данных за квартал',
+      requires: {},
+    }, agents)
+
+    expect(result.agent).toBe(agents[1])
+    expect(result.score).toBeGreaterThan(0)
+  })
+
   it('resolves orchestrator default tool presets before hard filtering', () => {
     const agent: AgentConfig = { name: 'defaulted-editor', model: 'test' }
     const result = new AgentSelector().select({

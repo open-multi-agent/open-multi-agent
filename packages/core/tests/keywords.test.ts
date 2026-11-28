@@ -96,6 +96,42 @@ describe('utils/keywords', () => {
       ])
     })
 
+    it('keeps words in non-Latin, non-CJK scripts', () => {
+      expect(extractKeywords('Напишите отчёт по продажам за квартал')).toEqual([
+        'напишите',
+        'отчёт',
+        'продажам',
+        'квартал',
+      ])
+      expect(extractKeywords('Γράψε αναφορά πωλήσεων')).toEqual(['γράψε', 'αναφορά', 'πωλήσεων'])
+      expect(extractKeywords('تحليل بيانات المبيعات')).toEqual(['تحليل', 'بيانات', 'المبيعات'])
+      expect(extractKeywords('विक्रय रिपोर्ट लिखें')).toEqual(['विक्रय', 'रिपोर्ट', 'लिखें'])
+    })
+
+    it('keeps Persian words that contain a zero-width non-joiner whole', () => {
+      expect(extractKeywords('می‌خواهم گزارش فروش بنویسم')).toEqual([
+        'می‌خواهم',
+        'گزارش',
+        'فروش',
+        'بنویسم',
+      ])
+      expect(extractKeywords('نمی‌توانم')).toEqual(['نمی‌توانم'])
+      expect(keywordScore('می‌توانم', extractKeywords('نمی‌توانم'))).toBe(0)
+    })
+
+    it('keeps accented Latin words whole', () => {
+      expect(extractKeywords('Überprüfe die Datenbank Größe')).toEqual([
+        'überprüfe',
+        'datenbank',
+        'größe',
+      ])
+      expect(extractKeywords('Analizar la canción española')).toEqual([
+        'analizar',
+        'canción',
+        'española',
+      ])
+    })
+
     it('preserves pure-English punctuation and length behaviour', () => {
       expect(extractKeywords("Writer's notes don't include tiny API words")).toEqual([
         'writer',
