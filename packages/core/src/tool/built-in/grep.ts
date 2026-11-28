@@ -171,9 +171,15 @@ async function runRipgrep(
         return
       }
 
-      const lines = output.split('\n')
+      // `--max-count` caps matches per file, so cap the total here to honour
+      // `maxResults` the same way the Node.js fallback does.
+      const lines = output.split('\n').slice(0, options.maxResults)
+      const truncationNote =
+        lines.length >= options.maxResults
+          ? `\n\n(results capped at ${options.maxResults}; use maxResults to raise the limit)`
+          : ''
       resolve({
-        data: lines.join('\n'),
+        data: lines.join('\n') + truncationNote,
         isError: false,
       })
     })
